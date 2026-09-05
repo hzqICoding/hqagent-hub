@@ -59,3 +59,35 @@ Vue 只跟 Local Hub 说话，一个 Base URL、一个 Token、一条事件序�
 | `E:\OtherPro\OTA-Platform` | 升级服务端，直接复用，不重建 |
 | `E:\OtherPro\HQDroidDeck-Desktop` | Go 更新模块的来源（1619 行纯标准库） |
 | `E:\OtherPro\HQUpdateKit` | 抽取出的共享更新模块，两个产品共同依赖（W6 建立） |
+
+## 本机工具链前置条件（2026-09-05 实测）
+
+开工时在这台机器上逐条验证过，缺的部分会直接卡住对应工作包：
+
+| 工具链 | 状态 | 影响 |
+| --- | --- | --- |
+| Python 3.13.7 | ✅ 已装 | W1 可开工。依赖装在各 worktree 的 `.venv/` |
+| Node + pnpm | ✅ 已装 | W4 可开工 |
+| Go | ✅ 已装（`E:\SoftWare\Go`） | W6 Update Agent 可开工 |
+| Rust / cargo / rustup | ❌ **未装** | — |
+| MSVC 工具链（`link.exe`） | ❌ **未装** | **W5 完全阻断** |
+
+### W5 的硬阻断
+
+`cargo check` 在 build script 阶段就死：
+
+```
+error: linker `link.exe` not found
+note: the msvc targets depend on the msvc linker but `link.exe` was not found
+```
+
+`vswhere.exe` 不存在，两个 `Microsoft Visual Studio` 安装目录都不存在——
+本机从没装过 Visual Studio 或 Build Tools。
+
+**复工前置**：装 Visual Studio Build Tools，勾选「使用 C++ 的桌面开发」工作负载
+（数 GB，要管理员权限）。Tauri 在 Windows 上依赖 WebView2 与 MSVC ABI，
+不要改用 `x86_64-pc-windows-gnu` 绕过。
+
+装完后把 Rust 正式装到 `%USERPROFILE%\.cargo`，并改掉
+`apps/desktop/src-tauri/acceptance/run-cargo.ps1` 里指向 `E:\tmp\hqagent-w5-cargo`
+的默认路径——那是执行方临时装的一套工具链，放在随时会被清理的目录里。
