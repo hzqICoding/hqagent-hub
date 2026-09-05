@@ -15,7 +15,7 @@ target/
 apps/desktop/src-tauri/target/
 
 # 本机运行时数据（绝不入库：含 Token）
-runtime/
+/runtime/
 *.local.json
 hub.json
 update-agent.json
