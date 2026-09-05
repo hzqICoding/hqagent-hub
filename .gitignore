@@ -1,0 +1,36 @@
+# 依赖
+node_modules/
+.pnpm-store/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+
+# 构建产物
+dist/
+build-output/
+target/
+*.egg-info/
+apps/desktop/src-tauri/target/
+
+# 本机运行时数据（绝不入库：含 Token）
+runtime/
+*.local.json
+hub.json
+update-agent.json
+
+# 日志与临时
+*.log
+logs/
+.tmp/
+*.tmp
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 注意：packages/protocol/generated/** 必须提交。
+# CI 会重新生成并逐字节比对，用来防止有人手改生成物。
