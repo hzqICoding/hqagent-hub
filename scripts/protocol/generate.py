@@ -464,19 +464,21 @@ def main() -> int:
     (OUT / "python").mkdir(parents=True, exist_ok=True)
     (OUT / "go").mkdir(parents=True, exist_ok=True)
 
-    (OUT / "ts" / "index.ts").write_text(emit_ts(index, registries, order, version), encoding="utf-8")
+    (OUT / "ts" / "index.ts").write_text(emit_ts(index, registries, order, version), encoding="utf-8", newline="\n")
     (OUT / "python" / "__init__.py").write_text(
         '"""HQAgent-Hub 协议边界 DTO（生成物）。"""\n\nfrom .models import *  # noqa: F401,F403\n',
         encoding="utf-8",
+        newline="\n",
     )
-    (OUT / "python" / "models.py").write_text(emit_py(index, registries, order, version), encoding="utf-8")
-    (OUT / "go" / "protocol.go").write_text(emit_go(index, registries, version), encoding="utf-8")
+    (OUT / "python" / "models.py").write_text(emit_py(index, registries, order, version), encoding="utf-8", newline="\n")
+    (OUT / "go" / "protocol.go").write_text(emit_go(index, registries, version), encoding="utf-8", newline="\n")
     # go.mod 一并生成，保证 generated/go 是可独立编译的模块：
     # HQUpdateKit 与 apps/update-agent 通过 replace 指向本目录消费它。
     (OUT / "go" / "go.mod").write_text(
         "// 此文件由 scripts/protocol/generate.py 生成，请勿手改。\n"
         "module hqagent.local/protocol\n\ngo 1.26\n",
         encoding="utf-8",
+        newline="\n",
     )
 
     print(f"protocol {version}: 生成 {len(index)} 个类型 -> ts / python / go")
