@@ -9,7 +9,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="h-screen w-screen overflow-hidden bg-app text-content-primary">
+  <div class="h-full w-full overflow-hidden bg-app text-content-primary flex flex-col">
     <router-view />
     <HqToast />
   </div>

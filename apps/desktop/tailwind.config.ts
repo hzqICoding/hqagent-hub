@@ -29,6 +29,17 @@ export default {
           'primary-active': 'var(--color-action-primary-active)',
           'primary-text': 'var(--color-action-primary-text)',
         },
+        primary: {
+          DEFAULT: 'var(--color-action-primary)',
+          50: 'var(--color-accent-soft)',
+          100: 'var(--color-accent-soft)',
+          500: 'var(--color-accent)',
+          600: 'var(--color-action-primary)',
+          700: 'var(--color-action-primary-hover)',
+          800: 'var(--color-action-primary-active)',
+          900: 'var(--color-action-primary-active)',
+          950: 'var(--color-accent-soft)',
+        },
         accent: {
           DEFAULT: 'var(--color-accent)',
           soft: 'var(--color-accent-soft)',

@@ -18,7 +18,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="h-screen w-screen overflow-hidden flex flex-col bg-app text-content-primary">
+  <div class="h-full w-full overflow-hidden flex flex-col bg-app text-content-primary">
     <!-- Top Body Area: Sidebar + Main Area + Inspector -->
     <div class="flex-1 flex overflow-hidden">
       <!-- Left: Sidebar -->

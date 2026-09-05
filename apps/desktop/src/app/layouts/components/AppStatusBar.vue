@@ -42,7 +42,7 @@ const hubStatusDotClass = computed(() => {
 </script>
 
 <template>
-  <footer class="h-6 bg-panel border-t border-border-subtle px-3 flex items-center justify-between text-2xs text-content-muted select-none shrink-0">
+  <footer class="w-full h-7 bg-panel border-t border-border-subtle px-3 flex items-center justify-between text-2xs text-content-muted select-none shrink-0 z-10 shadow-2xs">
     <!-- Left: Status indicators -->
     <div class="flex items-center gap-4">
       <!-- Hub Status -->

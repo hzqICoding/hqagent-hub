@@ -150,16 +150,16 @@ function onScenarioChange(event: Event) {
     </div>
 
     <!-- Active Workspace Quick Switcher -->
-    <div v-if="!appStore.sidebarCollapsed" class="p-2 border-b border-border-subtle bg-panel/30">
+    <div v-if="!appStore.sidebarCollapsed" class="p-2 border-b border-border-subtle bg-panel/30 shrink-0">
       <div class="px-2 py-1.5 rounded-md bg-panel border border-border-subtle flex flex-col gap-1">
-        <div class="flex items-center justify-between text-2xs text-content-muted">
-          <span>当前工作区</span>
-          <span class="flex items-center gap-1 text-primary-600 font-mono">
-            <GitBranch class="w-3 h-3" />
-            {{ workspaceStore.currentWorkspace?.branch || 'main' }}
+        <div class="flex items-center justify-between text-2xs text-content-muted gap-2">
+          <span class="shrink-0 whitespace-nowrap">当前工作区</span>
+          <span class="flex items-center gap-1 text-primary-600 font-mono truncate min-w-0" :title="workspaceStore.currentWorkspace?.branch || 'main'">
+            <GitBranch class="w-3 h-3 shrink-0" />
+            <span class="truncate">{{ workspaceStore.currentWorkspace?.branch || 'main' }}</span>
           </span>
         </div>
-        <div class="text-xs font-medium text-content-primary truncate" :title="workspaceStore.currentWorkspace?.path">
+        <div class="text-xs font-semibold text-content-primary truncate" :title="workspaceStore.currentWorkspace?.path">
           {{ workspaceStore.currentWorkspace?.name || 'HQAgent-Hub' }}
         </div>
       </div>
@@ -228,7 +228,7 @@ function onScenarioChange(event: Event) {
     </nav>
 
     <!-- Dev Mock Scenario Switcher (Available in Mock Gateway mode) -->
-    <div v-if="appStore.isMock && !appStore.sidebarCollapsed" class="p-2 border-t border-border-subtle bg-panel/20">
+    <div v-if="appStore.isMock && !appStore.sidebarCollapsed" class="p-2 border-t border-border-subtle bg-panel/20 shrink-0">
       <label class="block text-2xs font-semibold text-content-muted mb-1 flex items-center gap-1">
         <Radio class="w-3 h-3 text-amber-500" />
         Mock 场景切换
