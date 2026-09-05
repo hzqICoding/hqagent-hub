@@ -1,0 +1,17 @@
+{
+  "phase": "downloading",
+  "currentVersion": "0.1.0",
+  "channel": "beta",
+  "latestVersion": "0.2.0-beta.1",
+  "targetKey": "windows-amd64-installer",
+  "releaseNotes": "1. 增加 Local Hub 任务排空安全机制\n2. 优化四套主题色阶对比度\n3. 提升大日志流虚拟列表渲染性能",
+  "mandatory": false,
+  "downloadProgress": 68.5,
+  "downloadBytes": 42598400,
+  "totalBytes": 62193664,
+  "speedBytesPerSecond": 3145728,
+  "etaSeconds": 6,
+  "canInstallNow": false,
+  "lastCheckedAt": "2026-09-05T18:15:00Z",
+  "protocolVersion": "0.1.0"
+}

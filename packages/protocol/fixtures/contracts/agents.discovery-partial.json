@@ -1,0 +1,76 @@
+{
+  "discovered": [
+    {
+      "id": "agent_claude_default",
+      "adapterId": "claude",
+      "displayName": "Claude Code",
+      "version": "2.1.261",
+      "status": "ready",
+      "detectedAt": "2026-09-05T18:00:02Z",
+      "authKind": "local_login",
+      "executablePath": "C:/Users/ua-hzq/AppData/Roaming/npm/claude.cmd",
+      "lastHealthyAt": "2026-09-05T18:00:02Z",
+      "capabilities": [
+        { "id": "orchestration", "name": "编排调度", "hard": false, "source": "adapter" },
+        { "id": "architecture", "name": "架构设计", "hard": false, "source": "adapter" },
+        { "id": "review", "name": "审查", "hard": false, "source": "adapter" },
+        { "id": "coding", "name": "编码实现", "hard": false, "source": "adapter" },
+        { "id": "session_resume", "name": "会话恢复", "hard": true, "source": "detected" },
+        { "id": "streaming_events", "name": "流式事件", "hard": true, "source": "detected" },
+        { "id": "structured_output", "name": "结构化结果", "hard": true, "source": "detected" },
+        { "id": "tool_approval", "name": "工具审批", "hard": true, "source": "detected" },
+        { "id": "file_write", "name": "修改文件", "hard": true, "source": "detected" },
+        { "id": "shell", "name": "执行命令", "hard": true, "source": "detected" },
+        { "id": "git_worktree", "name": "Git worktree", "hard": true, "source": "detected" }
+      ],
+      "assignedRoles": ["orchestrator", "architect", "reviewer"],
+      "isPrimaryFor": ["orchestrator", "architect", "reviewer"]
+    },
+    {
+      "id": "agent_codex_default",
+      "adapterId": "codex",
+      "displayName": "Codex App Server",
+      "version": "0.147.0",
+      "status": "ready",
+      "detectedAt": "2026-09-05T18:00:03Z",
+      "authKind": "local_login",
+      "lastHealthyAt": "2026-09-05T18:00:03Z",
+      "capabilities": [
+        { "id": "coding", "name": "编码实现", "hard": false, "source": "adapter" },
+        { "id": "testing", "name": "测试", "hard": false, "source": "adapter" },
+        { "id": "review", "name": "审查", "hard": false, "source": "user", "note": "用户补充的软能力偏好" },
+        { "id": "session_resume", "name": "会话恢复", "hard": true, "source": "detected" },
+        { "id": "streaming_events", "name": "流式事件", "hard": true, "source": "detected" },
+        { "id": "structured_output", "name": "结构化结果", "hard": true, "source": "detected" },
+        { "id": "file_write", "name": "修改文件", "hard": true, "source": "detected" },
+        { "id": "shell", "name": "执行命令", "hard": true, "source": "detected" },
+        { "id": "git_worktree", "name": "Git worktree", "hard": true, "source": "detected" },
+        { "id": "vision", "name": "视觉", "hard": true, "source": "adapter", "supported": false, "note": "适配器明确不支持，能力缺口" }
+      ],
+      "assignedRoles": ["general_implementer", "frontend_implementer", "tester"],
+      "isPrimaryFor": ["general_implementer", "frontend_implementer", "tester"]
+    },
+    {
+      "id": "agent_antigravity_default",
+      "adapterId": "antigravity",
+      "displayName": "Antigravity Desktop",
+      "version": "2.11.0",
+      "status": "incompatible",
+      "detectedAt": "2026-09-05T18:00:05Z",
+      "diagnosticMessage": "Sidecar 接入方式尚未验证，一期不进入关键路径（裁决 D5）。可在 Phase 1.1 启用。",
+      "capabilities": [],
+      "assignedRoles": [],
+      "isPrimaryFor": []
+    }
+  ],
+  "total": 3,
+  "timestamp": "2026-09-05T18:00:06Z",
+  "durationMs": 4120,
+  "errors": [
+    {
+      "adapterId": "gemini",
+      "code": "AGENT_NOT_FOUND",
+      "message": "未在 PATH 中找到 gemini 可执行文件，跳过探测"
+    }
+  ]
+}

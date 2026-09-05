@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-instance.json",
+  "title": "Agent 实例与能力声明",
+  "description": "供应商名称只用于标识 Adapter 和 Agent 实例，不能代表固定职责（施工方案 §6.1）。UI 不得把职责与厂商绑定。",
+  "$defs": {
+    "CapabilityItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "hard", "source"],
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/CapabilityId" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "hard": {
+          "type": "boolean",
+          "description": "硬能力用户不能勾选覆盖；软能力用户可以补充偏好"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["detected", "user", "adapter"],
+          "description": "detected=探测得到，adapter=适配器静态声明，user=用户补充的软能力偏好"
+        },
+        "supported": {
+          "type": "boolean",
+          "description": "省略等同 true。false 表示适配器明确不支持，用于展示能力缺口"
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "AgentView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "adapterId",
+        "displayName",
+        "version",
+        "status",
+        "detectedAt",
+        "capabilities",
+        "assignedRoles",
+        "isPrimaryFor"
+      ],
+      "properties": {
+        "id": { "type": "string", "description": "Agent 实例 ID，例如 agent_codex_default" },
+        "adapterId": { "$ref": "common.json#/$defs/AdapterId" },
+        "displayName": { "type": "string" },
+        "version": { "type": "string" },
+        "status": { "$ref": "common.json#/$defs/AgentStatus" },
+        "detectedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "capabilities": { "type": "array", "items": { "$ref": "#/$defs/CapabilityItem" } },
+        "assignedRoles": {
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/RoleId" },
+          "description": "当前生效 Profile 里绑定到该 Agent 的角色（含 fallback）"
+        },
+        "isPrimaryFor": {
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/RoleId" },
+          "description": "该 Agent 作为 primary 的角色"
+        },
+        "diagnosticMessage": {
+          "type": "string",
+          "description": "非 ready 状态时给用户的可操作说明，例如「已安装但未登录，请在终端执行 codex login」"
+        },
+        "authKind": { "$ref": "common.json#/$defs/AuthKind" },
+        "executablePath": { "type": "string" },
+        "minimumVersion": { "type": "string", "description": "适配器要求的最低版本，低于此值状态为 incompatible" },
+        "lastHealthyAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "AgentDiscoveryError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapterId", "code", "message"],
+      "properties": {
+        "adapterId": { "$ref": "common.json#/$defs/AdapterId" },
+        "code": { "$ref": "common.json#/$defs/ErrorCode" },
+        "message": { "type": "string" }
+      }
+    },
+    "AgentDiscoveryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["discovered", "total", "timestamp"],
+      "properties": {
+        "discovered": { "type": "array", "items": { "$ref": "#/$defs/AgentView" } },
+        "total": { "type": "integer", "minimum": 0 },
+        "timestamp": { "$ref": "common.json#/$defs/Timestamp" },
+        "errors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AgentDiscoveryError" },
+          "description": "探测失败的适配器。有 error 不代表整体失败，UI 要能同时展示成功和失败"
+        },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-result.json",
+  "title": "统一执行结果",
+  "description": "对应施工方案 §8.4。reviewer 必须基于本结构里的真实变更、命令输出和测试结果复核，不得以 Agent 自述代替验证。",
+  "$defs": {
+    "FileChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "changeKind"],
+      "properties": {
+        "path": { "type": "string" },
+        "changeKind": { "type": "string", "enum": ["added", "modified", "deleted", "renamed"] },
+        "insertions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 },
+        "renamedFrom": { "type": "string" }
+      }
+    },
+    "TestOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "command", "passed"],
+      "properties": {
+        "name": { "type": "string" },
+        "command": { "type": "string" },
+        "passed": { "type": "boolean" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "exitCode": { "type": "integer" },
+        "outputExcerpt": {
+          "type": "string",
+          "description": "命令输出摘录，供 reviewer 核对。不是 Agent 的自然语言总结"
+        }
+      }
+    },
+    "Blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "message"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["capability_gap", "permission_denied", "dependency_missing", "ambiguous_requirement", "external_failure", "other"]
+        },
+        "message": { "type": "string" },
+        "detail": { "type": "object" }
+      }
+    },
+    "AgentResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "summary"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["done", "failed", "blocked"],
+          "description": "硬能力缺失时必须是 blocked 并给出 capability_gap，不得伪装成 done"
+        },
+        "summary": { "type": "string" },
+        "changedFiles": { "type": "array", "items": { "$ref": "#/$defs/FileChange" } },
+        "tests": { "type": "array", "items": { "$ref": "#/$defs/TestOutcome" } },
+        "commit": { "type": "string" },
+        "branch": { "type": "string" },
+        "artifacts": { "type": "array", "items": { "type": "string" } },
+        "blockers": { "type": "array", "items": { "$ref": "#/$defs/Blocker" } },
+        "questions": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -1,0 +1,152 @@
+# HQAgent-Hub 内置角色注册表
+#
+# 角色是工作流唯一可以引用的执行主体标识。工作流必须写 dispatch(role="architect")，
+# 禁止写 callClaude() / callCodex() 之类的厂商硬编码调用。
+#
+# 权限绑定角色，不绑定 Agent 品牌：更换 Agent 后仍沿用同一角色权限，
+# 避免因为换供应商而扩大本机访问范围（施工方案 §6.5）。
+#
+# 本文件是 roleId / RolePermissions 的唯一事实源，由 scripts/generate.py
+# 生成到 TS 的 RoleId 联合类型、Python 的 RoleId 枚举和 BUILTIN_ROLES 常量表。
+# 用户可以新增自定义角色，自定义角色不写进本文件，运行期存在 SQLite 里。
+
+version: 1
+
+# 需要审批的危险动作全集。角色的 requiresApproval 只能取本列表的子集。
+dangerousActions:
+  - deploy
+  - git_push
+  - git_merge
+  - delete
+  - shell
+  - network
+  - db_migrate
+
+roles:
+  - id: orchestrator
+    displayName: 总控
+    description: 总控、拆解、调度、状态汇总和异常处理
+    requiredCapabilities: [orchestration, structured_output]
+    preferredCapabilities: [session_resume, streaming_events]
+    permissions:
+      filesystem: read_only
+      shell: false
+      canApprove: false
+      canMerge: false
+      writablePaths: []
+      requiresApproval: []
+
+  - id: architect
+    displayName: 架构
+    description: 需求分析、方案、架构、接口和约束定义
+    requiredCapabilities: [architecture, structured_output]
+    preferredCapabilities: [session_resume]
+    permissions:
+      # 施工方案 §6.5 写的是 read_only，但 §6.7 又要求 architect 更新 INTERFACES.md，
+      # 两处矛盾。按 §6.7 的实际需要取 read_write，并用 writablePaths 把范围死死限制在
+      # 共享记忆和文档上——architect 依然碰不到任何业务代码。
+      filesystem: read_write
+      shell: false
+      canApprove: false
+      canMerge: false
+      writablePaths:
+        - ".hqagent/**"
+        - "docs/**"
+      requiresApproval: []
+
+  - id: frontend_implementer
+    displayName: 前端实现
+    description: 页面、组件、样式、交互和前端测试
+    requiredCapabilities: [coding, file_write]
+    preferredCapabilities: [git_worktree, browser, vision]
+    permissions:
+      filesystem: read_write
+      shell: true
+      canApprove: false
+      canMerge: false
+      writablePaths:
+        - "frontend/**"
+        - "web/**"
+        - "ui/**"
+        - "apps/desktop/src/**"
+      requiresApproval: [deploy, git_push, delete]
+
+  - id: general_implementer
+    displayName: 通用实现
+    description: 后端、客户端、脚本、数据库和通用工程实现
+    requiredCapabilities: [coding, file_write]
+    preferredCapabilities: [git_worktree, shell, session_resume]
+    permissions:
+      filesystem: read_write
+      shell: true
+      canApprove: false
+      canMerge: false
+      writablePaths:
+        - "backend/**"
+        - "server/**"
+        - "app/**"
+        - "apps/hub/**"
+        - "apps/update-agent/**"
+        - "apps/updater/**"
+      requiresApproval: [deploy, git_push, delete, db_migrate]
+
+  - id: reviewer
+    displayName: 审核
+    description: 方案审核、代码审查、风险检查和验收
+    requiredCapabilities: [review, structured_output]
+    preferredCapabilities: [session_resume]
+    permissions:
+      filesystem: read_only
+      shell: false
+      canApprove: true
+      canMerge: false
+      writablePaths: []
+      requiresApproval: []
+
+  - id: tester
+    displayName: 测试
+    description: 测试设计、执行、证据收集和回归验证
+    requiredCapabilities: [testing, shell]
+    preferredCapabilities: [file_write, structured_output]
+    permissions:
+      filesystem: read_write
+      shell: true
+      canApprove: false
+      canMerge: false
+      writablePaths:
+        - "tests/**"
+        - "test/**"
+        - "**/__tests__/**"
+        - "e2e/**"
+      requiresApproval: [deploy, delete]
+
+  - id: deployer
+    displayName: 发布
+    description: 构建、发布、部署、回滚和运行维护
+    requiredCapabilities: [shell]
+    preferredCapabilities: [structured_output]
+    permissions:
+      filesystem: read_write
+      shell: true
+      canApprove: false
+      canMerge: false
+      writablePaths:
+        - "build/**"
+        - "scripts/**"
+        - "deploy/**"
+      # 发布角色的每一个动作都要人批，这是设计意图，不是遗漏
+      requiresApproval: [deploy, git_push, delete, network, db_migrate]
+
+  - id: integrator
+    displayName: 合并
+    description: 跨分支检查和最终合并；默认只允许一个 integrator 执行最终合并
+    requiredCapabilities: [review, git_worktree]
+    preferredCapabilities: [shell]
+    permissions:
+      filesystem: read_write
+      shell: true
+      canApprove: false
+      canMerge: true
+      writablePaths:
+        - "**"
+      requiresApproval: [git_push, git_merge, delete]

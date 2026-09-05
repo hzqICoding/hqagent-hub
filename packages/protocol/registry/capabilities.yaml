@@ -1,0 +1,84 @@
+# HQAgent-Hub 能力注册表
+#
+# 能力由 Adapter 的 detect() 提供默认检测结果，用户可以补充偏好，
+# 但不能手动绕过 Adapter 明确不支持的硬能力（hard: true）——施工方案 §6.2。
+#
+# 硬能力缺失时，Role Resolver 必须提示能力缺口，不得伪装成正常完成（施工方案 §6.4）。
+#
+# 本文件是 capabilityId 的唯一事实源，由 scripts/generate.py 生成到
+# TS 的 CapabilityId 联合类型、Python 的 CapabilityId 枚举和 BUILTIN_CAPABILITIES 表。
+
+version: 1
+
+capabilities:
+  # ---- 软能力：描述 Agent 擅长什么，用于自动匹配和排序，缺失不阻塞 ----
+  - id: orchestration
+    displayName: 编排调度
+    hard: false
+    description: 能拆解目标、分派子任务、汇总状态和处理异常
+
+  - id: architecture
+    displayName: 架构设计
+    hard: false
+    description: 能产出方案、接口契约和可验证的验收标准
+
+  - id: coding
+    displayName: 编码实现
+    hard: false
+    description: 能按契约实现代码
+
+  - id: review
+    displayName: 审查
+    hard: false
+    description: 能基于真实 diff 和命令输出做复核，而不是复述自述
+
+  - id: testing
+    displayName: 测试
+    hard: false
+    description: 能设计和执行测试并收集证据
+
+  # ---- 硬能力：Adapter 不支持就是不支持，用户不能勾选覆盖 ----
+  - id: shell
+    displayName: 执行命令
+    hard: true
+    description: 能在本机执行 shell 命令
+
+  - id: file_write
+    displayName: 修改文件
+    hard: true
+    description: 能修改工作区文件
+
+  - id: git_worktree
+    displayName: Git worktree
+    hard: true
+    description: 能在独立 worktree 和分支中工作，是并发写任务的前提
+
+  - id: session_resume
+    displayName: 会话恢复
+    hard: true
+    description: 能用明确的会话 ID 续接历史会话，而不是新建会话重新理解项目
+
+  - id: streaming_events
+    displayName: 流式事件
+    hard: true
+    description: 能流式回报进度，而不是只在结束时给一坨输出
+
+  - id: tool_approval
+    displayName: 工具审批
+    hard: true
+    description: 能在执行工具前被拦截并等待审批决定
+
+  - id: structured_output
+    displayName: 结构化结果
+    hard: true
+    description: 能产出可机读的结构化结果，而不是只有自然语言
+
+  - id: vision
+    displayName: 视觉
+    hard: true
+    description: 能理解图片和截图
+
+  - id: browser
+    displayName: 浏览器
+    hard: true
+    description: 能驱动浏览器访问页面

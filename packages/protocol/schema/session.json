@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "session.json",
+  "title": "会话（按任务血缘管理）",
+  "description": "裁决 D7：会话不按 workspace+role+agent 全局复用。持久化会话的目标是「可准确续接」，不是「所有任务永远用同一个聊天线程」。新任务默认新会话；只有显式继续操作或显式 resumeSessionId 才恢复。项目级共享知识走 .hqagent 文档和任务 handoff 注入，不靠会话记忆。",
+  "$defs": {
+    "SessionPurpose": {
+      "type": "string",
+      "enum": ["orchestrate", "architect", "implement", "review", "test", "deploy", "integrate", "adhoc"],
+      "description": "会话用途。同一 Agent 同时承担实现与审核时，两者的 purpose 必须不同，且必须是两个独立会话"
+    },
+    "SessionReusePolicy": {
+      "type": "string",
+      "enum": ["new_session", "resume_explicit", "continue_lineage"],
+      "description": "new_session=默认，每个任务新开；resume_explicit=用户/调用方显式指定 resumeSessionId；continue_lineage=同一任务谱系内的后续节点继续用父会话"
+    },
+    "SessionView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "workspaceId",
+        "workspaceName",
+        "roleId",
+        "agentInstanceId",
+        "agentDisplayName",
+        "externalSessionId",
+        "purpose",
+        "reusePolicy",
+        "createdAt",
+        "lastUsedAt",
+        "isValid"
+      ],
+      "properties": {
+        "id": { "type": "string", "description": "Hub 本地会话 ID，不是外部会话 ID" },
+        "workspaceId": { "type": "string" },
+        "workspaceName": { "type": "string" },
+        "roleId": { "$ref": "common.json#/$defs/RoleId" },
+        "agentInstanceId": { "type": "string" },
+        "agentDisplayName": { "type": "string" },
+        "adapterId": { "$ref": "common.json#/$defs/AdapterId" },
+        "externalSessionId": {
+          "type": "string",
+          "description": "Claude 的 session_id / Codex 的 thread_id / Antigravity 的 conversation_id。必须是明确值，禁止使用 latest 之类不确定的续接方式"
+        },
+        "purpose": { "$ref": "#/$defs/SessionPurpose" },
+        "reusePolicy": { "$ref": "#/$defs/SessionReusePolicy" },
+        "taskId": { "type": "string", "description": "创建该会话的任务" },
+        "nodeId": { "type": "string", "description": "创建该会话的节点" },
+        "parentSessionId": {
+          "type": "string",
+          "description": "任务血缘。continue_lineage 时指向被继续的会话"
+        },
+        "rootTaskId": { "type": "string", "description": "谱系根任务，用于按谱系聚合展示" },
+        "createdAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "lastUsedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "isValid": {
+          "type": "boolean",
+          "description": "false 表示外部会话已失效或适配器不支持恢复，只能新建；对应错误码 SESSION_NOT_RESUMABLE"
+        },
+        "summary": { "type": "string" },
+        "turnCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "SessionQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "agentId": { "type": "string" },
+        "roleId": { "$ref": "common.json#/$defs/RoleId" },
+        "taskId": { "type": "string" },
+        "purpose": { "$ref": "#/$defs/SessionPurpose" },
+        "onlyValid": { "type": "boolean" },
+        "search": { "type": "string" },
+        "page": { "type": "integer", "minimum": 1 },
+        "pageSize": { "type": "integer", "minimum": 1, "maximum": 200 }
+      }
+    },
+    "ResumeSessionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instruction"],
+      "properties": {
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "description": "继续该会话要做什么。恢复会话必须是显式动作，不允许空调用"
+        },
+        "workspaceId": { "type": "string" },
+        "acceptance": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

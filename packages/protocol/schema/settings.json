@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "settings.json",
+  "title": "设置",
+  "description": "外观模式与配色方案必须解耦：用户可独立选择系统/浅色/深色，也可独立切换四套 Palette。",
+  "$defs": {
+    "ReduceMotion": {
+      "type": "string",
+      "enum": ["system", "on", "off"],
+      "description": "跟随系统 / 强制减少动效 / 强制保留动效。用三值枚举而不是 boolean|'system' 联合类型，是为了让 Python 和 Go 能生成干净的类型"
+    },
+    "FontScale": {
+      "type": "number",
+      "enum": [0.9, 1, 1.1, 1.2],
+      "description": "字号缩放档位"
+    },
+    "AppearanceSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "palette", "density", "contrast", "reduceMotion", "fontScale"],
+      "properties": {
+        "mode": { "$ref": "common.json#/$defs/ThemeMode" },
+        "palette": { "$ref": "common.json#/$defs/ThemePalette" },
+        "density": { "$ref": "common.json#/$defs/UiDensity" },
+        "contrast": { "$ref": "common.json#/$defs/ContrastMode" },
+        "reduceMotion": { "$ref": "#/$defs/ReduceMotion" },
+        "fontScale": { "$ref": "#/$defs/FontScale" }
+      },
+      "x-default": {
+        "mode": "system",
+        "palette": "hq-blue",
+        "density": "comfortable",
+        "contrast": "normal",
+        "reduceMotion": "system",
+        "fontScale": 1
+      }
+    },
+    "GeneralSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "launchAtLogin", "minimizeToTray", "closeToTray"],
+      "properties": {
+        "language": { "$ref": "common.json#/$defs/Language" },
+        "launchAtLogin": { "type": "boolean" },
+        "minimizeToTray": { "type": "boolean" },
+        "closeToTray": {
+          "type": "boolean",
+          "description": "true 时关窗不停止 Local Hub，任务继续在后台执行"
+        }
+      }
+    },
+    "ConnectionSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hubUrl", "cloudEnabled", "deviceName"],
+      "properties": {
+        "hubUrl": {
+          "type": "string",
+          "description": "只读展示，实际值来自 hub.json。用户不能在设置页改它"
+        },
+        "cloudEnabled": { "type": "boolean", "description": "一期恒为 false，云端属于 Phase 2" },
+        "deviceName": { "type": "string" }
+      }
+    },
+    "SecuritySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requireApprovalForDangerousActions", "allowedPathsOnly"],
+      "properties": {
+        "requireApprovalForDangerousActions": {
+          "type": "boolean",
+          "description": "关闭需要二次确认，且不影响角色自身声明的 requiresApproval"
+        },
+        "allowedPathsOnly": { "type": "boolean" },
+        "approvalTimeoutMinutes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "UpdateSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "autoCheck", "autoDownload"],
+      "properties": {
+        "channel": { "$ref": "common.json#/$defs/UpdateChannel" },
+        "autoCheck": { "type": "boolean" },
+        "autoDownload": { "type": "boolean" },
+        "autoInstall": {
+          "type": "boolean",
+          "description": "一期恒为 false。安装必须由用户确认，因为要排空正在跑的任务"
+        }
+      }
+    },
+    "TelemetrySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anonymousTelemetry"],
+      "properties": {
+        "anonymousTelemetry": {
+          "type": "boolean",
+          "description": "一期默认关闭且不上传。关闭后不得产生任何上传请求"
+        }
+      }
+    },
+    "UserSettingsView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["appearance", "general", "connection", "security", "updates", "telemetry"],
+      "properties": {
+        "appearance": { "$ref": "#/$defs/AppearanceSettings" },
+        "general": { "$ref": "#/$defs/GeneralSettings" },
+        "connection": { "$ref": "#/$defs/ConnectionSettings" },
+        "security": { "$ref": "#/$defs/SecuritySettings" },
+        "updates": { "$ref": "#/$defs/UpdateSettings" },
+        "telemetry": { "$ref": "#/$defs/TelemetrySettings" },
+        "dataDir": { "type": "string" },
+        "logDir": { "type": "string" },
+        "appVersion": { "type": "string" },
+        "protocolVersion": { "$ref": "common.json#/$defs/ProtocolVersion" }
+      }
+    }
+  }
+}

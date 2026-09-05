@@ -1,0 +1,136 @@
+# HQAgent-Hub 错误码注册表
+#
+# ApiEnvelope.error.code 只能取本表中的值。前端按 code 决定 UI 行为
+# （例如 HUB_MAINTENANCE 显示全局维护 Gate），不得按 message 文本判断。
+#
+# retryable 是给调用方看的：true 表示同样的请求稍后重试有意义。
+# 本文件由 scripts/generate.py 生成到三端的 ErrorCode 常量表。
+
+version: 1
+
+errors:
+  # ---- 请求本身的问题 ----
+  - code: BAD_REQUEST
+    http: 400
+    retryable: false
+    description: 请求格式或参数不合法
+  - code: VALIDATION_FAILED
+    http: 422
+    retryable: false
+    description: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
+  - code: UNAUTHORIZED
+    http: 401
+    retryable: false
+    description: 缺少或错误的 Bearer token；token 只能来自 hub.json
+  - code: NOT_FOUND
+    http: 404
+    retryable: false
+    description: 目标资源不存在
+  - code: CONFLICT
+    http: 409
+    retryable: false
+    description: 资源状态与请求冲突
+  - code: IDEMPOTENCY_MISMATCH
+    http: 409
+    retryable: false
+    description: 相同 Idempotency-Key 复用于不同请求体
+  - code: PROTOCOL_VERSION_MISMATCH
+    http: 426
+    retryable: false
+    description: 客户端协议大版本与 Hub 不兼容，必须升级后再试
+
+  # ---- Hub 自身状态 ----
+  - code: HUB_NOT_READY
+    http: 503
+    retryable: true
+    description: Hub 正在启动或恢复中，尚未就绪
+  - code: HUB_MAINTENANCE
+    http: 503
+    retryable: true
+    description: Hub 处于维护/排空状态，拒绝创建新任务；前端据此显示全局 Gate
+
+  # ---- Agent 与角色 ----
+  - code: AGENT_NOT_FOUND
+    http: 404
+    retryable: false
+    description: 指定的 Agent 实例不存在
+  - code: AGENT_OFFLINE
+    http: 409
+    retryable: true
+    description: Agent 当前离线，可等待或走 fallback
+  - code: AGENT_NOT_LOGGED_IN
+    http: 409
+    retryable: false
+    description: Agent 已安装但未登录，需要用户在对应工具里登录
+  - code: AGENT_INCOMPATIBLE
+    http: 409
+    retryable: false
+    description: Agent 版本低于适配器要求的最低版本
+  - code: CAPABILITY_MISSING
+    http: 409
+    retryable: false
+    description: 目标角色要求的硬能力在候选 Agent 上缺失，detail 里列能力缺口
+  - code: ROLE_UNRESOLVED
+    http: 409
+    retryable: false
+    description: 主选和备用链都无法解析出可用 Agent，需要用户选择或暂停节点
+
+  # ---- 会话与任务 ----
+  - code: SESSION_NOT_RESUMABLE
+    http: 409
+    retryable: false
+    description: 外部会话已失效或适配器不支持恢复，只能新建会话
+  - code: TASK_NOT_CANCELLABLE
+    http: 409
+    retryable: false
+    description: 任务已处于终态，无法取消
+  - code: TASK_ACTION_INVALID
+    http: 409
+    retryable: false
+    description: 当前任务状态不支持该动作
+  - code: WORKTREE_BUSY
+    http: 409
+    retryable: true
+    description: 目标 worktree 被占用
+  - code: PATH_NOT_ALLOWED
+    http: 403
+    retryable: false
+    description: 修改路径超出任务 allowedPaths 或角色 writablePaths，detail 里列越界路径
+
+  # ---- 审批 ----
+  - code: APPROVAL_REQUIRED
+    http: 409
+    retryable: false
+    description: 该动作需要审批且尚未批准
+  - code: APPROVAL_EXPIRED
+    http: 410
+    retryable: false
+    description: 审批已超时失效
+  - code: APPROVAL_ALREADY_DECIDED
+    http: 409
+    retryable: false
+    description: 该审批已被处理，不能重复决定
+
+  # ---- 升级 ----
+  - code: UPDATE_NOT_AVAILABLE
+    http: 409
+    retryable: false
+    description: 当前没有可用更新
+  - code: UPDATE_BUSY
+    http: 409
+    retryable: true
+    description: 升级流程正在进行中，不接受新的升级动作
+  - code: UPDATE_VERIFY_FAILED
+    http: 422
+    retryable: false
+    description: 大小、SHA-256 或 Ed25519 签名校验失败；没有忽略并继续的入口
+  - code: UPDATE_DRAIN_TIMEOUT
+    http: 409
+    retryable: true
+    description: 任务排空超时，需要用户选择继续等待、取消任务或退出应用
+
+  # ---- 兜底 ----
+  - code: INTERNAL
+    http: 500
+    retryable: true
+    description: 未分类的内部错误，detail 里带 requestId 供查日志

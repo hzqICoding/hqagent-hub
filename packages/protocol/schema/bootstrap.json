@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap.json",
+  "title": "首屏聚合",
+  "description": "一次返回首屏所需的全部概况，避免前端启动时打 6 个请求。注意：这里没有 token，也永远不会有——前端拿 token 的唯一途径是 Tauri invoke 读 hub.json（裁决 D3）。",
+  "$defs": {
+    "BootstrapAgentsSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "ready", "issues"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "ready": { "type": "integer", "minimum": 0 },
+        "issues": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "not_logged_in / incompatible / error 的合计，首屏要引导用户去处理"
+        },
+        "lastDiscoveryAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "BootstrapUpdateSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "hasUpdate", "currentVersion"],
+      "properties": {
+        "phase": { "$ref": "common.json#/$defs/UpdatePhase" },
+        "hasUpdate": { "type": "boolean" },
+        "currentVersion": { "type": "string" },
+        "latestVersion": { "type": "string" },
+        "mandatory": { "type": "boolean" },
+        "unacknowledgedResult": {
+          "type": "boolean",
+          "description": "存在未确认的升级回执，首屏要弹提示"
+        }
+      }
+    },
+    "BootstrapView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "appVersion",
+        "environment",
+        "maintenance",
+        "appearance",
+        "agents",
+        "workspaceCount",
+        "activeTasksCount",
+        "pendingApprovalsCount",
+        "update",
+        "lastEventSeq",
+        "hubStartedAt"
+      ],
+      "properties": {
+        "protocolVersion": { "$ref": "common.json#/$defs/ProtocolVersion" },
+        "appVersion": { "type": "string" },
+        "environment": { "type": "string", "enum": ["production", "development", "test"] },
+        "maintenance": {
+          "type": "boolean",
+          "description": "true 时前端显示全局维护 Gate，禁用新建任务入口"
+        },
+        "appearance": { "$ref": "settings.json#/$defs/AppearanceSettings" },
+        "agents": { "$ref": "#/$defs/BootstrapAgentsSummary" },
+        "defaultProfileId": { "type": "string" },
+        "currentWorkspace": { "$ref": "workspace.json#/$defs/WorkspaceView" },
+        "workspaceCount": { "type": "integer", "minimum": 0 },
+        "activeTasksCount": { "type": "integer", "minimum": 0 },
+        "pendingApprovalsCount": { "type": "integer", "minimum": 0 },
+        "update": { "$ref": "#/$defs/BootstrapUpdateSummary" },
+        "lastEventSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "前端据此建立事件流起点，避免首屏与事件流之间丢事件"
+        },
+        "hubStartedAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    }
+  }
+}

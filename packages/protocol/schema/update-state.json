@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "update-state.json",
+  "title": "升级状态",
+  "description": "状态机严格对应 OTA升级架构设计.md §6。Update Agent 是本机升级状态的唯一事实源；Local Hub 通过内部 API 代理，Vue 只看 Local Hub（裁决 D1）。",
+  "$defs": {
+    "DrainProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["step", "activeTasksRemaining", "percent"],
+      "properties": {
+        "step": { "$ref": "common.json#/$defs/DrainStep" },
+        "activeTasksRemaining": { "type": "integer", "minimum": 0 },
+        "percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "startedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "timeoutAt": {
+          "$ref": "common.json#/$defs/Timestamp",
+          "description": "超时后进入 waiting_user，由用户选择继续等待、取消任务或退出应用"
+        },
+        "waitingTaskIds": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ReleaseInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["version", "channel", "targetKey", "publishedAt", "sizeBytes", "sha256", "mandatory"],
+      "properties": {
+        "version": { "type": "string" },
+        "channel": { "$ref": "common.json#/$defs/UpdateChannel" },
+        "targetKey": { "type": "string", "description": "例如 windows-amd64-installer" },
+        "publishedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string" },
+        "signature": { "type": "string", "description": "Ed25519 签名" },
+        "signatureAlgorithm": { "type": "string" },
+        "keyId": { "type": "string", "description": "为密钥轮换预留" },
+        "mandatory": { "type": "boolean" },
+        "minimumSupportedVersion": { "type": "string" },
+        "releaseNotes": { "type": "string" },
+        "installStrategy": { "$ref": "common.json#/$defs/InstallStrategy" },
+        "rollbackCompatible": {
+          "type": "boolean",
+          "description": "false 表示包含不可逆迁移，回滚需要额外确认"
+        }
+      }
+    },
+    "UpdateStateView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["phase", "currentVersion", "channel", "canInstallNow", "lastCheckedAt"],
+      "properties": {
+        "phase": { "$ref": "common.json#/$defs/UpdatePhase" },
+        "currentVersion": { "type": "string" },
+        "channel": { "$ref": "common.json#/$defs/UpdateChannel" },
+        "latestVersion": { "type": "string" },
+        "targetKey": { "type": "string" },
+        "releaseNotes": { "type": "string" },
+        "mandatory": { "type": "boolean" },
+        "downloadProgress": { "type": "number", "minimum": 0, "maximum": 100 },
+        "downloadBytes": { "type": "integer", "minimum": 0 },
+        "totalBytes": { "type": "integer", "minimum": 0 },
+        "speedBytesPerSecond": { "type": "integer", "minimum": 0 },
+        "etaSeconds": { "type": "integer", "minimum": 0 },
+        "drainProgress": { "$ref": "#/$defs/DrainProgress" },
+        "canInstallNow": {
+          "type": "boolean",
+          "description": "false 时前端必须禁用「立即安装」，不能靠 phase 自己推断"
+        },
+        "deferredUntil": { "$ref": "common.json#/$defs/Timestamp" },
+        "lastCheckedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "error": { "type": "string" },
+        "errorCode": { "$ref": "common.json#/$defs/ErrorCode" },
+        "protocolVersion": { "$ref": "common.json#/$defs/ProtocolVersion" }
+      }
+    },
+    "UpdateActionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["action"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["check", "download", "cancel", "install", "defer", "acknowledge"],
+          "description": "与 OTA 文档 §13.2 的 9 条细路径一一对应。前端 UiGateway.controlUpdate 在 Gateway 层做映射，页面不感知"
+        },
+        "deferMinutes": { "type": "integer", "minimum": 1, "description": "action=defer 时必填" },
+        "allowTaskCancellation": {
+          "type": "boolean",
+          "description": "action=install 且存在运行任务时，是否允许取消任务以完成排空。默认 false"
+        }
+      }
+    }
+  }
+}

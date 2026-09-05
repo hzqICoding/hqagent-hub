@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "team-profile.json",
+  "title": "Team Profile、角色绑定与解析结果",
+  "description": "工作流只引用角色。同一份工作流在不同 Profile 下应当无需改代码即可运行——这是一期最核心的可验证目标。",
+  "$defs": {
+    "RolePermissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filesystem", "shell", "canApprove", "canMerge", "writablePaths", "requiresApproval"],
+      "properties": {
+        "filesystem": { "$ref": "common.json#/$defs/FilesystemAccess" },
+        "shell": { "type": "boolean" },
+        "canApprove": { "type": "boolean" },
+        "canMerge": { "type": "boolean", "description": "默认只允许一个 integrator 为 true" },
+        "writablePaths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "glob 列表。空数组表示不允许写任何业务路径"
+        },
+        "requiresApproval": {
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/DangerousAction" }
+        }
+      },
+      "description": "权限绑角色不绑品牌。换 Agent 后仍沿用同一角色权限（施工方案 §6.5）"
+    },
+    "RoleBindingConstraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requireHardCapabilities": {
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/CapabilityId" }
+        },
+        "allowShell": { "type": "boolean" },
+        "readOnlyFs": { "type": "boolean" }
+      },
+      "description": "用户对该角色的额外约束，只能收紧、不能放宽角色默认权限"
+    },
+    "RoleBindingView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roleId", "roleName", "primaryAgentId", "fallbackAgentIds"],
+      "properties": {
+        "roleId": { "$ref": "common.json#/$defs/RoleId" },
+        "roleName": { "type": "string" },
+        "primaryAgentId": { "type": "string", "description": "空字符串表示未绑定，解析时走能力匹配" },
+        "fallbackAgentIds": { "type": "array", "items": { "type": "string" } },
+        "constraints": { "$ref": "#/$defs/RoleBindingConstraints" },
+        "permissions": {
+          "$ref": "#/$defs/RolePermissions",
+          "description": "省略时取 registry/roles.yaml 的默认权限"
+        }
+      }
+    },
+    "TeamProfilePolicies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["missingAgentStrategy", "allowOneAgentMultipleRoles", "preferCrossAgentReview", "sameAgentReviewStrategy"],
+      "properties": {
+        "missingAgentStrategy": {
+          "type": "string",
+          "enum": ["fallback_then_ask", "fallback_then_fail", "ask"],
+          "description": "默认 fallback_then_ask（施工方案 §6.4）"
+        },
+        "allowOneAgentMultipleRoles": { "type": "boolean" },
+        "preferCrossAgentReview": { "type": "boolean" },
+        "sameAgentReviewStrategy": {
+          "type": "string",
+          "enum": ["isolated_session", "forbid"],
+          "description": "实现与审核落到同一 Agent 时：isolated_session 必须新开独立 Session 并重读验收标准与 diff"
+        }
+      }
+    },
+    "TeamProfileView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "scope", "isDefault", "roleBindings", "updatedAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "scope": { "type": "string", "enum": ["global", "workspace"] },
+        "workspaceId": { "type": "string", "description": "scope=workspace 时必须存在" },
+        "isDefault": { "type": "boolean" },
+        "roleBindings": {
+          "type": "object",
+          "x-map-value": "#/$defs/RoleBindingView",
+          "description": "以 roleId 为键"
+        },
+        "policies": { "$ref": "#/$defs/TeamProfilePolicies" },
+        "updatedAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "SaveTeamProfileInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "scope", "roleBindings"],
+      "properties": {
+        "id": { "type": "string", "description": "省略表示新建" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "scope": { "type": "string", "enum": ["global", "workspace"] },
+        "workspaceId": { "type": "string" },
+        "isDefault": { "type": "boolean" },
+        "roleBindings": { "type": "object", "x-map-value": "#/$defs/RoleBindingView" },
+        "policies": { "$ref": "#/$defs/TeamProfilePolicies" }
+      }
+    },
+    "ResolveTeamProfileInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId"],
+      "properties": {
+        "profileId": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "taskObjective": { "type": "string", "description": "可选，用于能力匹配时的提示" }
+      }
+    },
+    "ResolvedRoleItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roleId", "resolvedAgentId", "resolvedAgentName", "resolveSource", "isFallback"],
+      "properties": {
+        "roleId": { "$ref": "common.json#/$defs/RoleId" },
+        "resolvedAgentId": { "type": "string" },
+        "resolvedAgentName": { "type": "string" },
+        "resolveSource": { "$ref": "common.json#/$defs/ResolveSource" },
+        "isFallback": { "type": "boolean" },
+        "fallbackReason": {
+          "type": "string",
+          "description": "降级原因必须可读，UI 要展示「为什么用了这个 Agent」"
+        },
+        "missingCapabilities": {
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/CapabilityId" }
+        }
+      }
+    },
+    "ResolvedTeamGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roleId", "reason"],
+      "properties": {
+        "roleId": { "$ref": "common.json#/$defs/RoleId" },
+        "reason": { "type": "string" },
+        "missingCapabilities": {
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/CapabilityId" }
+        }
+      }
+    },
+    "ResolvedTeamView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "resolvedRoles", "hasGaps", "gaps"],
+      "properties": {
+        "profileId": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "resolvedRoles": {
+          "type": "object",
+          "x-map-value": "#/$defs/ResolvedRoleItem",
+          "description": "以 roleId 为键"
+        },
+        "hasGaps": { "type": "boolean" },
+        "gaps": { "type": "array", "items": { "$ref": "#/$defs/ResolvedTeamGap" } },
+        "resolvedAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    }
+  }
+}

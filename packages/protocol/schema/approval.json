@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "approval.json",
+  "title": "审批",
+  "description": "未经批准的危险动作不得执行。审批状态与任务状态分开持久化，Hub 重启后待批审批不丢。",
+  "$defs": {
+    "ApprovalView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "taskId",
+        "taskObjective",
+        "requestAgentId",
+        "requestAgentName",
+        "action",
+        "targetResource",
+        "riskLevel",
+        "status",
+        "requestedAt"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "taskId": { "type": "string" },
+        "taskObjective": { "type": "string" },
+        "nodeId": { "type": "string" },
+        "requestAgentId": { "type": "string" },
+        "requestAgentName": { "type": "string" },
+        "roleId": { "$ref": "common.json#/$defs/RoleId" },
+        "action": { "$ref": "common.json#/$defs/DangerousAction" },
+        "targetResource": {
+          "type": "string",
+          "description": "将要作用的对象，例如 git push 的远端分支、要删除的路径、要执行的命令"
+        },
+        "riskLevel": { "$ref": "common.json#/$defs/RiskLevel" },
+        "status": { "$ref": "common.json#/$defs/ApprovalStatus" },
+        "requestedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "decidedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "decision": { "$ref": "common.json#/$defs/ApprovalDecision" },
+        "reason": { "type": "string" },
+        "expiresAt": {
+          "$ref": "common.json#/$defs/Timestamp",
+          "description": "超时后状态变 expired，对应错误码 APPROVAL_EXPIRED"
+        },
+        "details": {
+          "type": "object",
+          "description": "结构化上下文，例如完整命令行、影响文件数、diff 摘要"
+        }
+      }
+    },
+    "ApprovalQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": { "$ref": "common.json#/$defs/ApprovalStatus" },
+        "taskId": { "type": "string" }
+      }
+    },
+    "ApprovalResponseInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision"],
+      "properties": {
+        "decision": { "$ref": "common.json#/$defs/ApprovalDecision" },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}

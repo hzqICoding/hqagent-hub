@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "common.json",
+  "title": "HQAgent-Hub 公共类型与枚举",
+  "description": "全协议共享的原子类型和枚举。枚举值一律用 snake_case 字符串，字段名一律用 camelCase（见 .hqagent/DECISIONS.md D7）。",
+  "$defs": {
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC3339 时间戳，一律带时区"
+    },
+    "ProtocolVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "协议版本。minor 只允许追加可选字段；major 变更必须全体停工对齐"
+    },
+    "RoleId": {
+      "type": "string",
+      "minLength": 1,
+      "x-registry": "roles",
+      "description": "角色 ID。内置角色见 registry/roles.yaml，用户自定义角色不在注册表内"
+    },
+    "CapabilityId": {
+      "type": "string",
+      "minLength": 1,
+      "x-registry": "capabilities",
+      "description": "能力 ID，见 registry/capabilities.yaml"
+    },
+    "ErrorCode": {
+      "type": "string",
+      "minLength": 1,
+      "x-registry": "error-codes",
+      "description": "错误码，见 registry/error-codes.yaml。前端按 code 决定行为，不得解析 message"
+    },
+    "AdapterId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "适配器 ID。首发 claude / codex；antigravity 见 DECISIONS.md D5，不在一期关键路径"
+    },
+    "AgentStatus": {
+      "type": "string",
+      "enum": [
+        "discovering",
+        "ready",
+        "busy",
+        "not_logged_in",
+        "incompatible",
+        "disabled",
+        "offline",
+        "error",
+        "unknown"
+      ],
+      "description": "Agent 实例状态"
+    },
+    "TaskStatus": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "queued",
+        "running",
+        "waiting_approval",
+        "paused",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "unknown"
+      ],
+      "description": "任务状态。终态：succeeded / failed / cancelled"
+    },
+    "NodeStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "resolving",
+        "running",
+        "waiting_approval",
+        "succeeded",
+        "failed",
+        "skipped",
+        "cancelled"
+      ],
+      "description": "任务节点状态。节点比任务多 resolving 和 skipped，不能复用 TaskStatus"
+    },
+    "ApprovalStatus": {
+      "type": "string",
+      "enum": ["pending", "approved", "rejected", "expired"],
+      "description": "审批状态"
+    },
+    "ApprovalDecision": {
+      "type": "string",
+      "enum": ["approve", "reject"],
+      "description": "审批决定"
+    },
+    "RiskLevel": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"],
+      "description": "危险动作风险等级，决定审批 UI 的强度"
+    },
+    "DangerousAction": {
+      "type": "string",
+      "enum": [
+        "deploy",
+        "git_push",
+        "git_merge",
+        "delete",
+        "shell",
+        "network",
+        "db_migrate"
+      ],
+      "description": "需要审批的动作全集，与 registry/roles.yaml 的 dangerousActions 一致"
+    },
+    "ResolveSource": {
+      "type": "string",
+      "enum": [
+        "task_override",
+        "workspace_profile",
+        "global_profile",
+        "capability_match",
+        "fallback",
+        "manual"
+      ],
+      "description": "角色解析来源，对应施工方案 §6.3 的六级优先级。必须持久化，前端要展示为什么用了这个 Agent"
+    },
+    "TaskSource": {
+      "type": "string",
+      "enum": ["desktop", "pwa", "scheduler", "cli"],
+      "description": "任务来源。一期只产生 desktop；pwa 为二期预留"
+    },
+    "AggregateType": {
+      "type": "string",
+      "enum": ["agent", "task", "session", "approval", "update", "system"],
+      "description": "事件聚合根类型，用于事件路由和订阅过滤"
+    },
+    "Vcs": {
+      "type": "string",
+      "enum": ["git", "none"],
+      "description": "工作区版本控制类型。非 git 工作区不支持 worktree 隔离"
+    },
+    "FilesystemAccess": {
+      "type": "string",
+      "enum": ["read_only", "read_write"],
+      "description": "角色的文件系统权限"
+    },
+    "AuthKind": {
+      "type": "string",
+      "enum": ["local_login", "api_key", "oauth", "device_code", "none"],
+      "description": "Agent 所需鉴权方式，由适配器声明"
+    },
+    "UpdateChannel": {
+      "type": "string",
+      "enum": ["stable", "beta"],
+      "description": "升级渠道"
+    },
+    "UpdatePhase": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "checking",
+        "up_to_date",
+        "available",
+        "downloading",
+        "downloaded",
+        "verifying",
+        "ready_to_install",
+        "draining_tasks",
+        "waiting_user",
+        "installing",
+        "health_checking",
+        "succeeded",
+        "rolling_back",
+        "rollback_succeeded",
+        "rollback_failed",
+        "cancelled",
+        "failed"
+      ],
+      "description": "客户端更新状态机，严格对应 OTA升级架构设计.md §6。所有状态必须持久化，进程重启后能恢复或进入明确失败态"
+    },
+    "DrainStep": {
+      "type": "string",
+      "enum": [
+        "stop_accepting",
+        "save_sessions",
+        "wait_running_tasks",
+        "backup_data",
+        "ready"
+      ],
+      "description": "任务排空步骤，对应 OTA升级架构设计.md §7 的排空序列"
+    },
+    "InstallStrategy": {
+      "type": "string",
+      "enum": [
+        "windows-nsis",
+        "windows-msi",
+        "windows-portable",
+        "macos-app-bundle",
+        "linux-appimage",
+        "linux-deb"
+      ],
+      "description": "安装策略。一期只实现 windows-nsis"
+    },
+    "ThemeMode": {
+      "type": "string",
+      "enum": ["system", "light", "dark"],
+      "description": "外观模式，与配色方案解耦"
+    },
+    "ResolvedThemeMode": {
+      "type": "string",
+      "enum": ["light", "dark"],
+      "description": "system 解析后的实际模式"
+    },
+    "ThemePalette": {
+      "type": "string",
+      "enum": ["hq-blue", "ai-violet", "tech-cyan", "ops-emerald"],
+      "description": "配色方案，与外观模式独立选择"
+    },
+    "UiDensity": {
+      "type": "string",
+      "enum": ["comfortable", "compact"],
+      "description": "界面密度"
+    },
+    "ContrastMode": {
+      "type": "string",
+      "enum": ["normal", "high"],
+      "description": "对比度"
+    },
+    "Language": {
+      "type": "string",
+      "enum": ["zh-CN", "en-US"],
+      "description": "界面语言"
+    }
+  }
+}

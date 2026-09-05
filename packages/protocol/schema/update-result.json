@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "update-result.json",
+  "title": "升级结果回执",
+  "description": "Updater 安装完成后写入 update-result.json，新版本首次启动读取并展示，用户确认后 acknowledge。健康检查失败时记录回滚过程（OTA §11.2、裁决 D8）。",
+  "$defs": {
+    "HealthCheckOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["type", "passed"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["process", "http", "protocol", "database"],
+          "description": "对应 Update Plan v2 的 healthChecks"
+        },
+        "component": { "type": "string" },
+        "passed": { "type": "boolean" },
+        "detail": { "type": "string" },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "UpdateResultView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": [
+        "schemaVersion",
+        "appId",
+        "fromVersion",
+        "toVersion",
+        "success",
+        "finishedAt",
+        "acknowledged"
+      ],
+      "properties": {
+        "schemaVersion": { "type": "integer", "const": 2 },
+        "appId": { "type": "string" },
+        "fromVersion": { "type": "string" },
+        "toVersion": { "type": "string" },
+        "channel": { "$ref": "common.json#/$defs/UpdateChannel" },
+        "success": { "type": "boolean" },
+        "finishedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "installStrategy": { "$ref": "common.json#/$defs/InstallStrategy" },
+        "healthChecks": { "type": "array", "items": { "$ref": "#/$defs/HealthCheckOutcome" } },
+        "healthCheckPassed": { "type": "boolean" },
+        "rolledBack": { "type": "boolean" },
+        "rollbackSucceeded": { "type": "boolean" },
+        "restoredDatabaseBackup": {
+          "type": "string",
+          "description": "回滚时实际恢复的数据库备份文件名。没有恢复则省略"
+        },
+        "error": { "type": "string" },
+        "errorCode": { "$ref": "common.json#/$defs/ErrorCode" },
+        "acknowledged": {
+          "type": "boolean",
+          "description": "用户是否已在界面确认。未确认的结果每次启动都要提示"
+        }
+      }
+    },
+    "AcknowledgeUpdateResultInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "toVersion": {
+          "type": "string",
+          "description": "要确认的结果版本，防止确认了一个已被覆盖的旧回执"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope.json",
+  "title": "响应包络、分页与统一事件",
+  "description": "Local Hub 的每个 HTTP 响应都是 ApiEnvelope；每条 WS/补发消息都是 HubEvent。fixtures 里存的是裸 data，由 MockGateway 自行包壳（见 fixtures/README）。",
+  "$defs": {
+    "ApiError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": { "$ref": "common.json#/$defs/ErrorCode" },
+        "message": { "type": "string", "description": "面向用户的中文说明，不得被前端用于逻辑判断" },
+        "detail": { "type": "object", "description": "结构化细节，例如越界路径列表、能力缺口列表、字段级校验错误" },
+        "retryable": { "type": "boolean", "description": "同样的请求稍后重试是否有意义" }
+      }
+    },
+    "ApiEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-generic-params": ["T"],
+      "required": ["success", "requestId", "protocolVersion"],
+      "properties": {
+        "success": { "type": "boolean" },
+        "data": { "x-generic": "T", "description": "success 为 true 时存在" },
+        "error": { "$ref": "#/$defs/ApiError", "description": "success 为 false 时存在" },
+        "requestId": { "type": "string", "description": "服务端生成，日志与错误上报的关联键" },
+        "protocolVersion": { "$ref": "common.json#/$defs/ProtocolVersion" }
+      }
+    },
+    "PageResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-generic-params": ["T"],
+      "required": ["items", "total", "page", "pageSize", "hasMore"],
+      "properties": {
+        "items": { "type": "array", "items": { "x-generic": "T" } },
+        "total": { "type": "integer", "minimum": 0 },
+        "page": { "type": "integer", "minimum": 1 },
+        "pageSize": { "type": "integer", "minimum": 1 },
+        "hasMore": { "type": "boolean" }
+      }
+    },
+    "HubEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-generic-params": ["T"],
+      "x-go": true,
+      "required": [
+        "eventId",
+        "seq",
+        "occurredAt",
+        "aggregateType",
+        "aggregateId",
+        "type",
+        "payload",
+        "protocolVersion"
+      ],
+      "properties": {
+        "eventId": { "type": "string", "description": "全局唯一。相同 eventId 不得重复应用" },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Hub 内单调递增序号，由 events 表自增列提供。前端重连携带最后确认的 seq，Hub 返回缺失事件"
+        },
+        "occurredAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "aggregateType": { "$ref": "common.json#/$defs/AggregateType" },
+        "aggregateId": { "type": "string", "description": "聚合根 ID，用于订阅过滤" },
+        "type": { "type": "string", "description": "事件类型，取值见 events/event-dictionary.md" },
+        "payload": { "x-generic": "T", "description": "按 type 决定结构，见 agent-event.json 与事件字典" },
+        "protocolVersion": { "$ref": "common.json#/$defs/ProtocolVersion" },
+        "taskId": { "type": "string", "description": "业务标识冗余在顶层，前端时间线无需挖 payload" },
+        "nodeId": { "type": "string" },
+        "roleId": { "$ref": "common.json#/$defs/RoleId" },
+        "agentInstanceId": { "type": "string" },
+        "adapterId": { "$ref": "common.json#/$defs/AdapterId" }
+      }
+    },
+    "SubscribeEventsInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "afterSeq": { "type": "integer", "minimum": 0, "description": "从该 seq 之后开始补发；省略表示只要新事件" },
+        "aggregateTypes": {
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/AggregateType" }
+        },
+        "taskId": { "type": "string", "description": "只订阅某个任务的事件" }
+      }
+    },
+    "EventPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events", "lastSeq", "hasMore"],
+      "properties": {
+        "events": { "type": "array", "items": { "$ref": "#/$defs/HubEvent" } },
+        "lastSeq": { "type": "integer", "minimum": 0 },
+        "hasMore": { "type": "boolean", "description": "true 表示还有更多历史事件未补完，调用方应继续拉" }
+      }
+    },
+    "HealthView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["status", "appVersion", "protocolVersion", "pid", "startedAt"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["ok", "starting", "maintenance", "degraded"],
+          "description": "Updater 的 health check 只认 ok"
+        },
+        "appVersion": { "type": "string" },
+        "protocolVersion": { "$ref": "common.json#/$defs/ProtocolVersion" },
+        "pid": { "type": "integer" },
+        "startedAt": { "$ref": "common.json#/$defs/Timestamp" }
+      },
+      "description": "GET /healthz 的返回。这是唯一免鉴权的端点：Update Plan v2 的 healthChecks 要在没有 token 的情况下探活。只返回非敏感信息"
+    }
+  }
+}

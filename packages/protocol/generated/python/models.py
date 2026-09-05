@@ -1,0 +1,1068 @@
+"""此文件由 scripts/protocol/generate.py 生成，请勿手改。"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+PROTOCOL_VERSION = "0.1.0"
+
+
+class _Base(BaseModel):
+    """边界 DTO 基类：线上字段是 camelCase，Python 侧用 snake_case 访问。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
+class AcknowledgeUpdateResultInput(_Base):
+    to_version: str | None = Field(default=None, alias="toVersion")
+
+
+AdapterId = str
+
+
+class Blocker(_Base):
+    kind: Literal["capability_gap", "permission_denied", "dependency_missing", "ambiguous_requirement", "external_failure", "other"] = Field(alias="kind")
+    message: str = Field(alias="message")
+    detail: dict[str, Any] | None = Field(default=None, alias="detail")
+
+
+class FileChange(_Base):
+    path: str = Field(alias="path")
+    change_kind: Literal["added", "modified", "deleted", "renamed"] = Field(alias="changeKind")
+    insertions: int | None = Field(default=None, alias="insertions")
+    deletions: int | None = Field(default=None, alias="deletions")
+    renamed_from: str | None = Field(default=None, alias="renamedFrom")
+
+
+class TestOutcome(_Base):
+    name: str = Field(alias="name")
+    command: str = Field(alias="command")
+    passed: bool = Field(alias="passed")
+    duration_ms: int | None = Field(default=None, alias="durationMs")
+    exit_code: int | None = Field(default=None, alias="exitCode")
+    output_excerpt: str | None = Field(default=None, alias="outputExcerpt")
+
+
+class AgentResult(_Base):
+    status: Literal["done", "failed", "blocked"] = Field(alias="status")
+    summary: str = Field(alias="summary")
+    changed_files: list[FileChange] | None = Field(default=None, alias="changedFiles")
+    tests: list[TestOutcome] | None = Field(default=None, alias="tests")
+    commit: str | None = Field(default=None, alias="commit")
+    branch: str | None = Field(default=None, alias="branch")
+    artifacts: list[str] | None = Field(default=None, alias="artifacts")
+    blockers: list[Blocker] | None = Field(default=None, alias="blockers")
+    questions: list[str] | None = Field(default=None, alias="questions")
+
+
+class AgentCompletedPayload(_Base):
+    result: AgentResult = Field(alias="result")
+
+
+class ErrorCode(StrEnum):
+    BAD_REQUEST = "BAD_REQUEST"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    NOT_FOUND = "NOT_FOUND"
+    CONFLICT = "CONFLICT"
+    IDEMPOTENCY_MISMATCH = "IDEMPOTENCY_MISMATCH"
+    PROTOCOL_VERSION_MISMATCH = "PROTOCOL_VERSION_MISMATCH"
+    HUB_NOT_READY = "HUB_NOT_READY"
+    HUB_MAINTENANCE = "HUB_MAINTENANCE"
+    AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
+    AGENT_OFFLINE = "AGENT_OFFLINE"
+    AGENT_NOT_LOGGED_IN = "AGENT_NOT_LOGGED_IN"
+    AGENT_INCOMPATIBLE = "AGENT_INCOMPATIBLE"
+    CAPABILITY_MISSING = "CAPABILITY_MISSING"
+    ROLE_UNRESOLVED = "ROLE_UNRESOLVED"
+    SESSION_NOT_RESUMABLE = "SESSION_NOT_RESUMABLE"
+    TASK_NOT_CANCELLABLE = "TASK_NOT_CANCELLABLE"
+    TASK_ACTION_INVALID = "TASK_ACTION_INVALID"
+    WORKTREE_BUSY = "WORKTREE_BUSY"
+    PATH_NOT_ALLOWED = "PATH_NOT_ALLOWED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    APPROVAL_EXPIRED = "APPROVAL_EXPIRED"
+    APPROVAL_ALREADY_DECIDED = "APPROVAL_ALREADY_DECIDED"
+    UPDATE_NOT_AVAILABLE = "UPDATE_NOT_AVAILABLE"
+    UPDATE_BUSY = "UPDATE_BUSY"
+    UPDATE_VERIFY_FAILED = "UPDATE_VERIFY_FAILED"
+    UPDATE_DRAIN_TIMEOUT = "UPDATE_DRAIN_TIMEOUT"
+    INTERNAL = "INTERNAL"
+
+
+class AgentDiscoveryError(_Base):
+    adapter_id: AdapterId = Field(alias="adapterId")
+    code: ErrorCode = Field(alias="code")
+    message: str = Field(alias="message")
+
+
+class AgentDiscoveryCompletedPayload(_Base):
+    total: int = Field(alias="total")
+    ready: int = Field(alias="ready")
+    errors: list[AgentDiscoveryError] | None = Field(default=None, alias="errors")
+    duration_ms: int | None = Field(default=None, alias="durationMs")
+
+
+class AgentStatus(StrEnum):
+    DISCOVERING = "discovering"
+    READY = "ready"
+    BUSY = "busy"
+    NOT_LOGGED_IN = "not_logged_in"
+    INCOMPATIBLE = "incompatible"
+    DISABLED = "disabled"
+    OFFLINE = "offline"
+    ERROR = "error"
+    UNKNOWN = "unknown"
+
+
+class AuthKind(StrEnum):
+    LOCAL_LOGIN = "local_login"
+    API_KEY = "api_key"
+    OAUTH = "oauth"
+    DEVICE_CODE = "device_code"
+    NONE = "none"
+
+
+class CapabilityId(StrEnum):
+    ORCHESTRATION = "orchestration"
+    ARCHITECTURE = "architecture"
+    CODING = "coding"
+    REVIEW = "review"
+    TESTING = "testing"
+    SHELL = "shell"
+    FILE_WRITE = "file_write"
+    GIT_WORKTREE = "git_worktree"
+    SESSION_RESUME = "session_resume"
+    STREAMING_EVENTS = "streaming_events"
+    TOOL_APPROVAL = "tool_approval"
+    STRUCTURED_OUTPUT = "structured_output"
+    VISION = "vision"
+    BROWSER = "browser"
+
+
+class CapabilityItem(_Base):
+    id: CapabilityId = Field(alias="id")
+    name: str = Field(alias="name")
+    description: str | None = Field(default=None, alias="description")
+    hard: bool = Field(alias="hard")
+    source: Literal["detected", "user", "adapter"] = Field(alias="source")
+    supported: bool | None = Field(default=None, alias="supported")
+    note: str | None = Field(default=None, alias="note")
+
+
+class RoleId(StrEnum):
+    ORCHESTRATOR = "orchestrator"
+    ARCHITECT = "architect"
+    FRONTEND_IMPLEMENTER = "frontend_implementer"
+    GENERAL_IMPLEMENTER = "general_implementer"
+    REVIEWER = "reviewer"
+    TESTER = "tester"
+    DEPLOYER = "deployer"
+    INTEGRATOR = "integrator"
+
+
+Timestamp = str
+
+
+class AgentView(_Base):
+    id: str = Field(alias="id")
+    adapter_id: AdapterId = Field(alias="adapterId")
+    display_name: str = Field(alias="displayName")
+    version: str = Field(alias="version")
+    status: AgentStatus = Field(alias="status")
+    detected_at: Timestamp = Field(alias="detectedAt")
+    capabilities: list[CapabilityItem] = Field(alias="capabilities")
+    assigned_roles: list[RoleId] = Field(alias="assignedRoles")
+    is_primary_for: list[RoleId] = Field(alias="isPrimaryFor")
+    diagnostic_message: str | None = Field(default=None, alias="diagnosticMessage")
+    auth_kind: AuthKind | None = Field(default=None, alias="authKind")
+    executable_path: str | None = Field(default=None, alias="executablePath")
+    minimum_version: str | None = Field(default=None, alias="minimumVersion")
+    last_healthy_at: Timestamp | None = Field(default=None, alias="lastHealthyAt")
+
+
+class AgentDiscoveryResult(_Base):
+    discovered: list[AgentView] = Field(alias="discovered")
+    total: int = Field(alias="total")
+    timestamp: Timestamp = Field(alias="timestamp")
+    errors: list[AgentDiscoveryError] | None = Field(default=None, alias="errors")
+    duration_ms: int | None = Field(default=None, alias="durationMs")
+
+
+class AgentFailedPayload(_Base):
+    error_code: ErrorCode = Field(alias="errorCode")
+    message: str = Field(alias="message")
+    blockers: list[Blocker] | None = Field(default=None, alias="blockers")
+
+
+class AgentProgressPayload(_Base):
+    message: str = Field(alias="message")
+    percent: int | None = Field(default=None, alias="percent")
+    raw: dict[str, Any] | None = Field(default=None, alias="raw")
+
+
+class AgentQuestionPayload(_Base):
+    question_id: str = Field(alias="questionId")
+    question: str = Field(alias="question")
+    options: list[str] | None = Field(default=None, alias="options")
+    expires_at: Timestamp | None = Field(default=None, alias="expiresAt")
+
+
+class SessionPurpose(StrEnum):
+    ORCHESTRATE = "orchestrate"
+    ARCHITECT = "architect"
+    IMPLEMENT = "implement"
+    REVIEW = "review"
+    TEST = "test"
+    DEPLOY = "deploy"
+    INTEGRATE = "integrate"
+    ADHOC = "adhoc"
+
+
+class SessionReusePolicy(StrEnum):
+    NEW_SESSION = "new_session"
+    RESUME_EXPLICIT = "resume_explicit"
+    CONTINUE_LINEAGE = "continue_lineage"
+
+
+class AgentStartedPayload(_Base):
+    session_id: str = Field(alias="sessionId")
+    external_session_id: str | None = Field(default=None, alias="externalSessionId")
+    purpose: SessionPurpose = Field(alias="purpose")
+    reuse_policy: SessionReusePolicy = Field(alias="reusePolicy")
+    worktree_path: str | None = Field(default=None, alias="worktreePath")
+    branch: str | None = Field(default=None, alias="branch")
+
+
+class AgentToolCallPayload(_Base):
+    tool_name: str = Field(alias="toolName")
+    arguments_excerpt: str | None = Field(default=None, alias="argumentsExcerpt")
+    result_summary: str | None = Field(default=None, alias="resultSummary")
+    duration_ms: int | None = Field(default=None, alias="durationMs")
+    failed: bool | None = Field(default=None, alias="failed")
+
+
+class AggregateType(StrEnum):
+    AGENT = "agent"
+    TASK = "task"
+    SESSION = "session"
+    APPROVAL = "approval"
+    UPDATE = "update"
+    SYSTEM = "system"
+
+
+class ApiError(_Base):
+    code: ErrorCode = Field(alias="code")
+    message: str = Field(alias="message")
+    detail: dict[str, Any] | None = Field(default=None, alias="detail")
+    retryable: bool = Field(alias="retryable")
+
+
+ProtocolVersion = str
+
+
+class ApiEnvelope(_Base):
+    success: bool = Field(alias="success")
+    data: Any | None = Field(default=None, alias="data")
+    error: ApiError | None = Field(default=None, alias="error")
+    request_id: str = Field(alias="requestId")
+    protocol_version: ProtocolVersion = Field(alias="protocolVersion")
+
+
+class ContrastMode(StrEnum):
+    NORMAL = "normal"
+    HIGH = "high"
+
+
+FontScale = Literal[0.9, 1, 1.1, 1.2]
+
+
+class ReduceMotion(StrEnum):
+    SYSTEM = "system"
+    ON = "on"
+    OFF = "off"
+
+
+class ThemeMode(StrEnum):
+    SYSTEM = "system"
+    LIGHT = "light"
+    DARK = "dark"
+
+
+class ThemePalette(StrEnum):
+    HQ_BLUE = "hq-blue"
+    AI_VIOLET = "ai-violet"
+    TECH_CYAN = "tech-cyan"
+    OPS_EMERALD = "ops-emerald"
+
+
+class UiDensity(StrEnum):
+    COMFORTABLE = "comfortable"
+    COMPACT = "compact"
+
+
+class AppearanceSettings(_Base):
+    mode: ThemeMode = Field(alias="mode")
+    palette: ThemePalette = Field(alias="palette")
+    density: UiDensity = Field(alias="density")
+    contrast: ContrastMode = Field(alias="contrast")
+    reduce_motion: ReduceMotion = Field(alias="reduceMotion")
+    font_scale: FontScale = Field(alias="fontScale")
+
+
+class ApprovalDecision(StrEnum):
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
+class ApprovalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class ApprovalQuery(_Base):
+    status: ApprovalStatus | None = Field(default=None, alias="status")
+    task_id: str | None = Field(default=None, alias="taskId")
+
+
+class DangerousAction(StrEnum):
+    DEPLOY = "deploy"
+    GIT_PUSH = "git_push"
+    GIT_MERGE = "git_merge"
+    DELETE = "delete"
+    SHELL = "shell"
+    NETWORK = "network"
+    DB_MIGRATE = "db_migrate"
+
+
+class RiskLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class ApprovalRequiredPayload(_Base):
+    approval_id: str = Field(alias="approvalId")
+    action: DangerousAction = Field(alias="action")
+    target_resource: str = Field(alias="targetResource")
+    risk_level: RiskLevel = Field(alias="riskLevel")
+    expires_at: Timestamp | None = Field(default=None, alias="expiresAt")
+
+
+class ApprovalResolvedPayload(_Base):
+    approval_id: str = Field(alias="approvalId")
+    decision: ApprovalDecision = Field(alias="decision")
+    reason: str | None = Field(default=None, alias="reason")
+    decided_at: Timestamp = Field(alias="decidedAt")
+
+
+class ApprovalResponseInput(_Base):
+    decision: ApprovalDecision = Field(alias="decision")
+    reason: str | None = Field(default=None, alias="reason")
+
+
+class ApprovalView(_Base):
+    id: str = Field(alias="id")
+    task_id: str = Field(alias="taskId")
+    task_objective: str = Field(alias="taskObjective")
+    node_id: str | None = Field(default=None, alias="nodeId")
+    request_agent_id: str = Field(alias="requestAgentId")
+    request_agent_name: str = Field(alias="requestAgentName")
+    role_id: RoleId | None = Field(default=None, alias="roleId")
+    action: DangerousAction = Field(alias="action")
+    target_resource: str = Field(alias="targetResource")
+    risk_level: RiskLevel = Field(alias="riskLevel")
+    status: ApprovalStatus = Field(alias="status")
+    requested_at: Timestamp = Field(alias="requestedAt")
+    decided_at: Timestamp | None = Field(default=None, alias="decidedAt")
+    decision: ApprovalDecision | None = Field(default=None, alias="decision")
+    reason: str | None = Field(default=None, alias="reason")
+    expires_at: Timestamp | None = Field(default=None, alias="expiresAt")
+    details: dict[str, Any] | None = Field(default=None, alias="details")
+
+
+class BootstrapAgentsSummary(_Base):
+    total: int = Field(alias="total")
+    ready: int = Field(alias="ready")
+    issues: int = Field(alias="issues")
+    last_discovery_at: Timestamp | None = Field(default=None, alias="lastDiscoveryAt")
+
+
+class UpdatePhase(StrEnum):
+    IDLE = "idle"
+    CHECKING = "checking"
+    UP_TO_DATE = "up_to_date"
+    AVAILABLE = "available"
+    DOWNLOADING = "downloading"
+    DOWNLOADED = "downloaded"
+    VERIFYING = "verifying"
+    READY_TO_INSTALL = "ready_to_install"
+    DRAINING_TASKS = "draining_tasks"
+    WAITING_USER = "waiting_user"
+    INSTALLING = "installing"
+    HEALTH_CHECKING = "health_checking"
+    SUCCEEDED = "succeeded"
+    ROLLING_BACK = "rolling_back"
+    ROLLBACK_SUCCEEDED = "rollback_succeeded"
+    ROLLBACK_FAILED = "rollback_failed"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+class BootstrapUpdateSummary(_Base):
+    phase: UpdatePhase = Field(alias="phase")
+    has_update: bool = Field(alias="hasUpdate")
+    current_version: str = Field(alias="currentVersion")
+    latest_version: str | None = Field(default=None, alias="latestVersion")
+    mandatory: bool | None = Field(default=None, alias="mandatory")
+    unacknowledged_result: bool | None = Field(default=None, alias="unacknowledgedResult")
+
+
+class Vcs(StrEnum):
+    GIT = "git"
+    NONE = "none"
+
+
+class WorkspaceView(_Base):
+    id: str = Field(alias="id")
+    name: str = Field(alias="name")
+    path: str = Field(alias="path")
+    vcs: Vcs = Field(alias="vcs")
+    branch: str | None = Field(default=None, alias="branch")
+    is_clean: bool | None = Field(default=None, alias="isClean")
+    default_profile_id: str | None = Field(default=None, alias="defaultProfileId")
+    last_opened_at: Timestamp = Field(alias="lastOpenedAt")
+    memory_dir_present: bool | None = Field(default=None, alias="memoryDirPresent")
+
+
+class BootstrapView(_Base):
+    protocol_version: ProtocolVersion = Field(alias="protocolVersion")
+    app_version: str = Field(alias="appVersion")
+    environment: Literal["production", "development", "test"] = Field(alias="environment")
+    maintenance: bool = Field(alias="maintenance")
+    appearance: AppearanceSettings = Field(alias="appearance")
+    agents: BootstrapAgentsSummary = Field(alias="agents")
+    default_profile_id: str | None = Field(default=None, alias="defaultProfileId")
+    current_workspace: WorkspaceView | None = Field(default=None, alias="currentWorkspace")
+    workspace_count: int = Field(alias="workspaceCount")
+    active_tasks_count: int = Field(alias="activeTasksCount")
+    pending_approvals_count: int = Field(alias="pendingApprovalsCount")
+    update: BootstrapUpdateSummary = Field(alias="update")
+    last_event_seq: int = Field(alias="lastEventSeq")
+    hub_started_at: Timestamp = Field(alias="hubStartedAt")
+
+
+class ConnectionSettings(_Base):
+    hub_url: str = Field(alias="hubUrl")
+    cloud_enabled: bool = Field(alias="cloudEnabled")
+    device_name: str = Field(alias="deviceName")
+
+
+class TaskSource(StrEnum):
+    DESKTOP = "desktop"
+    PWA = "pwa"
+    SCHEDULER = "scheduler"
+    CLI = "cli"
+
+
+class CreateTaskInput(_Base):
+    objective: str = Field(alias="objective")
+    workspace_id: str = Field(alias="workspaceId")
+    profile_id: str | None = Field(default=None, alias="profileId")
+    source: TaskSource | None = Field(default=None, alias="source")
+    role_overrides: dict[str, str] | None = Field(default=None, alias="roleOverrides")
+    parent_task_id: str | None = Field(default=None, alias="parentTaskId")
+    allowed_paths: list[str] | None = Field(default=None, alias="allowedPaths")
+    read_first: list[str] | None = Field(default=None, alias="readFirst")
+    acceptance: list[str] | None = Field(default=None, alias="acceptance")
+    requires_approval: list[DangerousAction] | None = Field(default=None, alias="requiresApproval")
+
+
+class DrainStep(StrEnum):
+    STOP_ACCEPTING = "stop_accepting"
+    SAVE_SESSIONS = "save_sessions"
+    WAIT_RUNNING_TASKS = "wait_running_tasks"
+    BACKUP_DATA = "backup_data"
+    READY = "ready"
+
+
+class DrainProgress(_Base):
+    step: DrainStep = Field(alias="step")
+    active_tasks_remaining: int = Field(alias="activeTasksRemaining")
+    percent: int = Field(alias="percent")
+    started_at: Timestamp | None = Field(default=None, alias="startedAt")
+    timeout_at: Timestamp | None = Field(default=None, alias="timeoutAt")
+    waiting_task_ids: list[str] | None = Field(default=None, alias="waitingTaskIds")
+
+
+class HubEvent(_Base):
+    event_id: str = Field(alias="eventId")
+    seq: int = Field(alias="seq")
+    occurred_at: Timestamp = Field(alias="occurredAt")
+    aggregate_type: AggregateType = Field(alias="aggregateType")
+    aggregate_id: str = Field(alias="aggregateId")
+    type: str = Field(alias="type")
+    payload: Any = Field(alias="payload")
+    protocol_version: ProtocolVersion = Field(alias="protocolVersion")
+    task_id: str | None = Field(default=None, alias="taskId")
+    node_id: str | None = Field(default=None, alias="nodeId")
+    role_id: RoleId | None = Field(default=None, alias="roleId")
+    agent_instance_id: str | None = Field(default=None, alias="agentInstanceId")
+    adapter_id: AdapterId | None = Field(default=None, alias="adapterId")
+
+
+class EventPage(_Base):
+    events: list[HubEvent] = Field(alias="events")
+    last_seq: int = Field(alias="lastSeq")
+    has_more: bool = Field(alias="hasMore")
+
+
+class FilesystemAccess(StrEnum):
+    READ_ONLY = "read_only"
+    READ_WRITE = "read_write"
+
+
+class Language(StrEnum):
+    ZH_CN = "zh-CN"
+    EN_US = "en-US"
+
+
+class GeneralSettings(_Base):
+    language: Language = Field(alias="language")
+    launch_at_login: bool = Field(alias="launchAtLogin")
+    minimize_to_tray: bool = Field(alias="minimizeToTray")
+    close_to_tray: bool = Field(alias="closeToTray")
+
+
+class HealthCheckOutcome(_Base):
+    type: Literal["process", "http", "protocol", "database"] = Field(alias="type")
+    component: str | None = Field(default=None, alias="component")
+    passed: bool = Field(alias="passed")
+    detail: str | None = Field(default=None, alias="detail")
+    duration_ms: int | None = Field(default=None, alias="durationMs")
+
+
+class HealthView(_Base):
+    """GET /healthz 的返回。这是唯一免鉴权的端点：Update Plan v2 的 healthChecks 要在没有 token 的情况下探活。只返回非敏感信息"""
+
+    status: Literal["ok", "starting", "maintenance", "degraded"] = Field(alias="status")
+    app_version: str = Field(alias="appVersion")
+    protocol_version: ProtocolVersion = Field(alias="protocolVersion")
+    pid: int = Field(alias="pid")
+    started_at: Timestamp = Field(alias="startedAt")
+
+
+class HubRuntimeDescriptor(_Base):
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    port: int = Field(alias="port")
+    token: str = Field(alias="token")
+    pid: int = Field(alias="pid")
+    base_url: str = Field(alias="baseUrl")
+    app_version: str = Field(alias="appVersion")
+    protocol_version: ProtocolVersion = Field(alias="protocolVersion")
+    started_at: Timestamp = Field(alias="startedAt")
+
+
+class InstallStrategy(StrEnum):
+    WINDOWS_NSIS = "windows-nsis"
+    WINDOWS_MSI = "windows-msi"
+    WINDOWS_PORTABLE = "windows-portable"
+    MACOS_APP_BUNDLE = "macos-app-bundle"
+    LINUX_APPIMAGE = "linux-appimage"
+    LINUX_DEB = "linux-deb"
+
+
+class ResolveSource(StrEnum):
+    TASK_OVERRIDE = "task_override"
+    WORKSPACE_PROFILE = "workspace_profile"
+    GLOBAL_PROFILE = "global_profile"
+    CAPABILITY_MATCH = "capability_match"
+    FALLBACK = "fallback"
+    MANUAL = "manual"
+
+
+class NodeResolvedPayload(_Base):
+    role_id: RoleId = Field(alias="roleId")
+    resolved_agent_id: str = Field(alias="resolvedAgentId")
+    resolved_agent_name: str | None = Field(default=None, alias="resolvedAgentName")
+    resolve_source: ResolveSource = Field(alias="resolveSource")
+    is_fallback: bool = Field(alias="isFallback")
+    fallback_reason: str | None = Field(default=None, alias="fallbackReason")
+    missing_capabilities: list[CapabilityId] | None = Field(default=None, alias="missingCapabilities")
+
+
+class NodeStatus(StrEnum):
+    PENDING = "pending"
+    RESOLVING = "resolving"
+    RUNNING = "running"
+    WAITING_APPROVAL = "waiting_approval"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    CANCELLED = "cancelled"
+
+
+class PageResult(_Base):
+    items: list[Any] = Field(alias="items")
+    total: int = Field(alias="total")
+    page: int = Field(alias="page")
+    page_size: int = Field(alias="pageSize")
+    has_more: bool = Field(alias="hasMore")
+
+
+class PathViolationPayload(_Base):
+    violation_paths: list[str] = Field(alias="violationPaths")
+    allowed_paths: list[str] = Field(alias="allowedPaths")
+    worktree_path: str | None = Field(default=None, alias="worktreePath")
+
+
+class UpdateChannel(StrEnum):
+    STABLE = "stable"
+    BETA = "beta"
+
+
+class ReleaseInfo(_Base):
+    version: str = Field(alias="version")
+    channel: UpdateChannel = Field(alias="channel")
+    target_key: str = Field(alias="targetKey")
+    published_at: Timestamp = Field(alias="publishedAt")
+    size_bytes: int = Field(alias="sizeBytes")
+    sha256: str = Field(alias="sha256")
+    signature: str | None = Field(default=None, alias="signature")
+    signature_algorithm: str | None = Field(default=None, alias="signatureAlgorithm")
+    key_id: str | None = Field(default=None, alias="keyId")
+    mandatory: bool = Field(alias="mandatory")
+    minimum_supported_version: str | None = Field(default=None, alias="minimumSupportedVersion")
+    release_notes: str | None = Field(default=None, alias="releaseNotes")
+    install_strategy: InstallStrategy | None = Field(default=None, alias="installStrategy")
+    rollback_compatible: bool | None = Field(default=None, alias="rollbackCompatible")
+
+
+class ResolveTeamProfileInput(_Base):
+    profile_id: str = Field(alias="profileId")
+    workspace_id: str | None = Field(default=None, alias="workspaceId")
+    task_objective: str | None = Field(default=None, alias="taskObjective")
+
+
+class ResolvedRoleItem(_Base):
+    role_id: RoleId = Field(alias="roleId")
+    resolved_agent_id: str = Field(alias="resolvedAgentId")
+    resolved_agent_name: str = Field(alias="resolvedAgentName")
+    resolve_source: ResolveSource = Field(alias="resolveSource")
+    is_fallback: bool = Field(alias="isFallback")
+    fallback_reason: str | None = Field(default=None, alias="fallbackReason")
+    missing_capabilities: list[CapabilityId] | None = Field(default=None, alias="missingCapabilities")
+
+
+class ResolvedTeamGap(_Base):
+    role_id: RoleId = Field(alias="roleId")
+    reason: str = Field(alias="reason")
+    missing_capabilities: list[CapabilityId] | None = Field(default=None, alias="missingCapabilities")
+
+
+class ResolvedTeamView(_Base):
+    profile_id: str = Field(alias="profileId")
+    workspace_id: str | None = Field(default=None, alias="workspaceId")
+    resolved_roles: dict[str, ResolvedRoleItem] = Field(alias="resolvedRoles")
+    has_gaps: bool = Field(alias="hasGaps")
+    gaps: list[ResolvedTeamGap] = Field(alias="gaps")
+    resolved_at: Timestamp | None = Field(default=None, alias="resolvedAt")
+
+
+class ResolvedThemeMode(StrEnum):
+    LIGHT = "light"
+    DARK = "dark"
+
+
+class ResumeSessionInput(_Base):
+    instruction: str = Field(alias="instruction")
+    workspace_id: str | None = Field(default=None, alias="workspaceId")
+    acceptance: list[str] | None = Field(default=None, alias="acceptance")
+
+
+class RoleBindingConstraints(_Base):
+    """用户对该角色的额外约束，只能收紧、不能放宽角色默认权限"""
+
+    require_hard_capabilities: list[CapabilityId] | None = Field(default=None, alias="requireHardCapabilities")
+    allow_shell: bool | None = Field(default=None, alias="allowShell")
+    read_only_fs: bool | None = Field(default=None, alias="readOnlyFs")
+
+
+class RolePermissions(_Base):
+    """权限绑角色不绑品牌。换 Agent 后仍沿用同一角色权限（施工方案 §6.5）"""
+
+    filesystem: FilesystemAccess = Field(alias="filesystem")
+    shell: bool = Field(alias="shell")
+    can_approve: bool = Field(alias="canApprove")
+    can_merge: bool = Field(alias="canMerge")
+    writable_paths: list[str] = Field(alias="writablePaths")
+    requires_approval: list[DangerousAction] = Field(alias="requiresApproval")
+
+
+class RoleBindingView(_Base):
+    role_id: RoleId = Field(alias="roleId")
+    role_name: str = Field(alias="roleName")
+    primary_agent_id: str = Field(alias="primaryAgentId")
+    fallback_agent_ids: list[str] = Field(alias="fallbackAgentIds")
+    constraints: RoleBindingConstraints | None = Field(default=None, alias="constraints")
+    permissions: RolePermissions | None = Field(default=None, alias="permissions")
+
+
+class TeamProfilePolicies(_Base):
+    missing_agent_strategy: Literal["fallback_then_ask", "fallback_then_fail", "ask"] = Field(alias="missingAgentStrategy")
+    allow_one_agent_multiple_roles: bool = Field(alias="allowOneAgentMultipleRoles")
+    prefer_cross_agent_review: bool = Field(alias="preferCrossAgentReview")
+    same_agent_review_strategy: Literal["isolated_session", "forbid"] = Field(alias="sameAgentReviewStrategy")
+
+
+class SaveTeamProfileInput(_Base):
+    id: str | None = Field(default=None, alias="id")
+    name: str = Field(alias="name")
+    description: str | None = Field(default=None, alias="description")
+    scope: Literal["global", "workspace"] = Field(alias="scope")
+    workspace_id: str | None = Field(default=None, alias="workspaceId")
+    is_default: bool | None = Field(default=None, alias="isDefault")
+    role_bindings: dict[str, RoleBindingView] = Field(alias="roleBindings")
+    policies: TeamProfilePolicies | None = Field(default=None, alias="policies")
+
+
+class SecuritySettings(_Base):
+    require_approval_for_dangerous_actions: bool = Field(alias="requireApprovalForDangerousActions")
+    allowed_paths_only: bool = Field(alias="allowedPathsOnly")
+    approval_timeout_minutes: int | None = Field(default=None, alias="approvalTimeoutMinutes")
+
+
+class SessionQuery(_Base):
+    workspace_id: str | None = Field(default=None, alias="workspaceId")
+    agent_id: str | None = Field(default=None, alias="agentId")
+    role_id: RoleId | None = Field(default=None, alias="roleId")
+    task_id: str | None = Field(default=None, alias="taskId")
+    purpose: SessionPurpose | None = Field(default=None, alias="purpose")
+    only_valid: bool | None = Field(default=None, alias="onlyValid")
+    search: str | None = Field(default=None, alias="search")
+    page: int | None = Field(default=None, alias="page")
+    page_size: int | None = Field(default=None, alias="pageSize")
+
+
+class SessionView(_Base):
+    id: str = Field(alias="id")
+    workspace_id: str = Field(alias="workspaceId")
+    workspace_name: str = Field(alias="workspaceName")
+    role_id: RoleId = Field(alias="roleId")
+    agent_instance_id: str = Field(alias="agentInstanceId")
+    agent_display_name: str = Field(alias="agentDisplayName")
+    adapter_id: AdapterId | None = Field(default=None, alias="adapterId")
+    external_session_id: str = Field(alias="externalSessionId")
+    purpose: SessionPurpose = Field(alias="purpose")
+    reuse_policy: SessionReusePolicy = Field(alias="reusePolicy")
+    task_id: str | None = Field(default=None, alias="taskId")
+    node_id: str | None = Field(default=None, alias="nodeId")
+    parent_session_id: str | None = Field(default=None, alias="parentSessionId")
+    root_task_id: str | None = Field(default=None, alias="rootTaskId")
+    created_at: Timestamp = Field(alias="createdAt")
+    last_used_at: Timestamp = Field(alias="lastUsedAt")
+    is_valid: bool = Field(alias="isValid")
+    summary: str | None = Field(default=None, alias="summary")
+    turn_count: int | None = Field(default=None, alias="turnCount")
+
+
+class SubscribeEventsInput(_Base):
+    after_seq: int | None = Field(default=None, alias="afterSeq")
+    aggregate_types: list[AggregateType] | None = Field(default=None, alias="aggregateTypes")
+    task_id: str | None = Field(default=None, alias="taskId")
+
+
+class SystemMaintenancePayload(_Base):
+    active: bool = Field(alias="active")
+    reason: str = Field(alias="reason")
+    drain_progress: DrainProgress | None = Field(default=None, alias="drainProgress")
+
+
+class TaskActionInput(_Base):
+    action: Literal["pause", "resume", "cancel", "retry", "append_instruction"] = Field(alias="action")
+    instruction: str | None = Field(default=None, alias="instruction")
+    node_id: str | None = Field(default=None, alias="nodeId")
+
+
+class TaskArtifactView(_Base):
+    id: str = Field(alias="id")
+    task_id: str = Field(alias="taskId")
+    title: str = Field(alias="title")
+    path: str = Field(alias="path")
+    type: Literal["file", "diff", "report", "log"] = Field(alias="type")
+    size_bytes: int = Field(alias="sizeBytes")
+    created_at: Timestamp = Field(alias="createdAt")
+
+
+class TaskCreatedPayload(_Base):
+    objective: str = Field(alias="objective")
+    workspace_id: str = Field(alias="workspaceId")
+    profile_id: str = Field(alias="profileId")
+    source: TaskSource = Field(alias="source")
+    parent_task_id: str | None = Field(default=None, alias="parentTaskId")
+
+
+class TaskNodeView(_Base):
+    id: str = Field(alias="id")
+    task_id: str = Field(alias="taskId")
+    role_id: RoleId = Field(alias="roleId")
+    resolved_agent_id: str = Field(alias="resolvedAgentId")
+    resolved_agent_name: str = Field(alias="resolvedAgentName")
+    resolve_source: ResolveSource = Field(alias="resolveSource")
+    status: NodeStatus = Field(alias="status")
+    started_at: Timestamp | None = Field(default=None, alias="startedAt")
+    completed_at: Timestamp | None = Field(default=None, alias="completedAt")
+    output_summary: str | None = Field(default=None, alias="outputSummary")
+    error: str | None = Field(default=None, alias="error")
+    is_fallback: bool | None = Field(default=None, alias="isFallback")
+    fallback_reason: str | None = Field(default=None, alias="fallbackReason")
+    session_id: str | None = Field(default=None, alias="sessionId")
+    external_session_id: str | None = Field(default=None, alias="externalSessionId")
+    worktree_path: str | None = Field(default=None, alias="worktreePath")
+    branch: str | None = Field(default=None, alias="branch")
+    changed_files: list[str] | None = Field(default=None, alias="changedFiles")
+    violation_paths: list[str] | None = Field(default=None, alias="violationPaths")
+
+
+class TaskStatus(StrEnum):
+    DRAFT = "draft"
+    QUEUED = "queued"
+    RUNNING = "running"
+    WAITING_APPROVAL = "waiting_approval"
+    PAUSED = "paused"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
+
+
+class TaskSummaryView(_Base):
+    id: str = Field(alias="id")
+    objective: str = Field(alias="objective")
+    workspace_id: str = Field(alias="workspaceId")
+    workspace_name: str = Field(alias="workspaceName")
+    profile_id: str = Field(alias="profileId")
+    profile_name: str = Field(alias="profileName")
+    status: TaskStatus = Field(alias="status")
+    source: TaskSource = Field(alias="source")
+    created_at: Timestamp = Field(alias="createdAt")
+    updated_at: Timestamp = Field(alias="updatedAt")
+    duration_ms: int | None = Field(default=None, alias="durationMs")
+    current_role: RoleId | None = Field(default=None, alias="currentRole")
+    current_agent: str | None = Field(default=None, alias="currentAgent")
+    pending_approval_id: str | None = Field(default=None, alias="pendingApprovalId")
+    parent_task_id: str | None = Field(default=None, alias="parentTaskId")
+
+
+class TaskDetailView(TaskSummaryView):
+    nodes: list[TaskNodeView] = Field(alias="nodes")
+    artifacts: list[TaskArtifactView] = Field(alias="artifacts")
+    events: list[HubEvent] = Field(alias="events")
+    worktree_path: str | None = Field(default=None, alias="worktreePath")
+    branch: str | None = Field(default=None, alias="branch")
+    failure_reason: str | None = Field(default=None, alias="failureReason")
+    allowed_paths: list[str] | None = Field(default=None, alias="allowedPaths")
+    read_first: list[str] | None = Field(default=None, alias="readFirst")
+    acceptance: list[str] | None = Field(default=None, alias="acceptance")
+    requires_approval: list[DangerousAction] | None = Field(default=None, alias="requiresApproval")
+    result: AgentResult | None = Field(default=None, alias="result")
+    last_event_seq: int | None = Field(default=None, alias="lastEventSeq")
+
+
+class TaskQuery(_Base):
+    page: int | None = Field(default=None, alias="page")
+    page_size: int | None = Field(default=None, alias="pageSize")
+    status: TaskStatus | None = Field(default=None, alias="status")
+    workspace_id: str | None = Field(default=None, alias="workspaceId")
+    search: str | None = Field(default=None, alias="search")
+
+
+class TaskStatusChangedPayload(_Base):
+    from_: TaskStatus = Field(alias="from")
+    to: TaskStatus = Field(alias="to")
+    reason: str | None = Field(default=None, alias="reason")
+
+
+class TeamProfileView(_Base):
+    id: str = Field(alias="id")
+    name: str = Field(alias="name")
+    description: str | None = Field(default=None, alias="description")
+    scope: Literal["global", "workspace"] = Field(alias="scope")
+    workspace_id: str | None = Field(default=None, alias="workspaceId")
+    is_default: bool = Field(alias="isDefault")
+    role_bindings: dict[str, RoleBindingView] = Field(alias="roleBindings")
+    policies: TeamProfilePolicies | None = Field(default=None, alias="policies")
+    updated_at: Timestamp = Field(alias="updatedAt")
+
+
+class TelemetrySettings(_Base):
+    anonymous_telemetry: bool = Field(alias="anonymousTelemetry")
+
+
+class UpdateActionInput(_Base):
+    action: Literal["check", "download", "cancel", "install", "defer", "acknowledge"] = Field(alias="action")
+    defer_minutes: int | None = Field(default=None, alias="deferMinutes")
+    allow_task_cancellation: bool | None = Field(default=None, alias="allowTaskCancellation")
+
+
+class UpdateAgentRuntimeDescriptor(_Base):
+    """对应 update-agent.json。Update Agent 不向 Vue 暴露第二个 Base URL（裁决 D1）"""
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    port: int = Field(alias="port")
+    token: str = Field(alias="token")
+    pid: int = Field(alias="pid")
+    base_url: str = Field(alias="baseUrl")
+    agent_version: str = Field(alias="agentVersion")
+    started_at: Timestamp = Field(alias="startedAt")
+
+
+class UpdateResultView(_Base):
+    schema_version: Literal[2] = Field(alias="schemaVersion")
+    app_id: str = Field(alias="appId")
+    from_version: str = Field(alias="fromVersion")
+    to_version: str = Field(alias="toVersion")
+    channel: UpdateChannel | None = Field(default=None, alias="channel")
+    success: bool = Field(alias="success")
+    finished_at: Timestamp = Field(alias="finishedAt")
+    install_strategy: InstallStrategy | None = Field(default=None, alias="installStrategy")
+    health_checks: list[HealthCheckOutcome] | None = Field(default=None, alias="healthChecks")
+    health_check_passed: bool | None = Field(default=None, alias="healthCheckPassed")
+    rolled_back: bool | None = Field(default=None, alias="rolledBack")
+    rollback_succeeded: bool | None = Field(default=None, alias="rollbackSucceeded")
+    restored_database_backup: str | None = Field(default=None, alias="restoredDatabaseBackup")
+    error: str | None = Field(default=None, alias="error")
+    error_code: ErrorCode | None = Field(default=None, alias="errorCode")
+    acknowledged: bool = Field(alias="acknowledged")
+
+
+class UpdateCompletedPayload(_Base):
+    result: UpdateResultView = Field(alias="result")
+
+
+class UpdateDownloadProgressPayload(_Base):
+    download_bytes: int = Field(alias="downloadBytes")
+    total_bytes: int = Field(alias="totalBytes")
+    percent: float = Field(alias="percent")
+    speed_bytes_per_second: int | None = Field(default=None, alias="speedBytesPerSecond")
+    eta_seconds: int | None = Field(default=None, alias="etaSeconds")
+
+
+class UpdateHealthCheckPayload(_Base):
+    passed: bool = Field(alias="passed")
+    checks: list[HealthCheckOutcome] = Field(alias="checks")
+
+
+class UpdateRollbackPayload(_Base):
+    reason: str = Field(alias="reason")
+    succeeded: bool | None = Field(default=None, alias="succeeded")
+    restored_database_backup: str | None = Field(default=None, alias="restoredDatabaseBackup")
+
+
+class UpdateSettings(_Base):
+    channel: UpdateChannel = Field(alias="channel")
+    auto_check: bool = Field(alias="autoCheck")
+    auto_download: bool = Field(alias="autoDownload")
+    auto_install: bool | None = Field(default=None, alias="autoInstall")
+
+
+class UpdateStateView(_Base):
+    phase: UpdatePhase = Field(alias="phase")
+    current_version: str = Field(alias="currentVersion")
+    channel: UpdateChannel = Field(alias="channel")
+    latest_version: str | None = Field(default=None, alias="latestVersion")
+    target_key: str | None = Field(default=None, alias="targetKey")
+    release_notes: str | None = Field(default=None, alias="releaseNotes")
+    mandatory: bool | None = Field(default=None, alias="mandatory")
+    download_progress: float | None = Field(default=None, alias="downloadProgress")
+    download_bytes: int | None = Field(default=None, alias="downloadBytes")
+    total_bytes: int | None = Field(default=None, alias="totalBytes")
+    speed_bytes_per_second: int | None = Field(default=None, alias="speedBytesPerSecond")
+    eta_seconds: int | None = Field(default=None, alias="etaSeconds")
+    drain_progress: DrainProgress | None = Field(default=None, alias="drainProgress")
+    can_install_now: bool = Field(alias="canInstallNow")
+    deferred_until: Timestamp | None = Field(default=None, alias="deferredUntil")
+    last_checked_at: Timestamp = Field(alias="lastCheckedAt")
+    error: str | None = Field(default=None, alias="error")
+    error_code: ErrorCode | None = Field(default=None, alias="errorCode")
+    protocol_version: ProtocolVersion | None = Field(default=None, alias="protocolVersion")
+
+
+class UpdateStateChangedPayload(_Base):
+    state: UpdateStateView = Field(alias="state")
+    previous_phase: UpdatePhase | None = Field(default=None, alias="previousPhase")
+
+
+class UpdateVerificationCompletedPayload(_Base):
+    passed: bool = Field(alias="passed")
+    size_matched: bool = Field(alias="sizeMatched")
+    sha256_matched: bool = Field(alias="sha256Matched")
+    signature_valid: bool = Field(alias="signatureValid")
+    key_id: str | None = Field(default=None, alias="keyId")
+    error: str | None = Field(default=None, alias="error")
+
+
+class UserSettingsView(_Base):
+    appearance: AppearanceSettings = Field(alias="appearance")
+    general: GeneralSettings = Field(alias="general")
+    connection: ConnectionSettings = Field(alias="connection")
+    security: SecuritySettings = Field(alias="security")
+    updates: UpdateSettings = Field(alias="updates")
+    telemetry: TelemetrySettings = Field(alias="telemetry")
+    data_dir: str | None = Field(default=None, alias="dataDir")
+    log_dir: str | None = Field(default=None, alias="logDir")
+    app_version: str | None = Field(default=None, alias="appVersion")
+    protocol_version: ProtocolVersion | None = Field(default=None, alias="protocolVersion")
+
+
+class WorkspaceQuery(_Base):
+    search: str | None = Field(default=None, alias="search")
+    limit: int | None = Field(default=None, alias="limit")
+
+
+class WsTicket(_Base):
+    ticket: str = Field(alias="ticket")
+    expires_at: Timestamp = Field(alias="expiresAt")
+    ttl_seconds: Literal[30] = Field(alias="ttlSeconds")
+
+
+class WsTicketRequest(_Base):
+    purpose: Literal["events"] | None = Field(default=None, alias="purpose")
+
+
+ERROR_CATALOG: dict[str, dict[str, Any]] = {
+    "BAD_REQUEST": {"http": 400, "retryable": False},
+    "VALIDATION_FAILED": {"http": 422, "retryable": False},
+    "UNAUTHORIZED": {"http": 401, "retryable": False},
+    "NOT_FOUND": {"http": 404, "retryable": False},
+    "CONFLICT": {"http": 409, "retryable": False},
+    "IDEMPOTENCY_MISMATCH": {"http": 409, "retryable": False},
+    "PROTOCOL_VERSION_MISMATCH": {"http": 426, "retryable": False},
+    "HUB_NOT_READY": {"http": 503, "retryable": True},
+    "HUB_MAINTENANCE": {"http": 503, "retryable": True},
+    "AGENT_NOT_FOUND": {"http": 404, "retryable": False},
+    "AGENT_OFFLINE": {"http": 409, "retryable": True},
+    "AGENT_NOT_LOGGED_IN": {"http": 409, "retryable": False},
+    "AGENT_INCOMPATIBLE": {"http": 409, "retryable": False},
+    "CAPABILITY_MISSING": {"http": 409, "retryable": False},
+    "ROLE_UNRESOLVED": {"http": 409, "retryable": False},
+    "SESSION_NOT_RESUMABLE": {"http": 409, "retryable": False},
+    "TASK_NOT_CANCELLABLE": {"http": 409, "retryable": False},
+    "TASK_ACTION_INVALID": {"http": 409, "retryable": False},
+    "WORKTREE_BUSY": {"http": 409, "retryable": True},
+    "PATH_NOT_ALLOWED": {"http": 403, "retryable": False},
+    "APPROVAL_REQUIRED": {"http": 409, "retryable": False},
+    "APPROVAL_EXPIRED": {"http": 410, "retryable": False},
+    "APPROVAL_ALREADY_DECIDED": {"http": 409, "retryable": False},
+    "UPDATE_NOT_AVAILABLE": {"http": 409, "retryable": False},
+    "UPDATE_BUSY": {"http": 409, "retryable": True},
+    "UPDATE_VERIFY_FAILED": {"http": 422, "retryable": False},
+    "UPDATE_DRAIN_TIMEOUT": {"http": 409, "retryable": True},
+    "INTERNAL": {"http": 500, "retryable": True},
+}

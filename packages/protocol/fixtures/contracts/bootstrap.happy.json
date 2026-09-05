@@ -1,0 +1,43 @@
+{
+  "protocolVersion": "0.1.0",
+  "appVersion": "0.1.0",
+  "environment": "development",
+  "maintenance": false,
+  "appearance": {
+    "mode": "system",
+    "palette": "hq-blue",
+    "density": "comfortable",
+    "contrast": "normal",
+    "reduceMotion": "system",
+    "fontScale": 1
+  },
+  "agents": {
+    "total": 2,
+    "ready": 2,
+    "issues": 0,
+    "lastDiscoveryAt": "2026-09-05T18:00:00Z"
+  },
+  "defaultProfileId": "profile_hq_default",
+  "currentWorkspace": {
+    "id": "ws_hqagent_hub",
+    "name": "HQAgent-Hub",
+    "path": "E:/OtherPro/HQAgent-Hub",
+    "vcs": "git",
+    "branch": "integration/phase1",
+    "isClean": true,
+    "defaultProfileId": "profile_hq_default",
+    "lastOpenedAt": "2026-09-05T18:00:00Z",
+    "memoryDirPresent": true
+  },
+  "workspaceCount": 1,
+  "activeTasksCount": 2,
+  "pendingApprovalsCount": 1,
+  "update": {
+    "phase": "idle",
+    "hasUpdate": false,
+    "currentVersion": "0.1.0",
+    "unacknowledgedResult": false
+  },
+  "lastEventSeq": 42,
+  "hubStartedAt": "2026-09-05T17:58:12Z"
+}

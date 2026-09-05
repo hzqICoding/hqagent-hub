@@ -1,0 +1,126 @@
+openapi: 3.1.0
+info:
+  title: HQAgent-Hub Update Agent Internal API
+  version: 0.1.0
+  description: |
+    **私有 API，只有 Local Hub 和桌面壳可以调用。**
+
+    Vue 永远不直连 Update Agent（裁决 D1）：前端只认 `local-hub.v1.yaml` 一个
+    Base URL、一个 Token、一条事件序列。Local Hub 把 `/api/v1/updates/*` 的
+    9 条公共路径代理到这里，并把 Update Agent 推来的状态转成统一 HubEvent
+    写进自己的事件总线。
+
+    **接入方式**：Update Agent 启动后把 `port` 与内部 Token 写入
+    `%LOCALAPPDATA%\HQAgent-Hub\runtime\update-agent.json`（结构见
+    `schema/runtime-descriptor.json#/$defs/UpdateAgentRuntimeDescriptor`）。
+
+    **为什么 Update Agent 是独立进程**：桌面窗口关闭、Local Hub 重启都不能让
+    下载和校验状态丢失；安装阶段 Hub 自己要退出，不可能由 Hub 执行安装。
+
+servers:
+  - url: http://127.0.0.1:{port}
+    variables:
+      port:
+        default: "0"
+
+security:
+  - internalBearer: []
+
+paths:
+  /internal/v1/state:
+    get:
+      summary: 当前升级状态（本机升级状态的唯一事实源）
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "../schema/update-state.json#/$defs/UpdateStateView"
+
+  /internal/v1/check:
+    post:
+      summary: 向 OTA Platform 检查更新
+      description: |
+        使用 `appId + currentVersion + channel + targetKey` 精确匹配。
+        targetKey 一期固定 `windows-amd64-installer`。
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "../schema/update-state.json#/$defs/UpdateStateView"
+
+  /internal/v1/download:
+    post:
+      summary: 开始或续传下载（支持 HTTP Range 断点续传）
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "../schema/update-state.json#/$defs/UpdateStateView"
+
+  /internal/v1/cancel:
+    post:
+      summary: 取消下载
+      responses:
+        "200":
+          description: OK
+
+  /internal/v1/install:
+    post:
+      summary: 生成 Update Plan v2 并启动 Updater
+      description: |
+        前置条件由 Local Hub 保证：已完成任务排空、已完成 WAL checkpoint 与
+        SQLite Backup。Update Agent 自己再校验一次签名和 Staging 路径——
+        只有通过验签且位于 Staging 的包才能生成 Plan，验签失败没有"忽略并继续"入口。
+      responses:
+        "200":
+          description: OK
+        "422":
+          description: UPDATE_VERIFY_FAILED
+
+  /internal/v1/result:
+    get:
+      summary: 读取上次升级回执
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "../schema/update-result.json#/$defs/UpdateResultView"
+
+  /internal/v1/releases:
+    get:
+      summary: 可用版本列表
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "../schema/update-state.json#/$defs/ReleaseInfo"
+
+  /internal/v1/events:
+    get:
+      summary: Update Agent 事件流（Local Hub 订阅后转成 HubEvent）
+      description: |
+        Local Hub 是唯一订阅方。它把这里的事件按 `events/event-dictionary.md`
+        的 update.* 类型映射成统一 HubEvent，分配自己的 seq 后写入事件总线。
+        Update Agent 自身不维护 HubEvent 的 seq。
+      responses:
+        "200":
+          description: 事件流
+
+components:
+  securitySchemes:
+    internalBearer:
+      type: http
+      scheme: bearer
+      description: Token 来自 update-agent.json，与 Hub 的 Token 是两个独立值

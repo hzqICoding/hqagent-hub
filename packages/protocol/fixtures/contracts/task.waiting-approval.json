@@ -1,0 +1,69 @@
+{
+  "id": "task_20260905_002",
+  "objective": "集成外部依赖并把测试分支推送到远程仓库",
+  "workspaceId": "ws_hqagent_hub",
+  "workspaceName": "HQAgent-Hub",
+  "profileId": "profile_hq_default",
+  "profileName": "HQ默认双Agent团队",
+  "status": "waiting_approval",
+  "source": "desktop",
+  "createdAt": "2026-09-05T18:15:00Z",
+  "updatedAt": "2026-09-05T18:19:10Z",
+  "durationMs": 250000,
+  "currentRole": "deployer",
+  "currentAgent": "Codex App Server",
+  "pendingApprovalId": "appr_99812",
+  "allowedPaths": ["apps/hub/**"],
+  "acceptance": ["pytest -q"],
+  "requiresApproval": ["deploy", "git_push", "delete", "network", "db_migrate"],
+  "lastEventSeq": 52,
+  "nodes": [
+    {
+      "id": "node_01",
+      "taskId": "task_20260905_002",
+      "roleId": "general_implementer",
+      "resolvedAgentId": "agent_codex_default",
+      "resolvedAgentName": "Codex App Server",
+      "resolveSource": "workspace_profile",
+      "status": "succeeded",
+      "startedAt": "2026-09-05T18:15:05Z",
+      "completedAt": "2026-09-05T18:18:00Z",
+      "changedFiles": ["apps/hub/pyproject.toml", "apps/hub/core/deps.py"]
+    },
+    {
+      "id": "node_02",
+      "taskId": "task_20260905_002",
+      "roleId": "deployer",
+      "resolvedAgentId": "agent_codex_default",
+      "resolvedAgentName": "Codex App Server",
+      "resolveSource": "workspace_profile",
+      "status": "waiting_approval",
+      "startedAt": "2026-09-05T18:18:05Z",
+      "outputSummary": "触发敏感动作 git_push，等待人工审批"
+    }
+  ],
+  "artifacts": [],
+  "events": [
+    {
+      "eventId": "evt_appr_01",
+      "seq": 52,
+      "occurredAt": "2026-09-05T18:18:05Z",
+      "aggregateType": "approval",
+      "aggregateId": "appr_99812",
+      "type": "approval.required",
+      "taskId": "task_20260905_002",
+      "nodeId": "node_02",
+      "roleId": "deployer",
+      "agentInstanceId": "agent_codex_default",
+      "adapterId": "codex",
+      "protocolVersion": "0.1.0",
+      "payload": {
+        "approvalId": "appr_99812",
+        "action": "git_push",
+        "targetResource": "origin work/w1-hub",
+        "riskLevel": "high",
+        "expiresAt": "2026-09-05T18:48:05Z"
+      }
+    }
+  ]
+}

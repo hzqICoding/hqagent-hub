@@ -1,0 +1,103 @@
+{
+  "id": "task_20260905_003",
+  "objective": "调整桌面端设置页的更新分组文案",
+  "workspaceId": "ws_hqagent_hub",
+  "workspaceName": "HQAgent-Hub",
+  "profileId": "profile_hq_default",
+  "profileName": "HQ默认双Agent团队",
+  "status": "failed",
+  "source": "desktop",
+  "createdAt": "2026-09-05T17:30:00Z",
+  "updatedAt": "2026-09-05T17:41:12Z",
+  "durationMs": 672000,
+  "currentRole": "frontend_implementer",
+  "currentAgent": "Codex App Server",
+  "failureReason": "节点修改了 allowedPaths 之外的路径，已判定越界失败并保留 worktree 现场",
+  "allowedPaths": ["apps/desktop/src/**"],
+  "acceptance": ["pnpm typecheck"],
+  "requiresApproval": ["deploy", "git_push", "delete"],
+  "worktreePath": "E:/OtherPro/HQAgent-Hub-worktrees/w4-frontend",
+  "branch": "work/w4-frontend",
+  "lastEventSeq": 28,
+  "nodes": [
+    {
+      "id": "node_01",
+      "taskId": "task_20260905_003",
+      "roleId": "frontend_implementer",
+      "resolvedAgentId": "agent_codex_default",
+      "resolvedAgentName": "Codex App Server",
+      "resolveSource": "fallback",
+      "status": "failed",
+      "startedAt": "2026-09-05T17:30:20Z",
+      "completedAt": "2026-09-05T17:41:10Z",
+      "isFallback": true,
+      "fallbackReason": "主选 Agent agent_antigravity_default 状态为 incompatible，按备用链降级到 agent_codex_default",
+      "externalSessionId": "thread_codex_5120_2026",
+      "worktreePath": "E:/OtherPro/HQAgent-Hub-worktrees/w4-frontend",
+      "branch": "work/w4-frontend",
+      "changedFiles": [
+        "apps/desktop/src/pages/settings/UpdateSection.vue",
+        "packages/protocol/schema/settings.json"
+      ],
+      "violationPaths": ["packages/protocol/schema/settings.json"],
+      "error": "越界修改：packages/protocol/ 只有 W0 可写，任何包都必须走 handoff 变更流程"
+    }
+  ],
+  "artifacts": [],
+  "events": [
+    {
+      "eventId": "evt_fb_01",
+      "seq": 20,
+      "occurredAt": "2026-09-05T17:30:18Z",
+      "aggregateType": "task",
+      "aggregateId": "task_20260905_003",
+      "type": "node.resolved",
+      "taskId": "task_20260905_003",
+      "nodeId": "node_01",
+      "roleId": "frontend_implementer",
+      "agentInstanceId": "agent_codex_default",
+      "adapterId": "codex",
+      "protocolVersion": "0.1.0",
+      "payload": {
+        "roleId": "frontend_implementer",
+        "resolvedAgentId": "agent_codex_default",
+        "resolvedAgentName": "Codex App Server",
+        "resolveSource": "fallback",
+        "isFallback": true,
+        "fallbackReason": "主选 Agent agent_antigravity_default 状态为 incompatible，按备用链降级"
+      }
+    },
+    {
+      "eventId": "evt_fb_02",
+      "seq": 27,
+      "occurredAt": "2026-09-05T17:41:10Z",
+      "aggregateType": "task",
+      "aggregateId": "task_20260905_003",
+      "type": "task.path_violation",
+      "taskId": "task_20260905_003",
+      "nodeId": "node_01",
+      "roleId": "frontend_implementer",
+      "protocolVersion": "0.1.0",
+      "payload": {
+        "violationPaths": ["packages/protocol/schema/settings.json"],
+        "allowedPaths": ["apps/desktop/src/**"],
+        "worktreePath": "E:/OtherPro/HQAgent-Hub-worktrees/w4-frontend"
+      }
+    },
+    {
+      "eventId": "evt_fb_03",
+      "seq": 28,
+      "occurredAt": "2026-09-05T17:41:12Z",
+      "aggregateType": "task",
+      "aggregateId": "task_20260905_003",
+      "type": "task.failed",
+      "taskId": "task_20260905_003",
+      "protocolVersion": "0.1.0",
+      "payload": {
+        "from": "running",
+        "to": "failed",
+        "reason": "PATH_NOT_ALLOWED"
+      }
+    }
+  ]
+}

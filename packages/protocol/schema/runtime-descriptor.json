@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "runtime-descriptor.json",
+  "title": "本机运行时描述符与接入鉴权（FZ-1）",
+  "description": "Local Hub 能改文件、跑 shell、推 git。裸开一个本地端口等于给本机任意程序开后门，因此接入必须走 Token。本文件冻结 hub.json / update-agent.json 的结构，以及 HTTP Bearer + WebSocket Ticket 的鉴权规则（裁决 D3）。W5 桌面壳、W1 Local Hub、W6 Update Agent 都按它实现。",
+  "$defs": {
+    "HubRuntimeDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": [
+        "schemaVersion",
+        "port",
+        "token",
+        "pid",
+        "baseUrl",
+        "appVersion",
+        "protocolVersion",
+        "startedAt"
+      ],
+      "properties": {
+        "schemaVersion": { "type": "integer", "const": 1 },
+        "port": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "随机高位端口，每次启动重新选取，不固定"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 43,
+          "description": "32 字节随机数的 base64url 编码，每次启动轮换。绝不允许出现在任何 HTTP 响应体、事件 payload 或日志里"
+        },
+        "pid": {
+          "type": "integer",
+          "description": "hqagent-core.exe 的进程 ID，供桌面壳守护和 Updater 等待退出使用"
+        },
+        "baseUrl": {
+          "type": "string",
+          "pattern": "^http://127\\.0\\.0\\.1:\\d+$",
+          "description": "只能是 127.0.0.1。Hub 不监听 0.0.0.0，不监听 ::"
+        },
+        "appVersion": { "type": "string" },
+        "protocolVersion": { "$ref": "common.json#/$defs/ProtocolVersion" },
+        "startedAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "UpdateAgentRuntimeDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["schemaVersion", "port", "token", "pid", "baseUrl", "agentVersion", "startedAt"],
+      "properties": {
+        "schemaVersion": { "type": "integer", "const": 1 },
+        "port": { "type": "integer", "minimum": 1024, "maximum": 65535 },
+        "token": {
+          "type": "string",
+          "minLength": 43,
+          "description": "Update Agent 的内部 Token，只由 Local Hub 与 W5 桌面壳读取。Vue 永远拿不到，也永远不直连 Update Agent"
+        },
+        "pid": { "type": "integer" },
+        "baseUrl": { "type": "string", "pattern": "^http://127\\.0\\.0\\.1:\\d+$" },
+        "agentVersion": { "type": "string" },
+        "startedAt": { "$ref": "common.json#/$defs/Timestamp" }
+      },
+      "description": "对应 update-agent.json。Update Agent 不向 Vue 暴露第二个 Base URL（裁决 D1）"
+    },
+    "WsTicketRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "enum": ["events"],
+          "description": "一期只有事件流一种用途"
+        }
+      }
+    },
+    "WsTicket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticket", "expiresAt", "ttlSeconds"],
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "minLength": 43,
+          "description": "一次性、单次使用。用过即作废，过期即作废，重放必须失败"
+        },
+        "expiresAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "ttlSeconds": {
+          "type": "integer",
+          "const": 30,
+          "description": "固定 30 秒。Ticket 不写日志、不持久化、不进 localStorage"
+        }
+      }
+    }
+  },
+  "x-contract": {
+    "why-ticket": "WebView/浏览器的原生 WebSocket 构造函数无法自定义 Authorization 头，因此 WS 不能直接用 Bearer。改为先用 Bearer 调 POST /api/v1/auth/ws-ticket 换一次性 Ticket，再以查询参数建立连接。",
+    "hub": {
+      "file": "%LOCALAPPDATA%\\HQAgent-Hub\\runtime\\hub.json",
+      "writer": "hqagent-core.exe（W1）在 HTTP 服务 listen 之后、进入 ready 之前原子写入（先写 .tmp 再 rename）",
+      "acl": "移除继承权限，只保留当前用户。其他 Windows 账户读不到",
+      "readers": [
+        "hqagent-desktop.exe（W5）读取后通过 invoke('get_hub_endpoint') 只把 baseUrl 与 token 交给前端",
+        "hqagent-update-agent.exe（W6）读取后调用 Hub 的 /internal/** 端口"
+      ]
+    },
+    "updateAgent": {
+      "file": "%LOCALAPPDATA%\\HQAgent-Hub\\runtime\\update-agent.json",
+      "readers": ["hqagent-core.exe（W1，用于 Update Proxy）", "hqagent-desktop.exe（W5，用于进程守护）"]
+    },
+    "auth": {
+      "http": "除 GET /healthz 外，所有 /api/v1/** 与 /internal/** 必须带 Authorization: Bearer <token>",
+      "ws": "GET /api/v1/events/stream?ticket=<ticket>&after=<seq>。握手时校验 Ticket 有效、未过期、未使用过，随即作废",
+      "origin": "校验 Origin/Host，只接受 Tauri WebView 的本地来源；拒绝任何远程页面导航过来的连接",
+      "rejections": [
+        "非 127.0.0.1 来源直接拒绝",
+        "token/ticket 不匹配一律返回 UNAUTHORIZED，不区分「无」和「错」",
+        "进程退出时删除自己的 runtime 描述符文件"
+      ],
+      "forbidden": "token 与 ticket 不得出现在 BootstrapView 或任何其他 API 响应体中。前端拿 token 的唯一途径是 Tauri invoke"
+    },
+    "scope": "ACL 与 Token 用于阻止其他 Windows 用户、普通网页和误调用；不承诺抵御已经拥有当前用户权限的恶意进程。"
+  }
+}

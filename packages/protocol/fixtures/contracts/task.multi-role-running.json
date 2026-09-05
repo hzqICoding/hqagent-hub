@@ -1,0 +1,156 @@
+{
+  "id": "task_20260905_001",
+  "objective": "为 Local Hub 事件总线补充断线补发的契约测试",
+  "workspaceId": "ws_hqagent_hub",
+  "workspaceName": "HQAgent-Hub",
+  "profileId": "profile_hq_default",
+  "profileName": "HQ默认双Agent团队",
+  "status": "running",
+  "source": "desktop",
+  "createdAt": "2026-09-05T18:00:00Z",
+  "updatedAt": "2026-09-05T18:12:40Z",
+  "durationMs": 760000,
+  "currentRole": "general_implementer",
+  "currentAgent": "Codex App Server",
+  "allowedPaths": ["apps/hub/tests/**", "apps/hub/core/events/**"],
+  "readFirst": [".hqagent/ARCHITECTURE.md", ".hqagent/INTERFACES.md"],
+  "acceptance": ["pytest apps/hub/tests/test_event_bus.py -q"],
+  "requiresApproval": ["deploy", "git_push", "delete"],
+  "worktreePath": "E:/OtherPro/HQAgent-Hub-worktrees/w1-hub",
+  "branch": "work/w1-hub",
+  "lastEventSeq": 41,
+  "nodes": [
+    {
+      "id": "node_01",
+      "taskId": "task_20260905_001",
+      "roleId": "architect",
+      "resolvedAgentId": "agent_claude_default",
+      "resolvedAgentName": "Claude Code",
+      "resolveSource": "global_profile",
+      "status": "succeeded",
+      "startedAt": "2026-09-05T18:00:05Z",
+      "completedAt": "2026-09-05T18:04:20Z",
+      "outputSummary": "已定义补发语义：客户端携带 lastSeq，服务端返回 (lastSeq, now] 区间且保证 eventId 幂等。",
+      "isFallback": false,
+      "sessionId": "sess_claude_arch_01",
+      "externalSessionId": "session-claude-7718-20260905",
+      "changedFiles": [".hqagent/INTERFACES.md"]
+    },
+    {
+      "id": "node_02",
+      "taskId": "task_20260905_001",
+      "roleId": "general_implementer",
+      "resolvedAgentId": "agent_codex_default",
+      "resolvedAgentName": "Codex App Server",
+      "resolveSource": "global_profile",
+      "status": "running",
+      "startedAt": "2026-09-05T18:04:30Z",
+      "outputSummary": "正在补 test_event_bus.py 的断线重连用例",
+      "isFallback": false,
+      "externalSessionId": "thread_codex_4481_2026",
+      "worktreePath": "E:/OtherPro/HQAgent-Hub-worktrees/w1-hub",
+      "branch": "work/w1-hub",
+      "changedFiles": ["apps/hub/tests/test_event_bus.py"]
+    },
+    {
+      "id": "node_03",
+      "taskId": "task_20260905_001",
+      "roleId": "reviewer",
+      "resolvedAgentId": "agent_claude_default",
+      "resolvedAgentName": "Claude Code",
+      "resolveSource": "global_profile",
+      "status": "pending",
+      "isFallback": false
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "art_01",
+      "taskId": "task_20260905_001",
+      "title": "事件补发语义说明",
+      "path": ".hqagent/handoffs/2026-09-05-event-replay.md",
+      "type": "report",
+      "sizeBytes": 3120,
+      "createdAt": "2026-09-05T18:04:18Z"
+    }
+  ],
+  "events": [
+    {
+      "eventId": "evt_0001",
+      "seq": 30,
+      "occurredAt": "2026-09-05T18:00:00Z",
+      "aggregateType": "task",
+      "aggregateId": "task_20260905_001",
+      "type": "task.created",
+      "taskId": "task_20260905_001",
+      "protocolVersion": "0.1.0",
+      "payload": {
+        "objective": "为 Local Hub 事件总线补充断线补发的契约测试",
+        "workspaceId": "ws_hqagent_hub",
+        "profileId": "profile_hq_default",
+        "source": "desktop"
+      }
+    },
+    {
+      "eventId": "evt_0002",
+      "seq": 31,
+      "occurredAt": "2026-09-05T18:00:04Z",
+      "aggregateType": "task",
+      "aggregateId": "task_20260905_001",
+      "type": "node.resolved",
+      "taskId": "task_20260905_001",
+      "nodeId": "node_01",
+      "roleId": "architect",
+      "agentInstanceId": "agent_claude_default",
+      "adapterId": "claude",
+      "protocolVersion": "0.1.0",
+      "payload": {
+        "roleId": "architect",
+        "resolvedAgentId": "agent_claude_default",
+        "resolvedAgentName": "Claude Code",
+        "resolveSource": "global_profile",
+        "isFallback": false
+      }
+    },
+    {
+      "eventId": "evt_0003",
+      "seq": 40,
+      "occurredAt": "2026-09-05T18:04:30Z",
+      "aggregateType": "task",
+      "aggregateId": "task_20260905_001",
+      "type": "agent.started",
+      "taskId": "task_20260905_001",
+      "nodeId": "node_02",
+      "roleId": "general_implementer",
+      "agentInstanceId": "agent_codex_default",
+      "adapterId": "codex",
+      "protocolVersion": "0.1.0",
+      "payload": {
+        "sessionId": "sess_codex_impl_02",
+        "externalSessionId": "thread_codex_4481_2026",
+        "purpose": "implement",
+        "reusePolicy": "new_session",
+        "worktreePath": "E:/OtherPro/HQAgent-Hub-worktrees/w1-hub",
+        "branch": "work/w1-hub"
+      }
+    },
+    {
+      "eventId": "evt_0004",
+      "seq": 41,
+      "occurredAt": "2026-09-05T18:12:40Z",
+      "aggregateType": "task",
+      "aggregateId": "task_20260905_001",
+      "type": "agent.progress",
+      "taskId": "task_20260905_001",
+      "nodeId": "node_02",
+      "roleId": "general_implementer",
+      "agentInstanceId": "agent_codex_default",
+      "adapterId": "codex",
+      "protocolVersion": "0.1.0",
+      "payload": {
+        "message": "正在补 test_event_bus.py 的断线重连用例",
+        "percent": 55
+      }
+    }
+  ]
+}

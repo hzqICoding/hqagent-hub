@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-event.json",
+  "title": "事件载荷",
+  "description": "HubEvent 是唯一的事件包络（见 envelope.json）。本文件定义 payload 按 type 的具体结构。type → payload 的映射表见 events/event-dictionary.md，那份文档是事件语义的唯一事实源。未识别的事件类型必须降级为 agent.progress 并把原始内容放进 payload.raw，不得丢弃。",
+  "$defs": {
+    "TaskCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective", "workspaceId", "profileId", "source"],
+      "properties": {
+        "objective": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "profileId": { "type": "string" },
+        "source": { "$ref": "common.json#/$defs/TaskSource" },
+        "parentTaskId": { "type": "string" }
+      }
+    },
+    "TaskStatusChangedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "$ref": "common.json#/$defs/TaskStatus" },
+        "to": { "$ref": "common.json#/$defs/TaskStatus" },
+        "reason": { "type": "string" }
+      }
+    },
+    "NodeResolvedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roleId", "resolvedAgentId", "resolveSource", "isFallback"],
+      "properties": {
+        "roleId": { "$ref": "common.json#/$defs/RoleId" },
+        "resolvedAgentId": { "type": "string" },
+        "resolvedAgentName": { "type": "string" },
+        "resolveSource": { "$ref": "common.json#/$defs/ResolveSource" },
+        "isFallback": { "type": "boolean" },
+        "fallbackReason": { "type": "string" },
+        "missingCapabilities": { "type": "array", "items": { "$ref": "common.json#/$defs/CapabilityId" } }
+      }
+    },
+    "AgentStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "purpose", "reusePolicy"],
+      "properties": {
+        "sessionId": { "type": "string" },
+        "externalSessionId": { "type": "string" },
+        "purpose": { "$ref": "session.json#/$defs/SessionPurpose" },
+        "reusePolicy": { "$ref": "session.json#/$defs/SessionReusePolicy" },
+        "worktreePath": { "type": "string" },
+        "branch": { "type": "string" }
+      }
+    },
+    "AgentProgressPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "message": { "type": "string" },
+        "percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "raw": { "type": "object", "description": "未识别的原生事件原文，降级时保留" }
+      }
+    },
+    "AgentToolCallPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolName"],
+      "properties": {
+        "toolName": { "type": "string" },
+        "argumentsExcerpt": { "type": "string" },
+        "resultSummary": { "type": "string" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "boolean" }
+      }
+    },
+    "AgentQuestionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["questionId", "question"],
+      "properties": {
+        "questionId": { "type": "string" },
+        "question": { "type": "string" },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "expiresAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "ApprovalRequiredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalId", "action", "targetResource", "riskLevel"],
+      "properties": {
+        "approvalId": { "type": "string" },
+        "action": { "$ref": "common.json#/$defs/DangerousAction" },
+        "targetResource": { "type": "string" },
+        "riskLevel": { "$ref": "common.json#/$defs/RiskLevel" },
+        "expiresAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "ApprovalResolvedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalId", "decision", "decidedAt"],
+      "properties": {
+        "approvalId": { "type": "string" },
+        "decision": { "$ref": "common.json#/$defs/ApprovalDecision" },
+        "reason": { "type": "string" },
+        "decidedAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "AgentCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result"],
+      "properties": {
+        "result": { "$ref": "agent-result.json#/$defs/AgentResult" }
+      }
+    },
+    "AgentFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["errorCode", "message"],
+      "properties": {
+        "errorCode": { "$ref": "common.json#/$defs/ErrorCode" },
+        "message": { "type": "string" },
+        "blockers": { "type": "array", "items": { "$ref": "agent-result.json#/$defs/Blocker" } }
+      }
+    },
+    "PathViolationPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["violationPaths", "allowedPaths"],
+      "properties": {
+        "violationPaths": { "type": "array", "items": { "type": "string" } },
+        "allowedPaths": { "type": "array", "items": { "type": "string" } },
+        "worktreePath": { "type": "string", "description": "保留现场供人工查看，不自动清理" }
+      }
+    },
+    "AgentDiscoveryCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "ready"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "ready": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "array", "items": { "$ref": "agent-instance.json#/$defs/AgentDiscoveryError" } },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "SystemMaintenancePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active", "reason"],
+      "properties": {
+        "active": { "type": "boolean" },
+        "reason": { "type": "string", "description": "例如 update_install / manual" },
+        "drainProgress": { "$ref": "update-state.json#/$defs/DrainProgress" }
+      }
+    },
+    "UpdateStateChangedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["state"],
+      "properties": {
+        "state": { "$ref": "update-state.json#/$defs/UpdateStateView" },
+        "previousPhase": { "$ref": "common.json#/$defs/UpdatePhase" }
+      }
+    },
+    "UpdateDownloadProgressPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["downloadBytes", "totalBytes", "percent"],
+      "properties": {
+        "downloadBytes": { "type": "integer", "minimum": 0 },
+        "totalBytes": { "type": "integer", "minimum": 0 },
+        "percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "speedBytesPerSecond": { "type": "integer", "minimum": 0 },
+        "etaSeconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "UpdateVerificationCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["passed", "sizeMatched", "sha256Matched", "signatureValid"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "sizeMatched": { "type": "boolean" },
+        "sha256Matched": { "type": "boolean" },
+        "signatureValid": { "type": "boolean" },
+        "keyId": { "type": "string" },
+        "error": { "type": "string", "description": "验签失败没有「忽略并继续」入口" }
+      }
+    },
+    "UpdateHealthCheckPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["passed", "checks"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "checks": { "type": "array", "items": { "$ref": "update-result.json#/$defs/HealthCheckOutcome" } }
+      }
+    },
+    "UpdateRollbackPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["reason"],
+      "properties": {
+        "reason": { "type": "string" },
+        "succeeded": { "type": "boolean" },
+        "restoredDatabaseBackup": { "type": "string" }
+      }
+    },
+    "UpdateCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["result"],
+      "properties": {
+        "result": { "$ref": "update-result.json#/$defs/UpdateResultView" }
+      }
+    }
+  }
+}
