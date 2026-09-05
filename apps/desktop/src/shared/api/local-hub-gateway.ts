@@ -1,5 +1,4 @@
 import type {
-  UiGateway,
   BootstrapView,
   WorkspaceView,
   WorkspaceQuery,
@@ -25,11 +24,13 @@ import type {
   UpdateStateView,
   UpdateActionInput,
   SubscribeEventsInput,
-  EventSubscription,
   HubEvent,
   ApiEnvelope,
   PageResult,
+  WsTicket,
 } from '@hqagent/protocol'
+
+import type { UiGateway, EventSubscription } from './ui-gateway'
 
 interface HubEndpoint {
   baseUrl: string
@@ -59,6 +60,7 @@ export class LocalHubGateway implements UiGateway {
   private ws: WebSocket | null = null
   private lastConfirmedSeq = 0
   private subscribers: Set<(event: HubEvent) => void> = new Set()
+  private isReconnecting = false
 
   private async ensureEndpoint(): Promise<HubEndpoint> {
     if (!this.endpoint) {
@@ -88,6 +90,19 @@ export class LocalHubGateway implements UiGateway {
       throw new Error(envelope.error?.message || 'Unknown Hub Error')
     }
     return envelope.data as T
+  }
+
+  /**
+   * 原生 WebSocket 无法设 Authorization Header。
+   * 必须先用 Bearer 调 POST /api/v1/auth/ws-ticket 换 30 秒一次性 Ticket，再用查询参数握手。
+   * 每次重连必须重新换票，严禁缓存复用。
+   */
+  private async acquireWsTicket(): Promise<string> {
+    const res = await this.fetchApi<WsTicket>('/api/v1/auth/ws-ticket', {
+      method: 'POST',
+      body: JSON.stringify({ purpose: 'events' }),
+    })
+    return res.ticket
   }
 
   async getBootstrap(): Promise<BootstrapView> {
@@ -207,33 +222,61 @@ export class LocalHubGateway implements UiGateway {
     })
   }
 
+  private connectWebSocket(onError?: (err: unknown) => void) {
+    if (this.subscribers.size === 0) return
+
+    Promise.all([this.ensureEndpoint(), this.acquireWsTicket()])
+      .then(([{ baseUrl }, ticket]) => {
+        const wsUrl =
+          baseUrl.replace(/^http/, 'ws') +
+          `/api/v1/events/stream?ticket=${encodeURIComponent(ticket)}&after=${this.lastConfirmedSeq}`
+
+        this.ws = new WebSocket(wsUrl)
+
+        this.ws.onmessage = (msg) => {
+          try {
+            const event = JSON.parse(msg.data) as HubEvent
+            if (event.seq > this.lastConfirmedSeq) {
+              this.lastConfirmedSeq = event.seq
+            }
+            this.subscribers.forEach((fn) => fn(event))
+          } catch (e) {
+            console.error('[LocalHubGateway] WS parse error', e)
+          }
+        }
+
+        this.ws.onerror = (err) => {
+          if (onError) onError(err)
+        }
+
+        this.ws.onclose = () => {
+          this.ws = null
+          // 退避重连并重新换票
+          if (this.subscribers.size > 0 && !this.isReconnecting) {
+            this.isReconnecting = true
+            setTimeout(() => {
+              this.isReconnecting = false
+              this.connectWebSocket(onError)
+            }, 3000)
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('[LocalHubGateway] Failed to obtain WS ticket for connection', err)
+        if (onError) onError(err)
+      })
+  }
+
   subscribeEvents(
-    input: SubscribeEventsInput,
+    _input: SubscribeEventsInput,
     onEvent: (event: HubEvent) => void,
     onError?: (err: unknown) => void
   ): EventSubscription {
     this.subscribers.add(onEvent)
 
-    this.ensureEndpoint().then(({ baseUrl, token }) => {
-      const wsUrl = baseUrl.replace(/^http/, 'ws') + `/api/v1/events/stream?token=${encodeURIComponent(token)}&after=${this.lastConfirmedSeq}`
-      this.ws = new WebSocket(wsUrl)
-
-      this.ws.onmessage = (msg) => {
-        try {
-          const event = JSON.parse(msg.data) as HubEvent
-          if (event.seq > this.lastConfirmedSeq) {
-            this.lastConfirmedSeq = event.seq
-          }
-          this.subscribers.forEach((fn) => fn(event))
-        } catch (e) {
-          console.error('[LocalHubGateway] WS parse error', e)
-        }
-      }
-
-      this.ws.onerror = (err) => {
-        if (onError) onError(err)
-      }
-    })
+    if (!this.ws) {
+      this.connectWebSocket(onError)
+    }
 
     return {
       unsubscribe: () => {

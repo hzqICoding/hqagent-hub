@@ -9,10 +9,15 @@ describe('MockGateway', () => {
     gateway.setDelay(0)
   })
 
-  it('loads bootstrap data from fixtures', async () => {
+  it('loads bootstrap data from contract fixtures', async () => {
     const bootstrap = await gateway.getBootstrap()
     expect(bootstrap.appVersion).toBe('0.1.0')
-    expect(bootstrap.agentsCount).toBeGreaterThan(0)
+    expect(bootstrap.agents.total).toBe(2)
+    expect(bootstrap.agents.ready).toBe(2)
+    expect(bootstrap.features.tasks.available).toBe(true)
+    expect(bootstrap.features.updates.available).toBe(false)
+    expect(bootstrap.features.updates.reason).toContain('Update Agent 未运行')
+    expect((bootstrap as any).hubEndpoint).toBeUndefined()
     expect(bootstrap.currentWorkspace?.name).toBe('HQAgent-Hub')
   })
 
@@ -28,11 +33,15 @@ describe('MockGateway', () => {
     gateway.setScenario('first-run-no-agent')
     const agents = await gateway.listAgents()
     expect(agents.length).toBe(0)
+
+    const bootstrap = await gateway.getBootstrap()
+    expect(bootstrap.agents.total).toBe(0)
+    expect(bootstrap.agents.ready).toBe(0)
   })
 
   it('fetches task details and approval requests', async () => {
     const task = await gateway.getTask('task_20260905_001')
-    expect(task.objective).toContain('HQAgent-Hub')
+    expect(task.objective).toContain('Local Hub')
     expect(task.nodes.length).toBeGreaterThan(0)
 
     const approvals = await gateway.listApprovals()

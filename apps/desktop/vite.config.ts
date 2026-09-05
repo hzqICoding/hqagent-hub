@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
         '@hqagent/protocol': fileURLToPath(new URL('../../packages/protocol/generated/ts', import.meta.url)),
-        '@hqagent/fixtures': fileURLToPath(new URL('../../packages/protocol/fixtures', import.meta.url)),
+        '@hqagent/fixtures': fileURLToPath(new URL('../../packages/protocol/fixtures/contracts', import.meta.url)),
       },
     },
     server: {

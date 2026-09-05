@@ -17,7 +17,7 @@
       "@/*": ["src/*"],
       "@hqagent/protocol": ["../../packages/protocol/generated/ts/index.ts"],
       "@hqagent/protocol/*": ["../../packages/protocol/generated/ts/*"],
-      "@hqagent/fixtures/*": ["../../packages/protocol/fixtures/*"]
+      "@hqagent/fixtures/*": ["../../packages/protocol/fixtures/contracts/*"]
     }
   },
   "include": [

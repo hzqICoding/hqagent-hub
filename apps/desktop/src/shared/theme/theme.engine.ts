@@ -101,7 +101,7 @@ export class ThemeEngine {
     const resolvedMotion =
       this.currentSettings.reduceMotion === 'system'
         ? Boolean(this.motionMediaQuery?.matches)
-        : Boolean(this.currentSettings.reduceMotion)
+        : this.currentSettings.reduceMotion === 'on'
 
     root.setAttribute('data-theme-mode', resolvedMode)
     root.setAttribute('data-theme-source', this.currentSettings.mode)
