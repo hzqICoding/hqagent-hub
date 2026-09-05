@@ -1,0 +1,88 @@
+/* ==================== Status Semantics (Light) ==================== */
+:root[data-theme-mode='light'] {
+  --color-status-success: #15803d;
+  --color-status-success-soft: #dcfce7;
+  --color-status-warning: #b45309;
+  --color-status-warning-soft: #fef3c7;
+  --color-status-danger: #b91c1c;
+  --color-status-danger-soft: #fee2e2;
+  --color-status-info: #0369a1;
+  --color-status-info-soft: #e0f2fe;
+  --color-status-neutral: #64748b;
+  --color-status-neutral-soft: #f1f5f9;
+}
+
+/* ==================== Status Semantics (Dark) ==================== */
+:root[data-theme-mode='dark'] {
+  --color-status-success: #4ade80;
+  --color-status-success-soft: rgb(74 222 128 / 15%);
+  --color-status-warning: #fbbf24;
+  --color-status-warning-soft: rgb(251 191 36 / 15%);
+  --color-status-danger: #f87171;
+  --color-status-danger-soft: rgb(248 113 113 / 15%);
+  --color-status-info: #38bdf8;
+  --color-status-info-soft: rgb(56 189 248 / 15%);
+  --color-status-neutral: #94a3b8;
+  --color-status-neutral-soft: rgb(148 163 184 / 15%);
+}
+
+/* ==================== 8 Built-in Role Colors ==================== */
+:root {
+  /* Orchestrator - Violet */
+  --role-orchestrator: #7c3aed;
+  --role-orchestrator-soft: #ede9fe;
+  
+  /* Architect - Indigo */
+  --role-architect: #4f46e5;
+  --role-architect-soft: #e0e7ff;
+  
+  /* Frontend Implementer - Cyan */
+  --role-frontend: #0891b2;
+  --role-frontend-soft: #cffafe;
+  
+  /* General Implementer - Blue */
+  --role-implementer: #2563eb;
+  --role-implementer-soft: #dbeafe;
+  
+  /* Reviewer - Amber */
+  --role-reviewer: #d97706;
+  --role-reviewer-soft: #fef3c7;
+  
+  /* Tester - Emerald */
+  --role-tester: #059669;
+  --role-tester-soft: #d1fae5;
+  
+  /* Deployer - Orange */
+  --role-deployer: #ea580c;
+  --role-deployer-soft: #ffedd5;
+  
+  /* Integrator - Slate */
+  --role-integrator: #475569;
+  --role-integrator-soft: #f1f5f9;
+}
+
+:root[data-theme-mode='dark'] {
+  --role-orchestrator: #a78bfa;
+  --role-orchestrator-soft: rgb(167 139 250 / 20%);
+  
+  --role-architect: #818cf8;
+  --role-architect-soft: rgb(129 140 248 / 20%);
+  
+  --role-frontend: #22d3ee;
+  --role-frontend-soft: rgb(34 211 238 / 20%);
+  
+  --role-implementer: #60a5fa;
+  --role-implementer-soft: rgb(96 165 250 / 20%);
+  
+  --role-reviewer: #fbbf24;
+  --role-reviewer-soft: rgb(251 191 36 / 20%);
+  
+  --role-tester: #34d399;
+  --role-tester-soft: rgb(52 211 153 / 20%);
+  
+  --role-deployer: #fb923c;
+  --role-deployer-soft: rgb(251 146 60 / 20%);
+  
+  --role-integrator: #94a3b8;
+  --role-integrator-soft: rgb(148 163 184 / 20%);
+}

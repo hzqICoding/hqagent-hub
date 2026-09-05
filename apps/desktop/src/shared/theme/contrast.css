@@ -1,0 +1,20 @@
+:root[data-contrast='high'] {
+  --color-border-subtle: var(--color-border-strong);
+  --color-border-default: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-primary);
+  --color-text-muted: var(--color-text-secondary);
+}
+
+:root[data-theme-mode='light'][data-contrast='high'] {
+  --color-bg-app: #ffffff;
+  --color-bg-panel: #ffffff;
+  --color-border-default: #000000;
+  --color-text-primary: #000000;
+}
+
+:root[data-theme-mode='dark'][data-contrast='high'] {
+  --color-bg-app: #000000;
+  --color-bg-panel: #050505;
+  --color-border-default: #ffffff;
+  --color-text-primary: #ffffff;
+}

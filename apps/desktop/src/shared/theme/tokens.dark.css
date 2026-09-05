@@ -1,0 +1,21 @@
+:root[data-theme-mode='dark'] {
+  --color-bg-app: #0b1120;
+  --color-bg-sidebar: #111827;
+  --color-bg-panel: #172033;
+  --color-bg-elevated: #1d293d;
+  --color-bg-muted: #111a2a;
+  --color-bg-code: #080d18;
+
+  --color-border-subtle: #223047;
+  --color-border-default: #304158;
+  --color-border-strong: #465a73;
+
+  --color-text-primary: #edf3fb;
+  --color-text-secondary: #aeb9ca;
+  --color-text-muted: #8491a6;
+  --color-text-disabled: #637086;
+
+  --color-overlay: rgb(2 6 23 / 72%);
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 28%);
+  --shadow-popover: 0 16px 36px rgb(0 0 0 / 38%);
+}

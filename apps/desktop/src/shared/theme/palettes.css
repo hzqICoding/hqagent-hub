@@ -1,0 +1,79 @@
+/* ==================== 1. HQ Blue (Default) ==================== */
+:root[data-theme-palette='hq-blue'] {
+  --color-action-primary: #2563eb;
+  --color-action-primary-hover: #1d4ed8;
+  --color-action-primary-active: #1e40af;
+  --color-action-primary-text: #ffffff;
+  --color-accent: #2563eb;
+  --color-accent-soft: #dbeafe;
+  --color-focus-ring: #2563eb;
+}
+
+:root[data-theme-mode='dark'][data-theme-palette='hq-blue'] {
+  --color-action-primary: #2563eb;
+  --color-action-primary-hover: #3b82f6;
+  --color-action-primary-active: #1d4ed8;
+  --color-accent: #60a5fa;
+  --color-accent-soft: rgb(37 99 235 / 20%);
+  --color-focus-ring: #60a5fa;
+}
+
+/* ==================== 2. AI Violet ==================== */
+:root[data-theme-palette='ai-violet'] {
+  --color-action-primary: #6d28d9;
+  --color-action-primary-hover: #5b21b6;
+  --color-action-primary-active: #4c1d95;
+  --color-action-primary-text: #ffffff;
+  --color-accent: #7c3aed;
+  --color-accent-soft: #ede9fe;
+  --color-focus-ring: #7c3aed;
+}
+
+:root[data-theme-mode='dark'][data-theme-palette='ai-violet'] {
+  --color-action-primary: #6d28d9;
+  --color-action-primary-hover: #7c3aed;
+  --color-action-primary-active: #5b21b6;
+  --color-accent: #a78bfa;
+  --color-accent-soft: rgb(109 40 217 / 20%);
+  --color-focus-ring: #a78bfa;
+}
+
+/* ==================== 3. Tech Cyan ==================== */
+:root[data-theme-palette='tech-cyan'] {
+  --color-action-primary: #0e7490;
+  --color-action-primary-hover: #155e75;
+  --color-action-primary-active: #164e63;
+  --color-action-primary-text: #ffffff;
+  --color-accent: #0891b2;
+  --color-accent-soft: #cffafe;
+  --color-focus-ring: #0891b2;
+}
+
+:root[data-theme-mode='dark'][data-theme-palette='tech-cyan'] {
+  --color-action-primary: #0e7490;
+  --color-action-primary-hover: #0891b2;
+  --color-action-primary-active: #155e75;
+  --color-accent: #22d3ee;
+  --color-accent-soft: rgb(14 116 144 / 20%);
+  --color-focus-ring: #22d3ee;
+}
+
+/* ==================== 4. Ops Emerald ==================== */
+:root[data-theme-palette='ops-emerald'] {
+  --color-action-primary: #047857;
+  --color-action-primary-hover: #065f46;
+  --color-action-primary-active: #064e3b;
+  --color-action-primary-text: #ffffff;
+  --color-accent: #059669;
+  --color-accent-soft: #d1fae5;
+  --color-focus-ring: #059669;
+}
+
+:root[data-theme-mode='dark'][data-theme-palette='ops-emerald'] {
+  --color-action-primary: #047857;
+  --color-action-primary-hover: #059669;
+  --color-action-primary-active: #065f46;
+  --color-accent: #34d399;
+  --color-accent-soft: rgb(4 120 87 / 20%);
+  --color-focus-ring: #34d399;
+}

@@ -1,0 +1,37 @@
+@import './tokens.base.css';
+@import './tokens.light.css';
+@import './tokens.dark.css';
+@import './palettes.css';
+@import './semantics.css';
+@import './density.css';
+@import './contrast.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base scrollbar & selection styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-text-primary);
+}
+
+/* Typography scale helper */
+html {
+  font-size: calc(14px * var(--font-scale, 1));
+}

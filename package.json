@@ -1,0 +1,12 @@
+{
+  "name": "hqagent-hub-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @hqagent/desktop dev",
+    "dev:mock": "pnpm --filter @hqagent/desktop dev:mock",
+    "build": "pnpm --filter @hqagent/desktop build",
+    "test": "pnpm --filter @hqagent/desktop test",
+    "typecheck": "pnpm --filter @hqagent/desktop typecheck"
+  }
+}

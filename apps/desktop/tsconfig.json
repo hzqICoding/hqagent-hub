@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "jsx": "preserve",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@hqagent/protocol": ["../../packages/protocol/generated/ts/index.ts"],
+      "@hqagent/protocol/*": ["../../packages/protocol/generated/ts/*"],
+      "@hqagent/fixtures/*": ["../../packages/protocol/fixtures/*"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.d.ts",
+    "src/**/*.tsx",
+    "src/**/*.vue",
+    "../../packages/protocol/generated/ts/**/*.ts"
+  ],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

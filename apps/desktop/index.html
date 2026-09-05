@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HQAgent-Hub</title>
+    <!-- Zero-Flicker Boot Script: Execute synchronously before any styles/bundles -->
+    <script>
+      ;(function () {
+        try {
+          var STORAGE_KEY = 'hqagent_appearance'
+          var cached = localStorage.getItem(STORAGE_KEY)
+          var settings = cached
+            ? JSON.parse(cached)
+            : {
+                mode: 'system',
+                palette: 'hq-blue',
+                density: 'comfortable',
+                contrast: 'normal',
+                reduceMotion: 'system',
+                fontScale: 1,
+              }
+
+          var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+          var resolvedMode = settings.mode === 'system' ? (systemDark ? 'dark' : 'light') : settings.mode
+          var systemReduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          var resolvedMotion =
+            settings.reduceMotion === 'system' ? systemReduceMotion : Boolean(settings.reduceMotion)
+
+          var root = document.documentElement
+          root.setAttribute('data-theme-mode', resolvedMode)
+          root.setAttribute('data-theme-source', settings.mode)
+          root.setAttribute('data-theme-palette', settings.palette || 'hq-blue')
+          root.setAttribute('data-density', settings.density || 'comfortable')
+          root.setAttribute('data-contrast', settings.contrast || 'normal')
+          root.setAttribute('data-reduce-motion', String(resolvedMotion))
+          if (settings.fontScale && settings.fontScale !== 1) {
+            root.style.setProperty('--font-scale', String(settings.fontScale))
+          }
+        } catch (e) {
+          console.error('[ThemeBoot] Error applying boot theme', e)
+        }
+      })()
+    </script>
+  </head>
+  <body class="bg-app text-content-primary antialiased font-sans m-0 p-0 overflow-hidden select-none">
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

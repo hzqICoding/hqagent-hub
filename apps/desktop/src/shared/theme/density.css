@@ -1,0 +1,17 @@
+:root[data-density='comfortable'] {
+  --density-row-height: 40px;
+  --density-item-py: 8px;
+  --density-item-px: 12px;
+  --density-table-cell-py: 10px;
+  --density-gap: 16px;
+  --density-input-height: 38px;
+}
+
+:root[data-density='compact'] {
+  --density-row-height: 30px;
+  --density-item-py: 4px;
+  --density-item-px: 8px;
+  --density-table-cell-py: 6px;
+  --density-gap: 10px;
+  --density-input-height: 30px;
+}
