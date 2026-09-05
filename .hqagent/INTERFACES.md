@@ -9,14 +9,14 @@
 | --- | --- |
 | 协议版本 | `0.1.0` |
 | 冻结日期 | 2026-09-05 |
-| Git SHA | `f56c891b336dd42aa112bc019bfcdc56e1ebc38d` |
+| Git SHA | `a3e1047874e8e900e36f4377bc07cea550b524af` |
 | 解锁 | W1 Local Hub 内核、W4 桌面前端、W5 桌面壳、W6 更新模块抽取，四条线可并行开工 |
 
 ### 冻结内容
 
 | 类别 | 位置 |
 | --- | --- |
-| 领域模型 Schema（15 份，114 个类型） | `packages/protocol/schema/` |
+| 领域模型 Schema（15 份，118 个类型） | `packages/protocol/schema/` |
 | 角色 / 能力 / 错误码注册表 | `packages/protocol/registry/` |
 | Local Hub 公共 API（Vue 唯一网络契约） | `packages/protocol/openapi/local-hub.v1.yaml` |
 | Update Agent 内部 API | `packages/protocol/openapi/update-agent.internal.v1.yaml` |
@@ -79,3 +79,4 @@ Adapter Port 方法签名、Session 生命周期细则、能力探测规则、�
 | 日期 | 协议版本 | 变更 | SHA |
 | --- | --- | --- | --- |
 | 2026-09-05 | 0.1.0 | FZ-1 初次冻结 | `f56c891` |
+| 2026-09-05 | 0.1.0 | FZ-1 重新裁切：补齐 W1/W5 规格要求的 EVENT_CURSOR_EXPIRED、FEATURE_UNAVAILABLE、`instanceId`、`FeatureAvailability`、`waitPids`/`backupCompleted`、Session `status`。**在任何工作包开工之前完成**，因此不构成破坏性变更 | `a3e1047` |
