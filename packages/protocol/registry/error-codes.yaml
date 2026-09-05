@@ -48,6 +48,18 @@ errors:
     http: 503
     retryable: true
     description: Hub 处于维护/排空状态，拒绝创建新任务；前端据此显示全局 Gate
+  - code: EVENT_CURSOR_EXPIRED
+    http: 410
+    retryable: false
+    description: >-
+      客户端携带的 seq 已超出事件保留窗口，无法补发。必须重新 bootstrap 拉取
+      Snapshot 后再订阅，不允许静默丢事件继续跑
+  - code: FEATURE_UNAVAILABLE
+    http: 503
+    retryable: true
+    description: >-
+      依赖的工作包尚未就绪（例如 Adapter 未接入、Update Agent 未运行）。
+      必须返回明确原因，不允许用空成功伪装成功能可用
 
   # ---- Agent 与角色 ----
   - code: AGENT_NOT_FOUND

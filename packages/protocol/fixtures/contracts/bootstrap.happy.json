@@ -38,6 +38,15 @@
     "currentVersion": "0.1.0",
     "unacknowledgedResult": false
   },
+  "features": {
+    "agents": { "available": true },
+    "teamProfiles": { "available": true },
+    "tasks": { "available": true },
+    "sessions": { "available": true },
+    "approvals": { "available": true },
+    "updates": { "available": false, "reason": "Update Agent 未运行" }
+  },
+  "instanceId": "hub-01JQ7Z8K2M4N6P8R",
   "lastEventSeq": 42,
   "hubStartedAt": "2026-09-05T17:58:12Z"
 }

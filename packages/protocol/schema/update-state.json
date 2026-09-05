@@ -4,12 +4,35 @@
   "title": "升级状态",
   "description": "状态机严格对应 OTA升级架构设计.md §6。Update Agent 是本机升级状态的唯一事实源；Local Hub 通过内部 API 代理，Vue 只看 Local Hub（裁决 D1）。",
   "$defs": {
+    "ProcessDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-go": true,
+      "required": ["component", "pid"],
+      "properties": {
+        "component": {
+          "type": "string",
+          "enum": ["desktop", "core", "update-agent", "agent-worker"]
+        },
+        "pid": { "type": "integer" },
+        "name": { "type": "string" }
+      }
+    },
     "DrainProgress": {
       "type": "object",
       "additionalProperties": false,
       "x-go": true,
       "required": ["step", "activeTasksRemaining", "percent"],
       "properties": {
+        "waitPids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ProcessDescriptor" },
+          "description": "step=ready 时必须给全。Updater 要等这些进程全部退出才能替换文件——漏一个就会出现文件占用导致安装失败"
+        },
+        "backupCompleted": {
+          "type": "boolean",
+          "description": "WAL checkpoint 与 SQLite Backup 是否已完成。false 时不得进入安装"
+        },
         "step": { "$ref": "common.json#/$defs/DrainStep" },
         "activeTasksRemaining": { "type": "integer", "minimum": 0 },
         "percent": { "type": "integer", "minimum": 0, "maximum": 100 },

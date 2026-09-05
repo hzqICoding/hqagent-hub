@@ -35,6 +35,32 @@
         }
       }
     },
+    "FeatureState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "reason": {
+          "type": "string",
+          "description": "available=false 时必填。例如「Update Agent 未运行」「Adapter 尚未接入（W2 未完成）」"
+        }
+      }
+    },
+    "FeatureAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agents", "teamProfiles", "tasks", "sessions", "approvals", "updates"],
+      "properties": {
+        "agents": { "$ref": "#/$defs/FeatureState" },
+        "teamProfiles": { "$ref": "#/$defs/FeatureState" },
+        "tasks": { "$ref": "#/$defs/FeatureState" },
+        "sessions": { "$ref": "#/$defs/FeatureState" },
+        "approvals": { "$ref": "#/$defs/FeatureState" },
+        "updates": { "$ref": "#/$defs/FeatureState" }
+      },
+      "description": "分阶段交付期间，未就绪的工作包必须在这里明确报 unavailable 并给原因。前端据此禁用入口并显示说明，不允许用空列表伪装成「功能可用但没数据」——那会让集成期的问题晚好几天才暴露"
+    },
     "BootstrapView": {
       "type": "object",
       "additionalProperties": false,
@@ -49,6 +75,7 @@
         "activeTasksCount",
         "pendingApprovalsCount",
         "update",
+        "features",
         "lastEventSeq",
         "hubStartedAt"
       ],
@@ -68,6 +95,11 @@
         "activeTasksCount": { "type": "integer", "minimum": 0 },
         "pendingApprovalsCount": { "type": "integer", "minimum": 0 },
         "update": { "$ref": "#/$defs/BootstrapUpdateSummary" },
+        "features": { "$ref": "#/$defs/FeatureAvailability" },
+        "instanceId": {
+          "type": "string",
+          "description": "本次 Hub 启动的实例 ID。前端发现它变化即知道 Hub 重启过，应重新 bootstrap 而不是继续用旧 seq"
+        },
         "lastEventSeq": {
           "type": "integer",
           "minimum": 0,

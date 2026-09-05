@@ -14,10 +14,16 @@
       "enum": ["new_session", "resume_explicit", "continue_lineage"],
       "description": "new_session=默认，每个任务新开；resume_explicit=用户/调用方显式指定 resumeSessionId；continue_lineage=同一任务谱系内的后续节点继续用父会话"
     },
+    "SessionStatus": {
+      "type": "string",
+      "enum": ["active", "idle", "closed", "invalid"],
+      "description": "active=正在被某个节点使用；idle=可被显式恢复；closed=已正常结束；invalid=外部会话失效，只能新建"
+    },
     "SessionView": {
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "status",
         "id",
         "workspaceId",
         "workspaceName",
@@ -33,6 +39,7 @@
       ],
       "properties": {
         "id": { "type": "string", "description": "Hub 本地会话 ID，不是外部会话 ID" },
+        "status": { "$ref": "#/$defs/SessionStatus" },
         "workspaceId": { "type": "string" },
         "workspaceName": { "type": "string" },
         "roleId": { "$ref": "common.json#/$defs/RoleId" },

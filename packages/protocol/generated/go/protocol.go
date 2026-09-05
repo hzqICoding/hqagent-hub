@@ -22,6 +22,8 @@ const (
 	ErrorCodeProtocolVersionMismatch ErrorCode = "PROTOCOL_VERSION_MISMATCH"
 	ErrorCodeHubNotReady ErrorCode = "HUB_NOT_READY"
 	ErrorCodeHubMaintenance ErrorCode = "HUB_MAINTENANCE"
+	ErrorCodeEventCursorExpired ErrorCode = "EVENT_CURSOR_EXPIRED"
+	ErrorCodeFeatureUnavailable ErrorCode = "FEATURE_UNAVAILABLE"
 	ErrorCodeAgentNotFound ErrorCode = "AGENT_NOT_FOUND"
 	ErrorCodeAgentOffline ErrorCode = "AGENT_OFFLINE"
 	ErrorCodeAgentNotLoggedIn ErrorCode = "AGENT_NOT_LOGGED_IN"
@@ -104,7 +106,15 @@ const (
 	DrainStepReady DrainStep = "ready"
 )
 
+type ProcessDescriptor struct {
+	Component string `json:"component"`
+	Pid int64 `json:"pid"`
+	Name *string `json:"name,omitempty"`
+}
+
 type DrainProgress struct {
+	WaitPids []ProcessDescriptor `json:"waitPids,omitempty"`
+	BackupCompleted *bool `json:"backupCompleted,omitempty"`
 	Step DrainStep `json:"step"`
 	ActiveTasksRemaining int64 `json:"activeTasksRemaining"`
 	Percent int64 `json:"percent"`
@@ -147,6 +157,7 @@ type HealthView struct {
 
 type HubRuntimeDescriptor struct {
 	SchemaVersion int64 `json:"schemaVersion"`
+	InstanceId string `json:"instanceId"`
 	Port int64 `json:"port"`
 	Token string `json:"token"`
 	Pid int64 `json:"pid"`
@@ -199,6 +210,7 @@ type UpdateActionInput struct {
 
 type UpdateAgentRuntimeDescriptor struct {
 	SchemaVersion int64 `json:"schemaVersion"`
+	InstanceId string `json:"instanceId"`
 	Port int64 `json:"port"`
 	Token string `json:"token"`
 	Pid int64 `json:"pid"`

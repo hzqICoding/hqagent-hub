@@ -72,6 +72,8 @@ class ErrorCode(StrEnum):
     PROTOCOL_VERSION_MISMATCH = "PROTOCOL_VERSION_MISMATCH"
     HUB_NOT_READY = "HUB_NOT_READY"
     HUB_MAINTENANCE = "HUB_MAINTENANCE"
+    EVENT_CURSOR_EXPIRED = "EVENT_CURSOR_EXPIRED"
+    FEATURE_UNAVAILABLE = "FEATURE_UNAVAILABLE"
     AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
     AGENT_OFFLINE = "AGENT_OFFLINE"
     AGENT_NOT_LOGGED_IN = "AGENT_NOT_LOGGED_IN"
@@ -424,6 +426,22 @@ class BootstrapUpdateSummary(_Base):
     unacknowledged_result: bool | None = Field(default=None, alias="unacknowledgedResult")
 
 
+class FeatureState(_Base):
+    available: bool = Field(alias="available")
+    reason: str | None = Field(default=None, alias="reason")
+
+
+class FeatureAvailability(_Base):
+    """分阶段交付期间，未就绪的工作包必须在这里明确报 unavailable 并给原因。前端据此禁用入口并显示说明，不允许用空列表伪装成「功能可用但没数据」——那会让集成期的问题晚好几天才暴露"""
+
+    agents: FeatureState = Field(alias="agents")
+    team_profiles: FeatureState = Field(alias="teamProfiles")
+    tasks: FeatureState = Field(alias="tasks")
+    sessions: FeatureState = Field(alias="sessions")
+    approvals: FeatureState = Field(alias="approvals")
+    updates: FeatureState = Field(alias="updates")
+
+
 class Vcs(StrEnum):
     GIT = "git"
     NONE = "none"
@@ -454,6 +472,8 @@ class BootstrapView(_Base):
     active_tasks_count: int = Field(alias="activeTasksCount")
     pending_approvals_count: int = Field(alias="pendingApprovalsCount")
     update: BootstrapUpdateSummary = Field(alias="update")
+    features: FeatureAvailability = Field(alias="features")
+    instance_id: str | None = Field(default=None, alias="instanceId")
     last_event_seq: int = Field(alias="lastEventSeq")
     hub_started_at: Timestamp = Field(alias="hubStartedAt")
 
@@ -492,7 +512,15 @@ class DrainStep(StrEnum):
     READY = "ready"
 
 
+class ProcessDescriptor(_Base):
+    component: Literal["desktop", "core", "update-agent", "agent-worker"] = Field(alias="component")
+    pid: int = Field(alias="pid")
+    name: str | None = Field(default=None, alias="name")
+
+
 class DrainProgress(_Base):
+    wait_pids: list[ProcessDescriptor] | None = Field(default=None, alias="waitPids")
+    backup_completed: bool | None = Field(default=None, alias="backupCompleted")
     step: DrainStep = Field(alias="step")
     active_tasks_remaining: int = Field(alias="activeTasksRemaining")
     percent: int = Field(alias="percent")
@@ -560,6 +588,7 @@ class HealthView(_Base):
 
 class HubRuntimeDescriptor(_Base):
     schema_version: Literal[1] = Field(alias="schemaVersion")
+    instance_id: str = Field(alias="instanceId")
     port: int = Field(alias="port")
     token: str = Field(alias="token")
     pid: int = Field(alias="pid")
@@ -750,8 +779,16 @@ class SessionQuery(_Base):
     page_size: int | None = Field(default=None, alias="pageSize")
 
 
+class SessionStatus(StrEnum):
+    ACTIVE = "active"
+    IDLE = "idle"
+    CLOSED = "closed"
+    INVALID = "invalid"
+
+
 class SessionView(_Base):
     id: str = Field(alias="id")
+    status: SessionStatus = Field(alias="status")
     workspace_id: str = Field(alias="workspaceId")
     workspace_name: str = Field(alias="workspaceName")
     role_id: RoleId = Field(alias="roleId")
@@ -915,6 +952,7 @@ class UpdateAgentRuntimeDescriptor(_Base):
     """对应 update-agent.json。Update Agent 不向 Vue 暴露第二个 Base URL（裁决 D1）"""
 
     schema_version: Literal[1] = Field(alias="schemaVersion")
+    instance_id: str = Field(alias="instanceId")
     port: int = Field(alias="port")
     token: str = Field(alias="token")
     pid: int = Field(alias="pid")
@@ -1046,6 +1084,8 @@ ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "PROTOCOL_VERSION_MISMATCH": {"http": 426, "retryable": False},
     "HUB_NOT_READY": {"http": 503, "retryable": True},
     "HUB_MAINTENANCE": {"http": 503, "retryable": True},
+    "EVENT_CURSOR_EXPIRED": {"http": 410, "retryable": False},
+    "FEATURE_UNAVAILABLE": {"http": 503, "retryable": True},
     "AGENT_NOT_FOUND": {"http": 404, "retryable": False},
     "AGENT_OFFLINE": {"http": 409, "retryable": True},
     "AGENT_NOT_LOGGED_IN": {"http": 409, "retryable": False},

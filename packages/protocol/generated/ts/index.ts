@@ -64,6 +64,8 @@ export type ErrorCode =
   | 'PROTOCOL_VERSION_MISMATCH'
   | 'HUB_NOT_READY'
   | 'HUB_MAINTENANCE'
+  | 'EVENT_CURSOR_EXPIRED'
+  | 'FEATURE_UNAVAILABLE'
   | 'AGENT_NOT_FOUND'
   | 'AGENT_OFFLINE'
   | 'AGENT_NOT_LOGGED_IN'
@@ -440,6 +442,22 @@ export interface BootstrapUpdateSummary {
   unacknowledgedResult?: boolean
 }
 
+export interface FeatureState {
+  available: boolean
+  /** available=false 时必填。例如「Update Agent 未运行」「Adapter 尚未接入（W2 未完成）」 */
+  reason?: string
+}
+
+/** 分阶段交付期间，未就绪的工作包必须在这里明确报 unavailable 并给原因。前端据此禁用入口并显示说明，不允许用空列表伪装成「功能可用但没数据」——那会让集成期的问题晚好几天才暴露 */
+export interface FeatureAvailability {
+  agents: FeatureState
+  teamProfiles: FeatureState
+  tasks: FeatureState
+  sessions: FeatureState
+  approvals: FeatureState
+  updates: FeatureState
+}
+
 /** 工作区版本控制类型。非 git 工作区不支持 worktree 隔离 */
 export type Vcs =
   | 'git'
@@ -474,6 +492,9 @@ export interface BootstrapView {
   activeTasksCount: number
   pendingApprovalsCount: number
   update: BootstrapUpdateSummary
+  features: FeatureAvailability
+  /** 本次 Hub 启动的实例 ID。前端发现它变化即知道 Hub 重启过，应重新 bootstrap 而不是继续用旧 seq */
+  instanceId?: string
   /** 前端据此建立事件流起点，避免首屏与事件流之间丢事件 */
   lastEventSeq: number
   hubStartedAt: Timestamp
@@ -518,7 +539,17 @@ export type DrainStep =
   | 'backup_data'
   | 'ready'
 
+export interface ProcessDescriptor {
+  component: 'desktop' | 'core' | 'update-agent' | 'agent-worker'
+  pid: number
+  name?: string
+}
+
 export interface DrainProgress {
+  /** step=ready 时必须给全。Updater 要等这些进程全部退出才能替换文件——漏一个就会出现文件占用导致安装失败 */
+  waitPids?: ProcessDescriptor[]
+  /** WAL checkpoint 与 SQLite Backup 是否已完成。false 时不得进入安装 */
+  backupCompleted?: boolean
   step: DrainStep
   activeTasksRemaining: number
   percent: number
@@ -596,6 +627,8 @@ export interface HealthView {
 
 export interface HubRuntimeDescriptor {
   schemaVersion: 1
+  /** 每次启动新生成。桌面壳据此识别并忽略陈旧 Descriptor——进程被强杀时文件可能残留，只看 pid 会连到已经不存在或被复用的进程上 */
+  instanceId: string
   /** 随机高位端口，每次启动重新选取，不固定 */
   port: number
   /** 32 字节随机数的 base64url 编码，每次启动轮换。绝不允许出现在任何 HTTP 响应体、事件 payload 或日志里 */
@@ -805,9 +838,17 @@ export interface SessionQuery {
   pageSize?: number
 }
 
+/** active=正在被某个节点使用；idle=可被显式恢复；closed=已正常结束；invalid=外部会话失效，只能新建 */
+export type SessionStatus =
+  | 'active'
+  | 'idle'
+  | 'closed'
+  | 'invalid'
+
 export interface SessionView {
   /** Hub 本地会话 ID，不是外部会话 ID */
   id: string
+  status: SessionStatus
   workspaceId: string
   workspaceName: string
   roleId: RoleId
@@ -994,6 +1035,8 @@ export interface UpdateActionInput {
 /** 对应 update-agent.json。Update Agent 不向 Vue 暴露第二个 Base URL（裁决 D1） */
 export interface UpdateAgentRuntimeDescriptor {
   schemaVersion: 1
+  /** 每次启动新生成，用于识别陈旧 Descriptor */
+  instanceId: string
   port: number
   /** Update Agent 的内部 Token，只由 Local Hub 与 W5 桌面壳读取。Vue 永远拿不到，也永远不直连 Update Agent */
   token: string
@@ -1155,6 +1198,8 @@ export const ERROR_CATALOG: Record<ErrorCode, { http: number; retryable: boolean
   PROTOCOL_VERSION_MISMATCH: { http: 426, retryable: false },
   HUB_NOT_READY: { http: 503, retryable: true },
   HUB_MAINTENANCE: { http: 503, retryable: true },
+  EVENT_CURSOR_EXPIRED: { http: 410, retryable: false },
+  FEATURE_UNAVAILABLE: { http: 503, retryable: true },
   AGENT_NOT_FOUND: { http: 404, retryable: false },
   AGENT_OFFLINE: { http: 409, retryable: true },
   AGENT_NOT_LOGGED_IN: { http: 409, retryable: false },

@@ -10,6 +10,7 @@
       "x-go": true,
       "required": [
         "schemaVersion",
+        "instanceId",
         "port",
         "token",
         "pid",
@@ -20,6 +21,11 @@
       ],
       "properties": {
         "schemaVersion": { "type": "integer", "const": 1 },
+        "instanceId": {
+          "type": "string",
+          "minLength": 8,
+          "description": "每次启动新生成。桌面壳据此识别并忽略陈旧 Descriptor——进程被强杀时文件可能残留，只看 pid 会连到已经不存在或被复用的进程上"
+        },
         "port": {
           "type": "integer",
           "minimum": 1024,
@@ -49,9 +55,10 @@
       "type": "object",
       "additionalProperties": false,
       "x-go": true,
-      "required": ["schemaVersion", "port", "token", "pid", "baseUrl", "agentVersion", "startedAt"],
+      "required": ["schemaVersion", "instanceId", "port", "token", "pid", "baseUrl", "agentVersion", "startedAt"],
       "properties": {
         "schemaVersion": { "type": "integer", "const": 1 },
+        "instanceId": { "type": "string", "minLength": 8, "description": "每次启动新生成，用于识别陈旧 Descriptor" },
         "port": { "type": "integer", "minimum": 1024, "maximum": 65535 },
         "token": {
           "type": "string",
