@@ -59,4 +59,59 @@ describe('MockGateway', () => {
     gateway.setScenario('hub-disconnected')
     await expect(gateway.getBootstrap()).rejects.toThrow('ERR_HUB_DISCONNECTED')
   })
+
+  it('Trap 6: concurrent subscriptions in the same tick deduplicate into a single connection', async () => {
+    const received1: any[] = []
+    const received2: any[] = []
+
+    // Simulate AppLayout and TaskDetailPage subscribing in the same tick
+    const sub1 = gateway.subscribeEvents({ afterSeq: 0 }, (e) => received1.push(e))
+    const sub2 = gateway.subscribeEvents({ afterSeq: 0 }, (e) => received2.push(e))
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect(gateway.ticketRequestCount).toBe(1)
+    expect(gateway.connectionCount).toBe(1)
+    expect(gateway.isConnected).toBe(true)
+
+    // Emit single event
+    gateway.emitMockEvent({ type: 'agent.progress', payload: { message: 'test' } })
+
+    // Each subscriber gets exactly 1 event (no duplicates)
+    expect(received1.length).toBe(1)
+    expect(received2.length).toBe(1)
+
+    sub1.unsubscribe()
+    sub2.unsubscribe()
+    expect(gateway.isConnected).toBe(false)
+  })
+
+  it('replays historical events when afterSeq is provided', async () => {
+    // Emit some events first
+    gateway.emitMockEvent({ type: 'agent.started', payload: {} })
+    gateway.emitMockEvent({ type: 'agent.progress', payload: { message: 'step 1' } })
+
+    const replayed: any[] = []
+    const sub = gateway.subscribeEvents({ afterSeq: 0 }, (e) => replayed.push(e))
+
+    expect(replayed.length).toBe(2)
+    sub.unsubscribe()
+  })
+
+  it('Trap 5: handles 10,000 events throughput smoothly', () => {
+    const events = gateway.generate10kEvents('task_20260905_001')
+    expect(events.length).toBe(10000)
+    expect(events[0].seq).toBeLessThan(events[9999].seq)
+  })
+
+  it('simulates close with code 4410 resetting sequence cursor', () => {
+    let closedCode = 0
+    gateway.onSimulatedClose((code) => {
+      closedCode = code
+    })
+
+    gateway.simulateClose(4410)
+    expect(closedCode).toBe(4410)
+    expect(gateway.isConnected).toBe(false)
+  })
 })

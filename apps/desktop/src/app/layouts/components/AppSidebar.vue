@@ -21,6 +21,7 @@ import {
   Lock,
   GitBranch,
   Radio,
+  ShieldAlert,
 } from 'lucide-vue-next'
 import { HqBadge, HqTooltip } from '@/shared/ui'
 
@@ -67,6 +68,15 @@ const navItems = computed<NavItem[]>(() => [
     icon: CheckSquare,
     featureKey: 'tasks',
     badge: () => appStore.bootstrap?.activeTasksCount || null,
+    badgeVariant: 'warning',
+  },
+  {
+    id: 'approvals',
+    label: '安全审批',
+    path: '/approvals',
+    icon: ShieldAlert,
+    featureKey: 'approvals',
+    badge: () => appStore.bootstrap?.pendingApprovalsCount || null,
     badgeVariant: 'warning',
   },
   {

@@ -39,6 +39,12 @@ export class MockGateway implements UiGateway {
   private shouldFail = false
   private eventListeners: Set<(event: HubEvent) => void> = new Set()
   private currentSeq = 100
+  public connectionCount = 0
+  public ticketRequestCount = 0
+  public isConnected = false
+  private connectPromise: Promise<void> | null = null
+  private historicalEvents: HubEvent[] = []
+  private closeListeners: Set<(code: number) => void> = new Set()
 
   constructor(initialScenario: MockScenario = 'happy-path') {
     this.currentScenario = initialScenario
@@ -320,21 +326,89 @@ export class MockGateway implements UiGateway {
       aggregateId: 'task_20260905_001',
       type: 'agent.progress',
       payload: {},
-      protocolVersion: '0.1.0',
+      protocolVersion: '0.2.0',
       ...event,
     }
+    this.historicalEvents.push(fullEvent)
     this.eventListeners.forEach((fn) => fn(fullEvent))
+    return fullEvent
+  }
+
+  public simulateClose(code = 1000) {
+    this.isConnected = false
+    if (code === 4410) {
+      this.currentSeq = 0
+    }
+    this.closeListeners.forEach((fn) => fn(code))
+  }
+
+  public onSimulatedClose(fn: (code: number) => void) {
+    this.closeListeners.add(fn)
+    return () => this.closeListeners.delete(fn)
+  }
+
+  public generate10kEvents(taskId = 'task_20260905_001'): HubEvent[] {
+    const list: HubEvent[] = []
+    const baseSeq = this.currentSeq
+    for (let i = 1; i <= 10000; i++) {
+      const evt: HubEvent = {
+        eventId: `evt_10k_${i}`,
+        seq: baseSeq + i,
+        occurredAt: new Date(Date.now() - (10000 - i) * 100).toISOString(),
+        aggregateType: 'task',
+        aggregateId: taskId,
+        taskId,
+        nodeId: i % 2 === 0 ? 'node_01' : 'node_02',
+        roleId: i % 2 === 0 ? 'general_implementer' : 'reviewer',
+        type: i % 5 === 0 ? 'agent.tool_call' : 'agent.progress',
+        payload: {
+          message: `正在执行第 ${i} 步自动化测试与代码分析...`,
+          percent: Math.min(100, Math.floor((i / 10000) * 100)),
+        },
+        protocolVersion: '0.2.0',
+      }
+      list.push(evt)
+    }
+    this.currentSeq += 10000
+    this.historicalEvents.push(...list)
+    return list
   }
 
   subscribeEvents(
-    _input: SubscribeEventsInput,
+    input: SubscribeEventsInput,
     onEvent: (event: HubEvent) => void,
-    _onError?: (err: unknown) => void
+    onError?: (err: unknown) => void
   ): EventSubscription {
     this.eventListeners.add(onEvent)
+
+    // Single-flight connection establishment simulation (Trap 6)
+    if (!this.isConnected && !this.connectPromise) {
+      this.connectPromise = (async () => {
+        this.ticketRequestCount++
+        await new Promise((r) => setTimeout(r, 10))
+        this.connectionCount++
+        this.isConnected = true
+        this.connectPromise = null
+      })().catch((err) => {
+        this.connectPromise = null
+        if (onError) onError(err)
+      })
+    }
+
+    // Replay historical events if afterSeq specified
+    if (input.afterSeq !== undefined && input.afterSeq >= 0) {
+      const replay = this.historicalEvents.filter((e) => e.seq > (input.afterSeq ?? 0))
+      for (const evt of replay) {
+        onEvent(evt)
+      }
+    }
+
     return {
       unsubscribe: () => {
         this.eventListeners.delete(onEvent)
+        if (this.eventListeners.size === 0) {
+          this.isConnected = false
+        }
       },
     }
   }

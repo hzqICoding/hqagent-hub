@@ -43,14 +43,26 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'tasks',
         name: 'tasks',
-        component: () => import('@/pages/common/PlaceholderPage.vue'),
-        meta: { title: '任务中心', milestone: 'F3', featureKey: 'tasks' },
+        component: () => import('@/pages/tasks/TasksPage.vue'),
+        meta: { title: '任务中心', featureKey: 'tasks' },
+      },
+      {
+        path: 'tasks/:taskId',
+        name: 'task-detail',
+        component: () => import('@/pages/tasks/TaskDetailPage.vue'),
+        meta: { title: '任务详情', featureKey: 'tasks' },
       },
       {
         path: 'sessions',
         name: 'sessions',
-        component: () => import('@/pages/common/PlaceholderPage.vue'),
-        meta: { title: '会话历史', milestone: 'F3', featureKey: 'sessions' },
+        component: () => import('@/pages/sessions/SessionsPage.vue'),
+        meta: { title: '会话历史', featureKey: 'sessions' },
+      },
+      {
+        path: 'approvals',
+        name: 'approvals',
+        component: () => import('@/pages/approvals/ApprovalsPage.vue'),
+        meta: { title: '安全审批中心', featureKey: 'approvals' },
       },
       {
         path: 'templates',

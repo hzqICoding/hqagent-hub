@@ -59,4 +59,49 @@ describe('useAppStore', () => {
     expect(store.activeScenario).toBe('first-run-no-agent')
     expect(store.bootstrap?.agents.total).toBe(0)
   })
+
+  it('F2-R1: sets hubGate to maintenance and blocks task creation when bootstrap maintenance is true', async () => {
+    const store = useAppStore()
+    await store.setScenario('update-draining')
+
+    expect(store.bootstrap?.maintenance).toBe(true)
+    expect(store.hubGate).toBe('maintenance')
+    expect(store.isTaskCreationAllowed).toBe(false)
+  })
+
+  it('F2-R1: handles HubApiError with HUB_MAINTENANCE', async () => {
+    const { getUiGateway, HubApiError } = await import('@/shared/api')
+    const gateway = getUiGateway()
+    const orig = gateway.getBootstrap
+    gateway.getBootstrap = async () => {
+      throw new HubApiError('Hub under maintenance', 'HUB_MAINTENANCE', 503)
+    }
+
+    const store = useAppStore()
+    await store.fetchBootstrap()
+
+    expect(store.hubGate).toBe('maintenance')
+    expect(store.hubGateReason).toBe('Hub under maintenance')
+    expect(store.isTaskCreationAllowed).toBe(false)
+
+    gateway.getBootstrap = orig
+  })
+
+  it('F2-R1: handles HubApiError with FEATURE_UNAVAILABLE', async () => {
+    const { getUiGateway, HubApiError } = await import('@/shared/api')
+    const gateway = getUiGateway()
+    const orig = gateway.getBootstrap
+    gateway.getBootstrap = async () => {
+      throw new HubApiError('Tasks module not available', 'FEATURE_UNAVAILABLE', 503)
+    }
+
+    const store = useAppStore()
+    await store.fetchBootstrap()
+
+    expect(store.hubGate).toBe('feature_unavailable')
+    expect(store.hubGateReason).toBe('Tasks module not available')
+    expect(store.isTaskCreationAllowed).toBe(false)
+
+    gateway.getBootstrap = orig
+  })
 })

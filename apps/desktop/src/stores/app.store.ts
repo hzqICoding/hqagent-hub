@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { BootstrapView, FeatureAvailability, FeatureState } from '@hqagent/protocol'
-import { getUiGateway, mockGateway, MockGateway } from '@/shared/api'
+import { getUiGateway, mockGateway, MockGateway, HubApiError } from '@/shared/api'
 import type { MockScenarioId } from '@/mocks/scenarios'
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'mock'
+export type HubGateType = 'maintenance' | 'feature_unavailable' | null
 
 export interface LogEntry {
   id: string
@@ -34,6 +35,8 @@ export const useAppStore = defineStore('app', () => {
   const isLoading = ref<boolean>(false)
   const error = ref<string | null>(null)
   const activeScenario = ref<MockScenarioId>('happy-path')
+  const hubGate = ref<HubGateType>(null)
+  const hubGateReason = ref<string | null>(null)
 
   // UI States
   const sidebarCollapsed = ref<boolean>(false)
@@ -51,6 +54,9 @@ export const useAppStore = defineStore('app', () => {
   // Computed
   const isOffline = computed(() => connectionStatus.value === 'disconnected')
   const isMock = computed(() => connectionStatus.value === 'mock')
+  const isTaskCreationAllowed = computed(
+    () => hubGate.value === null && isFeatureAvailable('tasks')
+  )
 
   const features = computed<FeatureAvailability | undefined>(() => {
     return bootstrap.value?.features
@@ -128,6 +134,17 @@ export const useAppStore = defineStore('app', () => {
       const data = await gateway.getBootstrap()
       bootstrap.value = data
 
+      if (data.maintenance) {
+        hubGate.value = 'maintenance'
+        hubGateReason.value = 'Local Hub 处于维护模式，暂不可创建新任务'
+      } else if (data.features?.tasks?.available === false) {
+        hubGate.value = 'feature_unavailable'
+        hubGateReason.value = data.features?.tasks?.reason || '任务系统暂未就绪'
+      } else {
+        hubGate.value = null
+        hubGateReason.value = null
+      }
+
       if (connectionStatus.value !== 'mock') {
         connectionStatus.value = 'connected'
       }
@@ -137,8 +154,17 @@ export const useAppStore = defineStore('app', () => {
         source: 'AppStore',
         message: `引导就绪: Hub v${data.appVersion}, ${data.agents.ready}/${data.agents.total} Agent 就绪`,
       })
-    } catch (err: any) {
-      const msg = err?.message || '获取系统引导数据失败'
+    } catch (err: unknown) {
+      if (err instanceof HubApiError) {
+        if (err.code === 'HUB_MAINTENANCE') {
+          hubGate.value = 'maintenance'
+          hubGateReason.value = err.message || 'Local Hub 处于系统维护模式'
+        } else if (err.code === 'FEATURE_UNAVAILABLE') {
+          hubGate.value = 'feature_unavailable'
+          hubGateReason.value = err.message || '功能暂不可用'
+        }
+      }
+      const msg = err instanceof Error ? err.message : '获取系统引导数据失败'
       error.value = msg
       connectionStatus.value = 'disconnected'
       addLog({
@@ -173,6 +199,8 @@ export const useAppStore = defineStore('app', () => {
     isLoading,
     error,
     activeScenario,
+    hubGate,
+    hubGateReason,
     sidebarCollapsed,
     isLogDrawerOpen,
     logFilterLevel,
@@ -183,6 +211,7 @@ export const useAppStore = defineStore('app', () => {
     // Computed
     isOffline,
     isMock,
+    isTaskCreationAllowed,
     features,
     filteredLogs,
 

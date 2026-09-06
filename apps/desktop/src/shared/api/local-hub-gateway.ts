@@ -137,8 +137,7 @@ export class LocalHubGateway implements UiGateway {
     }
 
     if (!res.ok) {
-      const defaultCode: ErrorCode =
-        res.status === 401 ? 'UNAUTHORIZED' : res.status === 403 ? 'ORIGIN_NOT_ALLOWED' : 'INTERNAL'
+      const defaultCode: ErrorCode = res.status === 401 ? 'UNAUTHORIZED' : 'INTERNAL'
       throw new HubApiError(
         `HTTP Error ${res.status}: ${res.statusText}`,
         defaultCode,
@@ -341,9 +340,23 @@ export class LocalHubGateway implements UiGateway {
           if (onError) onError(err)
         }
 
-        ws.onclose = () => {
+        ws.onclose = (event: CloseEvent) => {
           if (this.ws === ws) {
             this.ws = null
+          }
+          // F2-R2: Check close code 4410 (EVENT_CURSOR_EXPIRED)
+          if (event && (event.code === 4410 || event.code === 4010)) {
+            this.lastConfirmedSeq = 0
+            this.getBootstrap()
+              .catch((err) => {
+                console.error('[LocalHubGateway] Failed to refetch bootstrap snapshot on cursor expired', err)
+              })
+              .finally(() => {
+                if (this.subscribers.size > 0) {
+                  this.scheduleReconnect(onError)
+                }
+              })
+            return
           }
           if (this.subscribers.size > 0) {
             this.scheduleReconnect(onError)

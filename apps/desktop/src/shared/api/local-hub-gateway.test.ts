@@ -218,4 +218,105 @@ describe('LocalHubGateway', () => {
     sub.unsubscribe()
     vi.useRealTimers()
   })
+
+  it('F2-R4: non-JSON non-2xx HTTP response falls back to INTERNAL code with status preserved', async () => {
+    const gateway = new LocalHubGateway(mockEndpoint)
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: 'Forbidden',
+      json: async () => {
+        throw new Error('Not JSON')
+      },
+    })
+    globalThis.fetch = mockFetch as unknown as typeof fetch
+
+    await expect(gateway.listAgents()).rejects.toThrow(HubApiError)
+    try {
+      await gateway.listAgents()
+    } catch (e) {
+      expect(e).toBeInstanceOf(HubApiError)
+      const hubErr = e as HubApiError
+      expect(hubErr.code).toBe('INTERNAL')
+      expect(hubErr.status).toBe(403)
+    }
+  })
+
+  it('F2-R2: close code 4410 (cursor expired) resets lastConfirmedSeq and triggers getBootstrap', async () => {
+    const gateway = new LocalHubGateway(mockEndpoint)
+    let bootstrapCalled = 0
+    gateway.getBootstrap = vi.fn().mockImplementation(async () => {
+      bootstrapCalled++
+      return {} as any
+    })
+
+    const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/api/v1/auth/ws-ticket')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: { ticket: 'tkt_mock_4410', expiresAt: '2026-09-06T12:00:00Z' },
+            requestId: 'req_ws_4410',
+            protocolVersion: '0.2.0',
+          }),
+        }
+      }
+      return { ok: true, json: async () => ({ success: true, data: {} }) }
+    })
+    globalThis.fetch = mockFetch as unknown as typeof fetch
+
+    let closeHandler: ((event: { code: number }) => void) | null = null
+    class MockWebSocket {
+      readyState = 1
+      onopen: (() => void) | null = null
+      onmessage: ((msg: { data: string }) => void) | null = null
+      onerror: ((err: unknown) => void) | null = null
+      onclose: ((event: { code: number }) => void) | null = null
+
+      constructor(_url: string) {
+        setTimeout(() => {
+          if (this.onopen) this.onopen()
+          if (this.onmessage) {
+            this.onmessage({
+              data: JSON.stringify({
+                eventId: 'evt_99',
+                seq: 99,
+                occurredAt: '2026-09-06T12:00:00Z',
+                aggregateType: 'task',
+                aggregateId: 't1',
+                type: 'agent.progress',
+                payload: {},
+                protocolVersion: '0.2.0',
+              }),
+            })
+          }
+        }, 0)
+        closeHandler = (evt) => {
+          if (this.onclose) this.onclose(evt as any)
+        }
+      }
+
+      close() {
+        this.readyState = 3
+        if (this.onclose) this.onclose({ code: 1000 } as any)
+      }
+    }
+    globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket
+
+    const sub = gateway.subscribeEvents({ afterSeq: 0 }, vi.fn())
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect((gateway as any).lastConfirmedSeq).toBe(99)
+
+    // Simulate close with 4410 (cursor expired)
+    closeHandler!({ code: 4410 })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect((gateway as any).lastConfirmedSeq).toBe(0)
+    expect(bootstrapCalled).toBe(1)
+
+    sub.unsubscribe()
+  })
 })
