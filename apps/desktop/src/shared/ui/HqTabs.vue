@@ -16,7 +16,7 @@ interface Props {
   size?: 'sm' | 'md'
 }
 
-const props = withDefaults(defineProps<Props>(), {
+const _props = withDefaults(defineProps<Props>(), {
   variant: 'line',
   size: 'md',
 })

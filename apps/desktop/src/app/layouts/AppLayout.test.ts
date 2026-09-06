@@ -68,7 +68,7 @@ describe('AppLayout', () => {
     const appStore = useAppStore()
     await appStore.setScenario('happy-path')
 
-    const wrapper = mount(AppLayout, {
+    const _wrapper = mount(AppLayout, {
       global: {
         plugins: [dummyRouter],
       },

@@ -6,7 +6,7 @@ interface Props {
   width?: string
 }
 
-const props = withDefaults(defineProps<Props>(), {
+const _props = withDefaults(defineProps<Props>(), {
   placement: 'bottom-start',
   width: 'auto',
 })

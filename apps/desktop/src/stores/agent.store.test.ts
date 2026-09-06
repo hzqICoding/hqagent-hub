@@ -34,7 +34,6 @@ describe('useAgentStore', () => {
 
     const first = agentStore.agents[0]
     expect(first).toBeDefined()
-    const originalStatus = first.status
 
     agentStore.toggleAgent(first.id, false)
     expect(first.status).toBe('disabled')

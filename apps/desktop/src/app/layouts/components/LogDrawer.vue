@@ -6,9 +6,6 @@ import {
   Trash2,
   X,
   ArrowDown,
-  AlertCircle,
-  AlertTriangle,
-  Info,
 } from 'lucide-vue-next'
 import { HqBadge } from '@/shared/ui'
 

@@ -16,7 +16,7 @@ interface Props {
   placement?: 'left' | 'right'
 }
 
-const props = withDefaults(defineProps<Props>(), {
+const _props = withDefaults(defineProps<Props>(), {
   placement: 'right',
 })
 

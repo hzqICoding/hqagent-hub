@@ -2,20 +2,16 @@
 import { computed } from 'vue'
 import { useAppStore } from '@/stores/app.store'
 import { useAgentStore } from '@/stores/agent.store'
-import type { AgentView, CapabilityItem } from '@hqagent/protocol'
+import type { AgentView } from '@hqagent/protocol'
 import {
   X,
   Bot,
   CheckCircle2,
   AlertTriangle,
-  FileCode,
   Layers,
-  Terminal,
-  Cpu,
   Info,
-  ShieldAlert,
 } from 'lucide-vue-next'
-import { HqBadge, HqButton, HqSwitch } from '@/shared/ui'
+import { HqBadge, HqButton } from '@/shared/ui'
 
 const appStore = useAppStore()
 const agentStore = useAgentStore()

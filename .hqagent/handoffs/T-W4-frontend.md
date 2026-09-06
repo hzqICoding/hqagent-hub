@@ -1,127 +1,151 @@
-# T-W4 桌面前端 F1 交付报告
+# T-W4 桌面前端 F2 交付报告
 
 | 项 | 值 |
 | --- | --- |
 | taskId | `T-W4-frontend` |
-| milestone | `F1: 应用骨架、首次引导与 Agent 管理` |
+| milestone | `F2: 工作区、团队配置与任务模板 (Workspaces, Teams, Templates)` |
 | branch | `work/w4-frontend` |
 | worktree | `E:\OtherPro\HQAgent-Hub-worktrees\w4-frontend` |
-| date | `2026-09-05` |
+| date | `2026-09-06` |
 
 ---
 
-## 1. 协议迁移验收 (INTERFACES.md 10 项清单)
+## 1. F1 必修项闭环 (R1–R4, R6, R7 详报)
 
-按照 `.hqagent/INTERFACES.md` 与 `T-W4-frontend.md` 完成 10 项协议迁移，已全部验证通过：
+按照 `.hqagent/reviews/T-W4-frontend.F1.md` 审核结论，已全量修复并在 `src/shared/api/local-hub-gateway.test.ts` 补齐单元测试：
 
-1. **协议 DTO 导入**：协议层 118 个生成类型全部由 `@hqagent/protocol` 导入，前端保留 ViewModel 与 `UiGateway` 接口定义，不重新声明同名 DTO。
-2. **安全凭据隔离**：移除 `BootstrapView.hubEndpoint.token`，Local Hub 凭证通过 Tauri `invoke('get_hub_endpoint')` 动态获取，页面完全脱敏。
-3. **统计字段同步**：`BootstrapView` 接入 `agents: { total, ready, issues }`。
-4. **主题动效枚举**：`ReduceMotion` 适配 `'system' | 'on' | 'off'`。
-5. **OTA 状态机**：`UpdatePhase` 全量适配 18 态状态机；`canInstallNow` 接入。
-6. **OTA 动作输入**：`UpdateActionInput` 适配 `check/download/cancel/install/defer/acknowledge`。
-7. **审批事件名称**：事件统一使用 `approval.required`。
-8. **任务节点状态**：`TaskNodeView.status` 采用 `NodeStatus`（包含 `resolving`/`skipped`）。
-9. **契约数据源**：协议契约文件严格引用 `packages/protocol/fixtures/contracts/*.json`。
-10. **UI 场景组合**：UI 组合场景迁移至 `apps/desktop/src/mocks/scenarios/`，覆盖 6 套场景。
+1. **R1 消除硬编码回退 Token 与固定端口** (`local-hub-gateway.ts`):
+   - 彻底移除 `tok_dev_fallback_hub_token` 字面量与硬编码 `49210` 端口。
+   - `getHubEndpointFromTauri()` 在 Tauri 环境调用 `invoke('get_hub_endpoint')` 失败时直接 `throw`，确保 W5 桌面壳的四重描述符校验拒绝能被前端如实捕获；浏览器 Dev 模式下仅读取 `import.meta.env.VITE_HUB_BASE_URL` 与 `VITE_HUB_TOKEN`，未配置时显式抛错。
+2. **R4 协议错误码解析与 `HubApiError` 封装** (`local-hub-gateway.ts`, `shared/api/index.ts`):
+   - 实现 `export class HubApiError extends Error`，携带 `code: ErrorCode`、`status: number`、`detail?: Record<string, unknown>`、`retryable: boolean`、`requestId?: string`。
+   - `fetchApi` 无论 HTTP 状态码是否为 2xx，优先解析 JSON 信封 `ApiEnvelope<T>`，若发现 `envelope.error` 则提取业务错误码抛出 `HubApiError`（适配 `ORIGIN_NOT_ALLOWED`、`HUB_MAINTENANCE`、`EVENT_CURSOR_EXPIRED` 等 30 个协议错误码）。
+3. **R2 WebSocket 竞态单飞 (Single-flight)** (`local-hub-gateway.ts`):
+   - 引入 `connectPromise: Promise<void> | null`。同一 tick 内多次调用 `subscribeEvents` 时共享同一个在建连接 Promise，杜绝重复换票与孤儿 WebSocket 泄漏。
+4. **R3 换票失败退避重连** (`local-hub-gateway.ts`):
+   - 换票 `acquireWsTicket()` 失败在 catch 块捕获，统一引导至 `scheduleReconnect()`，避免 Hub 启动较慢时出现永久性断连。
+5. **R6 游标过期恢复路径** (`local-hub-gateway.ts`):
+   - 捕获 `EVENT_CURSOR_EXPIRED` 错误码时，重置 `this.lastConfirmedSeq = 0`，确保下次重连能够重新获取全量 Snapshot。
+6. **R7 指数退避重连** (`local-hub-gateway.ts`):
+   - 替换原固定 3 秒重试，改为指数退避 `Math.min(1000 * Math.pow(1.5, attempts), 15000)`，并在退订或成功建立连接时清理定时器与计数。
+7. **R5 补齐 ESLint 配置与 `lint` Script** (`apps/desktop/package.json`, `eslint.config.js`):
+   - 配置 ESLint Flat Config，增加 `"lint": "eslint src"`。全代码库 51 处未用变量告警全部清零，达到 0 errors, 0 warnings。
 
 ---
 
-## 2. F1 核心交付清单
+## 2. F2 核心功能交付清单
 
-### 2.1 Pinia 领域 Store 层 (`apps/desktop/src/stores/`)
-- `app.store.ts`:
-  - 管理 Local Hub 启动引导 (`BootstrapView`) 与连接状态 (`connected` / `connecting` / `disconnected` / `mock`)。
-  - Feature Availability 门禁判定：`isFeatureAvailable(featureKey)` 与 `getFeatureReason(featureKey)`。
-  - 系统日志流管理：支持等级过滤 (`ALL/INFO/WARN/ERROR`)、自动滚底、清空。
-  - 侧边检视器 (`ContextInspector`) 状态及激活数据挂载。
-  - 开发调试场景切换器 (`setScenario`)，支持在界面中即时切换 6 种场景测试四态。
-- `agent.store.ts`:
-  - Agent 列表 (`AgentView[]`)、探测结果 (`AgentDiscoveryResult`)、健康状态计数（就绪/繁忙/异常/已停用）。
-  - 模糊搜索（按名称、适配器、能力）与按状态过滤。
-  - `refreshDiscovery()`、`toggleAgent()` 启停控制与检视。
+### 2.1 领域 Store 层扩展 (`apps/desktop/src/stores/`)
 - `workspace.store.ts`:
-  - 工作区列表与当前激活工作区 (`WorkspaceView`)、分支与干净状态显示。
+  - 管理本地工作区列表 (`WorkspaceView[]`)、当前激活工作区 (`currentWorkspace`)、最近打开工作区排序 (`recentWorkspaces`)。
+  - 工作区操作：`fetchWorkspaces()`、`switchWorkspace()`、`addWorkspace()`、`removeWorkspace()`。
+  - 共享记忆状态管理：`initMemoryDir(id)` 支持一键初始化 `.hqagent/` 目录。
+  - 项目级 Team Profile 覆盖：`setWorkspaceProfile(workspaceId, profileId)`。
+- `team.store.ts`:
+  - 团队配置方案管理 (`TeamProfileView[]`)、当前激活方案、全局/工作区作用域分组。
+  - 方案操作：`fetchProfiles()`、`saveProfile()`、`duplicateProfile()`、`deleteProfile()`、`setDefaultProfile()`。
+  - 导入导出：`exportProfile()` 序列化 JSON、`importProfile()` 结构校验与导入。
+  - 实时路由解析：`resolveProfile()` 调用 `gateway.resolveTeamProfile()`，解析首选/备用链并检视能力缺口。
 
-### 2.2 三栏响应式桌面骨架 (`apps/desktop/src/app/layouts/`)
-- `AppLayout.vue`: 骨架根容器，整合导航、工具栏、主工作区、检视器、日志抽屉与状态栏。
-- `AppSidebar.vue`:
-  - 220px 宽度，支持图标栏与全宽度折叠切换。
-  - 当前工作区与分支摘要卡。
-  - 导航菜单项严格检查 `features` 门禁，对未开放模块展示锁定图标与禁用说明 Tooltip。
-  - Mock 场景切换选择器（支持 Happy Path、首次运行、任务执行中、等待审批、OTA 下载、Hub 断开）。
-- `AppHeader.vue`: 页面标题、维护模式告警指示、快捷刷新、主题明暗快速切换。
-- `AppStatusBar.vue`:
-  - Local Hub 连接指示（绿/黄/红状态灯与版本）。
-  - Cloud 连接状态、OTA 更新提示（有更新时高亮动效）。
-  - 当前 Git 工作区分支。
-  - 底部日志抽屉开关（带错误日志计数徽标）与检视器开关。
-- `LogDrawer.vue`: 底部折叠抽屉，支持按等级过滤、自动滚底、导出清空。
-- `ContextInspector.vue`: 320px 侧边检视器，详细呈现 Agent 配置、诊断建议、硬能力清单、任务与审批快照。
+### 2.2 业务页面交付（全部覆盖 loading / empty / error / offline 四态）
+- `WorkspacesPage.vue` (`/workspaces`):
+  - 顶部统计 Bento 卡片：受管工作区总数、Git 支持率、.hqagent 共享记忆就绪率。
+  - 工作区卡片流：展示绝对路径（带一键复制）、Git 分支名、`isClean` 干净状态徽标、`.hqagent` 记忆目录就绪状态。
+  - 快速操作：切换为当前工作区、未就绪时「一键初始化记忆」、从列表移除工作区。
+  - 「添加目录」模态弹窗 (`HqDialog` + `HqInput`)。
+- `TeamsPage.vue` (`/teams`):
+  - **三栏式 Studio 架构**（施工方案 §11.4 标准）：
+    - **左栏（团队方案列表）**：展示全局/工作区配置、当前激活态、默认配置徽标、新建与导入按钮。
+    - **中栏（角色分配与备用链 Studio）**：
+      - 六大系统角色 (`orchestrator`, `architect`, `frontend_implementer`, `general_implementer`, `reviewer`, `tester`)。
+      - 首选 Agent (Primary) 下拉选择器（来自探测就绪列表）。
+      - 备用链 (Fallback Chain) 动态标签列表，支持添加/移除备用实例。
+      - 方案快捷操作：设为默认、克隆副本、导出 JSON、删除。
+    - **右栏（实时路由解析与缺口预览）**：
+      - 严格落实四层解耦，**`resolveSource` 六级来源完整呈现且视觉特征高度区分**：
+        1. `task_override`: 单次任务指定 (Indigo)
+        2. `workspace_profile`: 项目配置绑定 (Cyan)
+        3. `global_profile`: 全局团队配置 (Purple)
+        4. `capability_match`: 动态能力匹配 (Teal)
+        5. `fallback`: **备用链故障降级** (Amber 警告高亮 + 醒目环形徽标 + 显示 `fallbackReason` 降级原因说明)
+        6. `manual`: **等待人工决策** (Rose 警示动画高亮 + 提请人工干预)
+      - 能力缺口清单 (`gaps`)：展示缺口角色、缺少硬能力与具体原因。
+- `TemplatesPage.vue` (`/templates`):
+  - 开箱模板库（标准全栈协作团队、代码审查与质量把关、极速原型与敏捷构建、架构重构与平滑升级）。
+  - 分类过滤（全部/开发协作/代码审查/极速原型）与文本模糊搜索。
+  - 每套模板展示所需角色清单、所需硬能力、以及本机当前兼容 Agent 数量。
+  - 「应用此模板」预览弹窗：预估角色映射并一键生成新团队配置并跳转到配置页。
 
-### 2.3 业务页面交付（覆盖 loading / empty / error / offline 四态）
-- `OnboardingPage.vue` (`/onboarding`):
-  - 六步向导：本地优先理念 -> Local Hub 连通自检 -> Agent 探测扫描 -> 工作区与团队 Profile -> 主题外观定制 -> 诊断总览与完成。
-- `OverviewPage.vue` (`/overview`):
-  - 工作区与 Git 分支横幅。
-  - Bento 主任务卡片（展示任务目标、多阶段工作流状态、等待审批高危动作告警与直达按钮）。
-  - 4 项关键指标看板（进行中任务、待审批数、Agent 就绪率、Hub 健康状态）。
-  - Agent 状态群缩略卡片（点击可在 Inspector 展开）。
-  - 最近活跃会话记录。
-- `AgentsPage.vue` (`/agents`):
-  - 顶部状态统计筛选、名称与能力搜索。
-  - Agent 卡片网格：状态徽标、适配器、版本、角色绑定、硬能力标签、启用开关。
-  - "诊断" 按钮与系统健康检查弹窗 (`HqDialog`)，展示可执行文件、版本兼容性、登录凭证有效性与处理建议。
-- `PlaceholderPage.vue`:
-  - 为后续里程碑（F2 工作区/团队、F3 任务/会话、F4 设置/更新）提供标准占位与功能门禁提示。
+### 2.3 路由接入 (`apps/desktop/src/app/router/index.ts`)
+- 将 `/workspaces`、`/teams`、`/templates` 正式从 `PlaceholderPage` 切换为上述业务页面组件。
 
 ---
 
-## 3. 验收命令与执行结果
+## 3. 验收命令与实测执行结果
 
-### 3.1 类型检查 (`pnpm --filter @hqagent/desktop typecheck`)
+### 3.1 代码规范检查 (`pnpm --filter @hqagent/desktop lint`)
+```powershell
+$ eslint src
+# 退出代码: 0（0 errors, 0 warnings）
+```
+
+### 3.2 严格类型检查 (`pnpm --filter @hqagent/desktop typecheck`)
 ```powershell
 $ vue-tsc --noEmit
 # 退出代码: 0
 ```
 
-### 3.2 单元测试 (`pnpm --filter @hqagent/desktop test`)
+### 3.3 单元测试全家桶 (`pnpm --filter @hqagent/desktop test`)
 ```powershell
 $ vitest run
 
  ✓ src/shared/theme/theme.engine.test.ts (5 tests)
+ ✓ src/shared/api/local-hub-gateway.test.ts (6 tests)
  ✓ src/shared/api/mock-gateway.test.ts (6 tests)
  ✓ src/shared/ui/HqButton.test.ts (4 tests)
+ ✓ src/stores/workspace.store.test.ts (3 tests)
  ✓ src/stores/app.store.test.ts (5 tests)
  ✓ src/stores/agent.store.test.ts (3 tests)
  ✓ src/pages/overview/OverviewPage.test.ts (2 tests)
+ ✓ src/pages/workspaces/WorkspacesPage.test.ts (3 tests)
  ✓ src/pages/agents/AgentsPage.test.ts (3 tests)
+ ✓ src/pages/teams/TeamsPage.test.ts (3 tests)
+ ✓ src/pages/templates/TemplatesPage.test.ts (3 tests)
  ✓ src/pages/onboarding/OnboardingPage.test.ts (2 tests)
  ✓ src/app/layouts/AppLayout.test.ts (3 tests)
+ ✓ src/stores/team.store.test.ts (5 tests)
 
- Test Files  9 passed (9)
-      Tests  33 passed (33)
+ Test Files  15 passed (15)
+      Tests  56 passed (56)
 # 退出代码: 0
 ```
 
-### 3.3 生产构建打包 (`pnpm --filter @hqagent/desktop build`)
+### 3.4 生产打包构建 (`pnpm --filter @hqagent/desktop build`)
 ```powershell
 $ vue-tsc --noEmit && vite build
 vite v5.4.21 building for production...
 transforming...
-✓ 1669 modules transformed.
+✓ 1676 modules transformed.
 rendering chunks...
-dist/index.html                                                             2.41 kB │ gzip:  1.00 kB
-dist/assets/index-CjIqY1RF.css                                             39.10 kB │ gzip:  7.68 kB
-dist/assets/PlaceholderPage-CRqR0bg_.js                                     1.74 kB │ gzip:  1.10 kB
-dist/assets/OfflineState.vue_vue_type_script_setup_true_lang-Rpwc-HsB.js    2.44 kB │ gzip:  1.19 kB
-dist/assets/LoadingState.vue_vue_type_script_setup_true_lang-CeSvf-jT.js    2.60 kB │ gzip:  1.16 kB
-dist/assets/OverviewPage-BLunHrx_.js                                       12.11 kB │ gzip:  3.96 kB
-dist/assets/OnboardingPage-IMozTavy.js                                     12.86 kB │ gzip:  4.91 kB
-dist/assets/AgentsPage-CxB-yDHk.js                                         13.51 kB │ gzip:  4.75 kB
-dist/assets/vendor-CM5OrxAm.js                                            126.88 kB │ gzip: 46.04 kB
-dist/assets/index-B1E8VEQO.js                                             132.12 kB │ gzip: 41.78 kB
-✓ built in 5.07s
+computing gzip size...
+dist/index.html                                                             2.50 kB │ gzip:  1.02 kB
+dist/assets/index-DboPdze2.css                                             45.17 kB │ gzip:  8.46 kB
+dist/assets/echarts-l0sNRNKZ.js                                             0.00 kB │ gzip:  0.02 kB
+dist/assets/PlaceholderPage-DLyJ5i4L.js                                     1.74 kB │ gzip:  1.09 kB
+dist/assets/HqDialog.vue_vue_type_script_setup_true_lang-D-jzXRhs.js        2.16 kB │ gzip:  1.05 kB
+dist/assets/HqInput.vue_vue_type_script_setup_true_lang-CVQccAqC.js         2.32 kB │ gzip:  1.04 kB
+dist/assets/OfflineState.vue_vue_type_script_setup_true_lang-D4G_SYzi.js    2.44 kB │ gzip:  1.19 kB
+dist/assets/LoadingState.vue_vue_type_script_setup_true_lang-DGK7Wdy7.js    2.60 kB │ gzip:  1.16 kB
+dist/assets/team.store-BZrZ1LC8.js                                          3.73 kB │ gzip:  1.88 kB
+dist/assets/WorkspacesPage-y2DCnOXT.js                                      8.72 kB │ gzip:  3.48 kB
+dist/assets/TemplatesPage-Bg2HUWG0.js                                       9.53 kB │ gzip:  4.24 kB
+dist/assets/AgentsPage-CeYXWOig.js                                         11.53 kB │ gzip:  4.03 kB
+dist/assets/OverviewPage-CA5GVN1g.js                                       12.11 kB │ gzip:  3.96 kB
+dist/assets/OnboardingPage-wE91Z3k4.js                                     12.85 kB │ gzip:  4.89 kB
+dist/assets/TeamsPage-lCUIQ1G3.js                                          15.88 kB │ gzip:  5.91 kB
+dist/assets/vendor-h-qv6l4d.js                                            130.37 kB │ gzip: 46.75 kB
+dist/assets/index-Ce9bvaOR.js                                             133.90 kB │ gzip: 42.39 kB
+✓ built in 5.18s
 # 退出代码: 0
 ```
 
@@ -129,10 +153,11 @@ dist/assets/index-B1E8VEQO.js                                             132.12
 
 ## 4. 交付约束遵循情况自查
 
-- [x] 独占工作区开发：在 `E:\OtherPro\HQAgent-Hub-worktrees\w4-frontend` 独立 worktree 进行。
-- [x] 路径所有权：代码仅修改 `apps/desktop/**`（不含 `src-tauri/**`）及本 handoff 文档，未修改任何其他模块。
-- [x] 协议生成物只读：无手写 DTO，未修改 `packages/protocol/**`。
-- [x] 四态覆盖：Onboarding、Overview、Agents 均已实现 loading、empty、error、offline 四种状态。
-- [x] 设计规范：无硬编码 Hex 颜色，全部使用 Tailwind CSS Token 与 Hq 组件库。
-- [x] 无厂商绑定：角色完全基于能力与 Profile 配置，无 Claude/Codex 角色硬绑定。
-- [x] 提交规范：不包含任何 AI 署名字样。
+- [x] **工作目录隔离**：在 `E:\OtherPro\HQAgent-Hub-worktrees\w4-frontend` 独占 worktree 开发。
+- [x] **路径所有权**：代码修改严格限定在 `apps/desktop/**`（排除 `src-tauri/**`）及本 handoff 文件。仓库根共享文件未作任何改动。
+- [x] **无硬编码 Token/端口**：`LocalHubGateway` 移除所有默认 fallback 字面量，`invoke` 错误直接抛出；浏览器测试仅依赖显式 `VITE_HUB_*` 环境变量。
+- [x] **协议错误码完整支持**：抛出 `HubApiError` 附带 `code`、`detail`、`retryable` 与 `requestId`。
+- [x] **四态覆盖**：`/workspaces`、`/teams`、`/templates` 全部完整接入 `LoadingState`、`HqEmptyState`、`HqErrorState`、`OfflineState`。
+- [x] **`resolveSource` 六级清晰可见**：尤其 `fallback`（故障降级+琥珀告警+原因说明）与 `manual`（人工介入+红调强调），与正常来源肉眼可辨。
+- [x] **无 AI 署名**：commit 信息仅包含改动内容，严禁任何 AI 署名与 Co-Authored-By 字样。
+- [x] **待 Integrator 合并事项**：`apps/desktop/package.json` 新增了 ESLint 依赖项，合并进主干时由 Integrator 同步根 `pnpm-lock.yaml`。

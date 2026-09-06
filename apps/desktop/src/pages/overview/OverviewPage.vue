@@ -8,8 +8,6 @@ import { getUiGateway } from '@/shared/api'
 import type { TaskSummaryView, SessionView } from '@hqagent/protocol'
 import {
   CheckSquare,
-  AlertCircle,
-  Users,
   GitBranch,
   Bot,
   Play,
@@ -19,17 +17,12 @@ import {
   CheckCircle2,
   RefreshCw,
   Layers,
-  Sparkles,
-  WifiOff,
 } from 'lucide-vue-next'
 import {
   HqButton,
   HqBadge,
-  HqProgress,
-  HqEmptyState,
   HqErrorState,
   OfflineState,
-  LoadingState,
 } from '@/shared/ui'
 
 const router = useRouter()

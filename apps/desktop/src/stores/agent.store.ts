@@ -21,6 +21,7 @@ export const useAgentStore = defineStore('agent', () => {
 
   // Computed Counts
   const totalCount = computed(() => agents.value.length)
+  const readyAgents = computed(() => agents.value.filter((a) => a.status === 'ready'))
   const readyCount = computed(() => agents.value.filter((a) => a.status === 'ready').length)
   const busyCount = computed(() => agents.value.filter((a) => a.status === 'busy').length)
   const disabledCount = computed(() => agents.value.filter((a) => a.status === 'disabled').length)
@@ -156,6 +157,7 @@ export const useAgentStore = defineStore('agent', () => {
 
     // Computed
     totalCount,
+    readyAgents,
     readyCount,
     busyCount,
     disabledCount,

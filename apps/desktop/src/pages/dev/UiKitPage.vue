@@ -27,10 +27,8 @@ import {
   HqTree,
   HqSplitPane,
   HqProgress,
-  HqSkeleton,
   HqEmptyState,
   HqErrorState,
-  HqCodeBlock,
   HqMarkdown,
   LoadingState,
   OfflineState,
@@ -46,11 +44,8 @@ import {
   Square,
   AlertCircle,
   FileCode,
-  Layers,
-  Terminal,
   RefreshCw,
   FolderGit2,
-  Cpu,
   CheckCircle2,
 } from 'lucide-vue-next'
 

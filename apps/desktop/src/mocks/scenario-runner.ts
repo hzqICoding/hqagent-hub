@@ -1,6 +1,5 @@
 import { ref } from 'vue'
 import { mockGateway, type MockScenario } from '../shared/api/mock-gateway'
-import type { HubEvent } from '@hqagent/protocol'
 
 export interface ScenarioMeta {
   id: MockScenario

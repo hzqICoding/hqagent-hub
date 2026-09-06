@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app.store'
 import { useAgentStore } from '@/stores/agent.store'
 import type { AgentView, AgentStatus } from '@hqagent/protocol'
@@ -10,20 +10,12 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
-  Clock,
-  Terminal,
-  Cpu,
-  Power,
   Stethoscope,
   ChevronRight,
-  ShieldCheck,
-  ShieldAlert,
 } from 'lucide-vue-next'
 import {
   HqButton,
   HqBadge,
-  HqInput,
-  HqSwitch,
   HqDialog,
   LoadingState,
   HqEmptyState,
@@ -34,7 +26,6 @@ import {
 const appStore = useAppStore()
 const agentStore = useAgentStore()
 
-const isDiagnosing = ref<boolean>(false)
 const diagnosticModalAgent = ref<AgentView | null>(null)
 
 onMounted(async () => {

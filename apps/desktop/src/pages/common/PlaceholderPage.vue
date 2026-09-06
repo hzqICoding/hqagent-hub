@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app.store'
 import type { FeatureAvailability } from '@hqagent/protocol'
-import { Construction, ArrowLeft, Lock, Calendar } from 'lucide-vue-next'
+import { Construction, ArrowLeft, Lock } from 'lucide-vue-next'
 import { HqButton, HqBadge } from '@/shared/ui'
 
 const route = useRoute()

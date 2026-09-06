@@ -1,12 +1,4 @@
-import type {
-  ThemeMode,
-  ThemePalette,
-  UiDensity,
-  ContrastMode,
-  FontScale,
-  ReduceMotion,
-  AppearanceSettings,
-} from '@hqagent/protocol'
+import type { AppearanceSettings } from '@hqagent/protocol'
 
 export type {
   ThemeMode,

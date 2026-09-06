@@ -11,7 +11,6 @@ import {
   Compass,
   AlertTriangle,
 } from 'lucide-vue-next'
-import { HqBadge, HqTooltip } from '@/shared/ui'
 
 const route = useRoute()
 const router = useRouter()

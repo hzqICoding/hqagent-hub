@@ -31,14 +31,14 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'workspaces',
         name: 'workspaces',
-        component: () => import('@/pages/common/PlaceholderPage.vue'),
-        meta: { title: '工作区管理', milestone: 'F2' },
+        component: () => import('@/pages/workspaces/WorkspacesPage.vue'),
+        meta: { title: '工作区管理' },
       },
       {
         path: 'teams',
         name: 'teams',
-        component: () => import('@/pages/common/PlaceholderPage.vue'),
-        meta: { title: '团队配置', milestone: 'F2', featureKey: 'teamProfiles' },
+        component: () => import('@/pages/teams/TeamsPage.vue'),
+        meta: { title: '团队配置', featureKey: 'teamProfiles' },
       },
       {
         path: 'tasks',
@@ -55,8 +55,8 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'templates',
         name: 'templates',
-        component: () => import('@/pages/common/PlaceholderPage.vue'),
-        meta: { title: '任务模板', milestone: 'F2' },
+        component: () => import('@/pages/templates/TemplatesPage.vue'),
+        meta: { title: '任务模板' },
       },
       {
         path: 'updates',

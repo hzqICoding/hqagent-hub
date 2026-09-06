@@ -15,7 +15,7 @@ interface Props {
   selectedId?: string
 }
 
-const props = defineProps<Props>()
+const _props = defineProps<Props>()
 
 const emit = defineEmits<{
   (e: 'select', node: TreeNode): void

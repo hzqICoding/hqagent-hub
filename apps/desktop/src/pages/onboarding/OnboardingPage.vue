@@ -1,41 +1,31 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app.store'
 import { useAgentStore } from '@/stores/agent.store'
-import { useWorkspaceStore } from '@/stores/workspace.store'
 import { useThemeStore } from '@/shared/theme/theme.store'
 import { PALETTES_META, type ThemePalette } from '@/shared/theme/theme.types'
 import {
   ShieldCheck,
   CheckCircle2,
-  AlertTriangle,
   RefreshCw,
-  FolderGit2,
   Bot,
-  Palette,
-  ArrowRight,
-  ArrowLeft,
   Server,
-  Terminal,
   Cpu,
-  Sparkles,
   WifiOff,
+  ArrowLeft,
+  ArrowRight,
 } from 'lucide-vue-next'
 import {
   HqButton,
   HqBadge,
-  HqInput,
   LoadingState,
   HqEmptyState,
-  HqErrorState,
-  OfflineState,
 } from '@/shared/ui'
 
 const router = useRouter()
 const appStore = useAppStore()
 const agentStore = useAgentStore()
-const workspaceStore = useWorkspaceStore()
 const themeStore = useThemeStore()
 
 const currentStep = ref<number>(1)
@@ -46,19 +36,15 @@ const hubConnected = ref<boolean>(true)
 const workspacePath = ref<string>('E:/OtherPro/HQAgent-Hub')
 
 onMounted(async () => {
-  await runHubCheck()
+  await appStore.fetchBootstrap()
+  await agentStore.fetchAgents()
 })
 
 async function runHubCheck() {
   isTestingHub.value = true
-  try {
-    await appStore.fetchBootstrap()
-    hubConnected.value = !appStore.isOffline
-  } catch {
-    hubConnected.value = false
-  } finally {
-    isTestingHub.value = false
-  }
+  await appStore.fetchBootstrap()
+  hubConnected.value = !appStore.isOffline
+  isTestingHub.value = false
 }
 
 async function handleStartScan() {
@@ -72,15 +58,6 @@ function selectPalette(id: ThemePalette) {
 function handleFinish() {
   router.push('/overview')
 }
-
-const steps = [
-  { step: 1, title: '欢迎与说明' },
-  { step: 2, title: 'Local Hub 检测' },
-  { step: 3, title: '扫描 Agent' },
-  { step: 4, title: '工作区配置' },
-  { step: 5, title: '外观风格' },
-  { step: 6, title: '完成与就绪' },
-]
 </script>
 
 <template>

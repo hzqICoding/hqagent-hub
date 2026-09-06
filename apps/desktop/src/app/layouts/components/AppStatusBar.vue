@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import { useAppStore } from '@/stores/app.store'
 import { useWorkspaceStore } from '@/stores/workspace.store'
 import {
-  Activity,
   CloudOff,
   Download,
   CheckCircle2,
