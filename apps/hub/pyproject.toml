@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "HQAgent-Hub Local Hub core"
 requires-python = ">=3.11"
 dependencies = [
+  # 协议包必须是真实依赖，不能靠 sys.path 碰巧能找到——
+  # 后者只在源码检出且 packages/ 在路径上时成立，PyInstaller 打包时不成立。
+  "hqagent-protocol",
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",
   "pydantic>=2.11,<3",
@@ -29,8 +32,15 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["api", "core", "runtime", "storage"]
 
+[tool.uv.sources]
+hqagent-protocol = { path = "../../packages/protocol", editable = true }
+
 [tool.pytest.ini_options]
-pythonpath = [".", "../../packages"]
+# 故意不再把 ../../packages 加进来。加了的话测试会绕过安装直接走源码路径，
+# 于是「协议包没装好」这种问题在测试里永远看不见——R1 就是这么藏了一整轮
+# （见 .hqagent/reviews/INT-smoke-W1xW5.md）。现在必须先
+# pip install -e packages/protocol 才能跑测试，这正是我们要的回归防线。
+pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-ra"
 
