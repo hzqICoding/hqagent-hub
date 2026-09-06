@@ -1,0 +1,42 @@
+[project]
+name = "hqagent-protocol"
+version = "0.2.0"
+description = "HQAgent-Hub 协议包：由 JSON Schema 生成的 DTO、事件字典与 Contract Fixture"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.11,<3",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+# 导入名必须是 protocol（全仓库都写的 from protocol.generated.python import ...），
+# 而本 pyproject 所在目录就叫 protocol，所以要把内容显式映射到 wheel 里的 protocol/ 下。
+#
+# 不要改成隐式命名空间包：那样只在 packages/ 恰好落在 sys.path 上时成立，
+# 进程直接起会 ModuleNotFoundError（见 .hqagent/reviews/INT-smoke-W1xW5.md R1），
+# 且 PyInstaller 对隐式命名空间包的处理不可靠。
+[tool.hatch.build.targets.wheel.force-include]
+"__init__.py" = "protocol/__init__.py"
+"VERSION" = "protocol/VERSION"
+"generated/__init__.py" = "protocol/generated/__init__.py"
+"generated/python" = "protocol/generated/python"
+"registry" = "protocol/registry"
+"schema" = "protocol/schema"
+"openapi" = "protocol/openapi"
+"events" = "protocol/events"
+"fixtures" = "protocol/fixtures"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "__init__.py",
+  "VERSION",
+  "generated/",
+  "registry/",
+  "schema/",
+  "openapi/",
+  "events/",
+  "fixtures/",
+  "adapters/",
+]
