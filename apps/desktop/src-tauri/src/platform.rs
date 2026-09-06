@@ -232,3 +232,81 @@ pub fn process_matches_executable(pid: u32, expected: &Path) -> bool {
         == expected.canonicalize().ok()
 }
 
+
+#[cfg(all(test, windows))]
+mod tests {
+    use std::process::Command;
+
+    use super::verify_private_file_acl;
+
+    /// 当前用户的 `域\用户名`，与 icacls 接受的主体格式一致。
+    fn current_principal() -> String {
+        let domain = std::env::var("USERDOMAIN").expect("USERDOMAIN");
+        let user = std::env::var("USERNAME").expect("USERNAME");
+        format!("{domain}\\{user}")
+    }
+
+    fn icacls(args: &[&str]) {
+        let output = Command::new("icacls.exe")
+            .args(args)
+            .output()
+            .expect("运行 icacls");
+        assert!(
+            output.status.success(),
+            "icacls {:?} 失败: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// 造一个符合 FZ-1 契约的描述符文件：去继承、只授当前用户。
+    fn locked_down_file() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().expect("临时目录");
+        let path = dir.path().join("hub.json");
+        std::fs::write(&path, b"{}").expect("写文件");
+        let path_str = path.to_string_lossy().to_string();
+        icacls(&[&path_str, "/inheritance:r"]);
+        icacls(&[
+            &path_str,
+            "/grant:r",
+            &format!("{}:(F)", current_principal()),
+        ]);
+        (dir, path)
+    }
+
+    #[test]
+    fn accepts_current_user_only_acl() {
+        let (_dir, path) = locked_down_file();
+        verify_private_file_acl(&path).expect("仅授当前用户的 ACL 必须通过");
+    }
+
+    #[test]
+    fn rejects_inherited_acl() {
+        // 不做 /inheritance:r，文件从临时目录继承 ACE。
+        let dir = tempfile::tempdir().expect("临时目录");
+        let path = dir.path().join("hub.json");
+        std::fs::write(&path, b"{}").expect("写文件");
+
+        let error = verify_private_file_acl(&path)
+            .expect_err("带继承权限的描述符必须被拒绝");
+        assert!(
+            error.to_string().contains("继承"),
+            "拒绝原因应指明继承权限，实际: {error}"
+        );
+    }
+
+    #[test]
+    fn rejects_additional_principal() {
+        let (_dir, path) = locked_down_file();
+        let path_str = path.to_string_lossy().to_string();
+        // *S-1-1-0 是 Everyone 的知名 SID，用 SID 而非本地化名称，避免中文系统上匹配不到。
+        icacls(&[&path_str, "/grant", "*S-1-1-0:(R)"]);
+
+        let error = verify_private_file_acl(&path)
+            .expect_err("向 Everyone 授权后必须被拒绝");
+        assert!(
+            error.to_string().contains("当前用户之外"),
+            "拒绝原因应指明存在其他主体，实际: {error}"
+        );
+    }
+}
