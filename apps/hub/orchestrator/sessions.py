@@ -146,7 +146,10 @@ class SessionManager:
         parent_session_id: str | None = None,
         root_task_id: str | None = None,
     ) -> SessionView:
-        external_session_id = handle.external_session_id or ""
+        # 裁决 D28：externalSessionId 现在是可选的。原来用空字符串顶替，
+        # 让前端分不清「这个 Agent 不支持恢复」和「支持但凭据丢了」——
+        # 而 Session 页那个「继续」按钮该不该出现，正取决于这个区别。
+        external_session_id = handle.external_session_id or None
         value = SessionView.model_validate(
             {
                 "id": handle.session_id,

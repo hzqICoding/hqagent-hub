@@ -45,6 +45,8 @@ def task_spec(
 ) -> AgentTaskSpec:
     return AgentTaskSpec.model_validate(
         {
+            # 裁决 D25：sessionId 由 Hub 生成后传入，Adapter 不得自行生成
+            "sessionId": f"session_{uuid.uuid4().hex}",
             "taskId": f"task_{uuid.uuid4().hex}",
             "nodeId": f"node_{uuid.uuid4().hex}",
             "workspaceId": "workspace_test",

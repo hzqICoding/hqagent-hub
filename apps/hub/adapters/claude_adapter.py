@@ -234,7 +234,10 @@ class ClaudeAdapter(AgentAdapter):
                 "显式恢复必须提供明确的 resumeSessionId",
                 retryable=False,
             )
-        session_id = f"session_{uuid.uuid4().hex}"
+        # 裁决 D25：sessionId 由 Hub 生成并通过 AgentTaskSpec 传入，Adapter 原样使用。
+        # 自行生成等于把会话身份的所有权从 Hub 拿走，D7 的「实现与复核必须两个会话」
+        # 就失去了强制手段——Adapter 不知道自己这次是在实现还是在复核。
+        session_id = spec.session_id
         external_id = spec.resume_session_id or str(uuid.uuid4())
         state = AdapterSessionState(
             session_id=session_id,

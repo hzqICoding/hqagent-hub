@@ -158,6 +158,9 @@ class FakeAdapter:
 
     async def start(self, spec: AgentTaskSpec) -> AgentSessionHandle:
         self.started.append(spec)
+        # 裁决 D25：Adapter 必须原样回传 Hub 传入的 sessionId。假 Adapter 也照做，
+        # 否则测试就绕过了 runtime 里那道「所有权没被拿走」的校验。
+        self.handle = self.handle.model_copy(update={"session_id": spec.session_id})
         return self.handle
 
     async def resume(self, request: ResumeRequest) -> None:

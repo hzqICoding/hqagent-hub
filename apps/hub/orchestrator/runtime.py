@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 import asyncio
 from dataclasses import dataclass
 
@@ -191,8 +193,14 @@ class WorkflowRuntime:
             )
             task_spec = None
         else:
+            # 裁决 D25：sessionId 由 Hub 生成后传给 Adapter，不能反过来。
+            # 原来本地 Session ID 取自 handle.session_id，等于把会话身份的所有权
+            # 交给了 Adapter——而 D7 要求「同一 Agent 承担实现与复核时必须是两个
+            # 不同会话」，Adapter 并不知道自己这次是在实现还是在复核，只有 Hub 知道。
+            hub_session_id = f"session_{uuid.uuid4().hex}"
             task_spec = AgentTaskSpec.model_validate(
                 {
+                    "sessionId": hub_session_id,
                     "taskId": request.task_id,
                     "nodeId": request.node_id,
                     "workspaceId": request.workspace_id,
@@ -213,6 +221,12 @@ class WorkflowRuntime:
             )
             adapter = self.adapters.adapter_for(resolution.agent.instance_id)
             handle = await adapter.start(task_spec)
+            if handle.session_id != hub_session_id:
+                raise InvalidTaskActionError(
+                    "Adapter 必须原样返回 Hub 传入的 sessionId（裁决 D25），不得自行生成",
+                    expected=hub_session_id,
+                    actual=handle.session_id,
+                )
             if handle.adapter_id != resolution.agent.adapter_id:
                 raise InvalidTaskActionError(
                     "Adapter 返回的 adapterId 与解析结果不一致",

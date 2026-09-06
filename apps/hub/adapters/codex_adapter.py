@@ -344,8 +344,11 @@ class CodexAdapter(AgentAdapter):
                 "显式恢复必须提供明确的 resumeSessionId",
                 retryable=False,
             )
+        # 裁决 D25：sessionId 由 Hub 生成并通过 AgentTaskSpec 传入，Adapter 原样使用。
+        # 自行生成等于把会话身份的所有权从 Hub 拿走，D7 的「实现与复核必须两个会话」
+        # 就失去了强制手段——Adapter 不知道自己这次是在实现还是在复核。
         state = AdapterSessionState(
-            session_id=f"session_{uuid.uuid4().hex}",
+            session_id=spec.session_id,
             external_session_id=spec.resume_session_id or "",
             spec=spec,
             guard=PathGuard(spec.worktree_path or "", spec.allowed_paths),
