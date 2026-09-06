@@ -53,7 +53,8 @@ export const useSessionStore = defineStore('session', () => {
       if (searchQuery.value.trim()) {
         const q = searchQuery.value.toLowerCase()
         const matchesId = sess.id.toLowerCase().includes(q)
-        const matchesExtId = sess.externalSessionId.toLowerCase().includes(q)
+        // 裁决 D28：externalSessionId 可缺省——不支持恢复的 Agent 没有这个值
+        const matchesExtId = sess.externalSessionId?.toLowerCase().includes(q) ?? false
         const matchesAgent = sess.agentDisplayName.toLowerCase().includes(q)
         const matchesWorkspace = sess.workspaceName.toLowerCase().includes(q)
         const matchesSummary = sess.summary ? sess.summary.toLowerCase().includes(q) : false

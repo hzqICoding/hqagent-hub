@@ -265,7 +265,15 @@ function formatTime(timestamp?: string) {
 
           <div>
             <span class="text-text-muted block mb-1">外部底层会话 ID:</span>
-            <div class="flex items-center gap-1.5 font-mono text-[11px] text-text-muted">
+            <!--
+              裁决 D28：externalSessionId 可缺省。缺省不等于"数据没加载出来"，
+              而是这个 Agent 本身不支持会话恢复——要如实说出来，
+              否则用户会以为是 bug，也看不懂为什么"继续"按钮是灰的。
+            -->
+            <div
+              v-if="sess.externalSessionId"
+              class="flex items-center gap-1.5 font-mono text-[11px] text-text-muted"
+            >
               <span class="truncate max-w-[140px]" :title="sess.externalSessionId">
                 {{ sess.externalSessionId }}
               </span>
@@ -276,6 +284,9 @@ function formatTime(timestamp?: string) {
               >
                 <Copy class="w-3.5 h-3.5" />
               </button>
+            </div>
+            <div v-else class="text-[11px] text-text-muted italic">
+              该 Agent 不支持会话恢复
             </div>
           </div>
 
