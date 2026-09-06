@@ -30,7 +30,10 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["api", "core", "runtime", "storage"]
+# adapters / orchestrator / security 是 W2 / W3 的独占目录，但它们要和 api/core 一起
+# 进 wheel，否则 PyInstaller 打包时这三个包不进产物——W1 的 R1 就是这么炸的
+# （见 .hqagent/reviews/INT-smoke-W1xW5.md）。两份 handoff 都点名要求 Integrator 加。
+packages = ["adapters", "api", "core", "orchestrator", "runtime", "security", "storage"]
 
 [tool.uv.sources]
 hqagent-protocol = { path = "../../packages/protocol", editable = true }
@@ -41,6 +44,9 @@ hqagent-protocol = { path = "../../packages/protocol", editable = true }
 # （见 .hqagent/reviews/INT-smoke-W1xW5.md）。现在必须先
 # pip install -e packages/protocol 才能跑测试，这正是我们要的回归防线。
 pythonpath = ["."]
-testpaths = ["tests"]
+# W2 / W3 的测试在各自独占目录里，不在 apps/hub/tests 下。不列进来的话
+# `pytest` 只会跑 W1 自己那 17 条，另外 51 条在 CI 上等于不存在。
+# 不要把它们搬进 apps/hub/tests——那是 W1 独占路径，会破坏路径所有权。
+testpaths = ["tests", "adapters/tests", "orchestrator/tests", "security/tests"]
 addopts = "-ra"
 
