@@ -6,9 +6,11 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 type AdapterId = string
+
+type Timestamp = string
 
 type ErrorCode string
 
@@ -16,6 +18,7 @@ const (
 	ErrorCodeBadRequest ErrorCode = "BAD_REQUEST"
 	ErrorCodeValidationFailed ErrorCode = "VALIDATION_FAILED"
 	ErrorCodeUnauthorized ErrorCode = "UNAUTHORIZED"
+	ErrorCodeOriginNotAllowed ErrorCode = "ORIGIN_NOT_ALLOWED"
 	ErrorCodeNotFound ErrorCode = "NOT_FOUND"
 	ErrorCodeConflict ErrorCode = "CONFLICT"
 	ErrorCodeIdempotencyMismatch ErrorCode = "IDEMPOTENCY_MISMATCH"
@@ -57,8 +60,6 @@ const (
 	RoleIdDeployer RoleId = "deployer"
 	RoleIdIntegrator RoleId = "integrator"
 )
-
-type Timestamp = string
 
 type AggregateType string
 
