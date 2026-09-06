@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.1.0' as const
+export const PROTOCOL_VERSION = '0.2.0' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -11,6 +11,172 @@ export interface AcknowledgeUpdateResultInput {
 
 /** 适配器 ID。首发 claude / codex；antigravity 见 DECISIONS.md D5，不在一期关键路径 */
 export type AdapterId = string
+
+/** 接入方式，按施工方案 §7.1 的可靠性优先级排列。gui_automation 仅为实验性兜底，不得作为正式适配器标准，Role Resolver 不应把它选为主力 */
+export type AdapterIntegrationKind =
+  | 'sdk'
+  | 'cli_stream'
+  | 'mcp'
+  | 'sidecar'
+  | 'gui_automation'
+
+/** 一期只验收 windows；macos/linux 在 Phase 3 */
+export type AdapterPlatform =
+  | 'windows'
+  | 'macos'
+  | 'linux'
+
+/** Agent 所需鉴权方式，由适配器声明 */
+export type AuthKind =
+  | 'local_login'
+  | 'api_key'
+  | 'oauth'
+  | 'device_code'
+  | 'none'
+
+/** 能力 ID，见 registry/capabilities.yaml */
+export type CapabilityId =
+  | 'orchestration'
+  | 'architecture'
+  | 'coding'
+  | 'review'
+  | 'testing'
+  | 'shell'
+  | 'file_write'
+  | 'git_worktree'
+  | 'session_resume'
+  | 'streaming_events'
+  | 'tool_approval'
+  | 'structured_output'
+  | 'vision'
+  | 'browser'
+
+export interface DeclaredCapability {
+  id: CapabilityId
+  supported: boolean
+  /** supported=false 时说明原因；部分支持也必须报 false 并在此说明，不得报 true 后在运行时静默降级 */
+  note?: string
+}
+
+/** RFC3339 时间戳，一律带时区 */
+export type Timestamp = string
+
+/** detect() 的返回值。描述「这个 Adapter 是什么、装没装、能干什么」，是一次性发现结果，不是周期性存活状态——后者见 AdapterHealth。 */
+export interface AdapterDescriptor {
+  adapterId: AdapterId
+  displayName: string
+  integrationKind: AdapterIntegrationKind
+  authKind: AuthKind
+  supportedPlatforms: AdapterPlatform[]
+  /** false 时 detectedVersion / executablePath 允许缺省，status 必须是 incompatible 或 unknown，不得报 ready */
+  installed: boolean
+  detectedVersion?: string
+  /** 低于此版本必须报 incompatible，不得降级尝试 */
+  minimumVersion?: string
+  executablePath?: string
+  /** Adapter 声明支持的能力。硬能力（capabilities.yaml 里 hard:true）只能由此声明，用户不能在 UI 上勾选覆盖——施工方案 §6.2 */
+  capabilities: DeclaredCapability[]
+  detectedAt?: Timestamp
+}
+
+/** Adapter 失败分类。Hub 据此决定重试、降级还是直接失败，不靠解析错误文案 */
+export type AdapterFailureKind =
+  | 'not_installed'
+  | 'not_logged_in'
+  | 'version_incompatible'
+  | 'capability_missing'
+  | 'transport_error'
+  | 'agent_error'
+  | 'timeout'
+  | 'cancelled'
+  | 'path_violation'
+
+/** 错误码，见 registry/error-codes.yaml。前端按 code 决定行为，不得解析 message */
+export type ErrorCode =
+  | 'BAD_REQUEST'
+  | 'VALIDATION_FAILED'
+  | 'UNAUTHORIZED'
+  | 'ORIGIN_NOT_ALLOWED'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'IDEMPOTENCY_MISMATCH'
+  | 'PROTOCOL_VERSION_MISMATCH'
+  | 'HUB_NOT_READY'
+  | 'HUB_MAINTENANCE'
+  | 'EVENT_CURSOR_EXPIRED'
+  | 'FEATURE_UNAVAILABLE'
+  | 'AGENT_NOT_FOUND'
+  | 'AGENT_OFFLINE'
+  | 'AGENT_NOT_LOGGED_IN'
+  | 'AGENT_INCOMPATIBLE'
+  | 'CAPABILITY_MISSING'
+  | 'ROLE_UNRESOLVED'
+  | 'SESSION_NOT_RESUMABLE'
+  | 'TASK_NOT_CANCELLABLE'
+  | 'TASK_ACTION_INVALID'
+  | 'WORKTREE_BUSY'
+  | 'PATH_NOT_ALLOWED'
+  | 'APPROVAL_REQUIRED'
+  | 'APPROVAL_EXPIRED'
+  | 'APPROVAL_ALREADY_DECIDED'
+  | 'UPDATE_NOT_AVAILABLE'
+  | 'UPDATE_BUSY'
+  | 'UPDATE_VERIFY_FAILED'
+  | 'UPDATE_DRAIN_TIMEOUT'
+  | 'INTERNAL'
+
+/** 任何 Port 方法失败时的统一结构。接入失败或缺少硬能力必须走这里，不得返回成功后在事件里静默降级。 */
+export interface AdapterFailure {
+  kind: AdapterFailureKind
+  code?: ErrorCode
+  message: string
+  retryable: boolean
+  /** kind=capability_missing 时必填，供 Role Resolver 提示能力缺口 */
+  missingCapabilities?: CapabilityId[]
+  /** kind=path_violation 时必填 */
+  violationPaths?: string[]
+  /** 供应商原始错误摘要，仅用于诊断包。长度上限 2048 字符，超出截断 */
+  raw?: string
+}
+
+/** Agent 实例状态 */
+export type AgentStatus =
+  | 'discovering'
+  | 'ready'
+  | 'busy'
+  | 'not_logged_in'
+  | 'incompatible'
+  | 'disabled'
+  | 'offline'
+  | 'error'
+  | 'unknown'
+
+/** health() 的返回值。周期性探活与登录态检查，比 detect() 轻量，不重新枚举能力。 */
+export interface AdapterHealth {
+  status: AgentStatus
+  checkedAt: Timestamp
+  latencyMs?: number
+  /** false 时 status 必须是 not_logged_in。凭据本身绝不出现在本结构里 */
+  authValid?: boolean
+  /** 面向用户的可操作提示，例如「请先运行 claude login」。不得包含 token、路径以外的敏感信息 */
+  diagnosticMessage?: string
+}
+
+/** streamEvents() 的终止原因。transport_lost=连接断了但 Agent 可能还活着，会话保持 active 且可重连；agent_exited=Agent 进程已退出，会话置 invalid；ended=正常收尾。把这两种混为一谈会导致 Hub 要么误判任务失败，要么永远等一个已死的进程 */
+export type AdapterStreamStatus =
+  | 'streaming'
+  | 'transport_lost'
+  | 'agent_exited'
+  | 'ended'
+
+export interface AdapterStreamEnd {
+  status: AdapterStreamStatus
+  endedAt: Timestamp
+  lastEventSeq?: number
+  /** 仅 transport_lost 时可能为 true */
+  resumable?: boolean
+  detail?: string
+}
 
 export interface Blocker {
   kind: 'capability_gap' | 'permission_denied' | 'dependency_missing' | 'ambiguous_requirement' | 'external_failure' | 'other'
@@ -53,39 +219,6 @@ export interface AgentCompletedPayload {
   result: AgentResult
 }
 
-/** 错误码，见 registry/error-codes.yaml。前端按 code 决定行为，不得解析 message */
-export type ErrorCode =
-  | 'BAD_REQUEST'
-  | 'VALIDATION_FAILED'
-  | 'UNAUTHORIZED'
-  | 'NOT_FOUND'
-  | 'CONFLICT'
-  | 'IDEMPOTENCY_MISMATCH'
-  | 'PROTOCOL_VERSION_MISMATCH'
-  | 'HUB_NOT_READY'
-  | 'HUB_MAINTENANCE'
-  | 'EVENT_CURSOR_EXPIRED'
-  | 'FEATURE_UNAVAILABLE'
-  | 'AGENT_NOT_FOUND'
-  | 'AGENT_OFFLINE'
-  | 'AGENT_NOT_LOGGED_IN'
-  | 'AGENT_INCOMPATIBLE'
-  | 'CAPABILITY_MISSING'
-  | 'ROLE_UNRESOLVED'
-  | 'SESSION_NOT_RESUMABLE'
-  | 'TASK_NOT_CANCELLABLE'
-  | 'TASK_ACTION_INVALID'
-  | 'WORKTREE_BUSY'
-  | 'PATH_NOT_ALLOWED'
-  | 'APPROVAL_REQUIRED'
-  | 'APPROVAL_EXPIRED'
-  | 'APPROVAL_ALREADY_DECIDED'
-  | 'UPDATE_NOT_AVAILABLE'
-  | 'UPDATE_BUSY'
-  | 'UPDATE_VERIFY_FAILED'
-  | 'UPDATE_DRAIN_TIMEOUT'
-  | 'INTERNAL'
-
 export interface AgentDiscoveryError {
   adapterId: AdapterId
   code: ErrorCode
@@ -98,43 +231,6 @@ export interface AgentDiscoveryCompletedPayload {
   errors?: AgentDiscoveryError[]
   durationMs?: number
 }
-
-/** Agent 实例状态 */
-export type AgentStatus =
-  | 'discovering'
-  | 'ready'
-  | 'busy'
-  | 'not_logged_in'
-  | 'incompatible'
-  | 'disabled'
-  | 'offline'
-  | 'error'
-  | 'unknown'
-
-/** Agent 所需鉴权方式，由适配器声明 */
-export type AuthKind =
-  | 'local_login'
-  | 'api_key'
-  | 'oauth'
-  | 'device_code'
-  | 'none'
-
-/** 能力 ID，见 registry/capabilities.yaml */
-export type CapabilityId =
-  | 'orchestration'
-  | 'architecture'
-  | 'coding'
-  | 'review'
-  | 'testing'
-  | 'shell'
-  | 'file_write'
-  | 'git_worktree'
-  | 'session_resume'
-  | 'streaming_events'
-  | 'tool_approval'
-  | 'structured_output'
-  | 'vision'
-  | 'browser'
 
 export interface CapabilityItem {
   id: CapabilityId
@@ -159,9 +255,6 @@ export type RoleId =
   | 'tester'
   | 'deployer'
   | 'integrator'
-
-/** RFC3339 时间戳，一律带时区 */
-export type Timestamp = string
 
 export interface AgentView {
   /** Agent 实例 ID，例如 agent_codex_default */
@@ -214,6 +307,19 @@ export interface AgentQuestionPayload {
   expiresAt?: Timestamp
 }
 
+/** start() 的返回值。Adapter 必须在此返回明确的外部会话 ID，Hub 据此写入 SessionView.externalSessionId。 */
+export interface AgentSessionHandle {
+  /** Hub 本地会话 ID，由 Hub 生成后传给 Adapter，不是 Adapter 生成的 */
+  sessionId: string
+  /** Claude 的 session_id / Codex 的 thread_id / Antigravity 的 conversation_id。Adapter 声明 session_resume 能力时此字段必填；声明不支持时允许缺省 */
+  externalSessionId?: string
+  adapterId: AdapterId
+  startedAt: Timestamp
+  /** 本次会话是否可被后续 resume。与 DeclaredCapability 的 session_resume 可以不同——某些 Agent 只对特定模式的会话支持续接 */
+  supportsResume: boolean
+  workingDirectory?: string
+}
+
 /** 会话用途。同一 Agent 同时承担实现与审核时，两者的 purpose 必须不同，且必须是两个独立会话 */
 export type SessionPurpose =
   | 'orchestrate'
@@ -238,6 +344,45 @@ export interface AgentStartedPayload {
   reusePolicy: SessionReusePolicy
   worktreePath?: string
   branch?: string
+}
+
+/** 需要审批的动作全集，与 registry/roles.yaml 的 dangerousActions 一致 */
+export type DangerousAction =
+  | 'deploy'
+  | 'git_push'
+  | 'git_merge'
+  | 'delete'
+  | 'shell'
+  | 'network'
+  | 'db_migrate'
+
+/** start() 的输入。对应施工方案 §8.1 的任务结构，字段名按 D11 转为 camelCase。 */
+export interface AgentTaskSpec {
+  taskId: string
+  nodeId: string
+  workspaceId: string
+  roleId: RoleId
+  objective: string
+  /** 并发写任务必须给独立 worktree。Adapter 必须以此为工作目录，不得回退到仓库主目录 */
+  worktreePath?: string
+  branch?: string
+  baseCommit?: string
+  /** glob。Adapter 若能在写入前拦截就拦截；不能拦截的，Hub 在 collectResult 时按 changedFiles 校验并发 task.path_violation */
+  allowedPaths: string[]
+  /** 开工前必读文档路径。项目背景靠这个和 handoff 注入，不靠把所有工作塞进一个长期会话——施工方案 §8.2 */
+  readFirst?: string[]
+  /** 验收命令。Adapter 不负责执行，只负责把它写进给 Agent 的指令 */
+  acceptance?: string[]
+  /** 需要人工审批的动作。Adapter 若不具备 tool_approval 硬能力，Hub 不得把带此字段的任务派给它 */
+  requiresApproval?: DangerousAction[]
+  sessionPurpose: SessionPurpose
+  reusePolicy: SessionReusePolicy
+  /** 仅当 reusePolicy=resume_explicit 时有值，且必须是明确的外部会话 ID。禁止 latest 之类不确定值——施工方案 §8.2 */
+  resumeSessionId?: string
+  /** 上游节点的 handoff 文件路径，由 Hub 注入 */
+  handoffDocuments?: string[]
+  /** 超过则 Hub 发起 graceful cancel。Adapter 自身不负责计时 */
+  timeoutSeconds?: number
 }
 
 export interface AgentToolCallPayload {
@@ -331,6 +476,17 @@ export type ApprovalDecision =
   | 'approve'
   | 'reject'
 
+/** approve() 的输入。Hub 是审批时效的唯一权威——Adapter 不得自行判定过期后放行。 */
+export interface ApprovalDispatch {
+  /** Hub 侧审批 ID，与 ApprovalView.id 一致 */
+  approvalId: string
+  /** Adapter 发起审批时携带的供应商侧请求 ID。Adapter 负责把它与 approvalId 关联 */
+  externalRequestId?: string
+  decision: ApprovalDecision
+  reason?: string
+  decidedAt: Timestamp
+}
+
 /** 审批状态 */
 export type ApprovalStatus =
   | 'pending'
@@ -342,16 +498,6 @@ export interface ApprovalQuery {
   status?: ApprovalStatus
   taskId?: string
 }
-
-/** 需要审批的动作全集，与 registry/roles.yaml 的 dangerousActions 一致 */
-export type DangerousAction =
-  | 'deploy'
-  | 'git_push'
-  | 'git_merge'
-  | 'delete'
-  | 'shell'
-  | 'network'
-  | 'db_migrate'
 
 /** 危险动作风险等级，决定审批 UI 的强度 */
 export type RiskLevel =
@@ -498,6 +644,36 @@ export interface BootstrapView {
   /** 前端据此建立事件流起点，避免首屏与事件流之间丢事件 */
   lastEventSeq: number
   hubStartedAt: Timestamp
+}
+
+/** graceful=向 Agent 发出停止指令并等待它自行收尾；force=直接终止进程/连接。Hub 先 graceful，超时后升级到 force */
+export type CancelMode =
+  | 'graceful'
+  | 'force'
+
+/** refused=Adapter 明确表示无法取消（例如底层 Agent 不提供中断入口）。此时 Hub 必须把节点标记为 failed 而不是 cancelled，并让用户知道该进程可能还在跑——不得假装取消成功 */
+export type CancelOutcome =
+  | 'stopped_gracefully'
+  | 'force_killed'
+  | 'already_finished'
+  | 'not_found'
+  | 'refused'
+
+export interface CancelRequest {
+  sessionId: string
+  mode: CancelMode
+  reason?: string
+  /** mode=graceful 时的等待上限。到点后 Hub 会再发一次 mode=force，Adapter 不得自行延长 */
+  graceSeconds?: number
+}
+
+export interface CancelResult {
+  outcome: CancelOutcome
+  completedAt: Timestamp
+  elapsedMs?: number
+  detail?: string
+  /** outcome=refused 或 force_killed 后仍可能残留的进程。OTA 排空的 waitPids 需要它 */
+  orphanProcessIds?: number[]
 }
 
 export interface ConnectionSettings {
@@ -760,6 +936,15 @@ export interface ResolvedTeamView {
 export type ResolvedThemeMode =
   | 'light'
   | 'dark'
+
+/** resume() 的输入。只有用户显式继续、工作流显式声明复用，或任务传入 resumeSessionId 时才会走到这里。 */
+export interface ResumeRequest {
+  /** Hub 本地会话 ID */
+  sessionId: string
+  externalSessionId?: string
+  message: string
+  acceptance?: string[]
+}
 
 export interface ResumeSessionInput {
   /** 继续该会话要做什么。恢复会话必须是显式动作，不允许空调用 */
@@ -1149,6 +1334,16 @@ export interface UserSettingsView {
   protocolVersion?: ProtocolVersion
 }
 
+/** Adapter 必须声明的供应商事件到统一事件字典的映射表。事件字典已在 FZ-1 冻结（28 条），Adapter 不得新增事件类型。 */
+export interface VendorEventMapping {
+  vendorType: string
+  /** 必须是 events/event-dictionary.md 里已有的类型 */
+  unifiedType: string
+  /** true 表示该供应商事件被有意丢弃。丢弃必须显式声明并计数，不得静默吞掉 */
+  dropped?: boolean
+  note?: string
+}
+
 export interface WorkspaceQuery {
   search?: string
   limit?: number
@@ -1192,6 +1387,7 @@ export const ERROR_CATALOG: Record<ErrorCode, { http: number; retryable: boolean
   BAD_REQUEST: { http: 400, retryable: false },
   VALIDATION_FAILED: { http: 422, retryable: false },
   UNAUTHORIZED: { http: 401, retryable: false },
+  ORIGIN_NOT_ALLOWED: { http: 403, retryable: false },
   NOT_FOUND: { http: 404, retryable: false },
   CONFLICT: { http: 409, retryable: false },
   IDEMPOTENCY_MISMATCH: { http: 409, retryable: false },
