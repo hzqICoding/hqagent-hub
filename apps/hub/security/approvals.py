@@ -161,7 +161,7 @@ class ApprovalCoordinator:
                 aggregate_id=approval.id,
                 task_id=approval.task_id,
                 node_id=approval.node_id,
-                role_id=approval.role_id.value if approval.role_id else None,
+                role_id=str(approval.role_id) if approval.role_id else None,
                 agent_instance_id=approval.request_agent_id,
                 payload={
                     "approvalId": approval.id,
@@ -223,7 +223,7 @@ class ApprovalCoordinator:
                 aggregate_id=approval.task_id,
                 task_id=approval.task_id,
                 node_id=approval.node_id,
-                role_id=approval.role_id.value if approval.role_id else None,
+                role_id=str(approval.role_id) if approval.role_id else None,
                 agent_instance_id=approval.request_agent_id,
                 payload={
                     "from": TaskStatus.WAITING_APPROVAL.value,

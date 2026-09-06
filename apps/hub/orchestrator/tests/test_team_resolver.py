@@ -50,8 +50,8 @@ def test_team_resolution_preserves_fallback_source_and_capability_gaps() -> None
     assert implementer.is_fallback is True
     assert implementer.fallback_reason
     assert result.has_gaps is True
-    assert any(gap.role_id.value == "deployer" for gap in result.gaps) is False
-    assert any(gap.role_id.value == "orchestrator" for gap in result.gaps) is False
+    assert any(str(gap.role_id) == "deployer" for gap in result.gaps) is False
+    assert any(str(gap.role_id) == "orchestrator" for gap in result.gaps) is False
     # reviewer requires structured_output and is resolvable, while roles whose
     # hard requirements are absent are exposed as gaps rather than fake success.
     assert all(gap.missing_capabilities for gap in result.gaps)

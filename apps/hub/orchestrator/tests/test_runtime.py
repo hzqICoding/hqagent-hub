@@ -75,7 +75,7 @@ async def test_dispatch_emits_truthful_node_resolved_and_role_only_task_spec() -
     assert events.events[0].payload["resolveSource"] == "fallback"
     assert events.events[0].payload["isFallback"] is True
     assert events.events[0].payload["fallbackReason"]
-    assert adapter.started[0].role_id.value == "general_implementer"
+    assert str(adapter.started[0].role_id) == "general_implementer"
     assert "fallback" not in adapter.started[0].objective
     assert adapter.started[0].allowed_paths == ["apps/hub/orchestrator/**"]
 
