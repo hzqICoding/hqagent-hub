@@ -8,6 +8,10 @@ dependencies = [
   "httpx>=0.28,<1",
   "pydantic>=2.11,<3",
   "uvicorn>=0.35,<1",
+  # 裸 uvicorn 不含 WebSocket 实现，缺它时 Upgrade 请求会退化成普通 HTTP，
+  # 被 Bearer 中间件拦成 401，/api/v1/events/stream 完全不可用。
+  # 测试套件发现不了：Starlette TestClient 在进程内自实现 WS，不走 uvicorn 这层。
+  "websockets>=15,<18",
 ]
 
 [project.optional-dependencies]
