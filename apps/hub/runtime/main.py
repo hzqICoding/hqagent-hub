@@ -14,6 +14,7 @@ from protocol.generated.python import HubRuntimeDescriptor
 from api.app import create_application
 from core.constants import APP_VERSION, PROTOCOL_VERSION
 from core.security import generate_startup_token
+from runtime.composition import bind_ports, build_ports
 from runtime.descriptor import RuntimeDescriptorFile
 from runtime.instance import SingleInstanceLock
 from runtime.paths import HubPaths
@@ -40,13 +41,17 @@ async def run(data_dir: Path | None = None, environment: str = "production") -> 
     listener.bind(("127.0.0.1", 0))
     listener.listen(128)
     port = int(listener.getsockname()[1])
+    ports = build_ports()
     application = create_application(
         paths=paths,
         token=token,
+        ports=ports,
         instance_id=instance_id,
         started_at=started_at,
         environment=environment,
     )
+    # Database 由 create_application 内部创建，所以补齐要放在它之后。
+    await bind_ports(application, ports)
     descriptor = HubRuntimeDescriptor.model_validate(
         {
             "schemaVersion": 1,

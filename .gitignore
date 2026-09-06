@@ -39,3 +39,7 @@ Thumbs.db
 
 # Claude Code 个人本地设置（含等价任意代码执行的规则，不入库）
 .claude/settings.local.json
+
+# 打包产物与本地构建中间件
+/dist/
+/apps/hub/build/
