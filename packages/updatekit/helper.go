@@ -20,27 +20,12 @@ type CommandRunner interface {
 }
 type ExecRunner struct{}
 
-// A killed NSIS parent may have left a child uninstaller running. Until the
-// product bundle's process-tree containment is validated, preserve backups and
-// report this capability gap instead of racing that child during restoration.
+// Installation did not reach proven process-tree quiescence before its deadline.
+// Preserve backups and do not restore over a potentially unfinished installer.
 var ErrInstallerNotQuiescent = errors.New("installer process tree could not be proven stopped")
 
 func (ExecRunner) Run(ctx context.Context, path string, args []string) (int, error) {
-	c := exec.CommandContext(ctx, path, args...)
-	ConfigureChild(c)
-	configureInstallerCommand(c, path, args)
-	err := c.Run()
-	if ctx.Err() != nil {
-		return -1, errors.Join(ErrInstallerNotQuiescent, ctx.Err())
-	}
-	if err == nil {
-		return 0, nil
-	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return exit.ExitCode(), nil
-	}
-	return -1, err
+	return runInstallerProcess(ctx, path, args)
 }
 
 type NSISStrategy struct {

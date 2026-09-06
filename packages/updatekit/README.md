@@ -45,8 +45,11 @@ NSIS 使用 `/S`，`/D=<installDirectory>` 位于原始 Windows 命令行末尾�
 回滚前必须停止所有已启动的产品进程。停止失败时记录 rollback_failed，不覆盖仍在使用的文件。
 失败版本目录移至事务备份，恢复旧程序、配置和 W1 提供的数据库快照，移走新 WAL/SHM，再验证旧 Core 健康。
 不会自动清理恢复材料。Helper 被强杀或系统断电后的自动事务续做尚未实现，保留材料供恢复。
-真实 NSIS 超时后的子安装进程收敛、新 Core 健康期间禁止创建 Worker，仍需与 W1/W7 真实联调验收。
-安装器被超时终止时，当前实现不能证明子卸载进程已全部退出：返回 `ErrInstallerNotQuiescent`，保留备份并禁止盲目恢复覆盖；此分支仍是能力缺口。
+安装器以 `CREATE_SUSPENDED` 创建，先加入私有 Windows Job Object 再恢复执行；不设置 `CREATE_BREAKAWAY_FROM_JOB`，Job 不允许普通或静默 breakaway。
+必须同时观察到安装器退出和 `JobObjectBasicAccountingInformation.ActiveProcesses == 0`，才按安装器退出码继续处理；只退出父进程不能视为完成。
+超过安装超时仍未收敛、或查询失败，返回 `ErrInstallerNotQuiescent`，保留备份并禁止恢复覆盖。退出 Runner 时终止整个 Job，最多再等待 5 秒验证清理；即使清理达到零，也不会把已超时的安装改成成功。
+Job 设置 `KILL_ON_JOB_CLOSE` 且句柄不继承，避免 Helper 异常退出留下安装器后代。
+第二轮已用真实 Windows 进程模拟器验证等待后代、超时保留备份和拒绝 breakaway；**这些不是实际 NSIS 验收**。真实安装包、证书及新 Core 健康期间的 Worker Gate 仍留待集成。
 
 ## 验证
 
@@ -64,6 +67,19 @@ go -C apps/update-agent test ./product -run TestE2EFakeTauriProcessesNSISAndAuto
 测试回滚验证数据库快照字节恢复；SQLite Backup 的一致性由 W1 负责。
 这些测试不能替代真实 NSIS、测试证书、非管理员安装和 W1 Hub 联调。
 
+第二轮 race 验证使用仓库外的 LLVM-MinGW（MSVC 不能直接作为 Go cgo 编译器）：
+
+```powershell
+$env:CGO_ENABLED='1'
+$env:CC='E:/tmp/hq-w6-toolchain/llvm-mingw-20260826-ucrt-x86_64/bin/clang.exe'
+$env:PATH=(Split-Path $env:CC)+';'+$env:PATH
+go -C packages/updatekit test -race ./... -count=1
+go -C apps/update-agent test -race ./... -count=1
+```
+
+工具链来自 [LLVM-MinGW 20260826](https://github.com/mstorsjo/llvm-mingw/releases/tag/20260826)，未修改系统 PATH 或 Go 全局配置；临时目录清理后须重新准备该工具链。
+`apps/update-agent/acceptance/` 的记录是对应提交的一次性验收快照，不是持续验证结果，应重新运行命令验证当前代码。
+
 ## 离线测试密钥
 
 ```powershell
@@ -73,6 +89,7 @@ go -C packages/updatekit run ./cmd/keygen --private E:/tmp/hqagent-release-keys/
 命令拒绝把私钥写到 Git checkout 内或覆盖已有密钥，只输出公钥。
 每次随机生成独立 Ed25519 密钥，不使用 HQDroidDeck 的密钥。
 私钥仅供本地离线发布测试，不能上传 OTA 服务器；生产使用受控离线密钥和生产证书。
+临时测试私钥如果被清理，可重新运行 `cmd/keygen` 并更新示例配置的公钥；旧签名需用新密钥重新生成。自动测试自己生成临时密钥，不依赖这份人工测试私钥。
 
 当前 OTA Platform `/updates/check` 的 `package` 不带 `targetKey/keyId/signatureAlgorithm`。
 本模块保留字段并校验显式值；兼容现有服务时使用精确 Target 查询、OS/Arch/type 校验、产品专用 `defaultKeyId` 和固定 `ed25519-sha256`。

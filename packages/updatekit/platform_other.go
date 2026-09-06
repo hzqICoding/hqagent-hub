@@ -22,9 +22,11 @@ func rejectLink(path string) error {
 	}
 	return nil
 }
-func replaceFile(a, b string) error                                     { return os.Rename(a, b) }
-func ConfigureChild(c *exec.Cmd)                                        {}
-func configureInstallerCommand(c *exec.Cmd, path string, args []string) {}
+func replaceFile(a, b string) error { return os.Rename(a, b) }
+func ConfigureChild(c *exec.Cmd)    {}
+func runInstallerProcess(context.Context, string, []string) (int, error) {
+	return -1, fmt.Errorf("NSIS process containment requires Windows")
+}
 func SecurePath(p string, d bool) error {
 	if d {
 		return os.Chmod(p, 0700)

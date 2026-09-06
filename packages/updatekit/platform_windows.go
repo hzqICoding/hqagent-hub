@@ -52,14 +52,6 @@ func ConfigureChild(c *exec.Cmd) {
 	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 }
 
-func configureInstallerCommand(c *exec.Cmd, path string, args []string) {
-	// NSIS parses the terminal /D value from the raw Windows command line;
-	// unlike ordinary argv it must remain unquoted even when it contains spaces.
-	if len(args) == 2 && args[0] == "/S" {
-		c.SysProcAttr.CmdLine = syscall.EscapeArg(path) + " /S " + args[1]
-	}
-}
-
 func powerShell(ctx context.Context, script string, env ...string) error {
 	// Use the OS binary, never PATH or a executable supplied by a Plan.
 	c := exec.CommandContext(ctx, filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), "-NoProfile", "-NonInteractive", "-Command", script)
