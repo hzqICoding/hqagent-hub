@@ -1,6 +1,6 @@
 {
   "name": "@hqagent/protocol",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "HQAgent-Hub 协议边界 DTO、事件字典与原子 Contract Fixture。generated/** 由 scripts/protocol/generate.ps1 生成，禁止手改。",
   "main": "./generated/ts/index.ts",

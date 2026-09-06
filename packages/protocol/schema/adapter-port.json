@@ -38,7 +38,7 @@
         },
         "installed": {
           "type": "boolean",
-          "description": "false 时 detectedVersion / executablePath 允许缺省，status 必须是 incompatible 或 unknown，不得报 ready"
+          "description": "false 时 detectedVersion / executablePath 可以缺省。发现状态不在本 DTO 里表达：AdapterDescriptor 描述「装了什么」，运行时能不能用由 AdapterHealth 组合出 AgentView.status（裁决 D31）"
         },
         "detectedVersion": { "type": "string" },
         "minimumVersion": {
@@ -91,6 +91,7 @@
       "additionalProperties": false,
       "description": "start() 的输入。对应施工方案 §8.1 的任务结构，字段名按 D11 转为 camelCase。",
       "required": [
+        "sessionId",
         "taskId",
         "nodeId",
         "workspaceId",
@@ -101,6 +102,10 @@
         "allowedPaths"
       ],
       "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Hub 本地会话 ID，由 Hub 生成后传入（裁决 D25）。Adapter 收到什么就用什么，不得自行生成——同一 Agent 承担实现与复核时必须是两个不同会话（裁决 D7），这个约束只有 Hub 能保证"
+        },
         "taskId": { "type": "string" },
         "nodeId": { "type": "string" },
         "workspaceId": { "type": "string" },
@@ -255,6 +260,35 @@
       "type": "string",
       "enum": ["streaming", "transport_lost", "agent_exited", "ended"],
       "description": "streamEvents() 的终止原因。transport_lost=连接断了但 Agent 可能还活着，会话保持 active 且可重连；agent_exited=Agent 进程已退出，会话置 invalid；ended=正常收尾。把这两种混为一谈会导致 Hub 要么误判任务失败，要么永远等一个已死的进程"
+    },
+    "AdapterEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "streamEvents() 逐条产出的事件（裁决 D32）。故意不带 eventId 和 seq——全局单调 seq 与幂等 eventId 由 Hub 分配，Adapter 直接产出 HubEvent 会把这个所有权弄乱。Hub 收到后补齐这两个字段再落库广播。不冻结这个形状的话，W2 定义一套、W3 消费时再猜一套，接缝正好落在两个包中间",
+      "required": ["sessionId", "type", "occurredAt", "payload"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Hub 本地会话 ID，即 AgentTaskSpec.sessionId（裁决 D25）"
+        },
+        "type": {
+          "type": "string",
+          "description": "必须是 FZ-1 冻结的 28 个事件类型之一，见 events/event-dictionary.md。Adapter 不得新增类型（裁决 D21）"
+        },
+        "occurredAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "payload": {
+          "type": "object",
+          "description": "按 type 取 agent-event.json 里对应的 payload 形状"
+        },
+        "externalRequestId": {
+          "type": "string",
+          "description": "供应商侧请求 ID。审批类事件必须带上，用于和 ApprovalDispatch 关联（裁决 D33）"
+        },
+        "vendorEventName": {
+          "type": "string",
+          "description": "映射自哪个供应商原生事件名，仅供排障。UI 不得据此渲染"
+        }
+      }
     },
     "AdapterStreamEnd": {
       "type": "object",

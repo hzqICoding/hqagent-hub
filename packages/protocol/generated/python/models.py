@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PROTOCOL_VERSION = "0.2.0"
+PROTOCOL_VERSION = "0.2.1"
 
 
 class _Base(BaseModel):
@@ -85,6 +85,17 @@ class AdapterDescriptor(_Base):
     executable_path: str | None = Field(default=None, alias="executablePath")
     capabilities: list[DeclaredCapability] = Field(alias="capabilities")
     detected_at: Timestamp | None = Field(default=None, alias="detectedAt")
+
+
+class AdapterEvent(_Base):
+    """streamEvents() 逐条产出的事件（裁决 D32）。故意不带 eventId 和 seq——全局单调 seq 与幂等 eventId 由 Hub 分配，Adapter 直接产出 HubEvent 会把这个所有权弄乱。Hub 收到后补齐这两个字段再落库广播。不冻结这个形状的话，W2 定义一套、W3 消费时再猜一套，接缝正好落在两个包中间"""
+
+    session_id: str = Field(alias="sessionId")
+    type: str = Field(alias="type")
+    occurred_at: Timestamp = Field(alias="occurredAt")
+    payload: dict[str, Any] = Field(alias="payload")
+    external_request_id: str | None = Field(default=None, alias="externalRequestId")
+    vendor_event_name: str | None = Field(default=None, alias="vendorEventName")
 
 
 class AdapterFailureKind(StrEnum):
@@ -244,7 +255,9 @@ class CapabilityItem(_Base):
     note: str | None = Field(default=None, alias="note")
 
 
-class RoleId(StrEnum):
+class BuiltinRoleId(StrEnum):
+    """内置RoleId值。边界类型是 str，自定义值同样合法（裁决 D30）。"""
+
     ORCHESTRATOR = "orchestrator"
     ARCHITECT = "architect"
     FRONTEND_IMPLEMENTER = "frontend_implementer"
@@ -253,6 +266,8 @@ class RoleId(StrEnum):
     TESTER = "tester"
     DEPLOYER = "deployer"
     INTEGRATOR = "integrator"
+
+RoleId = str
 
 
 class AgentView(_Base):
@@ -349,6 +364,7 @@ class DangerousAction(StrEnum):
 class AgentTaskSpec(_Base):
     """start() 的输入。对应施工方案 §8.1 的任务结构，字段名按 D11 转为 camelCase。"""
 
+    session_id: str = Field(alias="sessionId")
     task_id: str = Field(alias="taskId")
     node_id: str = Field(alias="nodeId")
     workspace_id: str = Field(alias="workspaceId")
@@ -484,6 +500,7 @@ class ApprovalRequiredPayload(_Base):
     target_resource: str = Field(alias="targetResource")
     risk_level: RiskLevel = Field(alias="riskLevel")
     expires_at: Timestamp | None = Field(default=None, alias="expiresAt")
+    external_request_id: str | None = Field(default=None, alias="externalRequestId")
 
 
 class ApprovalResolvedPayload(_Base):
@@ -961,7 +978,7 @@ class SessionView(_Base):
     agent_instance_id: str = Field(alias="agentInstanceId")
     agent_display_name: str = Field(alias="agentDisplayName")
     adapter_id: AdapterId | None = Field(default=None, alias="adapterId")
-    external_session_id: str = Field(alias="externalSessionId")
+    external_session_id: str | None = Field(default=None, alias="externalSessionId")
     purpose: SessionPurpose = Field(alias="purpose")
     reuse_policy: SessionReusePolicy = Field(alias="reusePolicy")
     task_id: str | None = Field(default=None, alias="taskId")

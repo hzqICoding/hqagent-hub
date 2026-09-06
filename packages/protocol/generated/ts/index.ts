@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.2.0' as const
+export const PROTOCOL_VERSION = '0.2.1' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -68,7 +68,7 @@ export interface AdapterDescriptor {
   integrationKind: AdapterIntegrationKind
   authKind: AuthKind
   supportedPlatforms: AdapterPlatform[]
-  /** false 时 detectedVersion / executablePath 允许缺省，status 必须是 incompatible 或 unknown，不得报 ready */
+  /** false 时 detectedVersion / executablePath 可以缺省。发现状态不在本 DTO 里表达：AdapterDescriptor 描述「装了什么」，运行时能不能用由 AdapterHealth 组合出 AgentView.status（裁决 D31） */
   installed: boolean
   detectedVersion?: string
   /** 低于此版本必须报 incompatible，不得降级尝试 */
@@ -77,6 +77,21 @@ export interface AdapterDescriptor {
   /** Adapter 声明支持的能力。硬能力（capabilities.yaml 里 hard:true）只能由此声明，用户不能在 UI 上勾选覆盖——施工方案 §6.2 */
   capabilities: DeclaredCapability[]
   detectedAt?: Timestamp
+}
+
+/** streamEvents() 逐条产出的事件（裁决 D32）。故意不带 eventId 和 seq——全局单调 seq 与幂等 eventId 由 Hub 分配，Adapter 直接产出 HubEvent 会把这个所有权弄乱。Hub 收到后补齐这两个字段再落库广播。不冻结这个形状的话，W2 定义一套、W3 消费时再猜一套，接缝正好落在两个包中间 */
+export interface AdapterEvent {
+  /** Hub 本地会话 ID，即 AgentTaskSpec.sessionId（裁决 D25） */
+  sessionId: string
+  /** 必须是 FZ-1 冻结的 28 个事件类型之一，见 events/event-dictionary.md。Adapter 不得新增类型（裁决 D21） */
+  type: string
+  occurredAt: Timestamp
+  /** 按 type 取 agent-event.json 里对应的 payload 形状 */
+  payload: Record<string, unknown>
+  /** 供应商侧请求 ID。审批类事件必须带上，用于和 ApprovalDispatch 关联（裁决 D33） */
+  externalRequestId?: string
+  /** 映射自哪个供应商原生事件名，仅供排障。UI 不得据此渲染 */
+  vendorEventName?: string
 }
 
 /** Adapter 失败分类。Hub 据此决定重试、降级还是直接失败，不靠解析错误文案 */
@@ -246,15 +261,18 @@ export interface CapabilityItem {
 }
 
 /** 角色 ID。内置角色见 registry/roles.yaml，用户自定义角色不在注册表内 */
-export type RoleId =
-  | 'orchestrator'
-  | 'architect'
-  | 'frontend_implementer'
-  | 'general_implementer'
-  | 'reviewer'
-  | 'tester'
-  | 'deployer'
-  | 'integrator'
+export type RoleId = string
+
+export const BUILTIN_ROLE_IDS = [
+  'orchestrator',
+  'architect',
+  'frontend_implementer',
+  'general_implementer',
+  'reviewer',
+  'tester',
+  'deployer',
+  'integrator',
+] as const
 
 export interface AgentView {
   /** Agent 实例 ID，例如 agent_codex_default */
@@ -358,6 +376,8 @@ export type DangerousAction =
 
 /** start() 的输入。对应施工方案 §8.1 的任务结构，字段名按 D11 转为 camelCase。 */
 export interface AgentTaskSpec {
+  /** Hub 本地会话 ID，由 Hub 生成后传入（裁决 D25）。Adapter 收到什么就用什么，不得自行生成——同一 Agent 承担实现与复核时必须是两个不同会话（裁决 D7），这个约束只有 Hub 能保证 */
+  sessionId: string
   taskId: string
   nodeId: string
   workspaceId: string
@@ -512,6 +532,8 @@ export interface ApprovalRequiredPayload {
   targetResource: string
   riskLevel: RiskLevel
   expiresAt?: Timestamp
+  /** 供应商侧审批请求 ID（裁决 D33）。ApprovalDispatch.externalRequestId 要求 Adapter 做关联，关联 ID 必须随事件走完全程，否则排障时和供应商日志对不上 */
+  externalRequestId?: string
 }
 
 export interface ApprovalResolvedPayload {
@@ -1040,8 +1062,8 @@ export interface SessionView {
   agentInstanceId: string
   agentDisplayName: string
   adapterId?: AdapterId
-  /** Claude 的 session_id / Codex 的 thread_id / Antigravity 的 conversation_id。必须是明确值，禁止使用 latest 之类不确定的续接方式 */
-  externalSessionId: string
+  /** 供应商侧会话 ID。不支持恢复的 Agent 可以缺省（裁决 D28）——空字符串虽然能跑，但让前端分不清「这个 Agent 不支持恢复」和「支持但凭据丢了」，而 Session 页的「继续」按钮该不该出现正取决于这个区别 */
+  externalSessionId?: string
   purpose: SessionPurpose
   reusePolicy: SessionReusePolicy
   /** 创建该会话的任务 */

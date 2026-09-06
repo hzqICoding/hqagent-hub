@@ -238,7 +238,18 @@ def py_member(value) -> str:
 
 def registry_values(definition: dict, registries: dict) -> list[str] | None:
     key = definition.get("x-registry")
+    if not key:
+        return None
+    # x-registry-open: 值域「以 registry 为内置集合，但允许用户扩展」。
+    # 生成闭枚举会让自定义值进不了 DTO（裁决 D30：RoleId 就是这么被卡住的），
+    # 所以这类返回 None，走下面的 str 别名分支；内置值另出常量表。
+    if definition.get("x-registry-open"):
+        return None
     return registries[key] if key else None
+
+
+def is_open_registry(definition: dict) -> bool:
+    return bool(definition.get("x-registry") and definition.get("x-registry-open"))
 
 
 # --------------------------------------------------------------------------
@@ -257,6 +268,16 @@ def emit_ts(index: dict, registries: dict, order: list[str], version: str) -> st
         if values is not None:
             out.append(f"export type {name} =")
             out.extend(f"  | '{v}'" for v in values)
+            out.append("")
+            continue
+        if is_open_registry(d):
+            builtin = registries[d["x-registry"]]
+            out.append(f"export type {name} = string")
+            out.append("")
+            const = "BUILTIN_" + snake(name).upper() + "S"
+            out.append(f"export const {const} = [")
+            out.extend(f"  '{v}'," for v in builtin)
+            out.append("] as const")
             out.append("")
             continue
         if "enum" in d and "properties" not in d:
@@ -339,6 +360,18 @@ def emit_py(index: dict, registries: dict, order: list[str], version: str) -> st
             out.append(f"class {name}(StrEnum):")
             for v in values:
                 out.append(f'    {py_member(v)} = "{v}"')
+            out.append("")
+            continue
+        if is_open_registry(d):
+            builtin = registries[d["x-registry"]]
+            out.append("")
+            out.append(f"class Builtin{name}(StrEnum):")
+            out.append(f'    """内置{name}值。边界类型是 str，自定义值同样合法（裁决 D30）。"""')
+            out.append("")
+            for v in builtin:
+                out.append(f'    {py_member(v)} = "{v}"')
+            out.append("")
+            out.append(f"{name} = str")
             out.append("")
             continue
         if "enum" in d and "properties" not in d:

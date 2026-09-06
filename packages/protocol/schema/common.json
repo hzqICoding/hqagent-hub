@@ -18,6 +18,7 @@
       "type": "string",
       "minLength": 1,
       "x-registry": "roles",
+      "x-registry-open": true,
       "description": "角色 ID。内置角色见 registry/roles.yaml，用户自定义角色不在注册表内"
     },
     "CapabilityId": {

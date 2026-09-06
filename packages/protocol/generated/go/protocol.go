@@ -6,7 +6,7 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.2.0"
+const Version = "0.2.1"
 
 type AdapterId = string
 
@@ -48,18 +48,7 @@ const (
 	ErrorCodeInternal ErrorCode = "INTERNAL"
 )
 
-type RoleId string
-
-const (
-	RoleIdOrchestrator RoleId = "orchestrator"
-	RoleIdArchitect RoleId = "architect"
-	RoleIdFrontendImplementer RoleId = "frontend_implementer"
-	RoleIdGeneralImplementer RoleId = "general_implementer"
-	RoleIdReviewer RoleId = "reviewer"
-	RoleIdTester RoleId = "tester"
-	RoleIdDeployer RoleId = "deployer"
-	RoleIdIntegrator RoleId = "integrator"
-)
+type RoleId = string
 
 type AggregateType string
 

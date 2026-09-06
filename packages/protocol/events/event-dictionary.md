@@ -1,7 +1,7 @@
 # HQAgent-Hub 事件字典
 
 > 本文件是事件语义的**唯一事实源**（裁决 D4）。Schema 定义结构，本文件定义"什么时候发、发了之后状态怎么变"。
-> 协议版本 `0.1.0`。改动走 `.hqagent/handoffs/` 变更流程，不得由消费方自行扩展。
+> 协议版本 `0.2.1`。改动走 `.hqagent/handoffs/` 变更流程，不得由消费方自行扩展。
 
 ## 1. 包络
 
@@ -16,7 +16,7 @@
   "aggregateId": "task_20260905_001",
   "type": "agent.started",            // 见下表
   "payload": { },                     // 结构由 type 决定，见下表
-  "protocolVersion": "0.1.0",
+  "protocolVersion": "0.2.1",
   // 以下为业务标识冗余，前端时间线直接用，不必挖 payload
   "taskId": "task_20260905_001",
   "nodeId": "node_02",
@@ -36,7 +36,19 @@
 
 ### 1.2 未知事件
 
-适配器产生的、映射表里没有的原生事件，**必须降级为 `agent.progress`** 并把原文放进 `payload.raw`，不得静默丢弃。前端遇到未知 `type` 时按 `agent.progress` 渲染。
+适配器遇到映射表里没有的原生事件，按两种情况处理（裁决 D34）：
+
+- **已知噪声**——心跳、rate-limit、重放 user 消息这类 Adapter 明确认得出来、
+  确定不需要的事件：在 `VendorEventMapping` 里填 `dropped: true` 并运行时计数。
+- **真正未知的事件**——Adapter 不认识的：**必须降级为 `agent.progress`**，
+  原文放进 `payload.raw`，并计数。**不得丢弃。**
+
+区别在于「认得出来所以决定不要」和「不认识」。前者是设计，后者是盲区，
+盲区必须留痕，否则「为什么进度卡住」无从查起。前端遇到未知 `type` 时按
+`agent.progress` 渲染。
+
+`payload.raw` 的 2048 上限约束的是 **`raw` 序列化后的总长度**，不是某个字符串
+字段的长度（裁决 D35）。
 
 ## 2. 业务事件
 
@@ -127,3 +139,4 @@
 | 日期 | 协议版本 | 变更 |
 |------|---------|------|
 | 2026-09-05 | 0.1.0 | 初版。合并施工方案 §8.3 的业务事件与 OTA §13.2 的升级事件；`approval.requested` 更名为 `approval.required`；新增 `node.resolved`、`task.path_violation`、`task.status_changed`、`agent.tool_call`、`agent.discovery.completed`、`system.maintenance`；补齐事件到状态的迁移表 |
+| 2026-09-06 | 0.2.1 | FZ-2.1：统一「无法映射」的措辞（D34）；明确 `raw` 2048 上限指序列化总长（D35）；成功取消不再产生 `agent.failed`（D27）；版本号跟进（D36） |

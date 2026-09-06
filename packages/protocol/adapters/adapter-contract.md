@@ -15,8 +15,8 @@ FZ-2 解锁 W2（Agent 适配层）与 W3（编排与安全）的正式实现。
 | `detect()` | — | `AdapterDescriptor` | `AdapterFailure` |
 | `health()` | — | `AdapterHealth` | `AdapterFailure` |
 | `start(spec)` | `AgentTaskSpec` | `AgentSessionHandle` | `AdapterFailure` |
-| `resume(req)` | `ResumeRequest` | — | `AdapterFailure` |
-| `streamEvents(sessionId)` | `string` | 事件流，以 `AdapterStreamEnd` 收尾 | 见 §4 |
+| `resume(req)` | `ResumeRequest` | `AgentSessionHandle` | `AdapterFailure` |
+| `streamEvents(sessionId)` | `string` | `AdapterEvent` 流，以 `AdapterStreamEnd` 收尾 | 见 §4 |
 | `approve(dispatch)` | `ApprovalDispatch` | — | `AdapterFailure` |
 | `cancel(req)` | `CancelRequest` | `CancelResult` | 见 §3 |
 | `collectResult(sessionId)` | `string` | `AgentResult` | `AdapterFailure` |
@@ -93,9 +93,18 @@ Adapter **必须**返回 `refused`，Hub 据此把节点标记为 `failed` 而�
 
 ### 取消产生的事件
 
-取消不产生新事件类型。按已冻结的事件字典：
-`agent.failed`（`errorCode` 取 `AdapterFailureKind.cancelled` 对应的码）
-→ `task.status_changed`（`to: cancelled`）。
+**成功取消只发 `task.status_changed`（`to: cancelled`），不发 `agent.failed`**（裁决 D27）。
+
+取消是正常路径，不是故障。原规则要求成功取消也产生 `agent.failed`，但
+`ErrorCode` 里根本没有取消对应的码——W3 实现时发现这条走不通。也不新增取消错误码：
+新增一个只在"正常结束"时使用的错误码，本身就是矛盾的。
+
+只有 `refused` 才是失败：`errorCode` 用 `TASK_NOT_CANCELLABLE`，
+并按上文填 `orphanProcessIds`。
+
+不新增"已发中断但 grace 到点仍在跑"这类中间 `CancelOutcome`。它和"没有中断入口"
+对 Hub 的下一步动作完全相同（都是升级到 force），区别只是诊断信息，放
+`CancelResult.detail`。**枚举值要为决策服务，不为叙事服务。**
 
 ## 4. 事件流的断开语义
 
@@ -144,10 +153,17 @@ Hub 要能区分「用户没决定」和「Agent 不等了」，这两种对用�
 
 1. **必须声明映射表。** 每个 Adapter 提供 `VendorEventMapping[]`，
    说明每种供应商事件映射到哪个统一事件。
-2. **丢弃必须显式且计数。** 无法映射的事件填 `dropped: true`，并在运行时计数。
-   静默吞掉会让「为什么进度卡住」这类问题无从查起。
+2. **分两种情况，都必须计数**（裁决 D34）。
+   - **已知噪声**（心跳、rate-limit、重放 user 消息——Adapter 明确认得出来、
+     确定不需要的）：填 `dropped: true` 并计数。
+   - **真正未知的事件**：降级为 `agent.progress`，原文放 `payload.raw`，并计数。
+     **不得丢弃。**
+
+   区别在于「认得出来所以决定不要」和「不认识」。前者是设计，后者是盲区，
+   盲区必须留痕——静默吞掉会让「为什么进度卡住」这类问题无从查起。
 3. **原始数据不泄漏到 UI。** `AgentProgressPayload.raw` 是**诊断字段**，
    仅进诊断包与日志，UI 不得把它当主内容渲染。
+   2048 上限约束的是 **`raw` 序列化后的总长度**，不是某个字符串字段（裁决 D35）。
    未知字段一律不进 `payload` 的具名字段。
 
 ### 最小映射集
@@ -209,3 +225,62 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 
 实测结论回填后，若发现本契约有形状不匹配的地方，**不要自己改 `packages/protocol/`**，
 写进 handoff 提出来，由 W0 决定是否需要 FZ-2.1。
+
+## 10. FZ-2.1 补充（2026-09-06）
+
+### `sessionId` 由 Hub 生成并传入（裁决 D25）
+
+`AgentTaskSpec` 现在有**必填** `sessionId`。Adapter 收到什么就用什么，
+**不得自行生成**。
+
+这条是 W2 和 W3 独立提出来的同一个问题：原来 `AgentSessionHandle.sessionId` 说是
+「Hub 生成后传给 Adapter」，但 `start()` 的唯一入参里没有这个字段，也没有别的通道。
+两个包只好各自绕路——W2 让 Adapter 生成 `session_<uuid>`，W3 接受 `start()` 的返回值。
+**结果是会话身份的所有权从 Hub 漏到了 Adapter。**
+
+为什么不能漏：D7 要求同一 Agent 承担实现与复核时必须是两个不同会话，
+而 Adapter 不知道自己这次是在实现还是在复核。只有 Hub 知道，所以只有 Hub 能保证。
+
+### `pause` 与 `append_instruction` 的语义收窄（裁决 D26）
+
+`TaskActionInput` 冻结了这两个动作，但 **Adapter Port 不为它们新增方法**。
+多数 CLI Agent 没有真正的暂停语义，加了会逼每个适配器假装实现——
+那正是 §3 要避免的那类谎报。改为收窄动作本身：
+
+- `pause`：只作用于**节点之间**。当前节点跑完就停住，**不打断正在执行的 Agent**。
+- `append_instruction`：只在节点 idle 时可用。运行中必须拒绝，返回 `TASK_ACTION_INVALID`。
+
+前端据此做按钮禁用态。用 `cancel()` 假装 pause 是明确禁止的——那会关掉会话。
+
+### `resume()` 返回 handle，`continue_lineage` 建子会话（裁决 D29）
+
+`resume()` 现在返回 `AgentSessionHandle`。`continue_lineage` 的语义定为
+**新建子 Session 并记 `parentSessionId`**，不是复用原 Session 记录——
+否则 lineage（世系）这个词没有意义。
+
+### `AdapterEvent` 已冻结（裁决 D32）
+
+`streamEvents()` 逐条产出 `AdapterEvent`。它**故意不带 `eventId` 和 `seq`**：
+全局单调 `seq` 与幂等 `eventId` 由 Hub 分配，Adapter 直接产出 `HubEvent`
+会把这个所有权弄乱。Hub 收到后补齐两个字段再落库广播。
+
+审批类事件必须填 `externalRequestId`，用于和 `ApprovalDispatch` 关联——
+`ApprovalRequiredPayload` 也同步加了这个可选字段（裁决 D33），
+关联 ID 要随事件走完全程，否则排障时和供应商日志对不上。
+
+### `AdapterDescriptor` 不表达运行时状态（裁决 D31）
+
+`installed` 的描述里原来写「status 必须是 incompatible 或 unknown」，
+但这个 DTO 根本没有 `status` 字段。已删掉那句。
+
+分层是：`AdapterDescriptor` 描述**装了什么**，`AdapterHealth` 描述**现在能不能用**，
+两者由 `AdapterManager` 组合出 `AgentView.status`。不要把运行时状态塞回 Descriptor。
+
+### `RoleId` 是开放类型（裁决 D30）
+
+Schema 一直允许用户自定义角色，但生成器把 `RoleId` 生成成了八值闭枚举，
+自定义角色进不了 `TaskNodeView` / `ResolvedTeamView`。这是**生成器的缺陷**。
+
+现在边界类型是 `string`；内置八个角色另出常量：
+TS 是 `BUILTIN_ROLE_IDS`，Python 是 `BuiltinRoleId`。
+Role Resolver 对未知角色按「无内置能力要求」处理。

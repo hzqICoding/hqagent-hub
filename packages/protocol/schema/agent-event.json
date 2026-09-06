@@ -95,7 +95,11 @@
         "action": { "$ref": "common.json#/$defs/DangerousAction" },
         "targetResource": { "type": "string" },
         "riskLevel": { "$ref": "common.json#/$defs/RiskLevel" },
-        "expiresAt": { "$ref": "common.json#/$defs/Timestamp" }
+        "expiresAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "externalRequestId": {
+          "type": "string",
+          "description": "供应商侧审批请求 ID（裁决 D33）。ApprovalDispatch.externalRequestId 要求 Adapter 做关联，关联 ID 必须随事件走完全程，否则排障时和供应商日志对不上"
+        }
       }
     },
     "ApprovalResolvedPayload": {
