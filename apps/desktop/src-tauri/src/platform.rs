@@ -6,16 +6,18 @@ use crate::error::ShellError;
 pub fn verify_private_file_acl(path: &Path) -> Result<(), ShellError> {
     use std::{ffi::c_void, os::windows::ffi::OsStrExt, ptr};
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, ERROR_SUCCESS, HANDLE},
+        // windows-sys 0.59：LocalFree 在 Foundation，不在 System::Memory；
+        // ACCESS_ALLOWED_ACE_TYPE 在 System::SystemServices，不在 Security。
+        Foundation::{CloseHandle, LocalFree, ERROR_SUCCESS, HANDLE},
         Security::{
             Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
             EqualSid, GetAce, GetAclInformation, GetTokenInformation, AclSizeInformation,
-            TokenUser, ACCESS_ALLOWED_ACE, ACCESS_ALLOWED_ACE_TYPE, ACE_HEADER,
+            TokenUser, ACCESS_ALLOWED_ACE, ACE_HEADER,
             ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION, INHERITED_ACE, OWNER_SECURITY_INFORMATION,
             TOKEN_QUERY, TOKEN_USER,
         },
         System::{
-            Memory::LocalFree,
+            SystemServices::ACCESS_ALLOWED_ACE_TYPE,
             Threading::{GetCurrentProcess, OpenProcessToken},
         },
     };
@@ -134,14 +136,19 @@ pub fn verify_private_file_acl(path: &Path) -> Result<(), ShellError> {
             ));
         }
         let header = unsafe { &*(ace.cast::<ACE_HEADER>()) };
-        if header.AceFlags & INHERITED_ACE != 0 {
+        // AceFlags 是 u8，windows-sys 把 INHERITED_ACE 定义成 u32，需显式窄化。
+        // INHERITED_ACE == 0x10，在 u8 范围内，语义不变。
+        if header.AceFlags & INHERITED_ACE as u8 != 0 {
             return Err(ShellError::InsecureDescriptorAcl(
                 "Descriptor DACL 仍包含继承权限".into(),
             ));
         }
-        if header.AceType == ACCESS_ALLOWED_ACE_TYPE {
+        // AceType 是 u8，ACCESS_ALLOWED_ACE_TYPE 定义为 u32(0)，需窄化比较。
+        if header.AceType == ACCESS_ALLOWED_ACE_TYPE as u8 {
             let allowed = unsafe { &*(ace.cast::<ACCESS_ALLOWED_ACE>()) };
-            let sid = (&allowed.SidStart as *const u32).cast::<c_void>();
+            // PSID 在 windows-sys 里是 *mut c_void；EqualSid 只读不写，
+            // 这里的 const→mut 转换仅为满足签名。
+            let sid = (&allowed.SidStart as *const u32).cast::<c_void>() as *mut c_void;
             if unsafe { EqualSid(sid, current_user_sid) } == 0 {
                 return Err(ShellError::InsecureDescriptorAcl(
                     "Descriptor 向当前用户之外的主体授予了访问权限".into(),
@@ -190,8 +197,9 @@ pub fn process_matches_executable(pid: u32, expected: &Path) -> bool {
         return false;
     }
     let mut exit_code = 0_u32;
+    // STILL_ACTIVE 在 windows-sys 里是 i32（259），退出码是 u32。
     let active = unsafe { GetExitCodeProcess(handle, &mut exit_code) } != 0
-        && exit_code == STILL_ACTIVE;
+        && exit_code == STILL_ACTIVE as u32;
     let mut buffer = vec![0_u16; 32_768];
     let mut length = buffer.len() as u32;
     let queried = unsafe {

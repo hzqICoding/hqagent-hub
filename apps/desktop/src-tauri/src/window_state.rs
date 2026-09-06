@@ -1,10 +1,7 @@
 use std::{fs, path::Path};
 
 use serde::{Deserialize, Serialize};
-use tauri::{
-    dpi::{PhysicalPosition, PhysicalSize},
-    Position, Size, WebviewWindow,
-};
+use tauri::{PhysicalPosition, PhysicalSize, Position, Size, WebviewWindow};
 
 use crate::{error::ShellError, fs_util::atomic_write};
 
