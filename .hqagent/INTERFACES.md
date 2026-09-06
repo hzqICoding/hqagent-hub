@@ -65,10 +65,48 @@
 
 `UiGateway` 与 ViewModel 属于前端应用层，手写，不由 Schema 生成（裁决 D10）。
 
-## FZ-2 — 未冻结
+## FZ-2 — 已冻结（2026-09-06，协议 0.2.0，SHA `bfcd91e`）
 
-Adapter Port 方法签名、Session 生命周期细则、能力探测规则、取消/审批/事件映射。
-产出物为 `docs/Agent适配接入规范.md`，由 W2 调研后补齐，冻结后 W2/W3 才进入正式实现。
+解锁 W2（Agent 适配层）与 W3（编排与安全）的正式实现。
+
+### 冻结内容
+
+| 产出 | 说明 |
+| --- | --- |
+| `packages/protocol/schema/adapter-port.json` | 18 个类型。把施工方案 §7.2 的 8 行签名补成精确契约 |
+| `packages/protocol/adapters/adapter-contract.md` | JSON Schema 表达不了的规则，见下 |
+| `ORIGIN_NOT_ALLOWED`（403） | 新增错误码，`UNAUTHORIZED` 收窄为「没带对 token」 |
+| 裁决 D17–D24 | 见 `.hqagent/DECISIONS.md` |
+
+类型总数 118 → 136。`generate + validate` 通过，7 个 Contract Fixture 全绿。
+
+### 契约规则（表达不了在 Schema 里的部分）
+
+1. **Session 生命周期**：`active ⇄ idle → closed`，`invalid` 单向不可逆。
+   新任务默认新会话；`invalid` 后只能新建不能 resume。
+2. **两段式取消**：Hub 先 `graceful` 带 `graceSeconds`，到点再 `force`。
+   Adapter 不得自行延长。`refused` 必须如实上报，Hub 据此标 `failed` 而非 `cancelled`。
+3. **事件流断开二分**：`transport_lost` 保持 `active` 可重连；`agent_exited` 置 `invalid` 不重连。
+4. **审批时效归 Hub**；Agent 侧超时报 `kind: agent_error` 并写明来源。
+   `requiresApproval` 非空的任务不得派给无 `tool_approval` 能力的 Adapter。
+5. **事件字典对 Adapter 只读**（28 条为全集），丢弃填 `dropped: true` 并计数。
+6. **路径越界前后两道**：能拦截的写入前拦截，不能的由 Hub 按 `changedFiles` 后置校验。
+
+### 下游必须跟进的改动
+
+| 包 | 改动 | 原因 |
+| --- | --- | --- |
+| W1 | `apps/hub/core/constants.py` 的 `PROTOCOL_VERSION` 改为从生成包导入 | 现在硬编码 `"0.1.0"`，协议升版会静默失配（D24） |
+| W1 | Origin/Host 拒绝改用 `ORIGIN_NOT_ALLOWED`（403），WS 侧关闭码 4403 | 现在 HTTP 返 401、WS 返 403，同条件两种传输不一致（D23） |
+| W4 | 无需改动 | `adapter-port.json` 是 Hub 内部端口，Vue 不可见 |
+| W5 | 无需改动 | 同上 |
+
+### 仍未冻结的部分
+
+FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
+`docs/Agent适配接入规范.md` §2 的调研矩阵（Claude / Codex 的接入方式、探测命令、
+外部会话 ID、流式格式、审批取消语义、结构化结果、已知限制）仍需 W2 实测填满。
+实测后若发现形状不匹配，写 handoff 提出，由 W0 决定是否需要 FZ-2.1。
 
 ## RD-1 / RD-2 — 未达成
 

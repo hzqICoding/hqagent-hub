@@ -57,3 +57,78 @@ Update Plan v2 的 `healthChecks` 要在没有 Token 的情况下探活新装版
 ### D16 `TaskNodeView.sessionKey` 改为 `sessionId`
 
 D7 之后不存在 `workspace:role:agent` 形式的全局会话键了，节点引用的是 Hub 本地会话 ID。
+
+## FZ-2 裁决（2026-09-06，协议 0.2.0）
+
+### D17 `cancel()` 改为两段式，且必须能表达「取消失败」
+
+施工方案 §7.2 的 `cancel(sessionId): Promise<void>` 表达不了取消失败。
+
+**决定**：引入 `CancelMode`（`graceful` / `force`）与 `CancelOutcome` 五值。
+Hub 先发 graceful 带 `graceSeconds`，到点未停再发 force，Adapter 不得自行延长宽限期。
+
+理由：OTA 排空有超时上限，`waitPids` 必须在有限时间内收敛，一个能无限拖延取消的
+Adapter 会让升级流程卡死。
+
+`refused`（底层 Agent 无中断入口）必须如实上报，Hub 据此把节点标为 `failed` 而非
+`cancelled`。**不得假装取消成功**——用户以为停了、实际还在改文件，比取消失败更坏。
+
+### D18 事件流断开必须区分 `transport_lost` 与 `agent_exited`
+
+**决定**：`AdapterStreamStatus` 四值。`transport_lost` 保持会话 `active` 并可重连；
+`agent_exited` 直接把会话置 `invalid`，不再重连。
+
+理由：混为一谈的后果是二选一——要么把网络抖动误判成任务失败，
+要么永远等一个已经死掉的进程。
+
+### D19 审批时效由 Hub 独占，Agent 侧超时是另一类失败
+
+**决定**：`ApprovalRequiredPayload.expiresAt` 由 Hub 设定，Adapter 不得自行判定过期后放行。
+底层 Agent 自己超时放弃时，报 `AdapterFailure { kind: agent_error }` 并写明是 Agent 侧超时。
+
+理由：「用户没决定」和「Agent 不等了」对用户的提示完全不同，混成一个码就没法给对提示。
+
+配套硬约束：`requiresApproval` 非空的任务，Hub **不得**派给未声明 `tool_approval`
+硬能力的 Adapter。这是 Role Resolver 的准入检查，不是运行时检查——派出去才发现拦不住，
+危险动作已经执行了。
+
+### D20 `detect()` 与 `health()` 不合并
+
+**决定**：`detect()` 产出 `AdapterDescriptor`（装没装、版本、能力），开销大可缓存；
+`health()` 产出 `AdapterHealth`（存活、登录态），轻量周期调用，不重新枚举能力。
+
+登录态失效走 `health()` 的 `status: not_logged_in` + `authValid: false`，
+不得返回 `error` 再把「请先登录」塞进文案——UI 要据此给可操作的登录引导。
+
+### D21 事件字典对 Adapter 只读，丢弃必须显式计数
+
+**决定**：FZ-1 冻结的 28 条事件是全集，Adapter 不得新增类型。
+每个 Adapter 必须声明 `VendorEventMapping[]`；无法映射的填 `dropped: true` 并运行时计数。
+原始数据只进 `AgentProgressPayload.raw`（诊断字段，上限 2048 字符），UI 不得当主内容渲染。
+
+理由：静默吞事件会让「为什么进度卡住」无从查起。
+
+### D22 路径越界要前后两道，不能只做后置
+
+**决定**：能在写入前拦截的 Adapter 必须拦截并返回 `kind: path_violation`；
+不能拦截的由 Hub 在 `collectResult()` 后按 `changedFiles` 校验。两道都要有。
+
+理由：只做后置校验时，发现越界文件已经被改了。
+
+### D23 新增 `ORIGIN_NOT_ALLOWED`（403）
+
+FZ-1 的 `error-codes.yaml` 里没有任何一个码是给「Host / Origin 不在白名单」用的，
+W1 只能复用 `UNAUTHORIZED`（401），导致排障时分不清是凭据问题还是来源问题；
+且 HTTP 返 401、WebSocket 返 403，同一条件两种传输不一致。
+（这是 W1×W5 冒烟查出来的，见 `.hqagent/reviews/INT-smoke-W1xW5.md` R4。）
+
+**决定**：新增 `ORIGIN_NOT_ALLOWED`，HTTP 403，WS 侧以关闭码 4403 表达。
+`UNAUTHORIZED` 收窄为「没带对 token」。W1 需相应调整。
+
+### D24 协议版本升到 0.2.0，且只能有一个事实源
+
+FZ-2 新增 18 个类型（118 → 136），属相容扩展，按 semver 升次版本号。
+
+**决定**：`packages/protocol/VERSION` 是唯一事实源，生成物导出 `PROTOCOL_VERSION`。
+W1 现在在 `apps/hub/core/constants.py` 里硬编码了 `PROTOCOL_VERSION = "0.1.0"`，
+**必须改成从生成包导入**，否则协议升版时会静默失配。

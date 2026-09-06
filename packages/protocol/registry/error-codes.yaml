@@ -22,6 +22,13 @@ errors:
     http: 401
     retryable: false
     description: 缺少或错误的 Bearer token；token 只能来自 hub.json
+  - code: ORIGIN_NOT_ALLOWED
+    http: 403
+    retryable: false
+    description: >-
+      Host 或 Origin 不在白名单。与 UNAUTHORIZED 区分开：那条是「没带对 token」，
+      这条是「token 对但来源不对」。混用会让排障时分不清是凭据问题还是来源问题。
+      HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
   - code: NOT_FOUND
     http: 404
     retryable: false
