@@ -27,6 +27,8 @@ export { default as HqErrorState } from './HqErrorState.vue'
 export { default as HqCodeBlock } from './HqCodeBlock.vue'
 export { default as HqMarkdown } from './HqMarkdown.vue'
 
+export { default as ResolveSourceBadge } from './ResolveSourceBadge.vue'
+
 // 4 Page states
 export { default as LoadingState } from './states/LoadingState.vue'
 export { default as OfflineState } from './states/OfflineState.vue'

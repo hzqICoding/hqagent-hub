@@ -8,6 +8,7 @@ import type {
   UiDensity,
   ContrastMode,
   FontScale,
+  ReduceMotion,
 } from './theme.types'
 
 export const useThemeStore = defineStore('theme', () => {
@@ -45,7 +46,7 @@ export const useThemeStore = defineStore('theme', () => {
     settings.value = themeEngine.updateSettings({ fontScale: newScale })
   }
 
-  function setReduceMotion(reduce: boolean | 'system') {
+  function setReduceMotion(reduce: ReduceMotion) {
     settings.value = themeEngine.updateSettings({ reduceMotion: reduce })
   }
 

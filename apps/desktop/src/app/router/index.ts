@@ -1,9 +1,88 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import AppLayout from '../layouts/AppLayout.vue'
 
 const routes: RouteRecordRaw[] = [
   {
+    path: '/onboarding',
+    name: 'onboarding',
+    component: () => import('@/pages/onboarding/OnboardingPage.vue'),
+    meta: { title: '首次使用引导' },
+  },
+  {
     path: '/',
-    redirect: '/dev/ui-kit',
+    component: AppLayout,
+    children: [
+      {
+        path: '',
+        redirect: '/overview',
+      },
+      {
+        path: 'overview',
+        name: 'overview',
+        component: () => import('@/pages/overview/OverviewPage.vue'),
+        meta: { title: '总览控制台' },
+      },
+      {
+        path: 'agents',
+        name: 'agents',
+        component: () => import('@/pages/agents/AgentsPage.vue'),
+        meta: { title: 'Agent 管理与诊断' },
+      },
+      {
+        path: 'workspaces',
+        name: 'workspaces',
+        component: () => import('@/pages/workspaces/WorkspacesPage.vue'),
+        meta: { title: '工作区管理' },
+      },
+      {
+        path: 'teams',
+        name: 'teams',
+        component: () => import('@/pages/teams/TeamsPage.vue'),
+        meta: { title: '团队配置', featureKey: 'teamProfiles' },
+      },
+      {
+        path: 'tasks',
+        name: 'tasks',
+        component: () => import('@/pages/tasks/TasksPage.vue'),
+        meta: { title: '任务中心', featureKey: 'tasks' },
+      },
+      {
+        path: 'tasks/:taskId',
+        name: 'task-detail',
+        component: () => import('@/pages/tasks/TaskDetailPage.vue'),
+        meta: { title: '任务详情', featureKey: 'tasks' },
+      },
+      {
+        path: 'sessions',
+        name: 'sessions',
+        component: () => import('@/pages/sessions/SessionsPage.vue'),
+        meta: { title: '会话历史', featureKey: 'sessions' },
+      },
+      {
+        path: 'approvals',
+        name: 'approvals',
+        component: () => import('@/pages/approvals/ApprovalsPage.vue'),
+        meta: { title: '安全审批中心', featureKey: 'approvals' },
+      },
+      {
+        path: 'templates',
+        name: 'templates',
+        component: () => import('@/pages/templates/TemplatesPage.vue'),
+        meta: { title: '任务模板' },
+      },
+      {
+        path: 'updates',
+        name: 'updates',
+        component: () => import('@/pages/common/PlaceholderPage.vue'),
+        meta: { title: '软件更新', milestone: 'F4', featureKey: 'updates' },
+      },
+      {
+        path: 'settings',
+        name: 'settings',
+        component: () => import('@/pages/common/PlaceholderPage.vue'),
+        meta: { title: '系统设置', milestone: 'F4' },
+      },
+    ],
   },
 ]
 

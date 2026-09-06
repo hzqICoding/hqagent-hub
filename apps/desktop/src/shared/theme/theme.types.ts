@@ -1,14 +1,25 @@
+import type { AppearanceSettings } from '@hqagent/protocol'
+
 export type {
   ThemeMode,
-  ResolvedThemeMode,
   ThemePalette,
   UiDensity,
   ContrastMode,
   FontScale,
+  ReduceMotion,
   AppearanceSettings,
 } from '@hqagent/protocol'
 
-export { defaultAppearance } from '@hqagent/protocol'
+export type ResolvedThemeMode = 'light' | 'dark'
+
+export const defaultAppearance: AppearanceSettings = {
+  mode: 'system',
+  palette: 'hq-blue',
+  density: 'comfortable',
+  contrast: 'normal',
+  reduceMotion: 'system',
+  fontScale: 1,
+}
 
 export const PALETTES_META: Record<
   string,

@@ -1,5 +1,4 @@
 import type {
-  UiGateway,
   BootstrapView,
   WorkspaceView,
   WorkspaceQuery,
@@ -25,33 +24,63 @@ import type {
   UpdateStateView,
   UpdateActionInput,
   SubscribeEventsInput,
-  EventSubscription,
   HubEvent,
   ApiEnvelope,
+  ErrorCode,
   PageResult,
+  WsTicket,
 } from '@hqagent/protocol'
 
-interface HubEndpoint {
+import type { UiGateway, EventSubscription } from './ui-gateway'
+
+export interface HubEndpoint {
   baseUrl: string
   token: string
   pid?: number
 }
 
-// Wrapper for Tauri invoke with safe browser fallback
+export class HubApiError extends Error {
+  readonly code: ErrorCode
+  readonly status: number
+  readonly detail?: Record<string, unknown>
+  readonly retryable: boolean
+  readonly requestId?: string
+
+  constructor(
+    message: string,
+    code: ErrorCode,
+    status: number,
+    detail?: Record<string, unknown>,
+    retryable = false,
+    requestId?: string
+  ) {
+    super(message)
+    this.name = 'HubApiError'
+    this.code = code
+    this.status = status
+    this.detail = detail
+    this.retryable = retryable
+    this.requestId = requestId
+  }
+}
+
+// Wrapper for Tauri invoke with strict validation (R1: no hardcoded fallback token)
 async function getHubEndpointFromTauri(): Promise<HubEndpoint> {
   if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core')
-      return await invoke<HubEndpoint>('get_hub_endpoint')
-    } catch (err) {
-      console.warn('[LocalHubGateway] invoke("get_hub_endpoint") failed, using fallback', err)
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke<HubEndpoint>('get_hub_endpoint')
+  }
+
+  // In browser dev mode, only read from explicit environment variables (R1)
+  if (import.meta.env.DEV) {
+    const baseUrl = import.meta.env.VITE_HUB_BASE_URL
+    const token = import.meta.env.VITE_HUB_TOKEN
+    if (baseUrl && token) {
+      return { baseUrl, token }
     }
   }
-  // Fallback for dev / browser testing
-  return {
-    baseUrl: 'http://127.0.0.1:49210',
-    token: 'tok_dev_fallback_hub_token',
-  }
+
+  throw new Error('Local Hub endpoint unavailable: not running in Tauri shell and no VITE_HUB_* dev env provided')
 }
 
 export class LocalHubGateway implements UiGateway {
@@ -59,6 +88,15 @@ export class LocalHubGateway implements UiGateway {
   private ws: WebSocket | null = null
   private lastConfirmedSeq = 0
   private subscribers: Set<(event: HubEvent) => void> = new Set()
+  private connectPromise: Promise<void> | null = null
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private reconnectAttempts = 0
+
+  constructor(initialEndpoint?: HubEndpoint) {
+    if (initialEndpoint) {
+      this.endpoint = initialEndpoint
+    }
+  }
 
   private async ensureEndpoint(): Promise<HubEndpoint> {
     if (!this.endpoint) {
@@ -79,15 +117,56 @@ export class LocalHubGateway implements UiGateway {
       headers,
     })
 
-    if (!res.ok) {
-      throw new Error(`HTTP Error ${res.status}: ${res.statusText}`)
+    // R4: Parse envelope first regardless of status code to preserve error codes
+    let envelope: ApiEnvelope<T> | null = null
+    try {
+      envelope = (await res.json()) as ApiEnvelope<T>
+    } catch {
+      // Body may not be valid JSON
     }
 
-    const envelope = (await res.json()) as ApiEnvelope<T>
-    if (!envelope.success) {
-      throw new Error(envelope.error?.message || 'Unknown Hub Error')
+    if (envelope && !envelope.success && envelope.error) {
+      throw new HubApiError(
+        envelope.error.message,
+        envelope.error.code,
+        res.status,
+        envelope.error.detail,
+        envelope.error.retryable,
+        envelope.requestId
+      )
     }
+
+    if (!res.ok) {
+      const defaultCode: ErrorCode = res.status === 401 ? 'UNAUTHORIZED' : 'INTERNAL'
+      throw new HubApiError(
+        `HTTP Error ${res.status}: ${res.statusText}`,
+        defaultCode,
+        res.status
+      )
+    }
+
+    if (!envelope || !envelope.success) {
+      throw new HubApiError(
+        envelope?.error?.message || 'Unknown Hub Error',
+        envelope?.error?.code || 'INTERNAL',
+        res.status
+      )
+    }
+
     return envelope.data as T
+  }
+
+  /**
+   * 原生 WebSocket 无法设 Authorization Header。
+   * 必须先用 Bearer 调 POST /api/v1/auth/ws-ticket 换 30 秒一次性 Ticket，再用查询参数握手。
+   * 每次重连必须重新换票，严禁缓存复用。
+   */
+  private async acquireWsTicket(): Promise<string> {
+    const res = await this.fetchApi<WsTicket>('/api/v1/auth/ws-ticket', {
+      method: 'POST',
+      body: JSON.stringify({ purpose: 'events' }),
+    })
+    return res.ticket
   }
 
   async getBootstrap(): Promise<BootstrapView> {
@@ -207,40 +286,125 @@ export class LocalHubGateway implements UiGateway {
     })
   }
 
+  // R7: Exponential backoff reconnect
+  private scheduleReconnect(onError?: (err: unknown) => void) {
+    if (this.reconnectTimer || this.subscribers.size === 0) return
+    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 15000)
+    this.reconnectAttempts++
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.connectWebSocket(onError)
+    }, delay)
+  }
+
+  // R2: Single-flight WebSocket connection (returns connectPromise while in-flight)
+  private connectWebSocket(onError?: (err: unknown) => void): Promise<void> {
+    if (this.subscribers.size === 0) return Promise.resolve()
+    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
+      return Promise.resolve()
+    }
+    if (this.connectPromise) {
+      return this.connectPromise
+    }
+
+    this.connectPromise = (async () => {
+      try {
+        const [{ baseUrl }, ticket] = await Promise.all([this.ensureEndpoint(), this.acquireWsTicket()])
+        if (this.subscribers.size === 0) {
+          return
+        }
+        const wsUrl =
+          baseUrl.replace(/^http/, 'ws') +
+          `/api/v1/events/stream?ticket=${encodeURIComponent(ticket)}&after=${this.lastConfirmedSeq}`
+
+        const ws = new WebSocket(wsUrl)
+        this.ws = ws
+
+        ws.onopen = () => {
+          this.reconnectAttempts = 0
+        }
+
+        ws.onmessage = (msg) => {
+          try {
+            const event = JSON.parse(msg.data) as HubEvent
+            if (event.seq > this.lastConfirmedSeq) {
+              this.lastConfirmedSeq = event.seq
+            }
+            this.subscribers.forEach((fn) => fn(event))
+          } catch (e) {
+            console.error('[LocalHubGateway] WS parse error', e)
+          }
+        }
+
+        ws.onerror = (err) => {
+          if (onError) onError(err)
+        }
+
+        ws.onclose = (event: CloseEvent) => {
+          if (this.ws === ws) {
+            this.ws = null
+          }
+          // F2-R2: Check close code 4410 (EVENT_CURSOR_EXPIRED)
+          if (event && (event.code === 4410 || event.code === 4010)) {
+            this.lastConfirmedSeq = 0
+            this.getBootstrap()
+              .catch((err) => {
+                console.error('[LocalHubGateway] Failed to refetch bootstrap snapshot on cursor expired', err)
+              })
+              .finally(() => {
+                if (this.subscribers.size > 0) {
+                  this.scheduleReconnect(onError)
+                }
+              })
+            return
+          }
+          if (this.subscribers.size > 0) {
+            this.scheduleReconnect(onError)
+          }
+        }
+      } catch (err) {
+        // R3: Catch ticket acquisition failure before WebSocket is created and schedule reconnect
+        console.error('[LocalHubGateway] Failed to establish WS connection', err)
+        // R6: Reset sequence cursor if cursor expired
+        if (err instanceof HubApiError && err.code === 'EVENT_CURSOR_EXPIRED') {
+          this.lastConfirmedSeq = 0
+        }
+        if (onError) onError(err)
+        if (this.subscribers.size > 0) {
+          this.scheduleReconnect(onError)
+        }
+      } finally {
+        this.connectPromise = null
+      }
+    })()
+
+    return this.connectPromise
+  }
+
   subscribeEvents(
-    input: SubscribeEventsInput,
+    _input: SubscribeEventsInput,
     onEvent: (event: HubEvent) => void,
     onError?: (err: unknown) => void
   ): EventSubscription {
     this.subscribers.add(onEvent)
 
-    this.ensureEndpoint().then(({ baseUrl, token }) => {
-      const wsUrl = baseUrl.replace(/^http/, 'ws') + `/api/v1/events/stream?token=${encodeURIComponent(token)}&after=${this.lastConfirmedSeq}`
-      this.ws = new WebSocket(wsUrl)
-
-      this.ws.onmessage = (msg) => {
-        try {
-          const event = JSON.parse(msg.data) as HubEvent
-          if (event.seq > this.lastConfirmedSeq) {
-            this.lastConfirmedSeq = event.seq
-          }
-          this.subscribers.forEach((fn) => fn(event))
-        } catch (e) {
-          console.error('[LocalHubGateway] WS parse error', e)
-        }
-      }
-
-      this.ws.onerror = (err) => {
-        if (onError) onError(err)
-      }
-    })
+    if (!this.ws && !this.connectPromise) {
+      this.connectWebSocket(onError)
+    }
 
     return {
       unsubscribe: () => {
         this.subscribers.delete(onEvent)
-        if (this.subscribers.size === 0 && this.ws) {
-          this.ws.close()
-          this.ws = null
+        if (this.subscribers.size === 0) {
+          if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer)
+            this.reconnectTimer = null
+          }
+          this.reconnectAttempts = 0
+          if (this.ws) {
+            this.ws.close()
+            this.ws = null
+          }
         }
       },
     }

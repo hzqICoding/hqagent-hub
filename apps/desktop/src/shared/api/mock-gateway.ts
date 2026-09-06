@@ -1,5 +1,4 @@
 import type {
-  UiGateway,
   BootstrapView,
   WorkspaceView,
   WorkspaceQuery,
@@ -25,37 +24,27 @@ import type {
   UpdateStateView,
   UpdateActionInput,
   SubscribeEventsInput,
-  EventSubscription,
   HubEvent,
   PageResult,
 } from '@hqagent/protocol'
 
-import bootstrapHappyData from '@hqagent/fixtures/bootstrap.happy.json'
-import agentsData from '@hqagent/fixtures/agents.discovery-partial.json'
-import taskMultiRoleRunningData from '@hqagent/fixtures/task.multi-role-running.json'
-import taskWaitingApprovalData from '@hqagent/fixtures/task.waiting-approval.json'
-import taskFailedFallbackData from '@hqagent/fixtures/task.failed-with-fallback.json'
-import updateDownloadingData from '@hqagent/fixtures/update.downloading.json'
-import updateDrainingData from '@hqagent/fixtures/update.draining.json'
-import firstRunNoAgentData from '@hqagent/fixtures/first-run-no-agent.json'
-import sessionResumeData from '@hqagent/fixtures/session-resume.json'
+import type { UiGateway, EventSubscription } from './ui-gateway'
+import { scenarios, type MockScenarioId } from '@/mocks/scenarios'
 
-export type MockScenario =
-  | 'happy-path'
-  | 'first-run-no-agent'
-  | 'task-running'
-  | 'task-waiting-approval'
-  | 'task-failed'
-  | 'update-downloading'
-  | 'update-draining'
-  | 'hub-disconnected'
+export type MockScenario = MockScenarioId
 
 export class MockGateway implements UiGateway {
   private currentScenario: MockScenario = 'happy-path'
-  private delayMs = 100
+  private delayMs = 60
   private shouldFail = false
   private eventListeners: Set<(event: HubEvent) => void> = new Set()
   private currentSeq = 100
+  public connectionCount = 0
+  public ticketRequestCount = 0
+  public isConnected = false
+  private connectPromise: Promise<void> | null = null
+  private historicalEvents: HubEvent[] = []
+  private closeListeners: Set<(code: number) => void> = new Set()
 
   constructor(initialScenario: MockScenario = 'happy-path') {
     this.currentScenario = initialScenario
@@ -89,114 +78,39 @@ export class MockGateway implements UiGateway {
     }
   }
 
+  private getScenarioDef() {
+    return scenarios[this.currentScenario] || scenarios['happy-path']
+  }
+
   async getBootstrap(): Promise<BootstrapView> {
     await this.wait()
-    const data = JSON.parse(JSON.stringify(bootstrapHappyData)) as BootstrapView
-    if (this.currentScenario === 'first-run-no-agent') {
-      data.agentsCount = 0
-      data.onlineAgentsCount = 0
-    }
-    return data
+    return this.getScenarioDef().getBootstrap()
   }
 
   async listWorkspaces(_query?: WorkspaceQuery): Promise<WorkspaceView[]> {
     await this.wait()
-    return [
-      {
-        id: 'ws_hqagent_hub',
-        name: 'HQAgent-Hub',
-        path: 'E:/OtherPro/HQAgent-Hub',
-        vcs: 'git',
-        branch: 'main',
-        isClean: true,
-        defaultProfileId: 'profile_hq_default',
-        lastOpenedAt: '2026-09-05T18:00:00Z',
-      },
-      {
-        id: 'ws_ota_platform',
-        name: 'OTA-Platform',
-        path: 'E:/OtherPro/OTA-Platform',
-        vcs: 'git',
-        branch: 'master',
-        isClean: false,
-        defaultProfileId: 'profile_hq_default',
-        lastOpenedAt: '2026-09-03T15:56:00Z',
-      },
-    ]
+    return this.getScenarioDef().getWorkspaces()
   }
 
   async listAgents(): Promise<AgentView[]> {
     await this.wait()
-    if (this.currentScenario === 'first-run-no-agent') {
-      return []
-    }
-    return JSON.parse(JSON.stringify(agentsData.discovered)) as AgentView[]
+    return this.getScenarioDef().getAgents()
   }
 
   async refreshAgents(): Promise<AgentDiscoveryResult> {
     await this.wait()
-    if (this.currentScenario === 'first-run-no-agent') {
-      return JSON.parse(JSON.stringify(firstRunNoAgentData)) as AgentDiscoveryResult
-    }
-    return JSON.parse(JSON.stringify(agentsData)) as AgentDiscoveryResult
+    return this.getScenarioDef().getDiscovery()
   }
 
   async listTeamProfiles(): Promise<TeamProfileView[]> {
     await this.wait()
-    return [
-      {
-        id: 'profile_hq_default',
-        name: 'HQ 默认双 Agent 团队',
-        description: 'Claude 负责架构与代码审查，Codex 负责实现与测试，自动处理 fallback',
-        scope: 'global',
-        isDefault: true,
-        updatedAt: '2026-09-05T18:00:00Z',
-        roleBindings: {
-          orchestrator: {
-            roleId: 'orchestrator',
-            roleName: '总控调度',
-            primaryAgentId: 'agent_claude_default',
-            fallbackAgentIds: ['agent_codex_default'],
-          },
-          architect: {
-            roleId: 'architect',
-            roleName: '系统架构',
-            primaryAgentId: 'agent_claude_default',
-            fallbackAgentIds: [],
-          },
-          frontend_implementer: {
-            roleId: 'frontend_implementer',
-            roleName: '前端开发',
-            primaryAgentId: 'agent_antigravity_default',
-            fallbackAgentIds: ['agent_codex_default'],
-          },
-          general_implementer: {
-            roleId: 'general_implementer',
-            roleName: '全栈实现',
-            primaryAgentId: 'agent_codex_default',
-            fallbackAgentIds: ['agent_claude_default'],
-          },
-          reviewer: {
-            roleId: 'reviewer',
-            roleName: '代码审查',
-            primaryAgentId: 'agent_claude_default',
-            fallbackAgentIds: [],
-          },
-          tester: {
-            roleId: 'tester',
-            roleName: '测试执行',
-            primaryAgentId: 'agent_codex_default',
-            fallbackAgentIds: ['agent_claude_default'],
-          },
-        },
-      },
-    ]
+    return this.getScenarioDef().getTeamProfiles()
   }
 
   async getTeamProfile(id: string): Promise<TeamProfileView> {
     const list = await this.listTeamProfiles()
     const found = list.find((p) => p.id === id)
-    if (!found) throw new Error(`Profile ${id} not found`)
+    if (!found) throw new Error(`NOT_FOUND: Team profile ${id} not found`)
     return found
   }
 
@@ -249,11 +163,7 @@ export class MockGateway implements UiGateway {
 
   async listTasks(_query: TaskQuery): Promise<PageResult<TaskSummaryView>> {
     await this.wait()
-    const items: TaskSummaryView[] = [
-      JSON.parse(JSON.stringify(taskMultiRoleRunningData)),
-      JSON.parse(JSON.stringify(taskWaitingApprovalData)),
-      JSON.parse(JSON.stringify(taskFailedFallbackData)),
-    ]
+    const items = this.getScenarioDef().getTasks()
     return {
       items,
       total: items.length,
@@ -265,13 +175,7 @@ export class MockGateway implements UiGateway {
 
   async getTask(id: string): Promise<TaskDetailView> {
     await this.wait()
-    if (id === 'task_20260905_002' || this.currentScenario === 'task-waiting-approval') {
-      return JSON.parse(JSON.stringify(taskWaitingApprovalData)) as TaskDetailView
-    }
-    if (id === 'task_20260905_003' || this.currentScenario === 'task-failed') {
-      return JSON.parse(JSON.stringify(taskFailedFallbackData)) as TaskDetailView
-    }
-    return JSON.parse(JSON.stringify(taskMultiRoleRunningData)) as TaskDetailView
+    return this.getScenarioDef().getTaskDetail(id)
   }
 
   async createTask(input: CreateTaskInput): Promise<TaskDetailView> {
@@ -306,36 +210,31 @@ export class MockGateway implements UiGateway {
 
   async listSessions(_query: SessionQuery): Promise<PageResult<SessionView>> {
     await this.wait()
-    return JSON.parse(JSON.stringify(sessionResumeData)) as PageResult<SessionView>
+    const items = this.getScenarioDef().getSessions()
+    return {
+      items,
+      total: items.length,
+      page: 1,
+      pageSize: 10,
+      hasMore: false,
+    }
   }
 
   async resumeSession(id: string, _input?: ResumeSessionInput): Promise<TaskDetailView> {
     await this.wait()
-    const task = JSON.parse(JSON.stringify(taskMultiRoleRunningData)) as TaskDetailView
-    task.id = 'task_resumed_' + id
-    return task
+    const base = this.getScenarioDef().getTasks()[0] || (await this.getTask('task_20260905_001'))
+    const detail = await this.getTask(base.id)
+    return {
+      ...detail,
+      id: 'task_resumed_' + id,
+      objective: `[恢复会话] ${detail.objective}`,
+      status: 'running',
+    }
   }
 
   async listApprovals(_query?: ApprovalQuery): Promise<ApprovalView[]> {
     await this.wait()
-    return [
-      {
-        id: 'appr_99812',
-        taskId: 'task_20260905_002',
-        taskObjective: '集成外部依赖并执行测试分支推送到远程仓库',
-        requestAgentId: 'agent_codex_default',
-        requestAgentName: 'Codex App Server',
-        action: 'git_push',
-        targetResource: 'git push origin feat/f0-desktop-skeleton',
-        riskLevel: 'high',
-        status: 'pending',
-        requestedAt: '2026-09-05T18:18:05Z',
-        details: {
-          branch: 'feat/f0-desktop-skeleton',
-          remote: 'origin',
-        },
-      },
-    ]
+    return this.getScenarioDef().getApprovals()
   }
 
   async respondApproval(id: string, input: ApprovalResponseInput): Promise<ApprovalView> {
@@ -360,7 +259,14 @@ export class MockGateway implements UiGateway {
   async getSettings(): Promise<UserSettingsView> {
     await this.wait()
     return {
-      appearance: bootstrapHappyData.appearance as AppearanceSettings,
+      appearance: {
+        mode: 'system',
+        palette: 'hq-blue',
+        density: 'comfortable',
+        contrast: 'normal',
+        reduceMotion: 'system',
+        fontScale: 1,
+      },
       general: {
         language: 'zh-CN',
         launchAtLogin: false,
@@ -394,19 +300,18 @@ export class MockGateway implements UiGateway {
 
   async getUpdateState(): Promise<UpdateStateView> {
     await this.wait()
-    if (this.currentScenario === 'update-draining') {
-      return JSON.parse(JSON.stringify(updateDrainingData)) as UpdateStateView
-    }
-    return JSON.parse(JSON.stringify(updateDownloadingData)) as UpdateStateView
+    return this.getScenarioDef().getUpdateState()
   }
 
   async controlUpdate(action: UpdateActionInput): Promise<UpdateStateView> {
     await this.wait()
     const state = await this.getUpdateState()
-    if (action.action === 'pause') {
-      state.phase = 'available'
-    } else if (action.action === 'resume' || action.action === 'download') {
+    if (action.action === 'download') {
       state.phase = 'downloading'
+    } else if (action.action === 'cancel') {
+      state.phase = 'available'
+    } else if (action.action === 'install') {
+      state.phase = 'draining_tasks'
     }
     return state
   }
@@ -421,21 +326,89 @@ export class MockGateway implements UiGateway {
       aggregateId: 'task_20260905_001',
       type: 'agent.progress',
       payload: {},
-      protocolVersion: '0.1.0',
+      protocolVersion: '0.2.0',
       ...event,
     }
+    this.historicalEvents.push(fullEvent)
     this.eventListeners.forEach((fn) => fn(fullEvent))
+    return fullEvent
+  }
+
+  public simulateClose(code = 1000) {
+    this.isConnected = false
+    if (code === 4410) {
+      this.currentSeq = 0
+    }
+    this.closeListeners.forEach((fn) => fn(code))
+  }
+
+  public onSimulatedClose(fn: (code: number) => void) {
+    this.closeListeners.add(fn)
+    return () => this.closeListeners.delete(fn)
+  }
+
+  public generate10kEvents(taskId = 'task_20260905_001'): HubEvent[] {
+    const list: HubEvent[] = []
+    const baseSeq = this.currentSeq
+    for (let i = 1; i <= 10000; i++) {
+      const evt: HubEvent = {
+        eventId: `evt_10k_${i}`,
+        seq: baseSeq + i,
+        occurredAt: new Date(Date.now() - (10000 - i) * 100).toISOString(),
+        aggregateType: 'task',
+        aggregateId: taskId,
+        taskId,
+        nodeId: i % 2 === 0 ? 'node_01' : 'node_02',
+        roleId: i % 2 === 0 ? 'general_implementer' : 'reviewer',
+        type: i % 5 === 0 ? 'agent.tool_call' : 'agent.progress',
+        payload: {
+          message: `正在执行第 ${i} 步自动化测试与代码分析...`,
+          percent: Math.min(100, Math.floor((i / 10000) * 100)),
+        },
+        protocolVersion: '0.2.0',
+      }
+      list.push(evt)
+    }
+    this.currentSeq += 10000
+    this.historicalEvents.push(...list)
+    return list
   }
 
   subscribeEvents(
-    _input: SubscribeEventsInput,
+    input: SubscribeEventsInput,
     onEvent: (event: HubEvent) => void,
-    _onError?: (err: unknown) => void
+    onError?: (err: unknown) => void
   ): EventSubscription {
     this.eventListeners.add(onEvent)
+
+    // Single-flight connection establishment simulation (Trap 6)
+    if (!this.isConnected && !this.connectPromise) {
+      this.connectPromise = (async () => {
+        this.ticketRequestCount++
+        await new Promise((r) => setTimeout(r, 10))
+        this.connectionCount++
+        this.isConnected = true
+        this.connectPromise = null
+      })().catch((err) => {
+        this.connectPromise = null
+        if (onError) onError(err)
+      })
+    }
+
+    // Replay historical events if afterSeq specified
+    if (input.afterSeq !== undefined && input.afterSeq >= 0) {
+      const replay = this.historicalEvents.filter((e) => e.seq > (input.afterSeq ?? 0))
+      for (const evt of replay) {
+        onEvent(evt)
+      }
+    }
+
     return {
       unsubscribe: () => {
         this.eventListeners.delete(onEvent)
+        if (this.eventListeners.size === 0) {
+          this.isConnected = false
+        }
       },
     }
   }
