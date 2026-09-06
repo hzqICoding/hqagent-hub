@@ -1,0 +1,231 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Callable
+
+from protocol.generated.python import (
+    AdapterStreamEnd,
+    AdapterStreamStatus,
+    AgentSessionHandle,
+    ResumeRequest,
+    SessionPurpose,
+    SessionReusePolicy,
+    SessionStatus,
+    SessionView,
+)
+
+from .errors import InvalidTaskActionError, SessionNotResumableError
+from .ports import AdapterDirectoryPort, SessionRepositoryPort
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+@dataclass(frozen=True, slots=True)
+class SessionPlan:
+    reuse_policy: SessionReusePolicy
+    resume_session: SessionView | None = None
+    forced_isolation: bool = False
+
+
+class SessionLifecycle:
+    _ALLOWED = {
+        SessionStatus.ACTIVE: {
+            SessionStatus.IDLE,
+            SessionStatus.CLOSED,
+            SessionStatus.INVALID,
+        },
+        SessionStatus.IDLE: {
+            SessionStatus.ACTIVE,
+            SessionStatus.CLOSED,
+            SessionStatus.INVALID,
+        },
+        SessionStatus.CLOSED: set(),
+        SessionStatus.INVALID: set(),
+    }
+
+    @classmethod
+    def transition(cls, session: SessionView, target: SessionStatus, *, now: str) -> SessionView:
+        if target == session.status:
+            return session
+        if target not in cls._ALLOWED[session.status]:
+            raise InvalidTaskActionError(
+                f"非法 Session 状态迁移：{session.status.value} -> {target.value}",
+                sessionId=session.id,
+                current=session.status.value,
+                target=target.value,
+            )
+        return session.model_copy(
+            update={
+                "status": target,
+                "last_used_at": now,
+                "is_valid": False if target == SessionStatus.INVALID else session.is_valid,
+            }
+        )
+
+    @classmethod
+    def on_stream_end(
+        cls,
+        session: SessionView,
+        stream_end: AdapterStreamEnd,
+        *,
+        now: str,
+    ) -> SessionView:
+        if stream_end.status == AdapterStreamStatus.TRANSPORT_LOST:
+            return session
+        if stream_end.status == AdapterStreamStatus.AGENT_EXITED:
+            return cls.transition(session, SessionStatus.INVALID, now=now)
+        if stream_end.status == AdapterStreamStatus.ENDED:
+            target = SessionStatus.IDLE if session.is_valid else SessionStatus.CLOSED
+            return cls.transition(session, target, now=now)
+        return session
+
+
+class SessionManager:
+    def __init__(
+        self,
+        repository: SessionRepositoryPort,
+        adapters: AdapterDirectoryPort,
+        *,
+        clock: Callable[[], datetime] = utc_now,
+    ) -> None:
+        self.repository = repository
+        self.adapters = adapters
+        self.clock = clock
+
+    async def plan(
+        self,
+        *,
+        reuse_policy: SessionReusePolicy,
+        resume_session_id: str | None,
+        agent_instance_id: str,
+        role_id: str,
+        implementation_agent_id: str | None = None,
+    ) -> SessionPlan:
+        if role_id == "reviewer" and implementation_agent_id == agent_instance_id:
+            return SessionPlan(SessionReusePolicy.NEW_SESSION, forced_isolation=True)
+        if reuse_policy == SessionReusePolicy.NEW_SESSION:
+            return SessionPlan(reuse_policy)
+        if not resume_session_id or resume_session_id.lower() == "latest":
+            raise SessionNotResumableError(
+                resume_session_id or "",
+                "恢复会话必须提供明确的 Hub 本地 Session ID，禁止使用 latest",
+            )
+        session = await self.repository.get(resume_session_id)
+        if session is None:
+            raise SessionNotResumableError(resume_session_id, "指定 Session 不存在")
+        if session.status == SessionStatus.INVALID:
+            raise SessionNotResumableError(resume_session_id, "Session 已断开失效，只能新建")
+        if session.status == SessionStatus.CLOSED:
+            raise SessionNotResumableError(resume_session_id, "Session 已正常结束，不能继续")
+        if session.status != SessionStatus.IDLE or not session.is_valid:
+            raise SessionNotResumableError(resume_session_id, "Session 当前不可恢复")
+        if session.agent_instance_id != agent_instance_id:
+            raise SessionNotResumableError(resume_session_id, "Session 与本次解析出的 Agent 不一致")
+        return SessionPlan(reuse_policy, resume_session=session)
+
+    async def create_active(
+        self,
+        *,
+        handle: AgentSessionHandle,
+        workspace_id: str,
+        workspace_name: str,
+        role_id: str,
+        agent_instance_id: str,
+        agent_display_name: str,
+        purpose: SessionPurpose,
+        reuse_policy: SessionReusePolicy,
+        task_id: str,
+        node_id: str,
+        parent_session_id: str | None = None,
+        root_task_id: str | None = None,
+    ) -> SessionView:
+        external_session_id = handle.external_session_id or ""
+        value = SessionView.model_validate(
+            {
+                "id": handle.session_id,
+                "status": SessionStatus.ACTIVE.value,
+                "workspaceId": workspace_id,
+                "workspaceName": workspace_name,
+                "roleId": role_id,
+                "agentInstanceId": agent_instance_id,
+                "agentDisplayName": agent_display_name,
+                "adapterId": handle.adapter_id,
+                "externalSessionId": external_session_id,
+                "purpose": purpose.value,
+                "reusePolicy": reuse_policy.value,
+                "taskId": task_id,
+                "nodeId": node_id,
+                "parentSessionId": parent_session_id,
+                "rootTaskId": root_task_id or task_id,
+                "createdAt": handle.started_at,
+                "lastUsedAt": handle.started_at,
+                "isValid": bool(handle.supports_resume and external_session_id),
+                "turnCount": 1,
+            }
+        )
+        await self.repository.save(value)
+        return value
+
+    async def resume(self, session: SessionView, message: str, acceptance: list[str] | None) -> SessionView:
+        adapter = self.adapters.adapter_for(session.agent_instance_id)
+        await adapter.resume(
+            ResumeRequest.model_validate(
+                {
+                    "sessionId": session.id,
+                    "externalSessionId": session.external_session_id,
+                    "message": message,
+                    "acceptance": acceptance,
+                }
+            )
+        )
+        active = SessionLifecycle.transition(
+            session,
+            SessionStatus.ACTIVE,
+            now=timestamp(self.clock()),
+        ).model_copy(update={"turn_count": (session.turn_count or 0) + 1})
+        await self.repository.save(active)
+        return active
+
+    async def apply_stream_end(self, session_id: str, stream_end: AdapterStreamEnd) -> SessionView:
+        session = await self.repository.get(session_id)
+        if session is None:
+            raise SessionNotResumableError(session_id, "指定 Session 不存在")
+        updated = SessionLifecycle.on_stream_end(
+            session,
+            stream_end,
+            now=timestamp(self.clock()),
+        )
+        await self.repository.save(updated)
+        return updated
+
+    async def close(self, session_id: str) -> SessionView:
+        session = await self.repository.get(session_id)
+        if session is None:
+            raise SessionNotResumableError(session_id, "指定 Session 不存在")
+        closed = SessionLifecycle.transition(
+            session,
+            SessionStatus.CLOSED,
+            now=timestamp(self.clock()),
+        )
+        await self.repository.save(closed)
+        return closed
+
+    async def finish(self, session_id: str) -> SessionView:
+        session = await self.repository.get(session_id)
+        if session is None:
+            raise SessionNotResumableError(session_id, "指定 Session 不存在")
+        target = SessionStatus.IDLE if session.is_valid else SessionStatus.CLOSED
+        finished = SessionLifecycle.transition(
+            session,
+            target,
+            now=timestamp(self.clock()),
+        )
+        await self.repository.save(finished)
+        return finished
