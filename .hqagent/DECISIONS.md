@@ -132,3 +132,140 @@ FZ-2 新增 18 个类型（118 → 136），属相容扩展，按 semver 升次�
 **决定**：`packages/protocol/VERSION` 是唯一事实源，生成物导出 `PROTOCOL_VERSION`。
 W1 现在在 `apps/hub/core/constants.py` 里硬编码了 `PROTOCOL_VERSION = "0.1.0"`，
 **必须改成从生成包导入**，否则协议升版时会静默失配。
+
+---
+
+## FZ-2.1（2026-09-06）
+
+W2 和 W3 交付时各提了 7 条协议变更请求。**两边互不通信、分别实现、独立提交**，
+其中第一条逐字相同——这是把冻结契约重新打开的充分理由。去重后 13 条，逐条裁决如下。
+
+裁决人 W0。依据：W2 `.hqagent/handoffs/T-W2-adapters.md` §「FZ-2.1 候选」、
+W3 `.hqagent/handoffs/T-W3-orchestrator.md` §「FZ-2.1 协议变更请求」。
+
+### D25 `AgentTaskSpec` 增加必填 `sessionId`（W2#1 = W3#1，双方独立提出）
+
+`AgentSessionHandle.sessionId` 的描述是「Hub 生成后传给 Adapter」，但 `start()` 的唯一
+入参 `AgentTaskSpec` 没有这个字段，八个方法也没有别的传入通道。
+
+两个包被迫做了同一件事：W2 只能由 Adapter 自己生成 `session_<uuid>`，
+W3 只能接受 `start()` 返回的本地 ID。**结果是会话身份的所有权从 Hub 漏到了 Adapter。**
+
+这不是美观问题。D7 要求「同一 Agent 承担实现与审核时必须是两个不同会话」——
+这个约束只有 Hub 能保证，Adapter 不知道自己这次是在实现还是在审核。
+所有权一漏，D7 就失去了强制手段。
+
+**决定**：`AgentTaskSpec` 增加 **required** `sessionId`。不是可选——可选会让两种
+所有权模型并存，等于没裁决。Adapter 收到什么就用什么，不得自行生成。
+
+### D26 `TaskActionInput` 的 `pause` / `append_instruction` 收窄语义，不给 Adapter Port 加方法（W3#2）
+
+冻结的 `TaskActionInput` 有 `pause` 和 `append_instruction`，但 Adapter Port 没有
+对应方法。用 `cancel()` 假装 pause 会把 Session 关掉，是欺骗。
+
+**决定**：不加 `pause()` / `sendInstruction()`。多数 CLI Agent 没有真正的暂停语义，
+加了会逼每个适配器假装实现——这正是 D17 要避免的那类谎报。改为收窄动作语义：
+
+- `pause`：只作用于**节点之间**。当前节点跑完就停住，不打断正在执行的 Agent。
+- `append_instruction`：只在节点 idle 时可用，运行中必须拒绝（`TASK_ACTION_INVALID`）。
+
+前端据此做按钮禁用态，不承诺做不到的事。
+
+### D27 成功取消不发 `agent.failed`（W3#3，关联 W2#7）
+
+原事件规则要求成功取消也产生 `agent.failed`，其 `errorCode` 映射
+`AdapterFailureKind.cancelled`；但 `ErrorCode` 里没有取消对应码。
+
+**决定**：**取消是正常路径，不是失败。** 成功取消只发
+`task.status_changed(to=cancelled)`，不发 `agent.failed`，也不新增取消错误码。
+修订事件字典里那条规则。`refused` 仍用 `TASK_NOT_CANCELLABLE`，并按 FZ-2 保留
+`orphanProcessIds`。
+
+W2#7 问「要不要区分『无中断入口』和『已发中断但 grace 到点仍在跑』」：
+**不新增 outcome**。两者对 Hub 的下一步动作完全相同（升级到 force），
+区别只是诊断信息，放 `CancelResult.detail` 即可。枚举值要为决策服务，不为叙事服务。
+
+### D28 `SessionView.externalSessionId` 改为可选（W3#4）
+
+`AgentSessionHandle.externalSessionId` 在不支持恢复时允许缺省，而 `SessionView` 里
+是必填字符串。W3 只能填空字符串并令 `isValid=false`。
+
+**决定**：View 字段改可选。空字符串能跑，但让前端无法区分「这个 Agent 不支持恢复」
+和「支持恢复但凭据丢了」——Session 页的「继续」按钮该不该出现，取决于这个区别。
+
+### D29 `resume()` 返回 `AgentSessionHandle`，`continue_lineage` 建子会话（W3#5）
+
+`continue_lineage` 有 `parentSessionId` 语义，但 `resume()` 返回 void，
+没法创建并关联一个新的 Hub 本地 Session。
+
+**决定**：定为**新建子 Session 并记 `parentSessionId`**，`resume()` 返回
+`AgentSessionHandle`。若复用原 Session 记录，lineage（世系）这个词就没有意义了。
+
+### D30 `RoleId` 边界类型回退 `str`，另导出内置角色常量（W3#6）
+
+Schema 明确允许用户自定义角色，但生成器把 `RoleId` 生成成了八值闭枚举，
+自定义角色进不了 `TaskNodeView` / `ResolvedTeamView`。
+
+**决定**：这是**生成器的缺陷**，不是 schema 的。边界类型回退 `str`，
+另导出内置角色常量供代码引用。Role Resolver 对未知角色按「无内置能力要求」处理。
+
+### D31 删掉 `AdapterDescriptor` 里引用不存在字段的描述（W2#2）
+
+`installed=false` 的描述写「status 必须是 incompatible 或 unknown」，
+但 `AdapterDescriptor` 根本没有 `status` 字段。
+
+**决定**：删掉这句描述。发现状态由 `AdapterManager` 组合 health 后生成
+`AgentView.status`——这是对的分层（Descriptor 描述「装了什么」，
+AgentView 描述「现在能不能用」），不该往 Descriptor 里塞运行时状态。
+
+### D32 冻结 `AdapterEvent` 最小形状（W2#3）
+
+`streamEvents()` 只冻结了终止对象 `AdapterStreamEnd`，没冻结单条事件。
+直接产出 `HubEvent` 不对——全局 `seq` / `eventId` 归 W1 分配。
+
+**决定**：冻结 `AdapterEvent`（无 `seq` / `eventId`，由 Hub 补齐）。
+不冻结的话，W2 定义一套、W3 消费时再猜一套，接缝正好落在两个包中间。
+
+### D33 `ApprovalRequiredPayload` 增加可选 `externalRequestId`（W2#4）
+
+`ApprovalDispatch.externalRequestId` 要求 Adapter 关联供应商请求，
+但 `ApprovalRequiredPayload` 没有这个字段，关联信息在事件里丢失。
+
+**决定**：加可选 `externalRequestId`。W2 当前在内部 `AdapterEvent` 上额外携带，
+属于绕路；关联 ID 应当随事件走完全程，否则排障时对不上供应商日志。
+
+### D34 统一「无法映射」的措辞：显式噪声可 drop，未知事件必须降级（W2#5）
+
+D21 / adapter-contract 说无法映射可 `dropped: true`；
+`event-dictionary.md` §1.2 又说未知原生事件必须降级为 `agent.progress`、不得丢弃。
+两句话打架。
+
+**决定**：按 W2 的实现口径统一，它是对的——
+
+- **已知噪声**（心跳、rate-limit、重放 user 等，Adapter 明确认得出来的）：
+  显式 `dropped: true` 并计数。
+- **真正未知的事件**：降级为 `agent.progress`，带截断 `raw`，并计数。**不得丢弃。**
+
+区别在于「认得出来所以决定不要」和「不认识」。前者是设计，后者是盲区，
+盲区必须留痕。两处文档都改。
+
+### D35 `AgentProgressPayload.raw` 的 2048 上限约束的是序列化总长度（W2#6）
+
+D21 写「raw 上限 2048 字符」，但生成的 Python 类型是 `dict[str, Any]`，
+「字符」指什么不明确。W2 当前实现为 `{"vendor": "<截断到 2048 的 JSON 文本>"}`。
+
+**决定**：上限约束的是 **`raw` 序列化后的总长度**，不是某个字符串字段。
+保持 `dict` 类型（结构化更有用），在文档里写清是序列化总长。
+
+### D36 `event-dictionary.md` 版本号跟进（W3#7）
+
+页头和示例仍写协议 `0.1.0`。**决定**：随本次一并改到 `0.2.1`。纯文档，无争议。
+
+### 版本与影响面
+
+`AgentTaskSpec.sessionId` 是**必填新增**，对已有 Adapter 实现是破坏性的
+（W2 要改 `start()`）。但 W2/W3 都还没并入 integration，此刻改的成本最低——
+这正是「先看 W2 交出什么再一次性出 FZ-2.1」要等的时机。
+
+协议版本升 **0.2.1**。虽然含一处破坏性变更，但一期尚未发布任何外部消费者，
+按补丁号推进并在此记录，不单独走大版本。
