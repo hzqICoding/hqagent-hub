@@ -1,0 +1,66 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "HQAgent-Hub",
+  "version": "0.1.0",
+  "identifier": "cn.hqagent.hub",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": {
+        "default-src": ["'self'"],
+        "base-uri": ["'self'"],
+        "form-action": ["'self'"],
+        "frame-ancestors": ["'none'"],
+        "object-src": ["'none'"],
+        "script-src": ["'self'"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "asset:", "http://asset.localhost", "data:"],
+        "font-src": ["'self'", "data:"],
+        "connect-src": [
+          "'self'",
+          "ipc:",
+          "http://ipc.localhost",
+          "http://127.0.0.1:*",
+          "ws://127.0.0.1:*"
+        ]
+      },
+      "devCsp": {
+        "default-src": ["'self'", "http://localhost:5173"],
+        "base-uri": ["'self'"],
+        "form-action": ["'self'"],
+        "frame-ancestors": ["'none'"],
+        "object-src": ["'none'"],
+        "script-src": ["'self'", "'unsafe-eval'", "http://localhost:5173"],
+        "style-src": ["'self'", "'unsafe-inline'", "http://localhost:5173"],
+        "img-src": ["'self'", "asset:", "http://asset.localhost", "data:"],
+        "font-src": ["'self'", "data:"],
+        "connect-src": [
+          "'self'",
+          "ipc:",
+          "http://ipc.localhost",
+          "http://localhost:5173",
+          "ws://localhost:5173",
+          "http://127.0.0.1:*",
+          "ws://127.0.0.1:*"
+        ]
+      },
+      "dangerousDisableAssetCspModification": false,
+      "freezePrototype": true,
+      "assetProtocol": {
+        "enable": false,
+        "scope": []
+      }
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": ["nsis"]
+  }
+}
+
