@@ -1,0 +1,3 @@
+0.1.0
+0.1.0
+go vet: all 3 modules passed; both Windows binaries built

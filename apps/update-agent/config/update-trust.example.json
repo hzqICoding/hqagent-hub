@@ -1,0 +1,9 @@
+{
+  "manifestBaseUrl": "https://ota.example.invalid",
+  "channel": "beta",
+  "trustedKeys": {
+    "hqagent-hub-test": "QheoALe2NWTjuOjeih3AsIdEFVrQ58TVpX+kDtvtzTY="
+  },
+  "defaultKeyId": "hqagent-hub-test",
+  "authenticodeThumbprints": []
+}

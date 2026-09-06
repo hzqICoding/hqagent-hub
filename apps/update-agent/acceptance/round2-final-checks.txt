@@ -1,0 +1,25 @@
+go -C packages/updatekit test ./... -count=1
+ok  	hqupdatekit.local/updatekit	14.943s
+?   	hqupdatekit.local/updatekit/cmd/keygen	[no test files]
+go -C apps/update-agent test ./... -count=1
+?   	hqagent.local/update-agent/cmd/hqagent-update-agent	[no test files]
+ok  	hqagent.local/update-agent/product	1.983s
+go -C apps/updater test ./... -count=1
+?   	hqagent.local/updater/cmd/hqagent-updater	[no test files]
+go -C packages/updatekit vet ./...
+go -C apps/update-agent vet ./...
+go -C apps/updater vet ./...
+All six commands exited 0; no temporary modfile.
+{
+	"Path": "hqagent.local/protocol",
+	"Version": "v0.2.0",
+	"Replace": {
+		"Path": "../../packages/protocol/generated/go",
+		"Dir": "E:\\OtherPro\\HQAgent-Hub-worktrees\\w6-updatekit\\packages\\protocol\\generated\\go",
+		"GoMod": "E:\\OtherPro\\HQAgent-Hub-worktrees\\w6-updatekit\\packages\\protocol\\generated\\go\\go.mod",
+		"GoVersion": "1.26"
+	},
+	"Dir": "E:\\OtherPro\\HQAgent-Hub-worktrees\\w6-updatekit\\packages\\protocol\\generated\\go",
+	"GoMod": "E:\\OtherPro\\HQAgent-Hub-worktrees\\w6-updatekit\\packages\\protocol\\generated\\go\\go.mod",
+	"GoVersion": "1.26"
+}

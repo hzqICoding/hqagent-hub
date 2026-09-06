@@ -1,0 +1,34 @@
+?   	hqagent.local/update-agent/cmd/hqagent-update-agent	[no test files]
+=== RUN   TestGeneratedDTOContracts
+    contract_test.go:80: generated protocol package: 0.2.0; HTTP protocolVersion: 1.0
+--- PASS: TestGeneratedDTOContracts (0.00s)
+=== RUN   TestPrivateAPIAuthorizationAndNoCredentialLeak
+=== RUN   TestPrivateAPIAuthorizationAndNoCredentialLeak/no_token
+=== RUN   TestPrivateAPIAuthorizationAndNoCredentialLeak/bad_token
+=== RUN   TestPrivateAPIAuthorizationAndNoCredentialLeak/browser
+=== RUN   TestPrivateAPIAuthorizationAndNoCredentialLeak/DNS_rebinding
+=== RUN   TestPrivateAPIAuthorizationAndNoCredentialLeak/remote
+=== RUN   TestPrivateAPIAuthorizationAndNoCredentialLeak/Hub
+=== RUN   TestPrivateAPIAuthorizationAndNoCredentialLeak/events_capability_gap
+=== RUN   TestPrivateAPIAuthorizationAndNoCredentialLeak/missing_result
+--- PASS: TestPrivateAPIAuthorizationAndNoCredentialLeak (0.02s)
+    --- PASS: TestPrivateAPIAuthorizationAndNoCredentialLeak/no_token (0.00s)
+    --- PASS: TestPrivateAPIAuthorizationAndNoCredentialLeak/bad_token (0.00s)
+    --- PASS: TestPrivateAPIAuthorizationAndNoCredentialLeak/browser (0.00s)
+    --- PASS: TestPrivateAPIAuthorizationAndNoCredentialLeak/DNS_rebinding (0.00s)
+    --- PASS: TestPrivateAPIAuthorizationAndNoCredentialLeak/remote (0.00s)
+    --- PASS: TestPrivateAPIAuthorizationAndNoCredentialLeak/Hub (0.00s)
+    --- PASS: TestPrivateAPIAuthorizationAndNoCredentialLeak/events_capability_gap (0.00s)
+    --- PASS: TestPrivateAPIAuthorizationAndNoCredentialLeak/missing_result (0.00s)
+=== RUN   TestHubDrainIsConsumedAndIncompleteInventoryRejected
+--- PASS: TestHubDrainIsConsumedAndIncompleteInventoryRejected (0.01s)
+=== RUN   TestE2EFakeTauriProcessesNSISAndAutomaticRollback
+    e2e_test.go:247: check: available; targetKey matched
+    e2e_test.go:254: download: ready_to_install; SHA-256 + Ed25519 verified (test OS-signature adapter)
+    e2e_test.go:263: Plan v2: Desktop/Core/Update Agent + 2 Workers; current-user directories validated
+    e2e_test.go:293: independent Helper: waited for all 5 processes; executed /S and terminal /D
+    e2e_test.go:316: health: new core unhealthy; automatic rollback restored program/config/DB snapshot, removed new WAL, restarted healthy 0.1.0; generated Result DTO persisted
+--- PASS: TestE2EFakeTauriProcessesNSISAndAutomaticRollback (1.80s)
+PASS
+ok  	hqagent.local/update-agent/product	1.874s
+?   	hqagent.local/updater/cmd/hqagent-updater	[no test files]
