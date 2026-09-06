@@ -15,7 +15,7 @@ target/
 apps/desktop/src-tauri/target/
 
 # 本机运行时数据（绝不入库：含 Token）
-runtime/
+/runtime/
 *.local.json
 hub.json
 update-agent.json
@@ -34,3 +34,6 @@ Thumbs.db
 
 # 注意：packages/protocol/generated/** 必须提交。
 # CI 会重新生成并逐字节比对，用来防止有人手改生成物。
+
+# Claude Code 个人本地设置（含等价任意代码执行的规则，不入库）
+.claude/settings.local.json

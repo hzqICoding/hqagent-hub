@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PROTOCOL_VERSION = "0.1.0"
+PROTOCOL_VERSION = "0.2.0"
 
 
 class _Base(BaseModel):
@@ -21,6 +21,165 @@ class AcknowledgeUpdateResultInput(_Base):
 
 
 AdapterId = str
+
+
+class AdapterIntegrationKind(StrEnum):
+    SDK = "sdk"
+    CLI_STREAM = "cli_stream"
+    MCP = "mcp"
+    SIDECAR = "sidecar"
+    GUI_AUTOMATION = "gui_automation"
+
+
+class AdapterPlatform(StrEnum):
+    WINDOWS = "windows"
+    MACOS = "macos"
+    LINUX = "linux"
+
+
+class AuthKind(StrEnum):
+    LOCAL_LOGIN = "local_login"
+    API_KEY = "api_key"
+    OAUTH = "oauth"
+    DEVICE_CODE = "device_code"
+    NONE = "none"
+
+
+class CapabilityId(StrEnum):
+    ORCHESTRATION = "orchestration"
+    ARCHITECTURE = "architecture"
+    CODING = "coding"
+    REVIEW = "review"
+    TESTING = "testing"
+    SHELL = "shell"
+    FILE_WRITE = "file_write"
+    GIT_WORKTREE = "git_worktree"
+    SESSION_RESUME = "session_resume"
+    STREAMING_EVENTS = "streaming_events"
+    TOOL_APPROVAL = "tool_approval"
+    STRUCTURED_OUTPUT = "structured_output"
+    VISION = "vision"
+    BROWSER = "browser"
+
+
+class DeclaredCapability(_Base):
+    id: CapabilityId = Field(alias="id")
+    supported: bool = Field(alias="supported")
+    note: str | None = Field(default=None, alias="note")
+
+
+Timestamp = str
+
+
+class AdapterDescriptor(_Base):
+    """detect() 的返回值。描述「这个 Adapter 是什么、装没装、能干什么」，是一次性发现结果，不是周期性存活状态——后者见 AdapterHealth。"""
+
+    adapter_id: AdapterId = Field(alias="adapterId")
+    display_name: str = Field(alias="displayName")
+    integration_kind: AdapterIntegrationKind = Field(alias="integrationKind")
+    auth_kind: AuthKind = Field(alias="authKind")
+    supported_platforms: list[AdapterPlatform] = Field(alias="supportedPlatforms")
+    installed: bool = Field(alias="installed")
+    detected_version: str | None = Field(default=None, alias="detectedVersion")
+    minimum_version: str | None = Field(default=None, alias="minimumVersion")
+    executable_path: str | None = Field(default=None, alias="executablePath")
+    capabilities: list[DeclaredCapability] = Field(alias="capabilities")
+    detected_at: Timestamp | None = Field(default=None, alias="detectedAt")
+
+
+class AdapterFailureKind(StrEnum):
+    NOT_INSTALLED = "not_installed"
+    NOT_LOGGED_IN = "not_logged_in"
+    VERSION_INCOMPATIBLE = "version_incompatible"
+    CAPABILITY_MISSING = "capability_missing"
+    TRANSPORT_ERROR = "transport_error"
+    AGENT_ERROR = "agent_error"
+    TIMEOUT = "timeout"
+    CANCELLED = "cancelled"
+    PATH_VIOLATION = "path_violation"
+
+
+class ErrorCode(StrEnum):
+    BAD_REQUEST = "BAD_REQUEST"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    ORIGIN_NOT_ALLOWED = "ORIGIN_NOT_ALLOWED"
+    NOT_FOUND = "NOT_FOUND"
+    CONFLICT = "CONFLICT"
+    IDEMPOTENCY_MISMATCH = "IDEMPOTENCY_MISMATCH"
+    PROTOCOL_VERSION_MISMATCH = "PROTOCOL_VERSION_MISMATCH"
+    HUB_NOT_READY = "HUB_NOT_READY"
+    HUB_MAINTENANCE = "HUB_MAINTENANCE"
+    EVENT_CURSOR_EXPIRED = "EVENT_CURSOR_EXPIRED"
+    FEATURE_UNAVAILABLE = "FEATURE_UNAVAILABLE"
+    AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
+    AGENT_OFFLINE = "AGENT_OFFLINE"
+    AGENT_NOT_LOGGED_IN = "AGENT_NOT_LOGGED_IN"
+    AGENT_INCOMPATIBLE = "AGENT_INCOMPATIBLE"
+    CAPABILITY_MISSING = "CAPABILITY_MISSING"
+    ROLE_UNRESOLVED = "ROLE_UNRESOLVED"
+    SESSION_NOT_RESUMABLE = "SESSION_NOT_RESUMABLE"
+    TASK_NOT_CANCELLABLE = "TASK_NOT_CANCELLABLE"
+    TASK_ACTION_INVALID = "TASK_ACTION_INVALID"
+    WORKTREE_BUSY = "WORKTREE_BUSY"
+    PATH_NOT_ALLOWED = "PATH_NOT_ALLOWED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    APPROVAL_EXPIRED = "APPROVAL_EXPIRED"
+    APPROVAL_ALREADY_DECIDED = "APPROVAL_ALREADY_DECIDED"
+    UPDATE_NOT_AVAILABLE = "UPDATE_NOT_AVAILABLE"
+    UPDATE_BUSY = "UPDATE_BUSY"
+    UPDATE_VERIFY_FAILED = "UPDATE_VERIFY_FAILED"
+    UPDATE_DRAIN_TIMEOUT = "UPDATE_DRAIN_TIMEOUT"
+    INTERNAL = "INTERNAL"
+
+
+class AdapterFailure(_Base):
+    """任何 Port 方法失败时的统一结构。接入失败或缺少硬能力必须走这里，不得返回成功后在事件里静默降级。"""
+
+    kind: AdapterFailureKind = Field(alias="kind")
+    code: ErrorCode | None = Field(default=None, alias="code")
+    message: str = Field(alias="message")
+    retryable: bool = Field(alias="retryable")
+    missing_capabilities: list[CapabilityId] | None = Field(default=None, alias="missingCapabilities")
+    violation_paths: list[str] | None = Field(default=None, alias="violationPaths")
+    raw: str | None = Field(default=None, alias="raw")
+
+
+class AgentStatus(StrEnum):
+    DISCOVERING = "discovering"
+    READY = "ready"
+    BUSY = "busy"
+    NOT_LOGGED_IN = "not_logged_in"
+    INCOMPATIBLE = "incompatible"
+    DISABLED = "disabled"
+    OFFLINE = "offline"
+    ERROR = "error"
+    UNKNOWN = "unknown"
+
+
+class AdapterHealth(_Base):
+    """health() 的返回值。周期性探活与登录态检查，比 detect() 轻量，不重新枚举能力。"""
+
+    status: AgentStatus = Field(alias="status")
+    checked_at: Timestamp = Field(alias="checkedAt")
+    latency_ms: int | None = Field(default=None, alias="latencyMs")
+    auth_valid: bool | None = Field(default=None, alias="authValid")
+    diagnostic_message: str | None = Field(default=None, alias="diagnosticMessage")
+
+
+class AdapterStreamStatus(StrEnum):
+    STREAMING = "streaming"
+    TRANSPORT_LOST = "transport_lost"
+    AGENT_EXITED = "agent_exited"
+    ENDED = "ended"
+
+
+class AdapterStreamEnd(_Base):
+    status: AdapterStreamStatus = Field(alias="status")
+    ended_at: Timestamp = Field(alias="endedAt")
+    last_event_seq: int | None = Field(default=None, alias="lastEventSeq")
+    resumable: bool | None = Field(default=None, alias="resumable")
+    detail: str | None = Field(default=None, alias="detail")
 
 
 class Blocker(_Base):
@@ -62,39 +221,6 @@ class AgentCompletedPayload(_Base):
     result: AgentResult = Field(alias="result")
 
 
-class ErrorCode(StrEnum):
-    BAD_REQUEST = "BAD_REQUEST"
-    VALIDATION_FAILED = "VALIDATION_FAILED"
-    UNAUTHORIZED = "UNAUTHORIZED"
-    NOT_FOUND = "NOT_FOUND"
-    CONFLICT = "CONFLICT"
-    IDEMPOTENCY_MISMATCH = "IDEMPOTENCY_MISMATCH"
-    PROTOCOL_VERSION_MISMATCH = "PROTOCOL_VERSION_MISMATCH"
-    HUB_NOT_READY = "HUB_NOT_READY"
-    HUB_MAINTENANCE = "HUB_MAINTENANCE"
-    EVENT_CURSOR_EXPIRED = "EVENT_CURSOR_EXPIRED"
-    FEATURE_UNAVAILABLE = "FEATURE_UNAVAILABLE"
-    AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
-    AGENT_OFFLINE = "AGENT_OFFLINE"
-    AGENT_NOT_LOGGED_IN = "AGENT_NOT_LOGGED_IN"
-    AGENT_INCOMPATIBLE = "AGENT_INCOMPATIBLE"
-    CAPABILITY_MISSING = "CAPABILITY_MISSING"
-    ROLE_UNRESOLVED = "ROLE_UNRESOLVED"
-    SESSION_NOT_RESUMABLE = "SESSION_NOT_RESUMABLE"
-    TASK_NOT_CANCELLABLE = "TASK_NOT_CANCELLABLE"
-    TASK_ACTION_INVALID = "TASK_ACTION_INVALID"
-    WORKTREE_BUSY = "WORKTREE_BUSY"
-    PATH_NOT_ALLOWED = "PATH_NOT_ALLOWED"
-    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
-    APPROVAL_EXPIRED = "APPROVAL_EXPIRED"
-    APPROVAL_ALREADY_DECIDED = "APPROVAL_ALREADY_DECIDED"
-    UPDATE_NOT_AVAILABLE = "UPDATE_NOT_AVAILABLE"
-    UPDATE_BUSY = "UPDATE_BUSY"
-    UPDATE_VERIFY_FAILED = "UPDATE_VERIFY_FAILED"
-    UPDATE_DRAIN_TIMEOUT = "UPDATE_DRAIN_TIMEOUT"
-    INTERNAL = "INTERNAL"
-
-
 class AgentDiscoveryError(_Base):
     adapter_id: AdapterId = Field(alias="adapterId")
     code: ErrorCode = Field(alias="code")
@@ -106,43 +232,6 @@ class AgentDiscoveryCompletedPayload(_Base):
     ready: int = Field(alias="ready")
     errors: list[AgentDiscoveryError] | None = Field(default=None, alias="errors")
     duration_ms: int | None = Field(default=None, alias="durationMs")
-
-
-class AgentStatus(StrEnum):
-    DISCOVERING = "discovering"
-    READY = "ready"
-    BUSY = "busy"
-    NOT_LOGGED_IN = "not_logged_in"
-    INCOMPATIBLE = "incompatible"
-    DISABLED = "disabled"
-    OFFLINE = "offline"
-    ERROR = "error"
-    UNKNOWN = "unknown"
-
-
-class AuthKind(StrEnum):
-    LOCAL_LOGIN = "local_login"
-    API_KEY = "api_key"
-    OAUTH = "oauth"
-    DEVICE_CODE = "device_code"
-    NONE = "none"
-
-
-class CapabilityId(StrEnum):
-    ORCHESTRATION = "orchestration"
-    ARCHITECTURE = "architecture"
-    CODING = "coding"
-    REVIEW = "review"
-    TESTING = "testing"
-    SHELL = "shell"
-    FILE_WRITE = "file_write"
-    GIT_WORKTREE = "git_worktree"
-    SESSION_RESUME = "session_resume"
-    STREAMING_EVENTS = "streaming_events"
-    TOOL_APPROVAL = "tool_approval"
-    STRUCTURED_OUTPUT = "structured_output"
-    VISION = "vision"
-    BROWSER = "browser"
 
 
 class CapabilityItem(_Base):
@@ -164,9 +253,6 @@ class RoleId(StrEnum):
     TESTER = "tester"
     DEPLOYER = "deployer"
     INTEGRATOR = "integrator"
-
-
-Timestamp = str
 
 
 class AgentView(_Base):
@@ -213,6 +299,17 @@ class AgentQuestionPayload(_Base):
     expires_at: Timestamp | None = Field(default=None, alias="expiresAt")
 
 
+class AgentSessionHandle(_Base):
+    """start() 的返回值。Adapter 必须在此返回明确的外部会话 ID，Hub 据此写入 SessionView.externalSessionId。"""
+
+    session_id: str = Field(alias="sessionId")
+    external_session_id: str | None = Field(default=None, alias="externalSessionId")
+    adapter_id: AdapterId = Field(alias="adapterId")
+    started_at: Timestamp = Field(alias="startedAt")
+    supports_resume: bool = Field(alias="supportsResume")
+    working_directory: str | None = Field(default=None, alias="workingDirectory")
+
+
 class SessionPurpose(StrEnum):
     ORCHESTRATE = "orchestrate"
     ARCHITECT = "architect"
@@ -237,6 +334,38 @@ class AgentStartedPayload(_Base):
     reuse_policy: SessionReusePolicy = Field(alias="reusePolicy")
     worktree_path: str | None = Field(default=None, alias="worktreePath")
     branch: str | None = Field(default=None, alias="branch")
+
+
+class DangerousAction(StrEnum):
+    DEPLOY = "deploy"
+    GIT_PUSH = "git_push"
+    GIT_MERGE = "git_merge"
+    DELETE = "delete"
+    SHELL = "shell"
+    NETWORK = "network"
+    DB_MIGRATE = "db_migrate"
+
+
+class AgentTaskSpec(_Base):
+    """start() 的输入。对应施工方案 §8.1 的任务结构，字段名按 D11 转为 camelCase。"""
+
+    task_id: str = Field(alias="taskId")
+    node_id: str = Field(alias="nodeId")
+    workspace_id: str = Field(alias="workspaceId")
+    role_id: RoleId = Field(alias="roleId")
+    objective: str = Field(alias="objective")
+    worktree_path: str | None = Field(default=None, alias="worktreePath")
+    branch: str | None = Field(default=None, alias="branch")
+    base_commit: str | None = Field(default=None, alias="baseCommit")
+    allowed_paths: list[str] = Field(alias="allowedPaths")
+    read_first: list[str] | None = Field(default=None, alias="readFirst")
+    acceptance: list[str] | None = Field(default=None, alias="acceptance")
+    requires_approval: list[DangerousAction] | None = Field(default=None, alias="requiresApproval")
+    session_purpose: SessionPurpose = Field(alias="sessionPurpose")
+    reuse_policy: SessionReusePolicy = Field(alias="reusePolicy")
+    resume_session_id: str | None = Field(default=None, alias="resumeSessionId")
+    handoff_documents: list[str] | None = Field(default=None, alias="handoffDocuments")
+    timeout_seconds: int | None = Field(default=None, alias="timeoutSeconds")
 
 
 class AgentToolCallPayload(_Base):
@@ -320,6 +449,16 @@ class ApprovalDecision(StrEnum):
     REJECT = "reject"
 
 
+class ApprovalDispatch(_Base):
+    """approve() 的输入。Hub 是审批时效的唯一权威——Adapter 不得自行判定过期后放行。"""
+
+    approval_id: str = Field(alias="approvalId")
+    external_request_id: str | None = Field(default=None, alias="externalRequestId")
+    decision: ApprovalDecision = Field(alias="decision")
+    reason: str | None = Field(default=None, alias="reason")
+    decided_at: Timestamp = Field(alias="decidedAt")
+
+
 class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
@@ -330,16 +469,6 @@ class ApprovalStatus(StrEnum):
 class ApprovalQuery(_Base):
     status: ApprovalStatus | None = Field(default=None, alias="status")
     task_id: str | None = Field(default=None, alias="taskId")
-
-
-class DangerousAction(StrEnum):
-    DEPLOY = "deploy"
-    GIT_PUSH = "git_push"
-    GIT_MERGE = "git_merge"
-    DELETE = "delete"
-    SHELL = "shell"
-    NETWORK = "network"
-    DB_MIGRATE = "db_migrate"
 
 
 class RiskLevel(StrEnum):
@@ -476,6 +605,34 @@ class BootstrapView(_Base):
     instance_id: str | None = Field(default=None, alias="instanceId")
     last_event_seq: int = Field(alias="lastEventSeq")
     hub_started_at: Timestamp = Field(alias="hubStartedAt")
+
+
+class CancelMode(StrEnum):
+    GRACEFUL = "graceful"
+    FORCE = "force"
+
+
+class CancelOutcome(StrEnum):
+    STOPPED_GRACEFULLY = "stopped_gracefully"
+    FORCE_KILLED = "force_killed"
+    ALREADY_FINISHED = "already_finished"
+    NOT_FOUND = "not_found"
+    REFUSED = "refused"
+
+
+class CancelRequest(_Base):
+    session_id: str = Field(alias="sessionId")
+    mode: CancelMode = Field(alias="mode")
+    reason: str | None = Field(default=None, alias="reason")
+    grace_seconds: int | None = Field(default=None, alias="graceSeconds")
+
+
+class CancelResult(_Base):
+    outcome: CancelOutcome = Field(alias="outcome")
+    completed_at: Timestamp = Field(alias="completedAt")
+    elapsed_ms: int | None = Field(default=None, alias="elapsedMs")
+    detail: str | None = Field(default=None, alias="detail")
+    orphan_process_ids: list[int] | None = Field(default=None, alias="orphanProcessIds")
 
 
 class ConnectionSettings(_Base):
@@ -707,6 +864,15 @@ class ResolvedTeamView(_Base):
 class ResolvedThemeMode(StrEnum):
     LIGHT = "light"
     DARK = "dark"
+
+
+class ResumeRequest(_Base):
+    """resume() 的输入。只有用户显式继续、工作流显式声明复用，或任务传入 resumeSessionId 时才会走到这里。"""
+
+    session_id: str = Field(alias="sessionId")
+    external_session_id: str | None = Field(default=None, alias="externalSessionId")
+    message: str = Field(alias="message")
+    acceptance: list[str] | None = Field(default=None, alias="acceptance")
 
 
 class ResumeSessionInput(_Base):
@@ -1059,6 +1225,15 @@ class UserSettingsView(_Base):
     protocol_version: ProtocolVersion | None = Field(default=None, alias="protocolVersion")
 
 
+class VendorEventMapping(_Base):
+    """Adapter 必须声明的供应商事件到统一事件字典的映射表。事件字典已在 FZ-1 冻结（28 条），Adapter 不得新增事件类型。"""
+
+    vendor_type: str = Field(alias="vendorType")
+    unified_type: str = Field(alias="unifiedType")
+    dropped: bool | None = Field(default=None, alias="dropped")
+    note: str | None = Field(default=None, alias="note")
+
+
 class WorkspaceQuery(_Base):
     search: str | None = Field(default=None, alias="search")
     limit: int | None = Field(default=None, alias="limit")
@@ -1078,6 +1253,7 @@ ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "BAD_REQUEST": {"http": 400, "retryable": False},
     "VALIDATION_FAILED": {"http": 422, "retryable": False},
     "UNAUTHORIZED": {"http": 401, "retryable": False},
+    "ORIGIN_NOT_ALLOWED": {"http": 403, "retryable": False},
     "NOT_FOUND": {"http": 404, "retryable": False},
     "CONFLICT": {"http": 409, "retryable": False},
     "IDEMPOTENCY_MISMATCH": {"http": 409, "retryable": False},
