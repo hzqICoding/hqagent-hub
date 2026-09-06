@@ -60,34 +60,55 @@ Vue 只跟 Local Hub 说话，一个 Base URL、一个 Token、一条事件序�
 | `E:\OtherPro\HQDroidDeck-Desktop` | Go 更新模块的来源（1619 行纯标准库） |
 | `E:\OtherPro\HQUpdateKit` | 抽取出的共享更新模块，两个产品共同依赖（W6 建立） |
 
-## 本机工具链前置条件（2026-09-05 实测）
+## 本机工具链前置条件（2026-09-06 更新）
 
-开工时在这台机器上逐条验证过，缺的部分会直接卡住对应工作包：
-
-| 工具链 | 状态 | 影响 |
+| 工具链 | 状态 | 位置 |
 | --- | --- | --- |
-| Python 3.13.7 | ✅ 已装 | W1 可开工。依赖装在各 worktree 的 `.venv/` |
-| Node + pnpm | ✅ 已装 | W4 可开工 |
-| Go | ✅ 已装（`E:\SoftWare\Go`） | W6 Update Agent 可开工 |
-| Rust / cargo / rustup | ❌ **未装** | — |
-| MSVC 工具链（`link.exe`） | ❌ **未装** | **W5 完全阻断** |
+| Python 3.13.7 | ✅ | `E:\SoftWare\Python313`。各 worktree 用自己的 `.venv/` |
+| Node + pnpm | ✅ | W4 使用 |
+| Go | ✅ | `E:\SoftWare\Go`。W6 Update Agent 使用 |
+| Rust 1.98.1 / cargo / rustup 1.29.1 | ✅ | **`E:\SoftWare\cargo` + `E:\SoftWareustup`** |
+| MSVC 生成工具 + Windows 11 SDK | ✅ | `E:\SoftWare\VSBuildTools`（SDK 在 C 盘，微软写死） |
 
-### W5 的硬阻断
+### MSVC 阻断已解除（2026-09-05 → 2026-09-06）
 
-`cargo check` 在 build script 阶段就死：
+9 月 5 日 W5 因本机无 MSVC 工具链完全阻断，`cargo check` 在 build script 阶段
+即报 `linker link.exe not found` 退出 101。
+
+9 月 6 日装了 **Visual Studio 生成工具 2022 17.14.39**，只勾两个单个组件：
+
+- `MSVC v143 - VS 2022 C++ x64/x86 生成工具`
+- `Windows 11 SDK (10.0.26100.7705)`
+
+**没有勾「使用 C++ 的桌面开发」工作负载**——那个会连带 CMake/ATL/MFC/测试工具，
+Rust 一个都用不上，多吃 4–5 GB。实际占用 5.48 GB，其中 C 盘 2.8 GB。
+
+产品路径改到 `E:\SoftWare\VSBuildTools`（C 盘当时只剩 13.8 GB）。
+注意 `vswhere.exe` 仍在 `C:\Program Files (x86)\Microsoft Visual Studio\Installer\`，
+安装器本体不跟随产品路径，验证时别找错地方。
+
+### Rust 装在 E 盘，不是默认的 %USERPROFILE%\.cargo
+
+C 盘空间紧张，`CARGO_HOME` / `RUSTUP_HOME` 用户级环境变量指向 E 盘：
 
 ```
-error: linker `link.exe` not found
-note: the msvc targets depend on the msvc linker but `link.exe` was not found
+CARGO_HOME  = E:\SoftWare\cargo
+RUSTUP_HOME = E:\SoftWareustup
+PATH       += E:\SoftWare\cargoin
 ```
 
-`vswhere.exe` 不存在，两个 `Microsoft Visual Studio` 安装目录都不存在——
-本机从没装过 Visual Studio 或 Build Tools。
+工具链是从 Codex 临时装在 `E:	mp\hqagent-w5-cargo` 的那套**原地搬迁**过来的，
+不是重装——`settings.toml` 里没有绝对路径，rustup 的 proxy 在运行时读 `RUSTUP_HOME`，
+所以搬完直接可用，省掉一次 2 GB 下载。
 
-**复工前置**：装 Visual Studio Build Tools，勾选「使用 C++ 的桌面开发」工作负载
-（数 GB，要管理员权限）。Tauri 在 Windows 上依赖 WebView2 与 MSVC ABI，
-不要改用 `x86_64-pc-windows-gnu` 绕过。
+`rustup toolchain list` 里有两套：`stable-x86_64-pc-windows-msvc`（默认，在用）
+和 `stable-x86_64-pc-windows-gnu`（Codex 当时试图绕过 MSVC 留下的，约 700 MB 死重，
+确认 msvc 链路稳定后可以 `rustup toolchain uninstall stable-x86_64-pc-windows-gnu`）。
 
-装完后把 Rust 正式装到 `%USERPROFILE%\.cargo`，并改掉
-`apps/desktop/src-tauri/acceptance/run-cargo.ps1` 里指向 `E:\tmp\hqagent-w5-cargo`
-的默认路径——那是执行方临时装的一套工具链，放在随时会被清理的目录里。
+### W5 的收尾清理
+
+`acceptance/run-cargo.ps1` 和 `acceptance/cargo_registry_proxy.py` 是 Codex 为绕开
+沙箱网络限制写的本地 sparse registry 代理，默认路径指向已经不存在的 `E:	mp\hqagent-w5-cargo`。
+正式工具链就位后**这两个文件已无用**，直接 `cargo check` / `cargo test` 即可。
+清理时一并删 `E:	mp\hqagent-w5-registry-cache`、`hqagent-w5-security-acceptance`、
+`hqagent-w5-registry-ready.txt`。
