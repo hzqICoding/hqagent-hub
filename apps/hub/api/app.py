@@ -85,11 +85,11 @@ class LocalBoundaryMiddleware:
         origin = headers.get("origin")
         cors_headers: list[tuple[bytes, bytes]] = []
         if host not in self.allowed_hosts:
-            await self._reject(send, HubError("UNAUTHORIZED", "请求来源未授权"))
+            await self._reject(send, HubError("ORIGIN_NOT_ALLOWED", "Host 不在白名单"))
             return
         if origin is not None:
             if origin not in self.allowed_origins:
-                await self._reject(send, HubError("UNAUTHORIZED", "Origin 未授权"))
+                await self._reject(send, HubError("ORIGIN_NOT_ALLOWED", "Origin 不在白名单"))
                 return
             cors_headers = [
                 (b"access-control-allow-origin", origin.encode("latin1")),
@@ -382,7 +382,12 @@ def create_application(
         valid_boundary = host in (allowed_hosts or {"127.0.0.1", "localhost"}) and (
             origin is None or origin in (allowed_origins or set(DEFAULT_ALLOWED_ORIGINS))
         )
-        if not valid_boundary or not ticket_store.consume(ticket):
+        # 裁决 D23：来源不对与票不对是两回事，关闭码要分开，
+        # 否则前端和排障都分不清是 Origin 配错了还是票过期/被重放了。
+        if not valid_boundary:
+            await websocket.close(code=4403)
+            return
+        if not ticket_store.consume(ticket):
             await websocket.close(code=4401)
             return
         try:
