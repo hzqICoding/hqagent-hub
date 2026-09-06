@@ -350,7 +350,22 @@ def create_application(
 
     @app.post("/api/v1/updates/install")
     async def update_install(value: UpdateActionInput | None = None) -> JSONResponse:
-        await drain.start()
+        # drain.start() 超时不抛异常，只把 step 停在 wait_running_tasks 就返回
+        # （见 core/maintenance.py:90-92）。不看返回值直接装，本机没排空干净时
+        # Update Agent 会拒绝，但用户看到的错误是「Update Agent 拒绝」而不是
+        # 「本机还有任务在跑」——排障方向完全指错。发现者是 W6，
+        # 见 .hqagent/reviews/T-W6-updatekit.md INT-W6R3。
+        progress = await drain.start()
+        step = getattr(progress, "step", None)
+        if step != "ready":
+            # 协议已有 UPDATE_DRAIN_TIMEOUT(409, retryable)，描述正是
+            # 「任务排空超时，需要用户选择继续等待、取消任务或退出应用」，
+            # 不需要为此新增错误码去动冻结的协议。
+            raise HubError(
+                "UPDATE_DRAIN_TIMEOUT",
+                "任务排空未完成，暂时不能安装更新",
+                detail={"step": step, "activeTasksRemaining": getattr(progress, "active_tasks_remaining", None)},
+            )
         return success_response(
             await proxy_state_after("POST", "/internal/v1/install", dump_model(value) if value else None)
         )
@@ -377,6 +392,17 @@ def create_application(
 
     @app.websocket("/api/v1/events/stream")
     async def event_stream(websocket: WebSocket, ticket: str, after: int | None = Query(None, ge=0)) -> None:
+        # accept() 必须排在所有校验之前。ASGI 规范里 accept 之前的 close 会被服务器
+        # 翻译成 HTTP 握手拒绝，关闭码在握手层就丢了——浏览器只会拿到 code 1006，
+        # 4401/4403/4410 三个码全部不可见，裁决 D23「关闭码要分开」等于没生效。
+        # 实测见 .hqagent/reviews/INT-ws-close-codes.md。
+        #
+        # 代价：未通过校验的对端会被短暂接受（毫秒级）。可接受的理由是
+        # 监听面只有 127.0.0.1、Host/Origin 双重校验、Ticket 一次性 30 秒，
+        # 且 accept 之后到 close 之前不发送任何业务数据。
+        # 这也是 WebSocket 协议下唯一能把应用级关闭码送到浏览器的方式：
+        # 改握手层返 401/403/410 同样没用，浏览器 WebSocket API 读不到握手状态码。
+        await websocket.accept()
         host = websocket.headers.get("host", "").split(":", 1)[0].lower()
         origin = websocket.headers.get("origin")
         valid_boundary = host in (allowed_hosts or {"127.0.0.1", "localhost"}) and (
@@ -385,15 +411,14 @@ def create_application(
         # 裁决 D23：来源不对与票不对是两回事，关闭码要分开，
         # 否则前端和排障都分不清是 Origin 配错了还是票过期/被重放了。
         if not valid_boundary:
-            await websocket.close(code=4403)
+            await websocket.close(code=4403, reason="ORIGIN_NOT_ALLOWED")
             return
         if not ticket_store.consume(ticket):
-            await websocket.close(code=4401)
+            await websocket.close(code=4401, reason="UNAUTHORIZED")
             return
         try:
             async with event_store.broker.subscribe() as queue:
                 replay = event_store.page(after if after is not None else event_store.latest_seq(), MAX_EVENT_PAGE_SIZE)
-                await websocket.accept()
                 last_sent = after or 0
                 for event in replay.events:
                     await websocket.send_json(dump_model(event))
@@ -405,8 +430,24 @@ def create_application(
                         last_sent = event.seq
         except WebSocketDisconnect:
             return
-        except HubError:
-            await websocket.close(code=4410)
+        except HubError as exc:
+            # 光给个 4410 不够用：前端要靠 detail.snapshotUrl 才知道去哪重新取
+            # Snapshot，靠 oldestAvailableSeq 才知道自己落后了多少。
+            # 关闭帧的 reason 最长 123 字节，塞不下 detail，所以先发一帧再关。
+            try:
+                await websocket.send_json(
+                    {
+                        "error": {
+                            "code": exc.code,
+                            "message": exc.message,
+                            "detail": exc.detail,
+                            "retryable": exc.retryable,
+                        }
+                    }
+                )
+            except (WebSocketDisconnect, RuntimeError):
+                pass
+            await websocket.close(code=4410, reason=exc.code)
 
     @app.post("/internal/maintenance")
     async def set_maintenance(request: Request) -> JSONResponse:

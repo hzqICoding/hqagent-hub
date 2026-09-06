@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 def test_health_is_public_and_has_only_frozen_fields(client) -> None:
     response = client.get("/healthz")
@@ -40,13 +42,16 @@ def test_ticket_is_single_use(client, auth_headers) -> None:
         headers={"Origin": "http://localhost:1420"},
     ):
         pass
-    replay_rejected = False
-    try:
-        with client.websocket_connect(
-            f"/api/v1/events/stream?ticket={ticket}&after=0",
-            headers={"Origin": "http://localhost:1420"},
-        ):
-            pass
-    except Exception:
-        replay_rejected = True
-    assert replay_rejected
+    # 断言具体关闭码，不是「抛了个异常就算过」。
+    # 老写法 except Exception: replay_rejected = True 太松——服务端把 close 发在
+    # accept 之前时它照样绿，而那种写法下浏览器只会拿到 code 1006，
+    # 4401/4403/4410 全部丢失（见 .hqagent/reviews/INT-ws-close-codes.md）。
+    from starlette.websockets import WebSocketDisconnect
+
+    with client.websocket_connect(
+        f"/api/v1/events/stream?ticket={ticket}&after=0",
+        headers={"Origin": "http://localhost:1420"},
+    ) as replayed:
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            replayed.receive_text()
+    assert excinfo.value.code == 4401

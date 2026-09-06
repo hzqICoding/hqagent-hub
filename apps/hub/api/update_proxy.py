@@ -11,6 +11,14 @@ from protocol.generated.python import UpdateAgentRuntimeDescriptor
 from core.errors import FeatureUnavailable, HubError
 
 
+_ENVELOPE_REQUIRED_KEYS = frozenset({"success", "requestId", "protocolVersion"})
+
+
+def _is_envelope(payload: dict[str, Any]) -> bool:
+    """判断响应体是不是协议信封，而不是一个恰好带 success 字段的业务 DTO。"""
+    return _ENVELOPE_REQUIRED_KEYS.issubset(payload.keys())
+
+
 class UpdateAgentProxy:
     def __init__(self, descriptor_path: Path, timeout_seconds: float = 5.0) -> None:
         self.descriptor_path = descriptor_path
@@ -61,7 +69,15 @@ class UpdateAgentProxy:
             payload = response.json()
         except ValueError as exc:
             raise HubError("INTERNAL", "Update Agent 返回了无效 JSON") from exc
-        if isinstance(payload, dict) and "success" in payload:
+        # 只看 "success" 键会把裸 DTO 误判成信封：生成的 UpdateResultView 恰好有一个
+        # success: boolean 字段（见 packages/protocol/schema/update-result.json）。
+        # 于是 success=false 的合法回滚回执被当成错误抛掉（用户永远看不到回滚结果），
+        # success=true 的成功回执被解包成不存在的 data 键而返回 None——两个方向都错。
+        # 发现者是 W6，见 .hqagent/reviews/T-W6-updatekit.md INT-W6R1。
+        #
+        # 判据改成完整信封结构：success 必须和 requestId、protocolVersion 一起出现。
+        # 这三个字段是 envelope.json 的必填项，任何业务 DTO 不会同时具备。
+        if isinstance(payload, dict) and _is_envelope(payload):
             if not payload.get("success"):
                 error = payload.get("error") or {}
                 raise HubError(
