@@ -1,0 +1,99 @@
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/missing-worker
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/missing-desktop
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/args
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/health
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/no-rollback
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/schema
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/scope
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/data
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/snapshot
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/missing-backup
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/command
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/downgrade
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/directory
+=== RUN   TestPlanRejectsUntrustedPathsAndIncompleteSchema/package
+--- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema (0.02s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/missing-worker (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/missing-desktop (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/args (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/health (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/no-rollback (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/schema (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/scope (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/data (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/snapshot (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/missing-backup (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/command (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/downgrade (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/directory (0.00s)
+    --- PASS: TestPlanRejectsUntrustedPathsAndIncompleteSchema/package (0.00s)
+=== RUN   TestHelperWaitFailureNeverInstalls
+--- PASS: TestHelperWaitFailureNeverInstalls (0.01s)
+=== RUN   TestInstallerTimeoutDoesNotRaceUncontainedChildren
+--- PASS: TestInstallerTimeoutDoesNotRaceUncontainedChildren (0.02s)
+=== RUN   TestHelperHealthySuccessAndRollbackFailures
+=== RUN   TestHelperHealthySuccessAndRollbackFailures/healthy
+=== RUN   TestHelperHealthySuccessAndRollbackFailures/unhealthy
+=== RUN   TestHelperHealthySuccessAndRollbackFailures/installer-failure
+=== RUN   TestHelperHealthySuccessAndRollbackFailures/cannot-stop
+--- PASS: TestHelperHealthySuccessAndRollbackFailures (0.12s)
+    --- PASS: TestHelperHealthySuccessAndRollbackFailures/healthy (0.02s)
+    --- PASS: TestHelperHealthySuccessAndRollbackFailures/unhealthy (0.03s)
+    --- PASS: TestHelperHealthySuccessAndRollbackFailures/installer-failure (0.04s)
+    --- PASS: TestHelperHealthySuccessAndRollbackFailures/cannot-stop (0.02s)
+=== RUN   TestCurrentUserOnlyProtectedACLAndExclusiveLock
+    security_windows_test.go:42: descriptor DACL protected; exactly one current-user SID ACE; duplicate lock denied
+--- PASS: TestCurrentUserOnlyProtectedACLAndExclusiveLock (2.26s)
+=== RUN   TestAuthenticodeRejectsUnsignedExecutable
+    security_windows_test.go:55: production Authenticode verifier rejected unsigned/wrong-publisher test executable
+--- PASS: TestAuthenticodeRejectsUnsignedExecutable (2.12s)
+=== RUN   TestAuthenticodeAcceptsPinnedOperatingSystemSigner
+    security_windows_test.go:74: production Authenticode verifier accepted an OS-signed binary with its exact configured signer pin
+--- PASS: TestAuthenticodeAcceptsPinnedOperatingSystemSigner (4.27s)
+=== RUN   TestJunctionCannotRedirectControlledPaths
+    security_windows_test.go:88: Windows junction rejected before package access
+--- PASS: TestJunctionCannotRedirectControlledPaths (1.37s)
+=== RUN   TestDoubleTrustAndTampering
+=== RUN   TestDoubleTrustAndTampering/hash
+=== RUN   TestDoubleTrustAndTampering/signature
+=== RUN   TestDoubleTrustAndTampering/key
+=== RUN   TestDoubleTrustAndTampering/algorithm
+=== RUN   TestDoubleTrustAndTampering/size
+=== RUN   TestDoubleTrustAndTampering/os-trust
+--- PASS: TestDoubleTrustAndTampering (0.00s)
+    --- PASS: TestDoubleTrustAndTampering/hash (0.00s)
+    --- PASS: TestDoubleTrustAndTampering/signature (0.00s)
+    --- PASS: TestDoubleTrustAndTampering/key (0.00s)
+    --- PASS: TestDoubleTrustAndTampering/algorithm (0.00s)
+    --- PASS: TestDoubleTrustAndTampering/size (0.00s)
+    --- PASS: TestDoubleTrustAndTampering/os-trust (0.00s)
+=== RUN   TestRangeResumeAndMalformedResponse
+=== RUN   TestRangeResumeAndMalformedResponse/range
+=== RUN   TestRangeResumeAndMalformedResponse/restart
+=== RUN   TestRangeResumeAndMalformedResponse/bad-range
+=== RUN   TestRangeResumeAndMalformedResponse/truncated
+=== RUN   TestRangeResumeAndMalformedResponse/oversized
+=== RUN   TestRangeResumeAndMalformedResponse/complete-part
+--- PASS: TestRangeResumeAndMalformedResponse (0.02s)
+    --- PASS: TestRangeResumeAndMalformedResponse/range (0.01s)
+    --- PASS: TestRangeResumeAndMalformedResponse/restart (0.00s)
+    --- PASS: TestRangeResumeAndMalformedResponse/bad-range (0.00s)
+    --- PASS: TestRangeResumeAndMalformedResponse/truncated (0.00s)
+    --- PASS: TestRangeResumeAndMalformedResponse/oversized (0.00s)
+    --- PASS: TestRangeResumeAndMalformedResponse/complete-part (0.00s)
+=== RUN   TestManifestTargetAndReleaseValidation
+--- PASS: TestManifestTargetAndReleaseValidation (0.00s)
+=== RUN   TestCancelDoesNotAllowStaleDownloadToOverwriteNextOperation
+--- PASS: TestCancelDoesNotAllowStaleDownloadToOverwriteNextOperation (0.00s)
+=== RUN   TestRestoreReverifiesAndPersistenceFailsClosed
+--- PASS: TestRestoreReverifiesAndPersistenceFailsClosed (0.00s)
+=== RUN   TestNSISArgumentsAndExitCodes
+--- PASS: TestNSISArgumentsAndExitCodes (0.00s)
+=== RUN   TestPathRejectionAndAtomicState
+--- PASS: TestPathRejectionAndAtomicState (0.00s)
+=== RUN   TestSemverOrdering
+--- PASS: TestSemverOrdering (0.00s)
+PASS
+ok  	hqupdatekit.local/updatekit	10.236s
+?   	hqupdatekit.local/updatekit/cmd/keygen	[no test files]

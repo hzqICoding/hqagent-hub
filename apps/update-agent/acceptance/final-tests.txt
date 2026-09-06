@@ -1,0 +1,7 @@
+ok  	hqupdatekit.local/updatekit	10.732s
+?   	hqupdatekit.local/updatekit/cmd/keygen	[no test files]
+?   	hqagent.local/update-agent/cmd/hqagent-update-agent	[no test files]
+ok  	hqagent.local/update-agent/product	2.006s
+?   	hqagent.local/updater/cmd/hqagent-updater	[no test files]
+?   	hqagent.local/update-agent/cmd/hqagent-update-agent	[no test files]
+ok  	hqagent.local/update-agent/product	1.967s
