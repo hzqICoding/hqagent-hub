@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PROTOCOL_VERSION = "0.2.1"
+PROTOCOL_VERSION = "0.2.2"
 
 
 class _Base(BaseModel):
@@ -191,6 +191,12 @@ class AdapterStreamEnd(_Base):
     last_event_seq: int | None = Field(default=None, alias="lastEventSeq")
     resumable: bool | None = Field(default=None, alias="resumable")
     detail: str | None = Field(default=None, alias="detail")
+
+
+class AddWorkspaceInput(_Base):
+    path: str = Field(alias="path")
+    name: str | None = Field(default=None, alias="name")
+    default_profile_id: str | None = Field(default=None, alias="defaultProfileId")
 
 
 class Blocker(_Base):
@@ -593,6 +599,14 @@ class Vcs(StrEnum):
     NONE = "none"
 
 
+class WorkspaceCapabilityView(_Base):
+    """工作区当前能承接什么任务（裁决 D38）。非 Git 目录是合法工作区，但拿不到 worktree 隔离，因此只能派只读任务"""
+
+    can_run_write_tasks: bool = Field(alias="canRunWriteTasks")
+    reason: str | None = Field(default=None, alias="reason")
+    can_init_git: bool | None = Field(default=None, alias="canInitGit")
+
+
 class WorkspaceView(_Base):
     id: str = Field(alias="id")
     name: str = Field(alias="name")
@@ -602,6 +616,7 @@ class WorkspaceView(_Base):
     is_clean: bool | None = Field(default=None, alias="isClean")
     default_profile_id: str | None = Field(default=None, alias="defaultProfileId")
     last_opened_at: Timestamp = Field(alias="lastOpenedAt")
+    capabilities: WorkspaceCapabilityView | None = Field(default=None, alias="capabilities")
     memory_dir_present: bool | None = Field(default=None, alias="memoryDirPresent")
 
 

@@ -16,9 +16,43 @@
         "isClean": { "type": "boolean", "description": "工作区是否干净。非 clean 时创建写任务要提示" },
         "defaultProfileId": { "type": "string" },
         "lastOpenedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "capabilities": { "$ref": "#/$defs/WorkspaceCapabilityView" },
         "memoryDirPresent": {
           "type": "boolean",
           "description": "是否存在 .hqagent/ 共享记忆目录（施工方案 §5.5）。不存在时引导用户初始化"
+        }
+      }
+    },
+    "AddWorkspaceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "本机绝对路径。Hub 会自行探测是不是 Git 仓库并写入 vcs，不接受调用方声明——声明和事实不符时，写任务的隔离保护就成了摆设"
+        },
+        "name": {
+          "type": "string",
+          "description": "省略时取目录名"
+        },
+        "defaultProfileId": { "type": "string" }
+      }
+    },
+    "WorkspaceCapabilityView": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "工作区当前能承接什么任务（裁决 D38）。非 Git 目录是合法工作区，但拿不到 worktree 隔离，因此只能派只读任务",
+      "required": ["canRunWriteTasks"],
+      "properties": {
+        "canRunWriteTasks": { "type": "boolean" },
+        "reason": {
+          "type": "string",
+          "description": "canRunWriteTasks 为 false 时说明原因，前端直接展示，不要自己编文案"
+        },
+        "canInitGit": {
+          "type": "boolean",
+          "description": "是否可以用 POST /workspaces/{id}/init-git 一键变成 Git 仓库"
         }
       }
     },
