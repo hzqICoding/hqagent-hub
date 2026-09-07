@@ -69,6 +69,7 @@ async def bind_ports(application: Any, ports: HubPorts) -> None:
         return
     port.bind(service)
     await _seed_defaults(application.database, ports)
+    _bind_orchestration(application, ports, service)
 
 
 def _build_agent_port():
@@ -124,3 +125,61 @@ async def _seed_defaults(database: Any, ports: HubPorts) -> None:
     except Exception:  # noqa: BLE001 - 探测失败不该阻断启动
         return
     seed_default_profile(TeamProfileRepository(database), list(agents))
+
+
+def _bind_orchestration(application: Any, ports: HubPorts, profiles: Any) -> None:
+    """接 tasks / sessions / approvals 三个 Port。
+
+    这三个是一组：任务推进要发事件、要开会话、要走审批，拆开接会出现
+    「任务能建但审批发不出去」这种半通状态。要么整组通，要么整组留占位。
+    """
+    from dataclasses import replace as _replace
+
+    try:
+        from orchestrator.catalog import BuiltinCatalog
+        from orchestrator.role_resolver import RoleResolver
+        from orchestrator.runtime import WorkflowRuntime
+        from orchestrator.sessions import SessionManager
+        from runtime.repositories import (
+            AdapterDirectory,
+            ApprovalRepository,
+            EventSink,
+            SessionRepository,
+        )
+        from runtime.tasks import ApprovalService, SessionService, TaskService
+        from security.approvals import ApprovalCoordinator
+        from security.permissions import PermissionEngine
+        from storage.tasks import TaskRepository
+    except ImportError:  # pragma: no cover - 打包漏文件时才会走到
+        return
+
+    database = application.database
+    catalog = BuiltinCatalog.load()
+    directory = AdapterDirectory(ports.agents)
+    events = EventSink(database, application.events)
+    session_repository = SessionRepository(database)
+    approval_repository = ApprovalRepository(database)
+
+    session_manager = SessionManager(session_repository, directory)
+    workflow = WorkflowRuntime(
+        RoleResolver(catalog),
+        PermissionEngine(catalog),
+        session_manager,
+        directory,
+        events,
+    )
+    coordinator = ApprovalCoordinator(approval_repository, events, directory)
+
+    ports_tasks = TaskService(
+        TaskRepository(database),
+        workflow,
+        directory,
+        profiles,
+        events,
+        ports.workspaces,
+    )
+    # HubPorts 是 slots dataclass，就地改字段而不是 replace——
+    # api 层持有的是同一个 ports 引用，replace 出来的新对象它看不见。
+    ports.tasks = ports_tasks
+    ports.sessions = SessionService(session_repository, session_manager)
+    ports.approvals = ApprovalService(approval_repository, coordinator)

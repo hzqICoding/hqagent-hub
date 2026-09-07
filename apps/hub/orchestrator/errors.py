@@ -71,3 +71,32 @@ class PathNotAllowedError(OrchestrationError):
 
 class ApprovalError(OrchestrationError):
     pass
+
+
+class AdapterStartFailedError(OrchestrationError):
+    """start() 返回了 AdapterFailure。
+
+    契约表（adapter-contract.md §1）给 start(spec) 列了 AgentSessionHandle 和
+    AdapterFailure 两列，但没写清失败是「返回」还是「抛出」。W2 读成返回
+    （联合类型），W3 的 Port 声明成 -> AgentSessionHandle 没处理联合，
+    于是集成时直接去取 handle.session_id 炸了。
+
+    W2 的读法是对的：AdapterFailureKind 那九个值就是给 Hub 做
+    kind → 动作映射用的（见契约 §8 的失败分类表），抛异常会把这层结构丢掉。
+    所以这里把返回值转成带结构的异常，让上层能按 kind 分别处理。
+    """
+
+    def __init__(self, failure: Any) -> None:
+        self.failure = failure
+        kind = getattr(failure, "kind", None)
+        super().__init__(
+            "AGENT_START_FAILED",
+            getattr(failure, "message", "Adapter 启动失败"),
+            {
+                "kind": str(kind) if kind is not None else None,
+                "retryable": getattr(failure, "retryable", None),
+                "missingCapabilities": [
+                    str(c) for c in (getattr(failure, "missing_capabilities", None) or [])
+                ],
+            },
+        )

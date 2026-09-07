@@ -37,7 +37,7 @@ from .domain import (
     ResolutionRequest,
     RuntimeEventDraft,
 )
-from .errors import InvalidTaskActionError, PathNotAllowedError
+from .errors import AdapterStartFailedError, InvalidTaskActionError, PathNotAllowedError
 from .ports import AdapterDirectoryPort, RuntimeEventSink
 from .role_resolver import RoleResolver
 from .sessions import SessionManager, SessionPlan
@@ -221,6 +221,11 @@ class WorkflowRuntime:
             )
             adapter = self.adapters.adapter_for(resolution.agent.instance_id)
             handle = await adapter.start(task_spec)
+            # start() 可能返回 AdapterFailure 而不是 handle（契约 §1 的失败列）。
+            # 不检查就会在下一行取 handle.session_id 时炸成 AttributeError，
+            # 把「Agent 没登录」这种可处理的状态变成一个看不懂的崩溃。
+            if isinstance(handle, AdapterFailure):
+                raise AdapterStartFailedError(handle)
             if handle.session_id != hub_session_id:
                 raise InvalidTaskActionError(
                     "Adapter 必须原样返回 Hub 传入的 sessionId（裁决 D25），不得自行生成",
