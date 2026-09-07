@@ -376,10 +376,63 @@ headless）。但那是私有未文档化协议，等于逆向别人 IDE 的内�
 
 这印证了施工方案 §7.1 把 Sidecar 排在可靠性第 4 级的判断。
 
-**决定**：按 D5 原文处理——「不达标则以 `incompatible` 状态展示能力缺口，
-不阻塞任何验收项」。**不实现 Antigravity Adapter**，也不创建占位。
-Phase 1.1 若仍要第三个 Agent，应从接入方式在 1–2 级的候选里选
-（官方 SDK / App Server，或 CLI JSON/JSONL），不要再往 Sidecar 这条路上投入。
+**决定（已修正，见下）**：一期不实现 Antigravity Adapter，也不创建占位。
+
+#### 修正：上面的判定只看了 agentapi 一半
+
+初判「不达标、不实现」时漏了施工方案 `:468` 早就写好的接入设计：
+
+> Phase 1.1 Antigravity：Sidecar + `agentapi` 创建/续接会话，保存
+> `conversation_id`；**通过共享 MCP 工具回报进度和结果**。
+
+**设计从来没打算只用 agentapi。** 规划的是混合模式：agentapi 起会话，
+MCP 回传。而 Antigravity 确实是 MCP 客户端——`~/.gemini/config/mcp_config.json`
+等三份配置文件都存在（当前为空，未注册任何 server），且它自己就启动着
+`chrome-devtools-mcp`（`-use_ls_chrome_devtools_mcp=true`）。
+
+按混合方案重新对照：
+
+| Port 方法 | 混合方案 | 结论 |
+| --- | --- | --- |
+| `start(spec)` | `agentapi new-conversation` | ✅ |
+| `resume(req)` | `agentapi send-message` | 🟡 |
+| `streamEvents()` | Antigravity 调 Hub 的 MCP `report_progress` | ✅ 推而非拉 |
+| `collectResult()` | MCP `submit_result` | ✅ |
+| `approve()` | MCP `request_approval`，阻塞等回应 | ✅ |
+| `cancel()` | 只能协作式，无硬中断 | ❌ |
+| `health()` | 无登录态查询 | ❌ |
+
+**从三个硬缺口降到一个半。技术上可行。**
+
+#### 但保证强度低一档，这是它留在 Phase 1.1 的真正理由
+
+前四条靠的是**推模式**：进度和结果能不能回来，取决于 Agent 愿不愿意调那个
+MCP 工具。模型忘了调，进度就静默停住，Hub 只能干等到超时。
+
+Claude / Codex 走的是**拉模式**——Adapter 主动读子进程 stdout，Agent 想不给都不行。
+
+定性差别：Antigravity 是「**Agent 配合**」，不是「**Adapter 保证**」。
+正常路径能跑，异常路径（模型跑飞、卡死、拒绝调工具）没有兜底。
+这正是 §7.1 把 Sidecar 排在第 4 级的原因——不是接不了，是保证强度低一档。
+
+`cancel` 的硬缺口也是真的：`agentapi` 起的会话，进程归 Antigravity IDE 管，
+Hub 杀不掉，D17 两段式取消里的 force 那半做不到。按 D17 该如实返回 `refused`
+并报告残留——Claude 的写任务取消已有先例，不是新问题。
+
+#### 修正后的决定
+
+一期结论不变（**不实现**），但理由要改准确：**不是「接口做不了」，
+而是「保证强度低一档 + 一期用两个 Agent 已足够证明四层解耦」（D5、D37）**。
+
+Phase 1.1 若要接，走 agentapi + MCP 混合方案是**可行**的，
+不必如初判所说「不要再往 Sidecar 这条路上投入」。届时必须在 UI 上如实标注
+其能力矩阵：`cancel` 不支持、进度依赖 Agent 配合，不能和 Claude/Codex
+显示成同等可靠。
+
+**另一条明确不走的路**：直接对接 `language_server.exe` 的私有 API
+（`-api_server_url="http://0.0.0.0:50001"`、CSRF token、extension server）。
+那是逆向别人 IDE 的内部协议，每次 Antigravity 升级都可能断，
+而 OTA 是本项目 P0 能力——用户升级 Antigravity 我们就挂，耦合方向是反的。
 
 **当前 Agent 可用性实况**（2026-09-07 实测）：
 
