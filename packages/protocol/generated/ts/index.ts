@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.2.1' as const
+export const PROTOCOL_VERSION = '0.2.2' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -191,6 +191,14 @@ export interface AdapterStreamEnd {
   /** 仅 transport_lost 时可能为 true */
   resumable?: boolean
   detail?: string
+}
+
+export interface AddWorkspaceInput {
+  /** 本机绝对路径。Hub 会自行探测是不是 Git 仓库并写入 vcs，不接受调用方声明——声明和事实不符时，写任务的隔离保护就成了摆设 */
+  path: string
+  /** 省略时取目录名 */
+  name?: string
+  defaultProfileId?: string
 }
 
 export interface Blocker {
@@ -631,6 +639,15 @@ export type Vcs =
   | 'git'
   | 'none'
 
+/** 工作区当前能承接什么任务（裁决 D38）。非 Git 目录是合法工作区，但拿不到 worktree 隔离，因此只能派只读任务 */
+export interface WorkspaceCapabilityView {
+  canRunWriteTasks: boolean
+  /** canRunWriteTasks 为 false 时说明原因，前端直接展示，不要自己编文案 */
+  reason?: string
+  /** 是否可以用 POST /workspaces/{id}/init-git 一键变成 Git 仓库 */
+  canInitGit?: boolean
+}
+
 export interface WorkspaceView {
   id: string
   name: string
@@ -642,6 +659,7 @@ export interface WorkspaceView {
   isClean?: boolean
   defaultProfileId?: string
   lastOpenedAt: Timestamp
+  capabilities?: WorkspaceCapabilityView
   /** 是否存在 .hqagent/ 共享记忆目录（施工方案 §5.5）。不存在时引导用户初始化 */
   memoryDirPresent?: boolean
 }

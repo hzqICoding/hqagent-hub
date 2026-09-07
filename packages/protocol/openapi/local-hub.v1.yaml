@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HQAgent-Hub Local Hub API
-  version: 0.1.0
+  version: 0.2.2
   description: |
     Vue 与 Tauri 桌面壳的**唯一**网络契约（裁决 D1）。Update Agent 的内部 API 见
     `update-agent.internal.v1.yaml`，它不向 Vue 暴露第二个 Base URL、第二个 Token
@@ -109,6 +109,55 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/WorkspaceList"
+    post:
+      tags: [workspaces]
+      summary: 添加受管工作区
+      description: >-
+        Hub 自行探测路径是不是 Git 仓库并写入 vcs，不接受调用方声明。
+        非 Git 目录也可以添加，但 capabilities.canRunWriteTasks 为 false（裁决 D38）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schema/workspace.json#/$defs/AddWorkspaceInput"
+      responses:
+        "200":
+          $ref: "#/components/responses/Workspace"
+
+  /api/v1/workspaces/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [workspaces]
+      summary: 移除受管工作区
+      description: 只解除 Hub 的管理关系，不删除磁盘上的任何文件。
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/v1/workspaces/{id}/init-git:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [workspaces]
+      summary: 把工作区初始化为 Git 仓库
+      description: >-
+        裁决 D38 的 C 项：非 Git 工作区不能派写任务，这里提供一键补救。
+        已经是 Git 仓库时原样返回，不报错。
+      responses:
+        "200":
+          $ref: "#/components/responses/Workspace"
+
+  /api/v1/workspaces/{id}/init-memory:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [workspaces]
+      summary: 初始化 .hqagent 共享记忆目录
+      responses:
+        "200":
+          $ref: "#/components/responses/Workspace"
 
   /api/v1/team-profiles:
     get:
@@ -506,6 +555,18 @@ components:
         application/json:
           schema:
             $ref: "../schema/agent-instance.json#/$defs/AgentDiscoveryResult"
+    Ok:
+      description: OK
+      content:
+        application/json:
+          schema:
+            $ref: "../schema/envelope.json#/$defs/ApiEnvelope"
+    Workspace:
+      description: OK
+      content:
+        application/json:
+          schema:
+            $ref: "../schema/workspace.json#/$defs/WorkspaceView"
     WorkspaceList:
       description: OK
       content:
