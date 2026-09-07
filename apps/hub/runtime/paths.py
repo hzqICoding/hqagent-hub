@@ -16,6 +16,7 @@ class HubPaths:
     staging: Path
     backup: Path
     diagnostics: Path
+    worktrees: Path
 
     @classmethod
     def resolve(cls, override: Path | None = None) -> "HubPaths":
@@ -38,6 +39,9 @@ class HubPaths:
             staging=root / "updates" / "staging",
             backup=root / "updates" / "backup",
             diagnostics=root / "diagnostics",
+            # 施工方案 §5 的固定目录。每个写任务在这下面开独立 worktree，
+            # WorktreeManager 会强制路径不得越出这个根。
+            worktrees=root / "worktrees",
         )
 
     def create(self) -> None:
@@ -51,6 +55,7 @@ class HubPaths:
             self.staging,
             self.backup,
             self.diagnostics,
+            self.worktrees,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

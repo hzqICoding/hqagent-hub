@@ -150,6 +150,7 @@ def _bind_orchestration(application: Any, ports: HubPorts, profiles: Any) -> Non
         from runtime.tasks import ApprovalService, SessionService, TaskService
         from security.approvals import ApprovalCoordinator
         from security.permissions import PermissionEngine
+        from security.worktrees import WorktreeManager
         from storage.tasks import TaskRepository
     except ImportError:  # pragma: no cover - 打包漏文件时才会走到
         return
@@ -178,6 +179,7 @@ def _bind_orchestration(application: Any, ports: HubPorts, profiles: Any) -> Non
         profiles,
         events,
         ports.workspaces,
+        WorktreeManager(application.paths.worktrees),
     )
     # HubPorts 是 slots dataclass，就地改字段而不是 replace——
     # api 层持有的是同一个 ports 引用，replace 出来的新对象它看不见。

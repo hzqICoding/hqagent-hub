@@ -298,6 +298,10 @@ class WorkflowRuntime:
     ) -> CompletionOutcome:
         adapter = self.adapters.adapter_for(outcome.resolution.agent.instance_id)
         result = await adapter.collect_result(outcome.session.id)
+        # 和 start() 同款：契约表把 AdapterFailure 列在失败列，W2 是返回不是抛出。
+        # 不检查就会在下面取 result.changed_files 时炸成 AttributeError。
+        if isinstance(result, AdapterFailure):
+            raise AdapterStartFailedError(result)
         changed_files = tuple(
             item.path for item in (result.changed_files or []) if isinstance(item, FileChange)
         )

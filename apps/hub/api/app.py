@@ -54,6 +54,8 @@ DEFAULT_ALLOWED_ORIGINS = frozenset(
 @dataclass(slots=True)
 class HubApplication:
     app: FastAPI
+    # Composition Root 要用它定位 worktree 根目录等固定目录
+    paths: HubPaths
     database: Database
     events: EventStore
     drain: DrainCoordinator
@@ -501,6 +503,7 @@ def create_application(
 
     return HubApplication(
         app=app,
+        paths=paths,
         database=database,
         events=event_store,
         drain=drain,

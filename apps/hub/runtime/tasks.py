@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from pathlib import Path
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
 from protocol.generated.python import (
+    AdapterStreamEnd,
     AgentResult,
     CreateTaskInput,
     NodeStatus,
@@ -33,9 +35,14 @@ from protocol.generated.python import (
 )
 
 from core.errors import HubError
-from orchestrator.domain import ProfileSnapshot, ResolutionGap
+from orchestrator.domain import ProfileSnapshot, ResolutionGap, RuntimeEventDraft
 from orchestrator.errors import AdapterStartFailedError, InvalidTaskActionError, OrchestrationError
 from orchestrator.runtime import NodeDispatchRequest
+from security.worktrees import WorktreeSpec
+
+
+def node_id_or_node(repository: Any, task_id: str, node_id: str) -> Any:
+    return next((n for n in repository.list_nodes(task_id) if n.id == node_id), None)
 
 
 def _now() -> str:
@@ -65,6 +72,7 @@ class TaskService:
         profiles: Any,
         events: Any,
         workspaces: Any,
+        worktrees: Any = None,
     ) -> None:
         self.repository = repository
         self.runtime = runtime
@@ -72,10 +80,13 @@ class TaskService:
         self.profiles = profiles
         self.events = events
         self.workspaces = workspaces
+        self.worktrees = worktrees
         self._pumps: dict[str, asyncio.Task[None]] = {}
         # DispatchOutcome 要留着：collect_result 和 cancel 收的是它整体，
         # 里面带着 path_scope、role_policy、session 等收尾时才用得上的东西。
         self._outcomes: dict[str, Any] = {}
+        # WorktreeSpec 留着做收尾时的越界复核（git diff --name-only）
+        self._worktree_specs: dict[str, Any] = {}
 
     # ---------- 查询 ----------
 
@@ -288,6 +299,8 @@ class TaskService:
         workspace: dict[str, Any],
     ) -> None:
         self._assert_can_write(role_id, workspace)
+        worktree = await self._prepare_worktree(task_id, node, role_id, workspace)
+        implementation_agent_id, review_context_paths = self._review_context(task_id, role_id)
         candidates = await self.directory.list_candidates()
         snapshot = ProfileSnapshot.from_view(profile)
         request = NodeDispatchRequest(
@@ -304,6 +317,14 @@ class TaskService:
             requires_approval=tuple(str(a) for a in value.requires_approval) if value.requires_approval else None,
             global_profile=snapshot if str(profile.scope) == "global" else None,
             workspace_profile=snapshot if str(profile.scope) == "workspace" else None,
+            worktree_path=worktree["path"] if worktree else None,
+            branch=(worktree["branch"] or None) if worktree else None,
+            base_commit=(worktree["base_commit"] or None) if worktree else None,
+            # D7：同一 Agent 承担实现与复核时必须换会话。W3 靠 implementation_agent_id
+            # 判断要不要强制隔离，靠 review_context_paths 保证复核方真去读了 diff，
+            # 而不是凭上一轮对话的记忆「复核」自己刚写的代码。
+            implementation_agent_id=implementation_agent_id,
+            review_context_paths=review_context_paths,
         )
         try:
             outcome = await self.runtime.dispatch(request)
@@ -357,7 +378,88 @@ class TaskService:
         )
         self._start_pump(task_id, node.id, outcome, value, profile, workspace)
 
-    async def _fail_node(self, task_id: str, node: TaskNodeView, reason: str) -> None:
+    async def _prepare_worktree(
+        self,
+        task_id: str,
+        node: TaskNodeView,
+        role_id: str,
+        workspace: dict[str, Any],
+    ) -> dict[str, str] | None:
+        """为写节点开一个独立 worktree（施工方案 §3.1 第 8 条、§6.7）。
+
+        只读角色不开：reviewer 读的就是实现节点产出的那份，另开一个空 worktree
+        反而看不到要复核的东西。
+        """
+        if self.worktrees is None or not workspace.get("path"):
+            return None
+        if self.runtime.permissions.role_policy(role_id).read_only:
+            # 只读角色不新开 worktree，而是**复用前序写节点的那个**。
+            # reviewer 要复核的就是实现节点刚产出的改动，另开一个干净 worktree
+            # 等于让它去看一份没人动过的代码——那就没什么可审的了。
+            return self._inherit_worktree(task_id)
+
+        repository = Path(workspace["path"])
+        base_commit = await self._head_commit(repository)
+        branch = f"hq/{task_id}/{role_id}"
+        path = self.worktrees.worktree_root / f"{task_id}-{role_id}"
+        spec = WorktreeSpec(
+            repository_path=repository,
+            worktree_path=path,
+            branch=branch,
+            base_commit=base_commit,
+        )
+        created = await asyncio.to_thread(self.worktrees.create, spec)
+        self._worktree_specs[node.id] = spec
+        return {"path": str(created), "branch": branch, "base_commit": base_commit}
+
+    def _review_context(self, task_id: str, role_id: str) -> tuple[str | None, tuple[str, ...]]:
+        """复核节点要知道「谁实现的」和「去读哪里」。"""
+        if not self.runtime.permissions.role_policy(role_id).read_only:
+            return None, ()
+        for previous in reversed(list(self.repository.list_nodes(task_id))):
+            if str(previous.status) != "succeeded" or not previous.resolved_agent_id:
+                continue
+            paths = tuple(previous.changed_files or ()) or (".",)
+            return previous.resolved_agent_id, paths
+        return None, ()
+
+    def _inherit_worktree(self, task_id: str) -> dict[str, str] | None:
+        for previous in reversed(list(self.repository.list_nodes(task_id))):
+            if previous.worktree_path and str(previous.status) == "succeeded":
+                return {
+                    "path": previous.worktree_path,
+                    "branch": previous.branch or "",
+                    "base_commit": "",
+                }
+        return None
+
+    @staticmethod
+    async def _head_commit(repository: Path) -> str:
+        """解析出明确的 SHA。
+
+        WorktreeManager 拒绝 HEAD 这类会飘的引用——并行任务必须能说清
+        「我是从哪个提交出发的」，否则改动归属就乱了。
+        """
+        process = await asyncio.create_subprocess_exec(
+            "git", "rev-parse", "HEAD",
+            cwd=str(repository),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await process.communicate()
+        sha = stdout.decode("utf-8", "replace").strip()
+        if process.returncode != 0 or not sha:
+            raise HubError(
+                "PATH_NOT_ALLOWED",
+                "该仓库还没有任何提交，无法为写任务创建 worktree。"
+                "请先在项目里做一次初始提交（git commit），再派写任务。",
+                detail={"repository": str(repository)},
+            )
+        return sha
+
+    async def _fail_node(self, task_id: str, node: TaskNodeView | None, reason: str) -> None:
+        if node is None:
+            return
         self.repository.save_node(
             node.model_copy(
                 update={
@@ -403,13 +505,23 @@ class TaskService:
             adapter = self.directory.adapter_for(outcome.resolution.agent.instance_id)
             try:
                 async for item in adapter.stream_events(outcome.session.id):
-                    # AdapterStreamEnd 没有 seq，用它区分「一条事件」和「流结束」。
-                    if getattr(item, "seq", None) is None:
-                        await self.runtime.handle_stream_end(outcome.session.id, item)
+                    # 必须用 isinstance 判：AdapterEvent 和 AdapterStreamEnd 都没有 seq
+                    # （全局 seq 归 Hub 分配，裁决 D32），靠有没有 seq 区分会把
+                    # 每一条事件都当成流结束。
+                    if isinstance(item, AdapterStreamEnd):
+                        await self.runtime.handle_stream_end(outcome, item)
                         break
+                    await self._forward(outcome, item)
                 await self._complete_node(task_id, node_id, value, profile, workspace)
             except asyncio.CancelledError:
                 raise
+            except AdapterStartFailedError as error:
+                failure = error.failure
+                await self._fail_node(
+                    task_id,
+                    node_id_or_node(self.repository, task_id, node_id),
+                    f"{getattr(failure, 'kind', 'agent_error')}: {getattr(failure, 'message', error)}",
+                )
             except Exception as error:  # noqa: BLE001 - 抽取失败必须落到节点上，不能静默
                 node = next((n for n in self.repository.list_nodes(task_id) if n.id == node_id), None)
                 if node is not None:
@@ -427,6 +539,29 @@ class TaskService:
                 self._outcomes.pop(node_id, None)
 
         self._pumps[node_id] = asyncio.create_task(pump())
+
+    async def _forward(self, outcome: Any, event: Any) -> None:
+        """把 Adapter 的内部事件补齐成 HubEvent 写进事件表。
+
+        裁决 D32：AdapterEvent 故意不带 eventId / seq，由 Hub 在这里补。
+        Adapter 直接产出 HubEvent 会把全局序号的所有权弄乱。
+        """
+        payload = event.payload
+        if hasattr(payload, "model_dump"):
+            payload = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
+        await self.events.append(
+            RuntimeEventDraft(
+                type=event.unified_type,
+                aggregate_type="task",
+                aggregate_id=outcome.task_id,
+                payload=payload,
+                task_id=outcome.task_id,
+                node_id=outcome.node_id,
+                role_id=outcome.role_id,
+                agent_instance_id=outcome.resolution.agent.instance_id,
+                adapter_id=outcome.resolution.agent.adapter_id,
+            )
+        )
 
     async def _complete_node(
         self,
@@ -492,8 +627,6 @@ class TaskService:
         )
 
     async def _emit(self, task_id: str, event_type: str, payload: dict[str, Any]) -> None:
-        from orchestrator.domain import RuntimeEventDraft
-
         await self.events.append(
             RuntimeEventDraft(
                 type=event_type,
