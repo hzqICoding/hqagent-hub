@@ -64,6 +64,7 @@ async def bind_ports(application: Any, ports: HubPorts) -> None:
     port = ports.team_profiles
     if not isinstance(port, _DeferredTeamProfilePort):
         return
+    _bind_workspaces(application, ports)
     service = _build_team_profile_service(application.database, ports.agents)
     if service is None:
         return
@@ -183,3 +184,16 @@ def _bind_orchestration(application: Any, ports: HubPorts, profiles: Any) -> Non
     ports.tasks = ports_tasks
     ports.sessions = SessionService(session_repository, session_manager)
     ports.approvals = ApprovalService(approval_repository, coordinator)
+
+
+def _bind_workspaces(application: Any, ports: HubPorts) -> None:
+    """接 workspaces Port。
+
+    独立于 agents：就算一个 Agent 都探测不到，用户也应该能先把项目目录加进来。
+    """
+    try:
+        from runtime.workspaces import WorkspaceService
+        from storage.workspaces import WorkspaceRepository
+    except ImportError:  # pragma: no cover - 打包漏文件时才会走到
+        return
+    ports.workspaces = WorkspaceService(WorkspaceRepository(application.database))

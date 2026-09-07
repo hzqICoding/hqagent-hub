@@ -99,6 +99,16 @@ MIGRATIONS = (
         CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, task_id);
         """,
     ),
+    Migration(
+        3,
+        """
+        -- workspaces 缺一个「上次打开时间」。这是持久事实，要存。
+        -- branch / isClean / memoryDirPresent / capabilities 一律不存——
+        -- 它们是文件系统的当前状态，存下来立刻过期，读时现算才是对的。
+        ALTER TABLE workspaces ADD COLUMN last_opened_at TEXT;
+        CREATE INDEX IF NOT EXISTS idx_workspaces_path ON workspaces(path);
+        """,
+    ),
 )
 
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version

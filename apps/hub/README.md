@@ -31,6 +31,20 @@ py -3.13 -m venv .venv
 **镜像装不下 Hatchling 构建依赖时，不要拷别人的 `.venv` 交差。**
 如实报告装不上，把命令和真实报错写进 handoff——W2/W6 都是这么做的，这是对的。
 
+## 改了协议之后必须重装
+
+`pip install -e packages/protocol` 的 editable 对这个包**不是软链**——
+它用 hatchling 的 force-include 把 `generated/`、`registry/` 等映射进 wheel 里的
+`protocol/`，装出来是 site-packages 下的真实文件。所以重新生成协议之后
+必须重装，否则代码里 import 到的还是旧的 DTO：
+
+```powershell
+.venv\Scripts\python.exe -m pip install --force-reinstall --no-deps -e packages/protocol
+```
+
+症状是 `ImportError: cannot import name 'XxxInput' from 'protocol.generated.python'`，
+而 schema 和 generated/ 里明明有。
+
 ## 跑测试
 
 ```powershell

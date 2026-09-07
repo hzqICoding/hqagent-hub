@@ -21,6 +21,10 @@ class AgentPort(FeaturePort, Protocol):
 
 class WorkspacePort(Protocol):
     async def list_workspaces(self, search: str | None, limit: int | None) -> list[Any]: ...
+    async def add_workspace(self, value: Any) -> Any: ...
+    async def remove_workspace(self, workspace_id: str) -> None: ...
+    async def init_git(self, workspace_id: str) -> Any: ...
+    async def init_memory(self, workspace_id: str) -> Any: ...
 
 
 class TeamProfilePort(FeaturePort, Protocol):
@@ -75,8 +79,23 @@ class UnavailablePort:
 
 
 class EmptyWorkspacePort:
+    """工作区还没接线时的占位。查询返回空，变更一律明确报不可用——
+    静默成功会让用户以为目录加进去了，其实什么都没发生。"""
+
     async def list_workspaces(self, search: str | None, limit: int | None) -> list[Any]:
         return []
+
+    async def add_workspace(self, value: Any) -> Any:
+        raise FeatureUnavailable("workspaces", "工作区管理尚未接线")
+
+    async def remove_workspace(self, workspace_id: str) -> None:
+        raise FeatureUnavailable("workspaces", "工作区管理尚未接线")
+
+    async def init_git(self, workspace_id: str) -> Any:
+        raise FeatureUnavailable("workspaces", "工作区管理尚未接线")
+
+    async def init_memory(self, workspace_id: str) -> Any:
+        raise FeatureUnavailable("workspaces", "工作区管理尚未接线")
 
 
 class EmptyDrainHooks:

@@ -11,6 +11,7 @@ from fastapi import FastAPI, Header, Query, Request, WebSocket, WebSocketDisconn
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from protocol.generated.python import (
+    AddWorkspaceInput,
     AcknowledgeUpdateResultInput,
     AppearanceSettings,
     ApprovalResponseInput,
@@ -229,6 +230,23 @@ def create_application(
     @app.get("/api/v1/workspaces")
     async def list_workspaces(search: str | None = None, limit: int | None = None) -> JSONResponse:
         return success_response(await resolved_ports.workspaces.list_workspaces(search, limit))
+
+    @app.post("/api/v1/workspaces")
+    async def add_workspace(value: AddWorkspaceInput) -> JSONResponse:
+        return success_response(await resolved_ports.workspaces.add_workspace(value))
+
+    @app.delete("/api/v1/workspaces/{workspace_id}")
+    async def remove_workspace(workspace_id: str) -> JSONResponse:
+        await resolved_ports.workspaces.remove_workspace(workspace_id)
+        return success_response({"removed": workspace_id})
+
+    @app.post("/api/v1/workspaces/{workspace_id}/init-git")
+    async def init_workspace_git(workspace_id: str) -> JSONResponse:
+        return success_response(await resolved_ports.workspaces.init_git(workspace_id))
+
+    @app.post("/api/v1/workspaces/{workspace_id}/init-memory")
+    async def init_workspace_memory(workspace_id: str) -> JSONResponse:
+        return success_response(await resolved_ports.workspaces.init_memory(workspace_id))
 
     @app.get("/api/v1/team-profiles")
     async def list_team_profiles() -> JSONResponse:

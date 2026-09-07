@@ -113,6 +113,10 @@ class TaskService:
     async def create_task(self, value: CreateTaskInput, idempotency_key: str | None) -> TaskDetailView:
         profile = await self._profile_for(value)
         workspace = await self._workspace_for(value.workspace_id)
+        # 裁决 D38 的准入检查放在建任务**之前**：工作流里但凡有一个写角色
+        # 这个工作区承接不了，这个任务就永远跑不完。先建再失败只会留下一堆
+        # 半截任务，用户还要一个个去清。
+        self._assert_workflow_supported(workspace)
         task_id = f"task_{uuid.uuid4().hex[:12]}"
         now = _now()
         task = TaskSummaryView.model_validate(
@@ -205,10 +209,62 @@ class TaskService:
     async def _workspace_for(self, workspace_id: str) -> dict[str, Any]:
         for item in await self.workspaces.list_workspaces(None, None):
             if getattr(item, "id", None) == workspace_id:
-                return {"name": getattr(item, "name", workspace_id)}
-        # 工作区还没接线时不阻断——任务照样能建，名字退化成 ID。
-        # 这里不抛错是有意的：workspaces 是独立的一条线，不该卡住编排验证。
-        return {"name": workspace_id}
+                capabilities = getattr(item, "capabilities", None)
+                return {
+                    "name": getattr(item, "name", workspace_id),
+                    "path": getattr(item, "path", None),
+                    "vcs": str(getattr(item, "vcs", "none")),
+                    "can_write": bool(getattr(capabilities, "can_run_write_tasks", False)),
+                    "reason": getattr(capabilities, "reason", None),
+                }
+        raise HubError(
+            "NOT_FOUND",
+            f"工作区不存在：{workspace_id}。请先在工作区页面把项目目录加进来",
+            detail={"workspaceId": workspace_id},
+        )
+
+    def _assert_workflow_supported(self, workspace: dict[str, Any]) -> None:
+        """默认工作流里的写角色，这个工作区能不能承接。"""
+        if workspace.get("can_write"):
+            return
+        blocked = [
+            role_id
+            for role_id, _deps in DEFAULT_WORKFLOW
+            if not self.runtime.permissions.role_policy(role_id).read_only
+        ]
+        if not blocked:
+            return
+        raise HubError(
+            "PATH_NOT_ALLOWED",
+            workspace.get("reason") or "该工作区不支持写任务",
+            detail={
+                "blockedRoles": blocked,
+                "vcs": workspace.get("vcs"),
+                "canInitGit": workspace.get("vcs") == "none",
+            },
+        )
+
+    def _assert_can_write(self, role_id: str, workspace: dict[str, Any]) -> None:
+        """裁决 D38：非 Git 工作区不能派写任务。
+
+        判定放在分派前而不是等 Adapter 的 preflight 拒绝：Adapter 那边只能说
+        「没有 worktreePath」，说不清「因为这个目录不是 Git 仓库，你可以点一键初始化」。
+        错误要在知道原因的那一层抛出。
+        """
+        if workspace.get("can_write"):
+            return
+        policy = self.runtime.permissions.role_policy(role_id)
+        if policy.read_only:
+            return
+        raise HubError(
+            "PATH_NOT_ALLOWED",
+            workspace.get("reason") or "该工作区不支持写任务",
+            detail={
+                "roleId": role_id,
+                "vcs": workspace.get("vcs"),
+                "canInitGit": workspace.get("vcs") == "none",
+            },
+        )
 
     async def _advance(self, task_id: str, value: CreateTaskInput, profile: Any, workspace: dict[str, Any]) -> None:
         """分派下一个就绪节点。"""
@@ -231,6 +287,7 @@ class TaskService:
         profile: Any,
         workspace: dict[str, Any],
     ) -> None:
+        self._assert_can_write(role_id, workspace)
         candidates = await self.directory.list_candidates()
         snapshot = ProfileSnapshot.from_view(profile)
         request = NodeDispatchRequest(
