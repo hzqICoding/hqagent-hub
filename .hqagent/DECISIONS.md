@@ -307,3 +307,30 @@ Phase 1.1 的三 Agent 目标后移**。另两个选项存档备查：
 **建议顺序**：先把 tasks / sessions / approvals 三个 Port 接完，让真实任务链路
 跑起来，再拿第三个 Agent 做「换 Agent 不改工作流代码」的验证——
 那时候有闭环可测，比现在盲接强。
+
+### D38 非 Git 工作区只能派只读任务，界面提供一键 `git init`
+
+**背景**：集成时第一个真实任务被 Claude Adapter 的 preflight 拒绝——
+`claude_adapter.py:287` 要求写任务必须提供存在的 `worktreePath`。
+这不是缺陷，是施工方案 §3.1 第 8 条「每个写任务使用独立 Git worktree、分支和
+固定 baseCommit」在起作用。
+
+但协议里 `Vcs` 枚举是 `["git", "none"]`，非 Git 目录是**合法工作区**，
+只是拿不到隔离保护。于是需要明确：用户添加一个非 Git 目录时会怎样。
+
+**决定**（用户拍板，2026-09-07）：
+
+- **A**：非 Git 工作区**只能派只读任务**。写任务在 Hub 侧就拒绝，
+  错误码 `PATH_NOT_ALLOWED`，理由写清「该目录不是 Git 仓库，无法隔离写任务」。
+  不允许「就地直接写」——那等于把 §3.1 第 8 条开一个口子，
+  同时丢掉越界校验（`git diff --name-only`）和回滚能力。
+- **C**：工作区页面提供**一键 `git init`**。前端 F2 已经有 `.hqagent` 记忆目录的
+  一键初始化，这是同一个交互模式，用户不会卡在「知道不行但不知道怎么办」。
+
+**为什么不选「非 Git 就地写」**：worktree 隔离兜的是三件事——多个 Agent 并行改
+同一项目不互相踩、跑完能用 `git diff --name-only` 做 `allowed_paths` 越界校验、
+干砸了能 `git worktree remove` 干净退出。没有版本控制，「改了什么」这个概念都不存在，
+`allowed_paths` 会退化成一句空话。安全约束不能为了方便悄悄放宽。
+
+**影响**：需要补工作区的增删与 `git init` 路由（当前 openapi 只有
+`GET /api/v1/workspaces`），属相容扩展，见 FZ-2.2。
