@@ -293,12 +293,14 @@ CLI 本身的能力是够的——`--output-format stream-json`、`--resume`、`
 想接 Google 的模型只剩 Antigravity 的 sidecar，而它恰恰是 §7.1 里可靠性第 4 级。
 
 **决定**：一期范围不动——四层解耦用 Claude + Codex 互换角色即可证明，
-这是 D5 的核心依据，不受本变化影响。Phase 1.1 的三 Agent 目标改为
-**待定**，三选一由用户拍板：
+这是 D5 的核心依据，不受本变化影响。
 
-1. 实测 Antigravity `agentapi`（`language_server.exe agentapi`，本机已存在）
-2. 换一个接入方式在 1–2 级的第三方 Agent（Phase 3 清单里的 GLM / K3 等）
-3. 一期就用两个 Agent，Phase 1.1 目标后移
+三选一已由用户拍板（2026-09-07）：**选 3——一期就用两个 Agent，
+Phase 1.1 的三 Agent 目标后移**。另两个选项存档备查：
+
+1. ~~实测 Antigravity `agentapi`（`language_server.exe agentapi`，本机已存在）~~ 后移
+2. ~~换一个接入方式在 1–2 级的第三方 Agent（Phase 3 清单里的 GLM / K3 等）~~ 后移
+3. **一期就用两个 Agent，Phase 1.1 目标后移** ← 采纳
 
 无论选哪个，**对外宣传「三 Agent 联动」的前置条件不变**（D5 硬约束）。
 
