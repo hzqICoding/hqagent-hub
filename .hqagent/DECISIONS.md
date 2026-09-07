@@ -269,3 +269,39 @@ D21 写「raw 上限 2048 字符」，但生成的 Python 类型是 `dict[str, A
 
 协议版本升 **0.2.1**。虽然含一处破坏性变更，但一期尚未发布任何外部消费者，
 按补丁号推进并在此记录，不单独走大版本。
+
+### D37 Gemini CLI 备选路径作废，Phase 1.1 变为单路
+
+**事实**（2026-09-07 实测）：`gemini` CLI `0.58.0` 登录失败，Google 已停止该客户端
+对个人版 Code Assist 的支持：
+
+```text
+IneligibleTierError: This client is no longer supported for Gemini Code Assist
+for individuals. To continue using Gemini, please migrate to the Antigravity
+suite of products.
+  reasonCode: 'UNSUPPORTED_CLIENT'
+  tierId: 'free-tier'
+```
+
+CLI 本身的能力是够的——`--output-format stream-json`、`--resume`、`--session-id`、
+`--approval-mode`、`--acp` 一应俱全，按施工方案 §7.1 属 1–2 级接入，
+比 Claude 那条路还齐。**卡的纯粹是认证。**
+
+**影响**：D5 有两句话，第一句「Antigravity 未经实测，移出一期关键路径」不变；
+第二句「Gemini CLI headless JSONL 作为备用方案」（施工方案 §3.2、
+分工方案 §106）**作废**。Phase 1.1 从「两条路选一条」变成单路：
+想接 Google 的模型只剩 Antigravity 的 sidecar，而它恰恰是 §7.1 里可靠性第 4 级。
+
+**决定**：一期范围不动——四层解耦用 Claude + Codex 互换角色即可证明，
+这是 D5 的核心依据，不受本变化影响。Phase 1.1 的三 Agent 目标改为
+**待定**，三选一由用户拍板：
+
+1. 实测 Antigravity `agentapi`（`language_server.exe agentapi`，本机已存在）
+2. 换一个接入方式在 1–2 级的第三方 Agent（Phase 3 清单里的 GLM / K3 等）
+3. 一期就用两个 Agent，Phase 1.1 目标后移
+
+无论选哪个，**对外宣传「三 Agent 联动」的前置条件不变**（D5 硬约束）。
+
+**建议顺序**：先把 tasks / sessions / approvals 三个 Port 接完，让真实任务链路
+跑起来，再拿第三个 Agent 做「换 Agent 不改工作流代码」的验证——
+那时候有闭环可测，比现在盲接强。
