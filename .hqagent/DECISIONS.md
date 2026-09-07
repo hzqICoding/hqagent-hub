@@ -334,3 +334,58 @@ Phase 1.1 的三 Agent 目标后移**。另两个选项存档备查：
 
 **影响**：需要补工作区的增删与 `git init` 路由（当前 openapi 只有
 `GET /api/v1/workspaces`），属相容扩展，见 FZ-2.2。
+
+### D39 Antigravity `agentapi` 实测不达标，判定 `incompatible`
+
+D5 当初把 Antigravity 移出一期关键路径，理由是「唯一接入方式未经实测」。
+2026-09-07 实测了，结论是**不达标**——不是暂时没接，是这个接口做不了。
+
+**`agentapi` 的完整命令面**（`language_server.exe agentapi`）：
+
+```text
+get-conversation-metadata <conversation_id>
+new-conversation [--model=<flash_lite|flash|pro>] [--title] [--profile] <prompt>
+send-message [--title] <recipient_id> <content>
+```
+
+对照 Adapter Port 的八个方法：
+
+| Port 方法 | agentapi | 结论 |
+| --- | --- | --- |
+| `start(spec)` | `new-conversation` | ✅ |
+| `resume(req)` | `send-message` | 🟡 勉强 |
+| `detect()` | 靠文件存在凑 | 🟡 |
+| `health()` | 无登录态查询 | ❌ |
+| `streamEvents()` | 无流式输出 | ❌ |
+| `approve(dispatch)` | 无审批回传 | ❌ |
+| `cancel(req)` | 无中断 | ❌ |
+| `collectResult()` | 只有 metadata | ❌ |
+
+缺的三条恰好都是硬能力：`streaming_events`、`tool_approval` 在
+`capabilities.yaml` 里是 `hard: true`，`cancel` 是 D17 两段式取消的前提。
+
+它自己的用法示例说明了设计意图不在这里：
+`# Send to yourself (useful for async notifications)`——
+**这是 Antigravity 会话之间互发通知的消息 API，不是给外部编排器控制 Agent 的。**
+
+**另一条路，明确不走**：`language_server.exe` 有完整 IDE 后端接口
+（`-api_server_url="http://0.0.0.0:50001"`、CSRF token、extension server、LSP、
+headless）。但那是私有未文档化协议，等于逆向别人 IDE 的内部接口。
+每次 Antigravity 升级都可能断，而 OTA 是本项目的 P0 能力——
+用户升级 Antigravity 我们就挂，耦合方向是反的。
+
+这印证了施工方案 §7.1 把 Sidecar 排在可靠性第 4 级的判断。
+
+**决定**：按 D5 原文处理——「不达标则以 `incompatible` 状态展示能力缺口，
+不阻塞任何验收项」。**不实现 Antigravity Adapter**，也不创建占位。
+Phase 1.1 若仍要第三个 Agent，应从接入方式在 1–2 级的候选里选
+（官方 SDK / App Server，或 CLI JSON/JSONL），不要再往 Sidecar 这条路上投入。
+
+**当前 Agent 可用性实况**（2026-09-07 实测）：
+
+| Agent | 状态 | 证据 |
+| --- | --- | --- |
+| Codex | ✅ **完整可用** | 通过 Hub 派活跑通：独立会话、隔离 worktree、真实创建 `backend/hello.txt`、结构化结果回传 |
+| Claude | 🟡 部分 | 能被解析成角色、能起会话、能出事件流；写任务闭环未验，`tool_approval` / `session_resume` 实测为 false |
+| Gemini CLI | ❌ 认证关闭 | `IneligibleTierError: UNSUPPORTED_CLIENT`（见 D37） |
+| Antigravity | ❌ 接口不达标 | 本条 |
