@@ -33,3 +33,13 @@
   animation-iteration-count: 1 !important;
   scroll-behavior: auto !important;
 }
+
+/* Ensure functional loading spinners still rotate */
+:root[data-reduce-motion="true"] .animate-spin,
+:root[data-reduce-motion="true"] .spin-indicator,
+:root[data-reduce-motion="true"] .animate-spin *,
+:root[data-reduce-motion="true"] .spin-indicator * {
+  animation-duration: 1s !important;
+  animation-iteration-count: infinite !important;
+}
+

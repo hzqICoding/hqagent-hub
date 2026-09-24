@@ -68,5 +68,46 @@ describe('ProcessActivityGroup component', () => {
     })
     expect(wrapper.text()).toContain('正在 探索 1 个文件，运行 1 条命令...')
     expect(wrapper.find('.animate-spin').exists()).toBe(true)
+    expect(wrapper.find('.spin-indicator').exists()).toBe(true)
+  })
+
+  it('shows live generic progress when activities are tools/steps without files or commands', () => {
+    const genericActivities: ActivityItem[] = [
+      {
+        id: 'step_1',
+        type: 'progress',
+        verb: 'Step',
+        target: 'Analyzing architecture requirements',
+        status: 'done',
+        timestamp: '2026-09-24T12:00:00Z',
+      },
+      {
+        id: 'step_2',
+        type: 'tool',
+        verb: 'Tool',
+        target: 'git_status: checking worktree',
+        status: 'done',
+        timestamp: '2026-09-24T12:00:01Z',
+      },
+    ]
+
+    const liveWrapper = mount(ProcessActivityGroup, {
+      props: {
+        activities: genericActivities,
+        isLive: true,
+      },
+    })
+    expect(liveWrapper.text()).toContain('正在执行 (2 个步骤)...')
+    expect(liveWrapper.find('.spin-indicator').exists()).toBe(true)
+
+    const completedWrapper = mount(ProcessActivityGroup, {
+      props: {
+        activities: genericActivities,
+        isLive: false,
+      },
+    })
+    expect(completedWrapper.text()).toContain('执行了 2 个步骤')
+    expect(completedWrapper.find('.spin-indicator').exists()).toBe(false)
   })
 })
+

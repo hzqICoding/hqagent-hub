@@ -72,9 +72,11 @@ const summaryTitle = computed(() => {
     return props.isLive ? `正在 ${parts.join('，')}...` : parts.join('，')
   }
   if (props.activities.length > 0) {
-    return `执行了 ${props.activities.length} 个步骤`
+    return props.isLive
+      ? `正在执行 (${props.activities.length} 个步骤)...`
+      : `执行了 ${props.activities.length} 个步骤`
   }
-  return '执行过程记录'
+  return props.isLive ? '正在执行任务...' : '执行过程记录'
 })
 </script>
 
@@ -88,8 +90,10 @@ const summaryTitle = computed(() => {
     >
       <div class="flex items-center gap-2 min-w-0">
         <!-- Live spinner or status icon -->
-        <div v-if="isLive" class="w-4 h-4 flex items-center justify-center shrink-0">
-          <Loader2 class="w-3.5 h-3.5 text-primary animate-spin" />
+        <div v-if="isLive" class="w-4 h-4 flex items-center justify-center shrink-0 text-primary">
+          <span class="inline-flex items-center justify-center animate-spin spin-indicator">
+            <Loader2 class="w-3.5 h-3.5" />
+          </span>
         </div>
         <div v-else-if="hasFailures" class="w-4 h-4 flex items-center justify-center shrink-0 text-danger">
           <AlertCircle class="w-3.5 h-3.5" />
@@ -211,3 +215,21 @@ const summaryTitle = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.spin-indicator {
+  display: inline-flex;
+  transform-origin: center center;
+  animation: hq-spin-rotate 1s linear infinite !important;
+}
+
+@keyframes hq-spin-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>
+
