@@ -137,6 +137,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
       description: '在授权项目的隔离工作树中完成编码实施、单测验证与审查',
       readOnly: false,
       version: 2,
+      reviewMode: 'original_planner',
       roles: [
         {
           roleId: 'analyst',
@@ -144,6 +145,14 @@ export class MockLocalChatGateway implements LocalChatGateway {
           instructions: '定位待改动文件范围与调用链路，提出最小改动方案。',
           modelId: 'claude-3-7-sonnet',
           reasoningEffort: 'medium',
+          enabled: true,
+        },
+        {
+          roleId: 'planner',
+          agentInstanceId: this.agents[0]?.id ?? 'claude-code-local',
+          instructions: '先形成可执行计划；开发结束后在原会话中依据冻结证据完成验收。',
+          modelId: 'claude-3-7-sonnet',
+          reasoningEffort: 'high',
           enabled: true,
         },
         {
@@ -157,9 +166,9 @@ export class MockLocalChatGateway implements LocalChatGateway {
         {
           roleId: 'reviewer',
           agentInstanceId: this.agents[0]?.id ?? 'claude-code-local',
-          instructions: '严格审查 git diff，检查代码坏味道、越界修改与安全风险。',
-          modelId: 'claude-3-5-sonnet',
-          reasoningEffort: 'low',
+          instructions: '依据冻结证据核对实施是否满足原方案、验收指标与安全边界，并明确给出结论。',
+          modelId: 'claude-3-7-sonnet',
+          reasoningEffort: 'high',
           enabled: true,
         },
       ],
@@ -268,7 +277,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
       conversationId: conv1Id,
       messageId: 'msg_1_1',
       taskId: 'task_run_1',
-      sceneSnapshot: analyzeScene,
+      sceneSnapshot: JSON.parse(JSON.stringify(analyzeScene)),
       status: 'succeeded',
       createdAt: '2026-09-24T08:00:05Z',
       updatedAt: '2026-09-24T08:05:00Z',
@@ -335,7 +344,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
         {
           id: 'node_run_2_1',
           taskId: 'task_run_2',
-          roleId: 'analyst',
+          roleId: 'planner',
           resolvedAgentId: this.agents[0]?.id ?? 'claude-code-local',
           resolvedAgentName: 'Claude Code',
           resolveSource: 'workspace_profile',
@@ -343,6 +352,9 @@ export class MockLocalChatGateway implements LocalChatGateway {
           startedAt: '2026-09-24T09:30:10Z',
           completedAt: '2026-09-24T09:31:00Z',
           outputSummary: 'UI 方案已确认',
+          phase: 'execution',
+          sessionId: 'session_planner_run_2',
+          externalSessionId: 'native_planner_run_2',
         },
         {
           id: 'node_run_2_2',
@@ -352,6 +364,9 @@ export class MockLocalChatGateway implements LocalChatGateway {
           resolvedAgentName: 'Codex CLI',
           resolveSource: 'capability_match',
           status: 'running',
+          phase: 'execution',
+          sessionId: 'session_developer_run_2',
+          externalSessionId: 'native_developer_run_2',
           startedAt: '2026-09-24T09:31:05Z',
           changedFiles: [
             'apps/desktop/src/pages/chat/ChatPage.vue',
@@ -361,11 +376,16 @@ export class MockLocalChatGateway implements LocalChatGateway {
         {
           id: 'node_run_2_3',
           taskId: 'task_run_2',
-          roleId: 'reviewer',
+          roleId: 'planner',
           resolvedAgentId: this.agents[0]?.id ?? 'claude-code-local',
           resolvedAgentName: 'Claude Code',
           resolveSource: 'workspace_profile',
           status: 'pending',
+          phase: 'acceptance',
+          sessionId: 'session_planner_run_2',
+          externalSessionId: 'native_planner_run_2',
+          reviewSourceNodeId: 'node_run_2_2',
+          reviewEvidenceId: 'evidence_run_2_pending',
         },
       ],
       artifacts: [],
@@ -377,7 +397,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
       conversationId: conv2Id,
       messageId: 'msg_2_1',
       taskId: 'task_run_2',
-      sceneSnapshot: developScene,
+      sceneSnapshot: JSON.parse(JSON.stringify(developScene)),
       status: 'running',
       createdAt: '2026-09-24T09:30:05Z',
       updatedAt: '2026-09-24T09:32:00Z',
@@ -451,7 +471,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
       conversationId: conv3Id,
       messageId: 'msg_3_1',
       taskId: 'task_run_3',
-      sceneSnapshot: planScene,
+      sceneSnapshot: JSON.parse(JSON.stringify(planScene)),
       status: 'waiting_approval',
       createdAt: '2026-09-24T10:10:05Z',
       updatedAt: '2026-09-24T10:12:00Z',
@@ -712,7 +732,8 @@ export class MockLocalChatGateway implements LocalChatGateway {
       )
     }
 
-    scene.roles = [...input.roles]
+    scene.roles = input.roles.map((role) => ({ ...role }))
+    scene.reviewMode = input.reviewMode ?? 'independent'
     scene.version += 1
     scene.updatedAt = new Date().toISOString()
     return { ...scene }
@@ -804,19 +825,39 @@ export class MockLocalChatGateway implements LocalChatGateway {
     const runId = `run_${Date.now()}`
     const taskId = `task_${runId}`
 
-    const taskNodes = scene.roles
-      .filter((r) => r.enabled)
-      .map((r, idx) => ({
+    const enabledRoles = scene.roles.filter((role) => role.enabled)
+    const planner = enabledRoles.find((role) => role.roleId === 'planner')
+    const taskNodes = enabledRoles.map((role, idx) => {
+      const isOriginalPlannerAcceptance =
+        scene.reviewMode === 'original_planner' && role.roleId === 'reviewer' && planner
+      const effectiveRole = isOriginalPlannerAcceptance ? planner : role
+      const plannerSessionId = `session_${runId}_planner`
+      const plannerExternalSessionId = `native_${runId}_planner`
+      return {
         id: `node_${runId}_${idx + 1}`,
         taskId,
-        roleId: r.roleId as any,
-        resolvedAgentId: r.agentInstanceId,
+        roleId: (isOriginalPlannerAcceptance ? 'planner' : role.roleId) as any,
+        resolvedAgentId: effectiveRole.agentInstanceId,
         resolvedAgentName:
-          this.agents.find((a) => a.id === r.agentInstanceId)?.displayName ||
-          r.agentInstanceId,
+          this.agents.find((agent) => agent.id === effectiveRole.agentInstanceId)?.displayName ||
+          effectiveRole.agentInstanceId,
         resolveSource: 'workspace_profile' as const,
         status: (idx === 0 ? 'running' : 'pending') as any,
-      }))
+        phase: (isOriginalPlannerAcceptance ? 'acceptance' : 'execution') as 'acceptance' | 'execution',
+        sessionId: effectiveRole.roleId === 'planner'
+          ? plannerSessionId
+          : `session_${runId}_${effectiveRole.roleId}`,
+        externalSessionId: effectiveRole.roleId === 'planner'
+          ? plannerExternalSessionId
+          : `native_${runId}_${effectiveRole.roleId}`,
+        ...(isOriginalPlannerAcceptance
+          ? {
+              reviewSourceNodeId: `node_${runId}_${Math.max(1, idx)}`,
+              reviewEvidenceId: `evidence_${runId}_pending`,
+            }
+          : {}),
+      }
+    })
 
     const newTask: TaskDetailView = {
       id: taskId,

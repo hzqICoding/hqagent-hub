@@ -30,6 +30,11 @@ describe('ChatPage', () => {
     expect(wrapper.text()).toContain('本轮场景与执行详情')
     expect(wrapper.text()).toContain('本轮场景快照')
     expect(wrapper.text()).toContain('执行步骤')
+    expect(wrapper.text()).toContain('验收方式')
+    expect(wrapper.text()).toContain('原规划者验收')
+    expect(wrapper.text()).toContain('原生 Session: native_planner_run_2')
+    expect(wrapper.text()).toContain('验收证据: evidence_run_2_pending')
+    expect(wrapper.text()).toContain('尚未产生验收结论')
   })
 
   it('allows user to type into composer and toggle context modes', async () => {

@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useScenesStore } from '@/stores/scenes.store'
-import type { LocalRoleConfig } from '@hqagent/protocol'
+import type { LocalRoleConfig, ReviewMode } from '@hqagent/protocol'
 import {
   HqButton,
   HqBadge,
   HqSelect,
   HqSwitch,
   HqTextarea,
+  HqRadioGroup,
   useToast,
 } from '@/shared/ui'
 import {
@@ -25,6 +26,26 @@ const selectedSceneId = ref<string>('develop')
 
 // Local edit buffer for roles
 const editableRoles = ref<LocalRoleConfig[]>([])
+const reviewMode = ref<ReviewMode>('independent')
+const localValidationError = ref<string | null>(null)
+
+const isDevelopScene = computed(() => selectedSceneId.value === 'develop')
+const usesOriginalPlannerReview = computed(
+  () => isDevelopScene.value && reviewMode.value === 'original_planner'
+)
+
+const reviewModeOptions = [
+  {
+    label: '原规划者验收',
+    value: 'original_planner',
+    description: '开发完成后恢复本轮 Planner 的原生会话，基于冻结证据给出验收结论。',
+  },
+  {
+    label: '独立 Reviewer',
+    value: 'independent',
+    description: '沿用现有模式，由 Reviewer 使用自己配置的 Agent、模型与会话独立审查。',
+  },
+]
 
 onMounted(async () => {
   await scenesStore.fetchScenes()
@@ -43,12 +64,58 @@ function syncEditBuffer() {
   if (scene) {
     scenesStore.selectScene(scene.id)
     editableRoles.value = JSON.parse(JSON.stringify(scene.roles))
+    reviewMode.value = scene.reviewMode ?? 'independent'
+    localValidationError.value = null
+    applyOriginalPlannerInheritance()
     // Prefetch models for agents
     editableRoles.value.forEach((r) => {
       if (r.agentInstanceId) {
         scenesStore.fetchAgentModels(r.agentInstanceId)
       }
     })
+  }
+}
+
+function findRole(roleId: string) {
+  return editableRoles.value.find((role) => role.roleId === roleId)
+}
+
+function applyOriginalPlannerInheritance() {
+  if (!usesOriginalPlannerReview.value) return
+  const planner = findRole('planner')
+  const reviewer = findRole('reviewer')
+  if (!planner || !reviewer || !reviewer.enabled) return
+
+  if (!planner.enabled) planner.enabled = true
+  if (reviewer.agentInstanceId !== planner.agentInstanceId) {
+    reviewer.agentInstanceId = planner.agentInstanceId
+  }
+  if (reviewer.modelId !== planner.modelId) reviewer.modelId = planner.modelId
+  if (reviewer.reasoningEffort !== planner.reasoningEffort) {
+    reviewer.reasoningEffort = planner.reasoningEffort
+  }
+}
+
+watch(editableRoles, applyOriginalPlannerInheritance, { deep: true })
+
+function handleReviewModeChange(value: string | number) {
+  reviewMode.value = value as ReviewMode
+  localValidationError.value = null
+  applyOriginalPlannerInheritance()
+}
+
+function handleRoleEnabledChange(role: LocalRoleConfig, enabled: boolean) {
+  role.enabled = enabled
+  localValidationError.value = null
+  if (usesOriginalPlannerReview.value && role.roleId === 'reviewer' && enabled) {
+    applyOriginalPlannerInheritance()
+  }
+  if (usesOriginalPlannerReview.value && role.roleId === 'planner' && !enabled) {
+    const reviewer = findRole('reviewer')
+    if (reviewer?.enabled) {
+      role.enabled = true
+      localValidationError.value = '原规划者验收已启用，Planner 必须保持启用。'
+    }
   }
 }
 
@@ -65,10 +132,22 @@ async function handleSave() {
   const current = scenesStore.currentScene
   if (!current) return
 
+  if (usesOriginalPlannerReview.value) {
+    const planner = findRole('planner')
+    const developer = findRole('developer')
+    const reviewer = findRole('reviewer')
+    if (!planner?.enabled || !developer?.enabled || !reviewer?.enabled) {
+      localValidationError.value = '原规划者验收要求 Planner、Developer 与 Reviewer（验收阶段）全部启用。'
+      return
+    }
+    applyOriginalPlannerInheritance()
+  }
+
   try {
     await scenesStore.saveScene(current.id, {
       roles: editableRoles.value,
       expectedVersion: current.version,
+      reviewMode: isDevelopScene.value ? reviewMode.value : current.reviewMode,
     })
     toast.success('场景配置保存成功！后续新建的 Run 将自动应用此配置。')
   } catch {
@@ -106,8 +185,10 @@ function getRoleMeta(roleId: string) {
       }
     case 'reviewer':
       return {
-        title: '代码审查 (Reviewer)',
-        desc: '对 git diff 实施坏味道、越界与安全审查（可选角色）',
+        title: usesOriginalPlannerReview.value ? '验收阶段 (Reviewer)' : '代码审查 (Reviewer)',
+        desc: usesOriginalPlannerReview.value
+          ? '表示开发后需要验收；执行身份、模型与原生会话继承本轮 Planner'
+          : '对 git diff 实施坏味道、越界与安全审查（可选角色）',
         isReadOnly: true,
         isOptional: true,
       }
@@ -239,11 +320,43 @@ function effortOptions(role: LocalRoleConfig) {
           </HqButton>
         </div>
 
+        <div
+          v-if="localValidationError"
+          class="mx-4 mt-4 p-3 rounded-[var(--radius-md)] bg-danger/10 border border-danger/30 text-xs text-danger flex items-center gap-2"
+        >
+          <AlertCircle class="w-4 h-4 shrink-0" />
+          <span>{{ localValidationError }}</span>
+        </div>
+
         <!-- Role Cards Stream -->
         <div class="flex-1 overflow-y-auto p-4 space-y-4">
+          <section
+            v-if="isDevelopScene"
+            class="p-4 rounded-[var(--radius-lg)] border border-border bg-panel shadow-xs space-y-3"
+          >
+            <div>
+              <h3 class="text-xs font-semibold text-text">验收方式</h3>
+              <p class="text-[11px] text-text-muted mt-1">
+                此配置会冻结到新 Run 的 sceneSnapshot。修改后请使用「新一轮上下文」，历史轮次与 Continue 不受影响。
+              </p>
+            </div>
+            <HqRadioGroup
+              :model-value="reviewMode"
+              :options="reviewModeOptions"
+              @update:model-value="handleReviewModeChange"
+            />
+            <div
+              v-if="usesOriginalPlannerReview"
+              class="p-2.5 rounded-[var(--radius-sm)] bg-primary/10 border border-primary/20 text-[11px] text-text leading-relaxed"
+            >
+              Reviewer 在这里表示“需要验收”。Agent、Model 与 Reasoning Effort 继承 Planner，职责提示仍可编辑；运行时将恢复本轮 Planner 的原生 Session。
+            </div>
+          </section>
+
           <div
             v-for="(role, idx) in editableRoles"
             :key="role.roleId"
+            :data-role-id="role.roleId"
             class="p-4 rounded-[var(--radius-lg)] border border-border bg-panel shadow-xs space-y-3"
           >
             <!-- Role Header -->
@@ -276,7 +389,10 @@ function effortOptions(role: LocalRoleConfig) {
                 <!-- Optional Role Switch -->
                 <div v-if="getRoleMeta(role.roleId).isOptional" class="flex items-center gap-1.5 text-xs">
                   <span class="text-[11px] text-text-muted">启用角色</span>
-                  <HqSwitch v-model="role.enabled" />
+                  <HqSwitch
+                    :model-value="role.enabled"
+                    @update:model-value="(value) => handleRoleEnabledChange(role, value)"
+                  />
                 </div>
               </div>
             </div>
@@ -290,6 +406,7 @@ function effortOptions(role: LocalRoleConfig) {
                 </label>
                 <HqSelect
                   :model-value="role.agentInstanceId"
+                  :disabled="usesOriginalPlannerReview && role.roleId === 'reviewer'"
                   :options="
                     scenesStore.availableAgents.map((a) => ({
                       label: `${a.displayName} (${a.adapterId})`,
@@ -310,6 +427,7 @@ function effortOptions(role: LocalRoleConfig) {
                 <div v-if="scenesStore.agentModelsMap[role.agentInstanceId]?.verified && (scenesStore.agentModelsMap[role.agentInstanceId]?.models?.length ?? 0) > 0">
                   <HqSelect
                   v-model="role.modelId"
+                  :disabled="usesOriginalPlannerReview && role.roleId === 'reviewer'"
                   @update:model-value="role.reasoningEffort = ''"
                     :options="
                       (scenesStore.agentModelsMap[role.agentInstanceId]?.models || []).map((m) => ({
@@ -325,6 +443,7 @@ function effortOptions(role: LocalRoleConfig) {
                 <div v-else class="space-y-1">
                   <input
                     v-model="role.modelId"
+                    :disabled="usesOriginalPlannerReview && role.roleId === 'reviewer'"
                     type="text"
                     placeholder="手动指定模型规格 (由后端在执行时验证)..."
                     class="w-full px-2.5 py-1.5 text-xs bg-bg-app border border-border rounded text-text placeholder-text-muted/60 focus:outline-none focus:border-primary"
@@ -344,10 +463,11 @@ function effortOptions(role: LocalRoleConfig) {
                 <HqSelect
                   v-if="selectedModel(role)"
                   v-model="role.reasoningEffort"
+                  :disabled="usesOriginalPlannerReview && role.roleId === 'reviewer'"
                   :options="effortOptions(role)"
                   placeholder="请选择思考等级"
                 />
-                <input v-else v-model="role.reasoningEffort" class="w-full px-2.5 py-1.5 bg-bg-app border border-border rounded" placeholder="留空继承默认；手填值由后端验证" />
+                <input v-else v-model="role.reasoningEffort" :disabled="usesOriginalPlannerReview && role.roleId === 'reviewer'" class="w-full px-2.5 py-1.5 bg-bg-app border border-border rounded disabled:opacity-60 disabled:cursor-not-allowed" placeholder="留空继承默认；手填值由后端验证" />
               </div>
             </div>
 
