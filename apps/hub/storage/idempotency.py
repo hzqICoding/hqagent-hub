@@ -15,7 +15,7 @@ def request_hash(value: Any) -> str:
 
 
 class IdempotencyRepository:
-    def __init__(self, database: Database, ttl_hours: int = 24) -> None:
+    def __init__(self, database: Database, ttl_hours: int | None = 24) -> None:
         self.database = database
         self.ttl_hours = ttl_hours
 
@@ -36,7 +36,7 @@ class IdempotencyRepository:
                 "SELECT request_hash,response_json,expires_at FROM idempotency_records WHERE key=? AND route=?",
                 (key, route),
             ).fetchone()
-            if row and datetime.fromisoformat(row[2].replace("Z", "+00:00")) > now:
+            if row and (self.ttl_hours is None or datetime.fromisoformat(row[2].replace("Z", "+00:00")) > now):
                 if row[0] != digest:
                     raise HubError(
                         "IDEMPOTENCY_MISMATCH",
@@ -50,10 +50,9 @@ class IdempotencyRepository:
                 )
             result = operation(transaction)
             response_json = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
-            expires_at = (now + timedelta(hours=self.ttl_hours)).isoformat().replace("+00:00", "Z")
+            expires_at = "9999-12-31T23:59:59Z" if self.ttl_hours is None else (now + timedelta(hours=self.ttl_hours)).isoformat().replace("+00:00", "Z")
             transaction.connection.execute(
                 "INSERT INTO idempotency_records(key,route,request_hash,response_json,expires_at) VALUES(?,?,?,?,?)",
                 (key, route, digest, response_json, expires_at),
             )
             return result
-

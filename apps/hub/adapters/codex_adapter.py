@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -37,6 +38,8 @@ from protocol.generated.python import (
     CapabilityId,
     DangerousAction,
     DeclaredCapability,
+    LocalAgentModel,
+    LocalAgentModelsView,
     ResumeRequest,
     RiskLevel,
     SessionReusePolicy,
@@ -55,7 +58,7 @@ from adapters.event_mapper import EventMapper
 from adapters.events import AdapterEvent, diagnostic_raw, utc_timestamp
 from adapters.failures import failure, failure_event, parse_agent_result, version_tuple
 from adapters.path_guard import PathGuard
-from adapters.process import ProcessRunner, command_environment, executable_args
+from adapters.process import ProcessRunner, command_environment, executable_args, terminate_process_tree
 from adapters.prompt import build_task_prompt
 from adapters.session_registry import (
     AdapterSessionState,
@@ -110,11 +113,7 @@ class _CodexConnection:
 
     async def force_close(self) -> None:
         if self.process.returncode is None:
-            self.process.kill()
-            try:
-                await asyncio.wait_for(self.process.wait(), timeout=2)
-            except TimeoutError:
-                return
+            await terminate_process_tree(self.process)
 
     async def _write(self, value: dict[str, Any]) -> None:
         if self.process.stdin is None or self.process.returncode is not None:
@@ -167,6 +166,9 @@ class CodexAdapter(AgentAdapter):
     vendor_event_mappings = tuple(
         VendorEventMapping.model_validate(item)
         for item in (
+            {"vendorType": "item/started:reasoning", "unifiedType": "agent.progress", "dropped": True},
+            {"vendorType": "item/completed:reasoning", "unifiedType": "agent.progress", "dropped": True},
+            {"vendorType": "__private_reasoning__", "unifiedType": "agent.progress", "dropped": True},
             {"vendorType": "thread/started", "unifiedType": "agent.started"},
             {"vendorType": "thread/status/changed", "unifiedType": "agent.progress"},
             {"vendorType": "turn/started", "unifiedType": "agent.progress"},
@@ -429,6 +431,15 @@ class CodexAdapter(AgentAdapter):
                     "capabilities": {},
                 },
             )
+            await connection._write({"method": "initialized"})
+            if state.spec.model_id_ or state.spec.reasoning_effort:
+                rows = await self._model_rows(connection)
+                selected = next((r for r in rows if (r.get("model") or r.get("id")) == state.spec.model_id_), None) if state.spec.model_id_ else next((r for r in rows if r.get("isDefault")), None)
+                if selected is None:
+                    raise RuntimeError("指定模型未出现在当前Runtime可用目录中")
+                efforts = [r.get("reasoningEffort") for r in selected.get("supportedReasoningEfforts", [])]
+                if state.spec.reasoning_effort and state.spec.reasoning_effort not in efforts:
+                    raise RuntimeError("该模型不支持指定的推理等级")
             if resume:
                 thread_result = await connection.request(
                     "thread/resume",
@@ -449,6 +460,7 @@ class CodexAdapter(AgentAdapter):
                         "sandbox": "read-only",
                         "ephemeral": False,
                         "experimentalRawEvents": False,
+                        **({"model": state.spec.model_id_} if state.spec.model_id_ else {}),
                     },
                 )
             thread = thread_result.get("thread", {})
@@ -463,6 +475,8 @@ class CodexAdapter(AgentAdapter):
                     "threadId": state.external_session_id,
                     "input": [{"type": "text", "text": message}],
                     "outputSchema": AgentResult.model_json_schema(by_alias=True),
+                    **({"model": state.spec.model_id_} if state.spec.model_id_ else {}),
+                    **({"effort": state.spec.reasoning_effort} if state.spec.reasoning_effort else {}),
                 },
             )
             state.active_turn_id = str(turn_result.get("turn", {}).get("id") or "") or None
@@ -474,13 +488,23 @@ class CodexAdapter(AgentAdapter):
                 await state.connection.force_close()
             return failure(
                 AdapterFailureKind.TRANSPORT_ERROR,
-                "Codex App Server 启动或建线程失败",
+                f"Codex模型或会话启动失败：{str(exc)[:300]}",
                 retryable=True,
                 raw=exc,
             )
 
     async def resume(self, request: ResumeRequest) -> OperationResult:
         state = self.registry.get(request.session_id)
+        if state is None and request.task_spec is not None:
+            spec = request.task_spec
+            if spec.session_id != request.session_id or not request.external_session_id:
+                return failure(AdapterFailureKind.AGENT_ERROR, "恢复规格与明确会话ID不匹配", retryable=False)
+            preflight = await self._preflight(spec)
+            if preflight is not None:
+                return preflight
+            state = AdapterSessionState(session_id=request.session_id, external_session_id=request.external_session_id,
+                spec=spec, guard=PathGuard(spec.worktree_path or "", spec.allowed_paths))
+            self.registry.add(state)
         if state is None:
             return failure(
                 AdapterFailureKind.AGENT_ERROR,
@@ -559,7 +583,45 @@ class CodexAdapter(AgentAdapter):
                     raw=exc,
                 )
             pending.resolved = True
+        return None
+
+    @staticmethod
+    async def _model_rows(connection: _CodexConnection) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        cursor = None
+        for _ in range(10):
+            page = await connection.request("model/list", {"limit": 100, "includeHidden": False,
+                **({"cursor": cursor} if cursor else {})})
+            rows.extend(page.get("data", []))
+            cursor = page.get("nextCursor")
+            if not cursor:
+                return rows
+        raise RuntimeError("模型目录分页过多，无法完整核验")
+
+    async def list_models(self, agent_instance_id: str) -> LocalAgentModelsView:
+        executable = self.runner.find("codex")
+        if not executable:
+            return LocalAgentModelsView(agent_instance_id=agent_instance_id, models=[], verified=False, reason="Codex未安装")
+        async def ignore(*_args):
             return None
+        connection = None
+        try:
+            process = await self.runner.start(executable_args(executable, "app-server", "--listen", "stdio://"),
+                cwd=Path.home(), env=command_environment("codex"))
+            connection = _CodexConnection(process, on_notification=ignore, on_server_request=ignore, on_disconnect=ignore)
+            await connection.request("initialize", {"clientInfo": {"name": "hqagent-catalog", "version": "0.1.0"}, "capabilities": {}})
+            await connection._write({"method": "initialized"})
+            rows = await self._model_rows(connection)
+            models = [LocalAgentModel(id=str(r.get("model") or r["id"]), name=str(r.get("displayName") or r.get("model") or r["id"]),
+                efforts=[str(e["reasoningEffort"]) for e in r.get("supportedReasoningEfforts", [])],
+                is_default=bool(r.get("isDefault"))) for r in rows]
+            return LocalAgentModelsView(agent_instance_id=agent_instance_id, models=models, verified=True)
+        except (OSError, RuntimeError, TimeoutError, KeyError):
+            return LocalAgentModelsView(agent_instance_id=agent_instance_id, models=[], verified=False,
+                reason="模型目录探测失败，请检查Codex安装、登录和版本；未启用任何默认替代模型")
+        finally:
+            if connection is not None:
+                await connection.force_close()
         return failure(
             AdapterFailureKind.AGENT_ERROR,
             "找不到对应的 Codex 审批请求",
@@ -622,6 +684,9 @@ class CodexAdapter(AgentAdapter):
             )
         state.expected_termination = True
         await connection.force_close()
+        if state.process is not None and state.process.returncode is None:
+            return self._cancel_result(CancelOutcome.REFUSED, started,
+                "取消请求已发出，但App Server进程仍在运行", orphan_pids=[state.process.pid])
         if state.stream_end is None:
             state.failure = failure(
                 AdapterFailureKind.CANCELLED,
@@ -666,6 +731,9 @@ class CodexAdapter(AgentAdapter):
                 retryable=False,
                 violation_paths=violations,
             )
+        if state.finished.is_set() and state.connection is not None:
+            state.expected_termination = True
+            await state.connection.force_close()
         return state.result
 
     async def _emit_started(self, state: AdapterSessionState) -> None:
@@ -689,6 +757,9 @@ class CodexAdapter(AgentAdapter):
     ) -> None:
         method = str(message.get("method", "__unknown__"))
         params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        if method.startswith("item/reasoning/"):
+            self.mapper.map("__private_reasoning__", {})
+            return
         if method == "thread/started":
             await self._emit_started(state)
             return
@@ -920,10 +991,13 @@ class CodexAdapter(AgentAdapter):
                 retryable=False,
             )
         else:
+            vendor_error = turn.get("error")
+            detail = str(vendor_error.get("message", "")) if isinstance(vendor_error, dict) else str(vendor_error or "")
+            detail = re.sub(r"(?i)Bearer\s+\S+|sk-[A-Za-z0-9_-]+", "[redacted]", detail)[:300]
             state.failure = failure(
                 AdapterFailureKind.AGENT_ERROR,
-                f"Codex turn 失败：{status}",
-                retryable=False,
+                f"Codex turn失败：{detail or status}",
+                retryable="429" in detail,
                 raw=turn.get("error"),
             )
         if state.result is not None and state.failure is None:
@@ -941,7 +1015,7 @@ class CodexAdapter(AgentAdapter):
                 {
                     "status": AdapterStreamStatus.ENDED,
                     "endedAt": utc_timestamp(),
-                    "resumable": False,
+                    "resumable": bool(state.result is not None and state.failure is None and state.external_session_id),
                     "detail": f"turn.status={status}",
                 }
             )

@@ -30,6 +30,7 @@ from api.update_proxy import UpdateAgentProxy
 from core.bootstrap import BootstrapService
 from core.constants import APP_VERSION, MAX_EVENT_PAGE_SIZE, PROTOCOL_VERSION
 from core.errors import FeatureUnavailable, HubError
+from core.local_auth import LocalBrowserAuth
 from core.maintenance import DrainCoordinator, MaintenanceState
 from core.ports import HubPorts
 from core.security import WsTicketStore, token_matches
@@ -38,6 +39,7 @@ from storage.database import Database
 from storage.events import EventStore
 from storage.idempotency import IdempotencyRepository
 from storage.settings import SettingsRepository
+from orchestrator.errors import OrchestrationError
 
 
 DEFAULT_ALLOWED_ORIGINS = frozenset(
@@ -64,6 +66,8 @@ class HubApplication:
     token: str
     instance_id: str
     started_at: datetime
+    local_auth: Any = None
+    local_chat: Any = None
 
 
 class LocalBoundaryMiddleware:
@@ -91,7 +95,8 @@ class LocalBoundaryMiddleware:
             await self._reject(send, HubError("ORIGIN_NOT_ALLOWED", "Host 不在白名单"))
             return
         if origin is not None:
-            if origin not in self.allowed_origins:
+            same_origin = origin in {f"http://{headers.get('host', '')}", f"https://{headers.get('host', '')}"}
+            if origin not in self.allowed_origins and not same_origin:
                 await self._reject(send, HubError("ORIGIN_NOT_ALLOWED", "Origin 不在白名单"))
                 return
             cors_headers = [
@@ -109,7 +114,15 @@ class LocalBoundaryMiddleware:
             await send({"type": "http.response.start", "status": 204, "headers": response_headers})
             await send({"type": "http.response.body", "body": b""})
             return
-        if scope["path"] != "/healthz":
+        path = scope["path"]
+        if path.startswith("/api/v2/") and scope["method"] not in {"GET", "HEAD", "OPTIONS"}:
+            # Cookie endpoints are JSON-only, and require Origin (browser) or the
+            # explicit legacy bearer (trusted local diagnostics). Cross-site form
+            # POSTs cannot use an absent Origin as an authentication bypass.
+            if not origin and not headers.get("authorization", "").startswith("Bearer "):
+                await self._reject(send, HubError("ORIGIN_NOT_ALLOWED", "本地写请求必须提供可信Origin"), cors_headers)
+                return
+        if path != "/healthz" and not path.startswith("/api/v2/") and (path.startswith("/api/") or path.startswith("/internal/")):
             authorization = headers.get("authorization", "")
             prefix = "Bearer "
             supplied = authorization[len(prefix) :] if authorization.startswith(prefix) else ""
@@ -163,20 +176,36 @@ def create_application(
     ticket_store = WsTicketStore()
     idempotency = IdempotencyRepository(database)
     drain = DrainCoordinator(database, event_store, resolved_ports.drain, maintenance, paths.backup, update_proxy)
+    from api.local_chat import install_local_routes
+    from runtime.local_chat import LocalChatService
+    from storage.local_chat import LocalChatRepository
+    local_auth = LocalBrowserAuth()
+    local_chat = LocalChatService(LocalChatRepository(database), resolved_ports)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        yield
-        if close_database_on_shutdown:
-            database.close()
+        if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "recover_pending"):
+            await resolved_ports.tasks.recover_pending()
+        await local_chat.start()
+        try:
+            yield
+        finally:
+            await local_chat.stop()
+            if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "shutdown"):
+                await resolved_ports.tasks.shutdown()
+            if close_database_on_shutdown:
+                database.close()
 
     app = FastAPI(title="HQAgent-Hub Local Hub", version=APP_VERSION, lifespan=lifespan)
+    app.state.local_auth = local_auth
+    app.state.local_chat = local_chat
     app.add_middleware(
         LocalBoundaryMiddleware,
         token=token,
         allowed_origins=allowed_origins or set(DEFAULT_ALLOWED_ORIGINS),
         allowed_hosts=allowed_hosts or {"127.0.0.1", "localhost"},
     )
+    install_local_routes(app, local_chat, local_auth, resolved_ports, event_store, token)
 
     bootstrap = BootstrapService(
         resolved_ports,
@@ -188,10 +217,15 @@ def create_application(
         environment,
         maintenance,
     )
+    app.state.local_bootstrap = bootstrap
 
     @app.exception_handler(HubError)
     async def handle_hub_error(_request: Request, exc: HubError) -> JSONResponse:
         return error_response(exc)
+
+    @app.exception_handler(OrchestrationError)
+    async def handle_orchestration_error(_request: Request, exc: OrchestrationError) -> JSONResponse:
+        return error_response(HubError(exc.code, exc.message, detail=exc.detail))
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -512,4 +546,6 @@ def create_application(
         token=token,
         instance_id=resolved_instance_id,
         started_at=resolved_started_at,
+        local_auth=local_auth,
+        local_chat=local_chat,
     )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,10 +26,16 @@ class HubPaths:
         elif os.environ.get("HQAGENT_HUB_DATA_DIR"):
             root = Path(os.environ["HQAGENT_HUB_DATA_DIR"]).resolve()
         else:
-            local_app_data = os.environ.get("LOCALAPPDATA")
-            if not local_app_data:
-                raise RuntimeError("LOCALAPPDATA 未设置，无法确定 HQAgent-Hub 数据目录")
-            root = (Path(local_app_data) / "HQAgent-Hub").resolve()
+            if os.name == "nt":
+                local_app_data = os.environ.get("LOCALAPPDATA")
+                if not local_app_data:
+                    raise RuntimeError("LOCALAPPDATA 未设置，无法确定 HQAgent-Hub 数据目录")
+                root = Path(local_app_data) / "HQAgent-Hub"
+            elif sys.platform == "darwin":
+                root = Path.home() / "Library/Application Support/HQAgent-Hub"
+            else:
+                root = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share"))) / "hqagent-hub"
+            root = root.resolve()
         return cls(
             root=root,
             data=root / "data",
@@ -58,4 +65,3 @@ class HubPaths:
             self.worktrees,
         ):
             path.mkdir(parents=True, exist_ok=True)
-

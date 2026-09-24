@@ -109,6 +109,33 @@ MIGRATIONS = (
         CREATE INDEX IF NOT EXISTS idx_workspaces_path ON workspaces(path);
         """,
     ),
+    Migration(
+        4,
+        """
+        CREATE TABLE local_scenes (
+            scene_id TEXT PRIMARY KEY, version INTEGER NOT NULL, payload_json TEXT NOT NULL
+        );
+        CREATE TABLE local_conversations (
+            conversation_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE local_messages (
+            message_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+            role TEXT NOT NULL, text TEXT NOT NULL, run_id TEXT, created_at TEXT NOT NULL,
+            UNIQUE(conversation_id, sequence), UNIQUE(run_id, role)
+        );
+        CREATE TABLE local_runs (
+            run_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL,
+            task_id TEXT, scene_json TEXT NOT NULL, session_mode TEXT NOT NULL,
+            status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE local_commands (
+            route TEXT NOT NULL, idempotency_key TEXT NOT NULL, request_hash TEXT NOT NULL,
+            response_json TEXT NOT NULL, PRIMARY KEY(route, idempotency_key)
+        );
+        CREATE INDEX idx_local_messages_conversation ON local_messages(conversation_id, sequence);
+        CREATE INDEX idx_local_runs_queue ON local_runs(conversation_id, created_at);
+        """,
+    ),
 )
 
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version

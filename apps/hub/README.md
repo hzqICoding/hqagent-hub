@@ -1,5 +1,36 @@
 # Local Hub 开发环境
 
+## N0 本地对话版启动（vNext 后端分支）
+
+先在仓库根创建独立环境；固定依赖见 `requirements.local-lock.txt`：
+
+```powershell
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -r apps/hub/requirements.local-lock.txt
+.venv/Scripts/python.exe -m pip install --no-deps -e packages/protocol -e "apps/hub[test]"
+```
+
+在 `apps/hub` 目录启动开发服务：
+
+```powershell
+../../.venv/Scripts/python.exe -m runtime.main --environment development --port 8765 --data-dir E:/tmp/hqagent-n0-local
+```
+
+控制台显示本地URL和一次性连接码。前端开发服务器把 `/api` 代理到 `http://127.0.0.1:8765`，浏览器通过 `/api/v2/auth/local-session` 换取 HttpOnly Cookie，不读取Hub Token。连接码有效期10分钟，仅用一次；Cookie有效期1天，Worker重启后重新连接。
+
+生产同源访问可添加 `--web-dir <前端dist绝对路径>`；只有前端完成构建后才能使用该参数。N0支持HTTP事件补拉，`/ws/v2/local`尚未实现，前端不要依赖它。
+
+CLI从Worker的PATH探测；可用 `HQAGENT_CODEX_PATH` / `HQAGENT_CLAUDE_PATH` 明确指定真实可执行文件。PowerShell函数/交互别名不是可执行文件，不会自动继承。Claude本批适配仅开放只读工具，写任务或宿主审批能力缺失会明确拒绝。
+
+真实模型冒烟会消耗所选Agent的正常额度，且使用独立临时目录，不触碰用户项目：
+
+```powershell
+# 在仓库根执行
+.venv/Scripts/python.exe -B scripts/e2e/local-chat-smoke.py --runtime codex --model <可用模型ID> --effort <可用等级>
+```
+
+前端独立开发要求见 `docs/vnext/前端独立开工说明.md`，后端交付状态见 `.hqagent/handoffs/N0-backend.md`。
+
 W2、W3 两轮交付都卡在同一件事上：**测试环境无法从仓库配置重建**。
 W3 是把 W1 的 `.venv` 整个拷过去再剔掉 editable `.pth`，W2 是直接借用
 `w1-hub/.venv` 跑验收（见 `.hqagent/reviews/T-W3-orchestrator.md` W3-R2、

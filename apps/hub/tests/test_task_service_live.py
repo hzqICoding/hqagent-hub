@@ -140,13 +140,40 @@ def test_real_task_service_is_idempotent_and_read_only_uses_workspace(tmp_path: 
     asyncio.run(scenario())
 
 
-def test_role_override_wins_and_missing_workflow_defaults_to_read_only(tmp_path: Path) -> None:
+def test_read_only_stages_receive_upstream_analysis(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        service, adapter, database = build_service(tmp_path)
+        adapter.result = AgentResult(status="done", summary="UPSTREAM_PLAN_MARKER", changedFiles=[])
+        value = task_input(workflowRoles=["planner", "analyst"])
+        await service.create_task(value, "handoff-key")
+        await settle(service)
+        assert len(adapter.started) == 2
+        assert "UPSTREAM_PLAN_MARKER" in adapter.started[1].objective
+        database.close()
+    asyncio.run(scenario())
+
+
+def test_task_deduplication_survives_old_receipt_expiry(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        service, adapter, database = build_service(tmp_path)
+        value = task_input()
+        first = await service.create_task(value, "durable-key")
+        await settle(service)
+        with database.transaction() as tx:
+            tx.connection.execute("UPDATE idempotency_records SET expires_at='2000-01-01T00:00:00Z' WHERE key='durable-key'")
+        second = await service.create_task(value, "durable-key")
+        assert first.id == second.id and len(adapter.started) == 1
+        database.close()
+    asyncio.run(scenario())
+
+
+def test_role_override_wins_for_explicit_read_only_workflow(tmp_path: Path) -> None:
     async def scenario() -> None:
         service, adapter, database = build_service(
             tmp_path,
             candidate_ids=("automatic", "chosen"),
         )
-        value = task_input(workflowRoles=None, roleOverrides={"analyst": "chosen"})
+        value = task_input(workflowRoles=["analyst"], roleOverrides={"analyst": "chosen"})
         detail = await service.create_task(value, "override-key")
         await settle(service)
         detail = await service.get_task(detail.id)

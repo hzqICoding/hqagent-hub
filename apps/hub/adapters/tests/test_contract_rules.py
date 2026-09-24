@@ -30,6 +30,7 @@ from protocol.generated.python import (
 from adapters.claude_adapter import ClaudeAdapter
 from adapters.codex_adapter import CodexAdapter
 from adapters.event_mapper import EventMapper, FROZEN_EVENT_TYPES
+from adapters.events import diagnostic_raw
 from adapters.path_guard import PathGuard
 from adapters.process import CommandResult
 from adapters.session_registry import AdapterSessionState, PendingApproval
@@ -84,6 +85,25 @@ class FakeProcess:
 
     async def wait(self) -> int:
         return self.returncode or 0
+
+
+def test_diagnostics_do_not_forward_private_reasoning_or_credentials():
+    result = diagnostic_raw({"content": [{"type": "thinking", "thinking": "PRIVATE_REASONING_MARKER"},
+        {"type": "text", "text": "public summary"}], "authorization": "Bearer PRIVATE_TOKEN_MARKER"})
+    assert "PRIVATE_REASONING_MARKER" not in result["vendor"]
+    assert "PRIVATE_TOKEN_MARKER" not in result["vendor"]
+    assert "public summary" in result["vendor"]
+
+
+def test_codex_failure_preserves_rate_limit_cause(tmp_path):
+    async def scenario():
+        adapter = CodexAdapter()
+        state = state_for(tmp_path)
+        await adapter._complete_turn(state, {"turn": {"status": "failed", "error": {"message": "429 Too Many Requests"}}})
+        assert "429" in state.failure.message
+        assert state.failure.retryable is True
+        assert state.finished.is_set()
+    asyncio.run(scenario())
 
 
 class FakeConnection:

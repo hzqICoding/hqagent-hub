@@ -69,6 +69,8 @@ class PathGuard:
         relative = self._relative(candidate)
         if relative is None:
             return False
+        if relative == ".git" or relative.startswith(".git/"):
+            return False
         for pattern in self.patterns:
             if pattern.endswith("/**"):
                 prefix = pattern[:-3].rstrip("/")

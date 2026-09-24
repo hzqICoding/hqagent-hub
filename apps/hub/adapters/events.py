@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -16,10 +17,23 @@ def diagnostic_raw(value: Any) -> dict[str, str]:
     """把供应商原文限制在 2048 字符，并保持生成 DTO 要求的 object 形状。"""
 
     try:
-        text = json.dumps(value, ensure_ascii=False, default=str, separators=(",", ":"))
+        text = json.dumps(_public_diagnostic(value), ensure_ascii=False, default=str, separators=(",", ":"))
     except (TypeError, ValueError):
         text = str(value)
     return {"vendor": text[:2048]}
+
+
+def _public_diagnostic(value: Any) -> Any:
+    if isinstance(value, dict):
+        if value.get("type") in {"reasoning", "thinking", "redacted_thinking"}:
+            return {"type": value.get("type"), "redacted": True}
+        hidden = {"authorization", "apikey", "api_key", "access_token", "refresh_token", "encrypted_content", "thinking"}
+        return {key: "[redacted]" if key.lower() in hidden else _public_diagnostic(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_public_diagnostic(item) for item in value]
+    if isinstance(value, str):
+        return re.sub(r"(?i)Bearer\s+\S+|sk-[A-Za-z0-9_-]+", "[redacted]", value)
+    return value
 
 
 @dataclass(frozen=True, slots=True)

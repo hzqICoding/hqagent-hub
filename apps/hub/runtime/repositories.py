@@ -134,8 +134,8 @@ class SessionRepository:
             clauses.append("workspace_id=?")
             params.append(query["workspaceId"])
         if query.get("taskId"):
-            clauses.append("task_id=?")
-            params.append(query["taskId"])
+            clauses.append("(task_id=? OR session_id IN (SELECT json_extract(payload_json, '$.sessionId') FROM task_nodes WHERE task_id=?))")
+            params.extend([query["taskId"], query["taskId"]])
         if query.get("agentInstanceId"):
             clauses.append("agent_instance_id=?")
             params.append(query["agentInstanceId"])

@@ -467,6 +467,20 @@ paths:
               schema:
                 $ref: ../schema/envelope.json#/$defs/ApiEnvelope
       parameters: []
+  /api/v2/bootstrap:
+    get:
+      operationId: getLocalBootstrap
+      security:
+      - localSession: []
+      responses:
+        '200':
+          description: Existing BootstrapView through cookie-authenticated local v2.
+          x-dataSchema:
+            $ref: ../schema/bootstrap.json#/$defs/BootstrapView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
 components:
   securitySchemes:
     localSession:

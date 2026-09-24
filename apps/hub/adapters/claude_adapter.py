@@ -52,7 +52,7 @@ from adapters.event_mapper import EventMapper
 from adapters.events import AdapterEvent, diagnostic_raw, utc_timestamp
 from adapters.failures import failure, failure_event, parse_agent_result, version_tuple
 from adapters.path_guard import PathGuard
-from adapters.process import ProcessRunner, command_environment, executable_args
+from adapters.process import ProcessRunner, command_environment, executable_args, terminate_process_tree
 from adapters.prompt import build_task_prompt
 from adapters.session_registry import AdapterSessionState, STREAM_END, SessionRegistry
 
@@ -115,8 +115,8 @@ class ClaudeAdapter(AgentAdapter):
             CapabilityId.CODING: True,
             CapabilityId.REVIEW: True,
             CapabilityId.TESTING: True,
-            CapabilityId.SHELL: True,
-            CapabilityId.FILE_WRITE: True,
+            CapabilityId.SHELL: False,
+            CapabilityId.FILE_WRITE: False,
             CapabilityId.GIT_WORKTREE: True,
             CapabilityId.SESSION_RESUME: False,
             CapabilityId.STREAMING_EVENTS: True,
@@ -126,6 +126,8 @@ class ClaudeAdapter(AgentAdapter):
             CapabilityId.BROWSER: False,
         }
         notes = {
+            CapabilityId.FILE_WRITE: "当前CLI接入仅开放只读工具；写入需具备可验证的宿主审批",
+            CapabilityId.SHELL: "当前CLI接入未开放shell工具",
             CapabilityId.SESSION_RESUME: "当前宿主实测无法持久化 Claude transcript；精确 --resume 失败",
             CapabilityId.TOOL_APPROVAL: "前台 stream-json 未实测到可回传的 host approval request",
             CapabilityId.VISION: "AgentTaskSpec 没有图片输入字段，本轮不声明",
@@ -341,6 +343,11 @@ class ClaudeAdapter(AgentAdapter):
             result_schema,
         )
         args.extend(["--resume" if resume else "--session-id", state.external_session_id])
+        args.extend(["--tools", "Read,Glob,Grep"])
+        if state.spec.model_id_:
+            args.extend(["--model", state.spec.model_id_])
+        if state.spec.reasoning_effort:
+            args.extend(["--effort", state.spec.reasoning_effort])
         try:
             state.process = await self.runner.start(
                 args,
@@ -440,7 +447,7 @@ class ClaudeAdapter(AgentAdapter):
         await self._force_stop(state)
         orphans = [state.process.pid] if state.process.returncode is None else []
         return self._cancel_result(
-            CancelOutcome.FORCE_KILLED,
+            CancelOutcome.REFUSED if orphans else CancelOutcome.FORCE_KILLED,
             started,
             "Claude 子进程已执行 force kill",
             orphan_pids=orphans,
@@ -656,17 +663,17 @@ class ClaudeAdapter(AgentAdapter):
         process = state.process
         if process is None or process.returncode is not None:
             return
-        process.kill()
-        try:
-            await asyncio.wait_for(process.wait(), timeout=2)
-        except TimeoutError:
-            return
+        await terminate_process_tree(process)
 
     @staticmethod
     async def _join_tasks(state: AdapterSessionState) -> None:
         tasks = [task for task in (state.reader_task, state.stderr_task) if task is not None]
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=3)
+            except TimeoutError:
+                for task in tasks:
+                    task.cancel()
 
     @staticmethod
     def _cancel_result(

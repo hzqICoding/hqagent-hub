@@ -81,13 +81,12 @@ def _build_agent_port():
     Hub 起不来不是。
     """
     try:
-        from adapters.claude_adapter import ClaudeAdapter
-        from adapters.codex_adapter import CodexAdapter
+        from adapters.builtins import builtin_runtimes
         from adapters.manager import AdapterManager
     except ImportError as error:  # pragma: no cover - 打包漏文件时才会走到
         return UnavailablePort("agents", f"Agent 适配层未随产物打包：{error}")
 
-    return AdapterManager([ClaudeAdapter(), CodexAdapter()])
+    return AdapterManager(builtin_runtimes().instantiate())
 
 
 def _build_team_profile_service(database: Any, agents: Any):
@@ -180,6 +179,7 @@ def _bind_orchestration(application: Any, ports: HubPorts, profiles: Any) -> Non
         events,
         ports.workspaces,
         WorktreeManager(application.paths.worktrees),
+        approval_coordinator=coordinator,
     )
     # HubPorts 是 slots dataclass，就地改字段而不是 replace——
     # api 层持有的是同一个 ports 引用，replace 出来的新对象它看不见。

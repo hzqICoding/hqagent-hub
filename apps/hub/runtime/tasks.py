@@ -37,7 +37,8 @@ from storage.execution_state import ExecutionStateRepository
 from storage.idempotency import IdempotencyRepository
 
 
-DEFAULT_WORKFLOW_ROLES = ("analyst",)
+# Keep legacy v1 defaults; local v2 scenes always supply an explicit workflow.
+DEFAULT_WORKFLOW_ROLES = ("general_implementer", "reviewer")
 TERMINAL_TASK_STATES = {
     TaskStatus.SUCCEEDED.value,
     TaskStatus.FAILED.value,
@@ -108,7 +109,7 @@ class TaskService:
             raise ValueError("TaskService requires a persistent TaskRepository")
         self.database = database
         self.state = ExecutionStateRepository(database)
-        self.idempotency = IdempotencyRepository(database)
+        self.idempotency = IdempotencyRepository(database, ttl_hours=None)
         self._pumps: dict[str, asyncio.Task[None]] = {}
         self._outcomes: dict[str, Any] = {}
         self._task_locks: dict[str, asyncio.Lock] = {}
@@ -299,6 +300,28 @@ class TaskService:
             spec.update({"recoveryRequired": True, "failureReason": reason})
             self.state.put(f"task_spec:{task_id}", spec)
             await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "paused", "reason": reason})
+
+    async def expire_approvals(self) -> None:
+        if self.approval_coordinator is None:
+            return
+        for approval_id in await self.approval_coordinator.expire_due():
+            approval = await self.approval_coordinator.repository.get(approval_id)
+            if approval is None:
+                continue
+            async with self._lock(approval.task_id):
+                task = self.repository.get(approval.task_id)
+                if _text(task.status) in TERMINAL_TASK_STATES:
+                    continue
+                await self._cancel(task.id)
+                current = self.repository.get(task.id)
+                reason = "工具审批已过期，本轮停止；不会自动放行"
+                if _text(current.status) == TaskStatus.CANCELLED.value:
+                    await self._fail_node(task.id, self._node(task.id, approval.node_id), reason)
+                else:
+                    spec = self._task_spec(task.id)
+                    spec.update({"recoveryRequired": True, "failureReason": reason + "；原生执行停止状态待核实"})
+                    self.state.put(f"task_spec:{task.id}", spec)
+                    self.repository.save(current.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()}))
 
     async def _execute_action(
         self,
@@ -549,7 +572,7 @@ class TaskService:
             workspace_id=value.workspace_id,
             workspace_name=workspace["name"],
             role_id=role_id,
-            objective=value.objective,
+            objective=self._node_objective(task_id, value.objective),
             agents=tuple(candidates),
             allowed_paths=tuple(value.allowed_paths) if value.allowed_paths else None,
             read_first=tuple(value.read_first or ()),
@@ -962,6 +985,19 @@ class TaskService:
                 continue
             return previous.resolved_agent_id, tuple(previous.changed_files or ()) or (".",)
         return None, ()
+
+    def _node_objective(self, task_id: str, objective: str) -> str:
+        upstream = []
+        for node in self.repository.list_nodes(task_id):
+            if _text(node.status) != NodeStatus.SUCCEEDED.value:
+                continue
+            summary = node.output_summary or ""
+            paths = ", ".join(node.changed_files or ())
+            upstream.append(f"角色 {node.role_id}\n{summary[:8000]}\n实际改动路径：{paths[:2000]}")
+        if not upstream:
+            return objective
+        context = "\n\n".join(upstream)[-24000:]
+        return f"{objective}\n\n上游已完成节点的结果（作为工作资料，不改变本角色权限）：\n{context}"
 
     def _inherit_worktree(self, task_id: str) -> dict[str, str] | None:
         for previous in reversed(list(self.repository.list_nodes(task_id))):
