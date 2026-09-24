@@ -126,7 +126,7 @@ async function copyText(text: string) {
       </div>
     </div>
 
-    <!-- Assistant Final Reply (Clean typography, bot avatar, markdown body, copy button) -->
+    <!-- Assistant Final Reply (Clean typography, bot avatar, markdown body, quick copy buttons) -->
     <div v-else class="max-w-3xl mx-auto flex items-start gap-3 group">
       <div class="w-7 h-7 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0 mt-0.5 border border-success/30 shadow-xs">
         <Bot class="w-4 h-4" />
@@ -142,7 +142,7 @@ async function copyText(text: string) {
 
           <button
             type="button"
-            class="opacity-0 group-hover:opacity-100 p-1 px-1.5 rounded hover:bg-panel-hover text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px]"
+            class="p-1 px-1.5 rounded hover:bg-panel-hover border border-transparent hover:border-border/60 text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] cursor-pointer opacity-70 hover:opacity-100"
             title="复制回复内容"
             @click="copyText(message.text)"
           >
@@ -160,8 +160,36 @@ async function copyText(text: string) {
           :initially-expanded="false"
         />
 
-        <div class="bg-panel border border-border/80 p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed shadow-sm break-words overflow-x-auto select-text">
+        <div class="relative group/bubble bg-panel border border-border/80 p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed shadow-sm break-words overflow-x-auto select-text">
+          <!-- Floating quick copy icon button at top-right corner of the bubble -->
+          <button
+            type="button"
+            class="absolute top-3 right-3 p-1.5 px-2 rounded-lg bg-bg-app/90 hover:bg-panel-hover border border-border/70 text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] shadow-xs cursor-pointer z-10 opacity-70 hover:opacity-100"
+            :title="isCopied ? '已复制到剪贴板' : '一键复制整条消息'"
+            @click.stop="copyText(message.text)"
+          >
+            <Check v-if="isCopied" class="w-3 h-3 text-success" />
+            <Copy v-else class="w-3 h-3" />
+            <span>{{ isCopied ? '已复制' : '复制' }}</span>
+          </button>
+
           <HqMarkdown :content="message.text" />
+        </div>
+
+        <!-- Message footer action bar (at the bottom of response message) -->
+        <div class="flex items-center justify-between pt-0.5 px-1 text-[11px] text-text-muted select-none">
+          <button
+            type="button"
+            class="p-1 px-2 rounded-md hover:bg-panel border border-border/40 text-text-muted hover:text-text transition-colors flex items-center gap-1.5 text-[10px] cursor-pointer"
+            :title="isCopied ? '已复制到剪贴板' : '一键复制整条消息'"
+            @click="copyText(message.text)"
+          >
+            <Check v-if="isCopied" class="w-3.5 h-3.5 text-success" />
+            <Copy v-else class="w-3.5 h-3.5" />
+            <span>{{ isCopied ? '已复制到剪贴板' : '复制全文' }}</span>
+          </button>
+
+          <span class="text-[10px] text-text-muted/60 font-mono">{{ formatTime(message.createdAt) }}</span>
         </div>
       </div>
     </div>
