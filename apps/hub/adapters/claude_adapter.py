@@ -510,12 +510,19 @@ class ClaudeAdapter(AgentAdapter):
                 )
         except Exception as exc:
             state.ready.set()
-            alive = process.returncode is None
+            cleaned = process.returncode is not None
+            if process.returncode is None:
+                try:
+                    cleaned = await terminate_process_tree(process)
+                except Exception:
+                    cleaned = False
             state.failure = failure(
                 AdapterFailureKind.TRANSPORT_ERROR,
-                "Claude 事件流读取失败，已清理专属进程树",
+                "Claude 事件流读取失败，已清理专属进程树"
+                if cleaned
+                else "Claude 事件流读取失败，专属进程树清理未确认",
                 retryable=False,
-                raw=exc,
+                raw={"channel": "stdout", "exceptionType": type(exc).__name__, "processTreeCleaned": cleaned},
             )
             await state.finish(
                 AdapterStreamEnd.model_validate(
@@ -523,12 +530,13 @@ class ClaudeAdapter(AgentAdapter):
                         "status": AdapterStreamStatus.AGENT_EXITED,
                         "endedAt": utc_timestamp(),
                         "resumable": False,
-                        "detail": f"reader failed ({type(exc).__name__}): {str(exc)[:384]}",
+                        "detail": (
+                            f"stdout reader failed ({type(exc).__name__}); "
+                            f"processTreeCleaned={str(cleaned).lower()}"
+                        ),
                     }
                 )
             )
-            if alive:
-                await terminate_process_tree(process)
 
     async def _handle_vendor_event(self, state: AdapterSessionState, raw: dict[str, Any]) -> None:
         event_type = str(raw.get("type", "__unknown__"))
@@ -662,14 +670,21 @@ class ClaudeAdapter(AgentAdapter):
             while await process.stderr.readline():
                 pass
         except Exception as exc:
+            cleaned = process.returncode is not None
+            if process.returncode is None:
+                try:
+                    cleaned = await terminate_process_tree(process)
+                except Exception:
+                    cleaned = False
             if state.stream_end is not None:
                 return
-            alive = process.returncode is None
             state.failure = failure(
                 AdapterFailureKind.TRANSPORT_ERROR,
-                "Claude stderr 读取失败，已清理专属进程树",
+                "Claude stderr 读取失败，已清理专属进程树"
+                if cleaned
+                else "Claude stderr 读取失败，专属进程树清理未确认",
                 retryable=False,
-                raw=exc,
+                raw={"channel": "stderr", "exceptionType": type(exc).__name__, "processTreeCleaned": cleaned},
             )
             await state.finish(
                 AdapterStreamEnd.model_validate(
@@ -677,12 +692,13 @@ class ClaudeAdapter(AgentAdapter):
                         "status": AdapterStreamStatus.AGENT_EXITED,
                         "endedAt": utc_timestamp(),
                         "resumable": False,
-                        "detail": f"stderr reader failed ({type(exc).__name__}): {str(exc)[:384]}",
+                        "detail": (
+                            f"stderr reader failed ({type(exc).__name__}); "
+                            f"processTreeCleaned={str(cleaned).lower()}"
+                        ),
                     }
                 )
             )
-            if alive:
-                await terminate_process_tree(process)
 
     async def _force_stop(self, state: AdapterSessionState) -> None:
         process = state.process

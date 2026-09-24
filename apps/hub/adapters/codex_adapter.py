@@ -168,10 +168,17 @@ class _CodexConnection:
             if self._reader_failure_reported:
                 return
             self._reader_failure_reported = True
-            detail = f"{channel} reader failed ({type(exc).__name__}): {str(exc)[:384]}"
-            await self.on_disconnect(False, detail)
+            cleaned = self.process.returncode is not None
             if self.process.returncode is None:
-                await terminate_process_tree(self.process)
+                try:
+                    cleaned = await terminate_process_tree(self.process)
+                except Exception:  # cleanup diagnostics must not expose OS/vendor text
+                    cleaned = False
+            detail = (
+                f"{channel} reader failed ({type(exc).__name__}); "
+                f"processTreeCleaned={str(cleaned).lower()}"
+            )
+            await self.on_disconnect(False, detail)
 
 
 class CodexAdapter(AgentAdapter):
@@ -1057,9 +1064,14 @@ class CodexAdapter(AgentAdapter):
             )
             return
         reader_failure = "reader failed" in detail
+        cleanup_confirmed = "processTreeCleaned=true" in detail
         state.failure = failure(
             AdapterFailureKind.TRANSPORT_ERROR if alive or reader_failure else AdapterFailureKind.AGENT_ERROR,
-            "Codex App Server stdio 读取失败，已清理专属进程树"
+            (
+                "Codex App Server stdio 读取失败，已清理专属进程树"
+                if cleanup_confirmed
+                else "Codex App Server stdio 读取失败，专属进程树清理未确认"
+            )
             if reader_failure
             else ("Codex App Server transport 丢失" if alive else "Codex App Server 进程已退出"),
             retryable=alive and not reader_failure,
