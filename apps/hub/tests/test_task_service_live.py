@@ -63,6 +63,7 @@ def build_service(
     result_status: str = "done",
     candidate_ids: tuple[str, ...] = ("agent",),
 ):
+    (tmp_path / "plain-directory").mkdir(exist_ok=True)
     database = Database(tmp_path / "hub.db")
     database.initialize()
     events = EventSink(database, EventStore(database))
