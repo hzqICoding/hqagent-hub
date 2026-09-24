@@ -73,6 +73,9 @@ class NodeDispatchRequest:
     base_commit: str | None = None
     handoff_documents: tuple[str, ...] = ()
     timeout_seconds: int | None = None
+    model_id: str | None = None
+    reasoning_effort: str | None = None
+    role_instructions: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,8 +220,16 @@ class WorkflowRuntime:
                     "reusePolicy": SessionReusePolicy.NEW_SESSION.value,
                     "handoffDocuments": list(request.handoff_documents) or None,
                     "timeoutSeconds": request.timeout_seconds,
+                    "readOnly": policy.read_only,
+                    "modelId": request.model_id,
+                    "reasoningEffort": request.reasoning_effort,
+                    "roleInstructions": request.role_instructions,
                 }
             )
+            # The recovery input must exist before the Adapter can create any
+            # external process/session. A crash after start() must not leave an
+            # unidentifiable native execution.
+            await self.sessions.repository.save_spec(hub_session_id, task_spec)
             adapter = self.adapters.adapter_for(resolution.agent.instance_id)
             handle = await adapter.start(task_spec)
             # start() 可能返回 AdapterFailure 而不是 handle（契约 §1 的失败列）。

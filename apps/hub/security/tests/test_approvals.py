@@ -1,7 +1,14 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from protocol.generated.python import ApprovalResponseInput, ApprovalStatus, DangerousAction, RiskLevel
+from protocol.generated.python import (
+    AdapterFailure,
+    ApprovalResponseInput,
+    ApprovalStatus,
+    DangerousAction,
+    RiskLevel,
+)
 
 from orchestrator.errors import ApprovalError
 from orchestrator.tests.fakes import (
@@ -98,3 +105,42 @@ async def test_agent_side_timeout_does_not_expire_hub_approval() -> None:
 
     assert expired == ()
     assert repository.items[approval.id].status == ApprovalStatus.PENDING
+
+
+@async_test
+async def test_adapter_approval_id_is_preserved_and_duplicate_event_is_idempotent() -> None:
+    coordinator, _, repository, events, _ = build_coordinator()
+    request = replace(request_value(), approval_id="approval_from_adapter")
+
+    first = await coordinator.request(request)
+    second = await coordinator.request(request)
+
+    assert first.id == "approval_from_adapter"
+    assert second.id == first.id
+    assert list(repository.items) == ["approval_from_adapter"]
+    assert [event.type for event in events.events] == ["approval.required"]
+
+
+@async_test
+async def test_adapter_failure_is_not_treated_as_consumed_approval() -> None:
+    coordinator, _, _, events, adapter = build_coordinator()
+    approval = await coordinator.request(replace(request_value(), approval_id="approval_failure"))
+
+    async def fail_approval(dispatch):
+        return AdapterFailure.model_validate(
+            {
+                "kind": "agent_error",
+                "message": "native request disappeared",
+                "retryable": False,
+            }
+        )
+
+    adapter.approve = fail_approval
+    with pytest.raises(ApprovalError) as error:
+        await coordinator.respond(
+            approval.id,
+            ApprovalResponseInput.model_validate({"decision": "approve"}),
+        )
+
+    assert error.value.code == "INTERNAL"
+    assert events.events[-1].type == "task.failed"

@@ -91,6 +91,7 @@ class FakeEventSink:
 class FakeSessionRepository:
     def __init__(self) -> None:
         self.items: dict[str, SessionView] = {}
+        self.specs: dict[str, AgentTaskSpec] = {}
 
     async def get(self, session_id: str) -> SessionView | None:
         return self.items.get(session_id)
@@ -103,6 +104,12 @@ class FakeSessionRepository:
         if query.get("taskId"):
             values = [item for item in values if item.task_id == query["taskId"]]
         return values
+
+    async def save_spec(self, session_id: str, spec: AgentTaskSpec) -> None:
+        self.specs[session_id] = spec
+
+    async def get_spec(self, session_id: str) -> AgentTaskSpec | None:
+        return self.specs.get(session_id)
 
 
 class FakeApprovalRepository:

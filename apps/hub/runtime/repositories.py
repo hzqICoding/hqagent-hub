@@ -12,11 +12,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from protocol.generated.python import ApprovalView, HubEvent, SessionView
+from protocol.generated.python import AgentTaskSpec, ApprovalView, HubEvent, SessionView
 
 from orchestrator.domain import AgentCandidate, RuntimeEventDraft
 from storage.database import Database
 from storage.events import EventDraft, EventStore
+from storage.execution_state import ExecutionStateRepository
 
 
 class EventSink:
@@ -33,20 +34,24 @@ class EventSink:
 
     async def append(self, draft: RuntimeEventDraft) -> HubEvent | None:
         with self.database.transaction() as transaction:
-            event, _created = self.events.append(
-                transaction,
-                EventDraft(
-                    aggregate_type=draft.aggregate_type,
-                    aggregate_id=draft.aggregate_id,
-                    type=draft.type,
-                    payload=draft.payload,
-                    task_id=draft.task_id,
-                    node_id=draft.node_id,
-                    role_id=draft.role_id,
-                    agent_instance_id=draft.agent_instance_id,
-                    adapter_id=draft.adapter_id,
-                ),
-            )
+            event = self.append_in_transaction(transaction, draft)
+        return event
+
+    def append_in_transaction(self, transaction: Any, draft: RuntimeEventDraft) -> HubEvent:
+        event, _created = self.events.append(
+            transaction,
+            EventDraft(
+                aggregate_type=draft.aggregate_type,
+                aggregate_id=draft.aggregate_id,
+                type=draft.type,
+                payload=draft.payload,
+                task_id=draft.task_id,
+                node_id=draft.node_id,
+                role_id=draft.role_id,
+                agent_instance_id=draft.agent_instance_id,
+                adapter_id=draft.adapter_id,
+            ),
+        )
         return event
 
     async def load_task_events(self, task_id: str, after_seq: int = 0) -> Sequence[HubEvent]:
@@ -80,6 +85,7 @@ class SessionRepository:
 
     def __init__(self, database: Database) -> None:
         self.database = database
+        self.execution_state = ExecutionStateRepository(database)
 
     async def get(self, session_id: str) -> SessionView | None:
         with self.database.locked_connection() as connection:
@@ -140,6 +146,16 @@ class SessionRepository:
                 params,
             ).fetchall()
         return [SessionView.model_validate_json(row[0]) for row in rows]
+
+    async def save_spec(self, session_id: str, spec: AgentTaskSpec) -> None:
+        self.execution_state.put(
+            f"session_spec:{session_id}",
+            spec.model_dump(mode="json", by_alias=True, exclude_none=True),
+        )
+
+    async def get_spec(self, session_id: str) -> AgentTaskSpec | None:
+        value = self.execution_state.get(f"session_spec:{session_id}")
+        return AgentTaskSpec.model_validate(value) if value else None
 
 
 class ApprovalRepository:
