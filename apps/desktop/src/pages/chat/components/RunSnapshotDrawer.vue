@@ -5,6 +5,7 @@ import {
   HqButton,
   HqBadge,
   HqDialog,
+  HqMarkdown,
   ResolveSourceBadge,
 } from '@/shared/ui'
 import {
@@ -282,9 +283,9 @@ function getNodeStatusBadge(status: string) {
               />
             </div>
 
-            <p v-if="node.outputSummary" class="text-[11px] text-text-muted mt-1 leading-relaxed break-words whitespace-pre-wrap">
-              {{ node.outputSummary }}
-            </p>
+            <div v-if="node.outputSummary" class="mt-1.5 p-2 rounded-lg bg-bg-app/60 border border-border/50 text-[11px] leading-relaxed break-words">
+              <HqMarkdown :content="node.outputSummary" />
+            </div>
           </div>
         </div>
       </div>
