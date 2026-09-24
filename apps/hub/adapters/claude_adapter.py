@@ -512,21 +512,23 @@ class ClaudeAdapter(AgentAdapter):
             state.ready.set()
             alive = process.returncode is None
             state.failure = failure(
-                AdapterFailureKind.TRANSPORT_ERROR if alive else AdapterFailureKind.AGENT_ERROR,
-                "Claude 事件流连接丢失" if alive else "Claude 进程异常退出",
-                retryable=alive,
+                AdapterFailureKind.TRANSPORT_ERROR,
+                "Claude 事件流读取失败，已清理专属进程树",
+                retryable=False,
                 raw=exc,
             )
             await state.finish(
                 AdapterStreamEnd.model_validate(
                     {
-                        "status": AdapterStreamStatus.TRANSPORT_LOST if alive else AdapterStreamStatus.AGENT_EXITED,
+                        "status": AdapterStreamStatus.AGENT_EXITED,
                         "endedAt": utc_timestamp(),
-                        "resumable": alive,
-                        "detail": str(exc)[:512],
+                        "resumable": False,
+                        "detail": f"reader failed ({type(exc).__name__}): {str(exc)[:384]}",
                     }
                 )
             )
+            if alive:
+                await terminate_process_tree(process)
 
     async def _handle_vendor_event(self, state: AdapterSessionState, raw: dict[str, Any]) -> None:
         event_type = str(raw.get("type", "__unknown__"))
@@ -656,8 +658,31 @@ class ClaudeAdapter(AgentAdapter):
         process = state.process
         if process is None or process.stderr is None:
             return
-        while await process.stderr.readline():
-            pass
+        try:
+            while await process.stderr.readline():
+                pass
+        except Exception as exc:
+            if state.stream_end is not None:
+                return
+            alive = process.returncode is None
+            state.failure = failure(
+                AdapterFailureKind.TRANSPORT_ERROR,
+                "Claude stderr 读取失败，已清理专属进程树",
+                retryable=False,
+                raw=exc,
+            )
+            await state.finish(
+                AdapterStreamEnd.model_validate(
+                    {
+                        "status": AdapterStreamStatus.AGENT_EXITED,
+                        "endedAt": utc_timestamp(),
+                        "resumable": False,
+                        "detail": f"stderr reader failed ({type(exc).__name__}): {str(exc)[:384]}",
+                    }
+                )
+            )
+            if alive:
+                await terminate_process_tree(process)
 
     async def _force_stop(self, state: AdapterSessionState) -> None:
         process = state.process

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import signal
@@ -8,6 +9,14 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
+
+
+DEFAULT_STREAM_LIMIT = 16 * 1024 * 1024
+_ALLOWED_NPM_BIN_SUFFIXES = {".exe", ".js", ".cjs", ".mjs"}
+_KNOWN_NPM_PACKAGES = {
+    "claude": ("@anthropic-ai/claude-code", "claude"),
+    "codex": ("@openai/codex", "codex"),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +27,11 @@ class CommandResult:
 
 
 class ProcessRunner:
+    def __init__(self, *, stream_limit: int = DEFAULT_STREAM_LIMIT) -> None:
+        if stream_limit < 64 * 1024 or stream_limit > 64 * 1024 * 1024:
+            raise ValueError("stream_limit must be between 64 KiB and 64 MiB")
+        self.stream_limit = stream_limit
+
     def find(self, command: str) -> str | None:
         override = os.environ.get(f"HQAGENT_{command.upper()}_PATH")
         if override:
@@ -39,6 +53,7 @@ class ProcessRunner:
             env=dict(env) if env else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=self.stream_limit,
             creationflags=self._creation_flags(),
             start_new_session=os.name != "nt",
         )
@@ -67,6 +82,7 @@ class ProcessRunner:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=self.stream_limit,
             creationflags=self._creation_flags(),
             start_new_session=os.name != "nt",
         )
@@ -95,18 +111,44 @@ def command_environment(prefix: str) -> dict[str, str]:
 def executable_args(executable: str, *args: str) -> list[str]:
     path = Path(executable)
     if os.name == "nt" and path.suffix.lower() in {".cmd", ".bat"}:
-        # npm shims can be launched without interpolating any task text into cmd.
-        # Resolve the known package's JS launcher; reject unknown batch wrappers.
-        candidates = {
-            "codex": path.parent / "node_modules/@openai/codex/bin/codex.js",
-            "claude": path.parent / "node_modules/@anthropic-ai/claude-code/cli.js",
-        }
-        script = candidates.get(path.stem.lower())
+        launcher = _resolve_known_npm_bin(path)
+        if launcher.suffix.lower() == ".exe":
+            return [str(launcher), *args]
         node = shutil.which("node")
-        if script is not None and script.is_file() and node:
-            return [node, str(script), *args]
-        raise OSError("Unsupported CLI batch launcher; install a native executable or supported npm package")
+        if not node:
+            raise OSError("Node.js executable not found for supported npm CLI launcher")
+        return [node, str(launcher), *args]
     return [str(Path(executable)), *args]
+
+
+def _resolve_known_npm_bin(shim: Path) -> Path:
+    package_info = _KNOWN_NPM_PACKAGES.get(shim.stem.lower())
+    if package_info is None:
+        raise OSError("Unsupported CLI batch launcher; only known npm packages are allowed")
+    package_name, bin_name = package_info
+    package_root = (shim.parent / "node_modules" / Path(package_name)).resolve()
+    package_json = package_root / "package.json"
+    try:
+        raw = json.loads(package_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OSError(f"Unable to read npm package metadata for {shim.stem}") from exc
+    bin_value = raw.get("bin")
+    if isinstance(bin_value, str):
+        relative = bin_value
+    elif isinstance(bin_value, dict) and isinstance(bin_value.get(bin_name), str):
+        relative = bin_value[bin_name]
+    else:
+        raise OSError(f"npm package does not declare the expected {bin_name!r} bin")
+    launcher = (package_root / relative).resolve()
+    try:
+        launcher.relative_to(package_root)
+    except ValueError as exc:
+        raise OSError("npm package bin escapes its package directory") from exc
+    if launcher.suffix.lower() not in _ALLOWED_NPM_BIN_SUFFIXES:
+        raise OSError("Unsupported npm package bin type")
+    if not launcher.is_file():
+        raise OSError("Declared npm package bin does not exist")
+    return launcher
 
 
 async def terminate_process_tree(process: asyncio.subprocess.Process, timeout: float = 3) -> bool:
