@@ -403,6 +403,7 @@ class AgentToolCallPayload(_Base):
     result_summary: str | None = Field(default=None, alias="resultSummary")
     duration_ms: int | None = Field(default=None, alias="durationMs")
     failed: bool | None = Field(default=None, alias="failed")
+    exit_code: int | None = Field(default=None, alias="exitCode")
 
 
 class AggregateType(StrEnum):
@@ -692,6 +693,11 @@ class CreateLocalConversationInput(_Base):
     scene_id: LocalSceneId = Field(alias="sceneId")
 
 
+class ReviewMode(StrEnum):
+    INDEPENDENT = "independent"
+    ORIGINAL_PLANNER = "original_planner"
+
+
 class RoleExecutionOptions(_Base):
     model_id_: str | None = Field(default=None, alias="modelId")
     reasoning_effort: str | None = Field(default=None, alias="reasoningEffort")
@@ -719,6 +725,7 @@ class CreateTaskInput(_Base):
     workflow_roles: list[str] | None = Field(default=None, alias="workflowRoles")
     role_executions: dict[str, RoleExecutionOptions] | None = Field(default=None, alias="roleExecutions")
     resume_sessions: dict[str, str] | None = Field(default=None, alias="resumeSessions")
+    review_mode: ReviewMode | None = Field(default=None, alias="reviewMode")
 
 
 class DrainStep(StrEnum):
@@ -900,6 +907,7 @@ class LocalSceneView(_Base):
     version: int = Field(alias="version")
     roles: list[LocalRoleConfig] = Field(alias="roles")
     updated_at: Timestamp = Field(alias="updatedAt")
+    review_mode: ReviewMode | None = Field(default=None, alias="reviewMode")
 
 
 class TaskArtifactView(_Base):
@@ -952,6 +960,10 @@ class TaskNodeView(_Base):
     branch: str | None = Field(default=None, alias="branch")
     changed_files: list[str] | None = Field(default=None, alias="changedFiles")
     violation_paths: list[str] | None = Field(default=None, alias="violationPaths")
+    phase: Literal["execution", "acceptance"] | None = Field(default=None, alias="phase")
+    review_verdict: Literal["passed", "changes_requested", "insufficient_evidence"] | None = Field(default=None, alias="reviewVerdict")
+    review_source_node_id: str | None = Field(default=None, alias="reviewSourceNodeId")
+    review_evidence_id: str | None = Field(default=None, alias="reviewEvidenceId")
 
 
 class TaskStatus(StrEnum):
@@ -1150,6 +1162,7 @@ class RoleBindingView(_Base):
 class SaveLocalSceneInput(_Base):
     roles: list[LocalRoleConfig] = Field(alias="roles")
     expected_version: int = Field(alias="expectedVersion")
+    review_mode: ReviewMode | None = Field(default=None, alias="reviewMode")
 
 
 class TeamProfilePolicies(_Base):

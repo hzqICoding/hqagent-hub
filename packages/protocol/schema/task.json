@@ -277,6 +277,9 @@
         "resumeSessions": {
           "type": "object",
           "x-map-value-primitive": "string"
+        },
+        "reviewMode": {
+          "$ref": "local-chat.json#/$defs/ReviewMode"
         }
       }
     },
