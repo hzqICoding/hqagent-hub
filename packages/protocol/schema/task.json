@@ -7,15 +7,44 @@
     "TaskArtifactView": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "taskId", "title", "path", "type", "sizeBytes", "createdAt"],
+      "required": [
+        "id",
+        "taskId",
+        "title",
+        "path",
+        "type",
+        "sizeBytes",
+        "createdAt"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "taskId": { "type": "string" },
-        "title": { "type": "string" },
-        "path": { "type": "string" },
-        "type": { "type": "string", "enum": ["file", "diff", "report", "log"] },
-        "sizeBytes": { "type": "integer", "minimum": 0 },
-        "createdAt": { "$ref": "common.json#/$defs/Timestamp" }
+        "id": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "file",
+            "diff",
+            "report",
+            "log"
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        }
       }
     },
     "TaskSummaryView": {
@@ -34,105 +63,248 @@
         "updatedAt"
       ],
       "properties": {
-        "id": { "type": "string" },
-        "objective": { "type": "string" },
-        "workspaceId": { "type": "string" },
-        "workspaceName": { "type": "string" },
-        "profileId": { "type": "string" },
-        "profileName": { "type": "string" },
-        "status": { "$ref": "common.json#/$defs/TaskStatus" },
-        "source": { "$ref": "common.json#/$defs/TaskSource" },
-        "createdAt": { "$ref": "common.json#/$defs/Timestamp" },
-        "updatedAt": { "$ref": "common.json#/$defs/Timestamp" },
-        "durationMs": { "type": "integer", "minimum": 0 },
-        "currentRole": { "$ref": "common.json#/$defs/RoleId" },
-        "currentAgent": { "type": "string", "description": "当前执行 Agent 的显示名" },
-        "pendingApprovalId": { "type": "string" },
-        "parentTaskId": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "workspaceName": {
+          "type": "string"
+        },
+        "profileId": {
+          "type": "string"
+        },
+        "profileName": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "common.json#/$defs/TaskStatus"
+        },
+        "source": {
+          "$ref": "common.json#/$defs/TaskSource"
+        },
+        "createdAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "updatedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "currentRole": {
+          "$ref": "common.json#/$defs/RoleId"
+        },
+        "currentAgent": {
+          "type": "string",
+          "description": "当前执行 Agent 的显示名"
+        },
+        "pendingApprovalId": {
+          "type": "string"
+        },
+        "parentTaskId": {
+          "type": "string"
+        }
       }
     },
     "TaskDetailView": {
       "type": "object",
       "additionalProperties": false,
       "x-extends": "TaskSummaryView",
-      "required": ["nodes", "artifacts", "events"],
+      "required": [
+        "nodes",
+        "artifacts",
+        "events"
+      ],
       "properties": {
-        "nodes": { "type": "array", "items": { "$ref": "task-node.json#/$defs/TaskNodeView" } },
-        "artifacts": { "type": "array", "items": { "$ref": "#/$defs/TaskArtifactView" } },
-        "events": { "type": "array", "items": { "$ref": "envelope.json#/$defs/HubEvent" } },
-        "worktreePath": { "type": "string" },
-        "branch": { "type": "string" },
-        "failureReason": { "type": "string" },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "task-node.json#/$defs/TaskNodeView"
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskArtifactView"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.json#/$defs/HubEvent"
+          }
+        },
+        "worktreePath": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "failureReason": {
+          "type": "string"
+        },
         "allowedPaths": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "本任务允许修改的 glob 列表。任务结束用 git diff --name-only 对照校验"
         },
         "readFirst": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "执行前必须阅读的共享记忆文件"
         },
         "acceptance": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "验收命令，例如 npm test / pytest"
         },
         "requiresApproval": {
           "type": "array",
-          "items": { "$ref": "common.json#/$defs/DangerousAction" }
+          "items": {
+            "$ref": "common.json#/$defs/DangerousAction"
+          }
         },
-        "result": { "$ref": "agent-result.json#/$defs/AgentResult" },
-        "lastEventSeq": { "type": "integer", "minimum": 0 }
+        "result": {
+          "$ref": "agent-result.json#/$defs/AgentResult"
+        },
+        "lastEventSeq": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "TaskQuery": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "page": { "type": "integer", "minimum": 1 },
-        "pageSize": { "type": "integer", "minimum": 1, "maximum": 200 },
-        "status": { "$ref": "common.json#/$defs/TaskStatus" },
-        "workspaceId": { "type": "string" },
-        "search": { "type": "string" }
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "status": {
+          "$ref": "common.json#/$defs/TaskStatus"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string"
+        }
       }
     },
     "CreateTaskInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["objective", "workspaceId"],
+      "required": [
+        "objective",
+        "workspaceId"
+      ],
       "properties": {
-        "objective": { "type": "string", "minLength": 1 },
-        "workspaceId": { "type": "string" },
-        "profileId": { "type": "string", "description": "省略时用工作区默认 Profile，再省略用全局默认" },
-        "source": { "$ref": "common.json#/$defs/TaskSource" },
+        "objective": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "profileId": {
+          "type": "string",
+          "description": "省略时用工作区默认 Profile，再省略用全局默认"
+        },
+        "source": {
+          "$ref": "common.json#/$defs/TaskSource"
+        },
         "roleOverrides": {
           "type": "object",
           "x-map-value-primitive": "string",
           "description": "单次任务覆盖，以 roleId 为键、agentInstanceId 为值。这是解析优先级的最高层"
         },
-        "parentTaskId": { "type": "string" },
-        "allowedPaths": { "type": "array", "items": { "type": "string" } },
-        "readFirst": { "type": "array", "items": { "type": "string" } },
-        "acceptance": { "type": "array", "items": { "type": "string" } },
+        "parentTaskId": {
+          "type": "string"
+        },
+        "allowedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "readFirst": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "acceptance": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "requiresApproval": {
           "type": "array",
-          "items": { "$ref": "common.json#/$defs/DangerousAction" },
+          "items": {
+            "$ref": "common.json#/$defs/DangerousAction"
+          },
           "description": "省略时取角色默认的 requiresApproval，不是取空"
+        },
+        "workflowRoles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "roleExecutions": {
+          "type": "object",
+          "x-map-value": "local-chat.json#/$defs/RoleExecutionOptions"
+        },
+        "resumeSessions": {
+          "type": "object",
+          "x-map-value-primitive": "string"
         }
       }
     },
     "TaskActionInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["action"],
+      "required": [
+        "action"
+      ],
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["pause", "resume", "cancel", "retry", "append_instruction"]
+          "enum": [
+            "pause",
+            "resume",
+            "cancel",
+            "retry",
+            "append_instruction"
+          ]
         },
-        "instruction": { "type": "string", "description": "action=append_instruction 时必填" },
-        "nodeId": { "type": "string", "description": "action=retry 时可指定重跑某个节点" }
+        "instruction": {
+          "type": "string",
+          "description": "action=append_instruction 时必填"
+        },
+        "nodeId": {
+          "type": "string",
+          "description": "action=retry 时可指定重跑某个节点"
+        }
       }
     }
   }

@@ -1,0 +1,475 @@
+openapi: 3.1.0
+info:
+  title: HQAgent N0 Local Chat
+  version: 0.3.0
+  description: N0 additive contract. Responses use the existing ApiEnvelope; response
+    schema below describes data, see x-envelope.
+x-envelope: ../schema/envelope.json#/$defs/ApiEnvelope
+paths:
+  /api/v2/auth/local-session:
+    post:
+      operationId: openLocalSession
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalAuthView
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-chat.json#/$defs/LocalAuthInput
+      parameters: []
+  /api/v2/auth/status:
+    get:
+      operationId: getLocalAuthStatus
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalAuthView
+      parameters: []
+  /api/v2/auth/logout:
+    post:
+      operationId: logoutLocalSession
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalAuthView
+      parameters: []
+      security:
+      - localSession: []
+  /api/v2/scenes:
+    get:
+      operationId: listLocalScenes
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            type: array
+            items:
+              $ref: ../schema/local-chat.json#/$defs/LocalSceneView
+      parameters: []
+      security:
+      - localSession: []
+  /api/v2/scenes/{sceneId}:
+    put:
+      operationId: saveLocalScene
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalSceneView
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-chat.json#/$defs/SaveLocalSceneInput
+      parameters:
+      - name: sceneId
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - localSession: []
+  /api/v2/conversations:
+    get:
+      operationId: listLocalConversations
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            type: array
+            items:
+              $ref: ../schema/local-chat.json#/$defs/LocalConversationView
+      parameters: []
+      security:
+      - localSession: []
+    post:
+      operationId: createLocalConversation
+      responses:
+        '201':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalConversationView
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-chat.json#/$defs/CreateLocalConversationInput
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+      security:
+      - localSession: []
+  /api/v2/conversations/{conversationId}/messages:
+    get:
+      operationId: listLocalMessages
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            type: array
+            items:
+              $ref: ../schema/local-chat.json#/$defs/LocalMessageView
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: after
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 200
+      security:
+      - localSession: []
+    post:
+      operationId: sendLocalMessage
+      responses:
+        '202':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalMessageReceipt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-chat.json#/$defs/SendLocalMessageInput
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+      security:
+      - localSession: []
+  /api/v2/conversations/{conversationId}/runs:
+    get:
+      operationId: listConversationRuns
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            type: array
+            items:
+              $ref: ../schema/local-chat.json#/$defs/LocalRunView
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - localSession: []
+  /api/v2/runs/{runId}:
+    get:
+      operationId: getLocalRun
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalRunView
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - localSession: []
+  /api/v2/events:
+    get:
+      operationId: listLocalEvents
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalEventPage
+      parameters:
+      - name: after
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 200
+      security:
+      - localSession: []
+  /api/v2/agents/{agentId}/models:
+    get:
+      operationId: getAgentModels
+      responses:
+        '200':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalAgentModelsView
+      parameters:
+      - name: agentId
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - localSession: []
+  /api/v2/runs/{runId}/commands:
+    post:
+      operationId: controlLocalRun
+      responses:
+        '202':
+          description: ApiEnvelope.data contains the declared payload; success/error
+            envelope is shared with v1.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalRunView
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/task.json#/$defs/TaskActionInput
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+      security:
+      - localSession: []
+  /api/v2/agents:
+    get:
+      operationId: listLocalAgents
+      security:
+      - localSession: []
+      responses:
+        '200':
+          description: ApiEnvelope; x-dataSchema defines data.
+          x-dataSchema:
+            type: array
+            items:
+              $ref: ../schema/agent-instance.json#/$defs/AgentView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      parameters: []
+  /api/v2/agents/discover:
+    post:
+      operationId: discoverLocalAgents
+      security:
+      - localSession: []
+      responses:
+        '200':
+          description: ApiEnvelope; x-dataSchema defines data.
+          x-dataSchema:
+            $ref: ../schema/agent-instance.json#/$defs/AgentDiscoveryResult
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      parameters: []
+  /api/v2/workspaces:
+    get:
+      operationId: listLocalWorkspaces
+      security:
+      - localSession: []
+      responses:
+        '200':
+          description: ApiEnvelope; x-dataSchema defines data.
+          x-dataSchema:
+            type: array
+            items:
+              $ref: ../schema/workspace.json#/$defs/WorkspaceView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      parameters: []
+    post:
+      operationId: addLocalWorkspace
+      security:
+      - localSession: []
+      responses:
+        '200':
+          description: ApiEnvelope; x-dataSchema defines data.
+          x-dataSchema:
+            $ref: ../schema/workspace.json#/$defs/WorkspaceView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/workspace.json#/$defs/AddWorkspaceInput
+      parameters: []
+  /api/v2/approvals:
+    get:
+      operationId: listLocalApprovals
+      security:
+      - localSession: []
+      responses:
+        '200':
+          description: ApiEnvelope; x-dataSchema defines data.
+          x-dataSchema:
+            type: array
+            items:
+              $ref: ../schema/approval.json#/$defs/ApprovalView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      parameters: []
+  /api/v2/approvals/{approvalId}/decisions:
+    post:
+      operationId: decideLocalApproval
+      security:
+      - localSession: []
+      responses:
+        '200':
+          description: ApiEnvelope; x-dataSchema defines data.
+          x-dataSchema:
+            $ref: ../schema/approval.json#/$defs/ApprovalView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/approval.json#/$defs/ApprovalResponseInput
+      parameters:
+      - name: approvalId
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v2/sessions:
+    get:
+      operationId: listLocalSessions
+      security:
+      - localSession: []
+      responses:
+        '200':
+          description: ApiEnvelope; x-dataSchema defines data.
+          x-dataSchema:
+            type: array
+            items:
+              $ref: ../schema/session.json#/$defs/SessionView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      parameters: []
+components:
+  securitySchemes:
+    localSession:
+      type: apiKey
+      in: cookie
+      name: hqagent_local_session

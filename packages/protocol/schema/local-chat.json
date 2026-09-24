@@ -1,0 +1,441 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "local-chat.json",
+  "title": "N0 本地场景与连续对话契约",
+  "description": "0.3.0 additive local API. Lifecycle uses legacy TaskStatus until explicit v2 migration.",
+  "$defs": {
+    "LocalSceneId": {
+      "type": "string",
+      "enum": [
+        "analyze",
+        "plan",
+        "develop"
+      ]
+    },
+    "LocalRoleConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roleId",
+        "agentInstanceId",
+        "instructions",
+        "enabled"
+      ],
+      "properties": {
+        "roleId": {
+          "type": "string"
+        },
+        "agentInstanceId": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": "string",
+          "maxLength": 12000
+        },
+        "modelId": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "reasoningEffort": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "LocalSceneView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "description",
+        "readOnly",
+        "version",
+        "roles",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "local-chat.json#/$defs/LocalSceneId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "local-chat.json#/$defs/LocalRoleConfig"
+          }
+        },
+        "updatedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        }
+      }
+    },
+    "SaveLocalSceneInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roles",
+        "expectedVersion"
+      ],
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "local-chat.json#/$defs/LocalRoleConfig"
+          }
+        },
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "LocalConversationView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "workspaceId",
+        "sceneId",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "sceneId": {
+          "$ref": "local-chat.json#/$defs/LocalSceneId"
+        },
+        "createdAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "updatedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "activeRunId": {
+          "type": "string"
+        },
+        "lastRunId": {
+          "type": "string"
+        }
+      }
+    },
+    "CreateLocalConversationInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "workspaceId",
+        "sceneId"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sceneId": {
+          "$ref": "local-chat.json#/$defs/LocalSceneId"
+        }
+      }
+    },
+    "LocalMessageView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "conversationId",
+        "sequence",
+        "role",
+        "text",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "conversationId": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "integer"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "user",
+            "assistant",
+            "system"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        }
+      }
+    },
+    "SendLocalMessageInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clientMessageId",
+        "text",
+        "sessionMode"
+      ],
+      "properties": {
+        "clientMessageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32000
+        },
+        "sessionMode": {
+          "type": "string",
+          "enum": [
+            "new",
+            "continue"
+          ]
+        }
+      }
+    },
+    "LocalRunView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "conversationId",
+        "messageId",
+        "taskId",
+        "sceneSnapshot",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "conversationId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "sceneSnapshot": {
+          "$ref": "local-chat.json#/$defs/LocalSceneView"
+        },
+        "status": {
+          "$ref": "common.json#/$defs/TaskStatus"
+        },
+        "createdAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "updatedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "error": {
+          "type": "string"
+        },
+        "task": {
+          "$ref": "task.json#/$defs/TaskDetailView"
+        }
+      }
+    },
+    "LocalMessageReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commandId",
+        "conversationId",
+        "messageId",
+        "runId",
+        "status",
+        "duplicate"
+      ],
+      "properties": {
+        "commandId": {
+          "type": "string"
+        },
+        "conversationId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "accepted"
+          ]
+        },
+        "duplicate": {
+          "type": "boolean"
+        }
+      }
+    },
+    "LocalEventPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "events",
+        "nextSeq",
+        "hasMore"
+      ],
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.json#/$defs/HubEvent"
+          }
+        },
+        "nextSeq": {
+          "type": "integer"
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "LocalAuthInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128
+        }
+      }
+    },
+    "LocalAuthView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authenticated",
+        "protocolVersion"
+      ],
+      "properties": {
+        "authenticated": {
+          "type": "boolean"
+        },
+        "protocolVersion": {
+          "type": "string"
+        }
+      }
+    },
+    "LocalAgentModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "efforts",
+        "isDefault"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "efforts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "isDefault": {
+          "type": "boolean"
+        }
+      }
+    },
+    "LocalAgentModelsView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentInstanceId",
+        "models",
+        "verified"
+      ],
+      "properties": {
+        "agentInstanceId": {
+          "type": "string"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "local-chat.json#/$defs/LocalAgentModel"
+          }
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "RoleExecutionOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "modelId": {
+          "type": "string"
+        },
+        "reasoningEffort": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "analyze",
+  "name": "代码分析",
+  "description": "只读梳理代码",
+  "readOnly": true,
+  "version": 1,
+  "roles": [
+    {
+      "roleId": "analyst",
+      "agentInstanceId": "",
+      "instructions": "阅读相关代码，给出有依据的逻辑梳理。",
+      "enabled": true
+    }
+  ],
+  "updatedAt": "2026-09-24T01:00:00Z"
+}

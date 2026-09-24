@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.2.2' as const
+export const PROTOCOL_VERSION = '0.3.0' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -280,6 +280,9 @@ export const BUILTIN_ROLE_IDS = [
   'tester',
   'deployer',
   'integrator',
+  'analyst',
+  'planner',
+  'developer',
 ] as const
 
 export interface AgentView {
@@ -411,6 +414,10 @@ export interface AgentTaskSpec {
   handoffDocuments?: string[]
   /** 超过则 Hub 发起 graceful cancel。Adapter 自身不负责计时 */
   timeoutSeconds?: number
+  readOnly?: boolean
+  modelId?: string
+  reasoningEffort?: string
+  roleInstructions?: string
 }
 
 export interface AgentToolCallPayload {
@@ -724,6 +731,23 @@ export interface ConnectionSettings {
   deviceName: string
 }
 
+export type LocalSceneId =
+  | 'analyze'
+  | 'plan'
+  | 'develop'
+
+export interface CreateLocalConversationInput {
+  title: string
+  workspaceId: string
+  sceneId: LocalSceneId
+}
+
+export interface RoleExecutionOptions {
+  modelId?: string
+  reasoningEffort?: string
+  instructions?: string
+}
+
 /** 任务来源。一期只产生 desktop；pwa 为二期预留 */
 export type TaskSource =
   | 'desktop'
@@ -745,6 +769,9 @@ export interface CreateTaskInput {
   acceptance?: string[]
   /** 省略时取角色默认的 requiresApproval，不是取空 */
   requiresApproval?: DangerousAction[]
+  workflowRoles?: string[]
+  roleExecutions?: Record<string, RoleExecutionOptions>
+  resumeSessions?: Record<string, string>
 }
 
 /** 任务排空步骤，对应 OTA升级架构设计.md §7 的排空序列 */
@@ -867,23 +894,92 @@ export type InstallStrategy =
   | 'linux-appimage'
   | 'linux-deb'
 
-/** 角色解析来源，对应施工方案 §6.3 的六级优先级。必须持久化，前端要展示为什么用了这个 Agent */
-export type ResolveSource =
-  | 'task_override'
-  | 'workspace_profile'
-  | 'global_profile'
-  | 'capability_match'
-  | 'fallback'
-  | 'manual'
+export interface LocalAgentModel {
+  id: string
+  name: string
+  efforts: string[]
+  isDefault: boolean
+}
 
-export interface NodeResolvedPayload {
-  roleId: RoleId
-  resolvedAgentId: string
-  resolvedAgentName?: string
-  resolveSource: ResolveSource
-  isFallback: boolean
-  fallbackReason?: string
-  missingCapabilities?: CapabilityId[]
+export interface LocalAgentModelsView {
+  agentInstanceId: string
+  models: LocalAgentModel[]
+  verified: boolean
+  reason?: string
+}
+
+export interface LocalAuthInput {
+  code: string
+}
+
+export interface LocalAuthView {
+  authenticated: boolean
+  protocolVersion: string
+}
+
+export interface LocalConversationView {
+  id: string
+  title: string
+  workspaceId: string
+  sceneId: LocalSceneId
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  activeRunId?: string
+  lastRunId?: string
+}
+
+export interface LocalEventPage {
+  events: HubEvent[]
+  nextSeq: number
+  hasMore: boolean
+}
+
+export interface LocalMessageReceipt {
+  commandId: string
+  conversationId: string
+  messageId: string
+  runId: string
+  status: 'queued' | 'accepted'
+  duplicate: boolean
+}
+
+export interface LocalMessageView {
+  id: string
+  conversationId: string
+  sequence: number
+  role: 'user' | 'assistant' | 'system'
+  text: string
+  runId?: string
+  createdAt: Timestamp
+}
+
+export interface LocalRoleConfig {
+  roleId: string
+  agentInstanceId: string
+  instructions: string
+  modelId?: string
+  reasoningEffort?: string
+  enabled: boolean
+}
+
+export interface LocalSceneView {
+  id: LocalSceneId
+  name: string
+  description: string
+  readOnly: boolean
+  version: number
+  roles: LocalRoleConfig[]
+  updatedAt: Timestamp
+}
+
+export interface TaskArtifactView {
+  id: string
+  taskId: string
+  title: string
+  path: string
+  type: 'file' | 'diff' | 'report' | 'log'
+  sizeBytes: number
+  createdAt: Timestamp
 }
 
 /** 任务节点状态。节点比任务多 resolving 和 skipped，不能复用 TaskStatus */
@@ -896,6 +992,112 @@ export type NodeStatus =
   | 'failed'
   | 'skipped'
   | 'cancelled'
+
+/** 角色解析来源，对应施工方案 §6.3 的六级优先级。必须持久化，前端要展示为什么用了这个 Agent */
+export type ResolveSource =
+  | 'task_override'
+  | 'workspace_profile'
+  | 'global_profile'
+  | 'capability_match'
+  | 'fallback'
+  | 'manual'
+
+export interface TaskNodeView {
+  id: string
+  taskId: string
+  roleId: RoleId
+  resolvedAgentId: string
+  resolvedAgentName: string
+  resolveSource: ResolveSource
+  status: NodeStatus
+  startedAt?: Timestamp
+  completedAt?: Timestamp
+  outputSummary?: string
+  error?: string
+  isFallback?: boolean
+  fallbackReason?: string
+  /** 本节点使用的 Hub 本地会话 ID。同一 Agent 承担实现与审核时，两个节点必须是两个不同的会话（裁决 D7） */
+  sessionId?: string
+  externalSessionId?: string
+  worktreePath?: string
+  branch?: string
+  /** git diff --name-only 的结果 */
+  changedFiles?: string[]
+  /** 越界修改的路径。非空即判定任务失败，且保留 worktree 供人工查看 */
+  violationPaths?: string[]
+}
+
+/** 任务状态。终态：succeeded / failed / cancelled */
+export type TaskStatus =
+  | 'draft'
+  | 'queued'
+  | 'running'
+  | 'waiting_approval'
+  | 'paused'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'unknown'
+
+export interface TaskSummaryView {
+  id: string
+  objective: string
+  workspaceId: string
+  workspaceName: string
+  profileId: string
+  profileName: string
+  status: TaskStatus
+  source: TaskSource
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  durationMs?: number
+  currentRole?: RoleId
+  /** 当前执行 Agent 的显示名 */
+  currentAgent?: string
+  pendingApprovalId?: string
+  parentTaskId?: string
+}
+
+export interface TaskDetailView extends TaskSummaryView {
+  nodes: TaskNodeView[]
+  artifacts: TaskArtifactView[]
+  events: HubEvent[]
+  worktreePath?: string
+  branch?: string
+  failureReason?: string
+  /** 本任务允许修改的 glob 列表。任务结束用 git diff --name-only 对照校验 */
+  allowedPaths?: string[]
+  /** 执行前必须阅读的共享记忆文件 */
+  readFirst?: string[]
+  /** 验收命令，例如 npm test / pytest */
+  acceptance?: string[]
+  requiresApproval?: DangerousAction[]
+  result?: AgentResult
+  lastEventSeq?: number
+}
+
+export interface LocalRunView {
+  id: string
+  conversationId: string
+  messageId: string
+  taskId: string
+  sceneSnapshot: LocalSceneView
+  status: TaskStatus
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  error?: string
+  task?: TaskDetailView
+}
+
+export interface NodeResolvedPayload {
+  roleId: RoleId
+  resolvedAgentId: string
+  resolvedAgentName?: string
+  resolveSource: ResolveSource
+  isFallback: boolean
+  fallbackReason?: string
+  missingCapabilities?: CapabilityId[]
+}
 
 export interface PageResult<T = unknown> {
   items: T[]
@@ -984,6 +1186,7 @@ export interface ResumeRequest {
   externalSessionId?: string
   message: string
   acceptance?: string[]
+  taskSpec?: AgentTaskSpec
 }
 
 export interface ResumeSessionInput {
@@ -1023,6 +1226,11 @@ export interface RoleBindingView {
   permissions?: RolePermissions
 }
 
+export interface SaveLocalSceneInput {
+  roles: LocalRoleConfig[]
+  expectedVersion: number
+}
+
 export interface TeamProfilePolicies {
   /** 默认 fallback_then_ask（施工方案 §6.4） */
   missingAgentStrategy: 'fallback_then_ask' | 'fallback_then_fail' | 'ask'
@@ -1049,6 +1257,12 @@ export interface SecuritySettings {
   requireApprovalForDangerousActions: boolean
   allowedPathsOnly: boolean
   approvalTimeoutMinutes?: number
+}
+
+export interface SendLocalMessageInput {
+  clientMessageId: string
+  text: string
+  sessionMode: 'new' | 'continue'
 }
 
 export interface SessionQuery {
@@ -1123,96 +1337,12 @@ export interface TaskActionInput {
   nodeId?: string
 }
 
-export interface TaskArtifactView {
-  id: string
-  taskId: string
-  title: string
-  path: string
-  type: 'file' | 'diff' | 'report' | 'log'
-  sizeBytes: number
-  createdAt: Timestamp
-}
-
 export interface TaskCreatedPayload {
   objective: string
   workspaceId: string
   profileId: string
   source: TaskSource
   parentTaskId?: string
-}
-
-export interface TaskNodeView {
-  id: string
-  taskId: string
-  roleId: RoleId
-  resolvedAgentId: string
-  resolvedAgentName: string
-  resolveSource: ResolveSource
-  status: NodeStatus
-  startedAt?: Timestamp
-  completedAt?: Timestamp
-  outputSummary?: string
-  error?: string
-  isFallback?: boolean
-  fallbackReason?: string
-  /** 本节点使用的 Hub 本地会话 ID。同一 Agent 承担实现与审核时，两个节点必须是两个不同的会话（裁决 D7） */
-  sessionId?: string
-  externalSessionId?: string
-  worktreePath?: string
-  branch?: string
-  /** git diff --name-only 的结果 */
-  changedFiles?: string[]
-  /** 越界修改的路径。非空即判定任务失败，且保留 worktree 供人工查看 */
-  violationPaths?: string[]
-}
-
-/** 任务状态。终态：succeeded / failed / cancelled */
-export type TaskStatus =
-  | 'draft'
-  | 'queued'
-  | 'running'
-  | 'waiting_approval'
-  | 'paused'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
-  | 'unknown'
-
-export interface TaskSummaryView {
-  id: string
-  objective: string
-  workspaceId: string
-  workspaceName: string
-  profileId: string
-  profileName: string
-  status: TaskStatus
-  source: TaskSource
-  createdAt: Timestamp
-  updatedAt: Timestamp
-  durationMs?: number
-  currentRole?: RoleId
-  /** 当前执行 Agent 的显示名 */
-  currentAgent?: string
-  pendingApprovalId?: string
-  parentTaskId?: string
-}
-
-export interface TaskDetailView extends TaskSummaryView {
-  nodes: TaskNodeView[]
-  artifacts: TaskArtifactView[]
-  events: HubEvent[]
-  worktreePath?: string
-  branch?: string
-  failureReason?: string
-  /** 本任务允许修改的 glob 列表。任务结束用 git diff --name-only 对照校验 */
-  allowedPaths?: string[]
-  /** 执行前必须阅读的共享记忆文件 */
-  readFirst?: string[]
-  /** 验收命令，例如 npm test / pytest */
-  acceptance?: string[]
-  requiresApproval?: DangerousAction[]
-  result?: AgentResult
-  lastEventSeq?: number
 }
 
 export interface TaskQuery {
@@ -1411,6 +1541,9 @@ export const BUILTIN_ROLES = [
   { id: 'tester', displayName: '测试', description: '测试设计、执行、证据收集和回归验证' },
   { id: 'deployer', displayName: '发布', description: '构建、发布、部署、回滚和运行维护' },
   { id: 'integrator', displayName: '合并', description: '跨分支检查和最终合并；默认只允许一个 integrator 执行最终合并' },
+  { id: 'analyst', displayName: '代码分析', description: '只读梳理代码与调用链' },
+  { id: 'planner', displayName: '需求规划', description: '只读分析需求并输出方案，不修改业务文件' },
+  { id: 'developer', displayName: '项目开发', description: '在授权项目的隔离工作树实施并验证' },
 ] as const
 
 export const DANGEROUS_ACTIONS = [

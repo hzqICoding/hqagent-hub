@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PROTOCOL_VERSION = "0.2.2"
+PROTOCOL_VERSION = "0.3.0"
 
 
 class _Base(BaseModel):
@@ -272,6 +272,9 @@ class BuiltinRoleId(StrEnum):
     TESTER = "tester"
     DEPLOYER = "deployer"
     INTEGRATOR = "integrator"
+    ANALYST = "analyst"
+    PLANNER = "planner"
+    DEVELOPER = "developer"
 
 RoleId = str
 
@@ -388,6 +391,10 @@ class AgentTaskSpec(_Base):
     resume_session_id: str | None = Field(default=None, alias="resumeSessionId")
     handoff_documents: list[str] | None = Field(default=None, alias="handoffDocuments")
     timeout_seconds: int | None = Field(default=None, alias="timeoutSeconds")
+    read_only: bool | None = Field(default=None, alias="readOnly")
+    model_id_: str | None = Field(default=None, alias="modelId")
+    reasoning_effort: str | None = Field(default=None, alias="reasoningEffort")
+    role_instructions: str | None = Field(default=None, alias="roleInstructions")
 
 
 class AgentToolCallPayload(_Base):
@@ -673,6 +680,24 @@ class ConnectionSettings(_Base):
     device_name: str = Field(alias="deviceName")
 
 
+class LocalSceneId(StrEnum):
+    ANALYZE = "analyze"
+    PLAN = "plan"
+    DEVELOP = "develop"
+
+
+class CreateLocalConversationInput(_Base):
+    title: str = Field(alias="title")
+    workspace_id: str = Field(alias="workspaceId")
+    scene_id: LocalSceneId = Field(alias="sceneId")
+
+
+class RoleExecutionOptions(_Base):
+    model_id_: str | None = Field(default=None, alias="modelId")
+    reasoning_effort: str | None = Field(default=None, alias="reasoningEffort")
+    instructions: str | None = Field(default=None, alias="instructions")
+
+
 class TaskSource(StrEnum):
     DESKTOP = "desktop"
     PWA = "pwa"
@@ -691,6 +716,9 @@ class CreateTaskInput(_Base):
     read_first: list[str] | None = Field(default=None, alias="readFirst")
     acceptance: list[str] | None = Field(default=None, alias="acceptance")
     requires_approval: list[DangerousAction] | None = Field(default=None, alias="requiresApproval")
+    workflow_roles: list[str] | None = Field(default=None, alias="workflowRoles")
+    role_executions: dict[str, RoleExecutionOptions] | None = Field(default=None, alias="roleExecutions")
+    resume_sessions: dict[str, str] | None = Field(default=None, alias="resumeSessions")
 
 
 class DrainStep(StrEnum):
@@ -796,23 +824,92 @@ class InstallStrategy(StrEnum):
     LINUX_DEB = "linux-deb"
 
 
-class ResolveSource(StrEnum):
-    TASK_OVERRIDE = "task_override"
-    WORKSPACE_PROFILE = "workspace_profile"
-    GLOBAL_PROFILE = "global_profile"
-    CAPABILITY_MATCH = "capability_match"
-    FALLBACK = "fallback"
-    MANUAL = "manual"
+class LocalAgentModel(_Base):
+    id: str = Field(alias="id")
+    name: str = Field(alias="name")
+    efforts: list[str] = Field(alias="efforts")
+    is_default: bool = Field(alias="isDefault")
 
 
-class NodeResolvedPayload(_Base):
-    role_id: RoleId = Field(alias="roleId")
-    resolved_agent_id: str = Field(alias="resolvedAgentId")
-    resolved_agent_name: str | None = Field(default=None, alias="resolvedAgentName")
-    resolve_source: ResolveSource = Field(alias="resolveSource")
-    is_fallback: bool = Field(alias="isFallback")
-    fallback_reason: str | None = Field(default=None, alias="fallbackReason")
-    missing_capabilities: list[CapabilityId] | None = Field(default=None, alias="missingCapabilities")
+class LocalAgentModelsView(_Base):
+    agent_instance_id: str = Field(alias="agentInstanceId")
+    models: list[LocalAgentModel] = Field(alias="models")
+    verified: bool = Field(alias="verified")
+    reason: str | None = Field(default=None, alias="reason")
+
+
+class LocalAuthInput(_Base):
+    code: str = Field(alias="code")
+
+
+class LocalAuthView(_Base):
+    authenticated: bool = Field(alias="authenticated")
+    protocol_version: str = Field(alias="protocolVersion")
+
+
+class LocalConversationView(_Base):
+    id: str = Field(alias="id")
+    title: str = Field(alias="title")
+    workspace_id: str = Field(alias="workspaceId")
+    scene_id: LocalSceneId = Field(alias="sceneId")
+    created_at: Timestamp = Field(alias="createdAt")
+    updated_at: Timestamp = Field(alias="updatedAt")
+    active_run_id: str | None = Field(default=None, alias="activeRunId")
+    last_run_id: str | None = Field(default=None, alias="lastRunId")
+
+
+class LocalEventPage(_Base):
+    events: list[HubEvent] = Field(alias="events")
+    next_seq: int = Field(alias="nextSeq")
+    has_more: bool = Field(alias="hasMore")
+
+
+class LocalMessageReceipt(_Base):
+    command_id: str = Field(alias="commandId")
+    conversation_id: str = Field(alias="conversationId")
+    message_id: str = Field(alias="messageId")
+    run_id: str = Field(alias="runId")
+    status: Literal["queued", "accepted"] = Field(alias="status")
+    duplicate: bool = Field(alias="duplicate")
+
+
+class LocalMessageView(_Base):
+    id: str = Field(alias="id")
+    conversation_id: str = Field(alias="conversationId")
+    sequence: int = Field(alias="sequence")
+    role: Literal["user", "assistant", "system"] = Field(alias="role")
+    text: str = Field(alias="text")
+    run_id: str | None = Field(default=None, alias="runId")
+    created_at: Timestamp = Field(alias="createdAt")
+
+
+class LocalRoleConfig(_Base):
+    role_id: str = Field(alias="roleId")
+    agent_instance_id: str = Field(alias="agentInstanceId")
+    instructions: str = Field(alias="instructions")
+    model_id_: str | None = Field(default=None, alias="modelId")
+    reasoning_effort: str | None = Field(default=None, alias="reasoningEffort")
+    enabled: bool = Field(alias="enabled")
+
+
+class LocalSceneView(_Base):
+    id: LocalSceneId = Field(alias="id")
+    name: str = Field(alias="name")
+    description: str = Field(alias="description")
+    read_only: bool = Field(alias="readOnly")
+    version: int = Field(alias="version")
+    roles: list[LocalRoleConfig] = Field(alias="roles")
+    updated_at: Timestamp = Field(alias="updatedAt")
+
+
+class TaskArtifactView(_Base):
+    id: str = Field(alias="id")
+    task_id: str = Field(alias="taskId")
+    title: str = Field(alias="title")
+    path: str = Field(alias="path")
+    type: Literal["file", "diff", "report", "log"] = Field(alias="type")
+    size_bytes: int = Field(alias="sizeBytes")
+    created_at: Timestamp = Field(alias="createdAt")
 
 
 class NodeStatus(StrEnum):
@@ -824,6 +921,105 @@ class NodeStatus(StrEnum):
     FAILED = "failed"
     SKIPPED = "skipped"
     CANCELLED = "cancelled"
+
+
+class ResolveSource(StrEnum):
+    TASK_OVERRIDE = "task_override"
+    WORKSPACE_PROFILE = "workspace_profile"
+    GLOBAL_PROFILE = "global_profile"
+    CAPABILITY_MATCH = "capability_match"
+    FALLBACK = "fallback"
+    MANUAL = "manual"
+
+
+class TaskNodeView(_Base):
+    id: str = Field(alias="id")
+    task_id: str = Field(alias="taskId")
+    role_id: RoleId = Field(alias="roleId")
+    resolved_agent_id: str = Field(alias="resolvedAgentId")
+    resolved_agent_name: str = Field(alias="resolvedAgentName")
+    resolve_source: ResolveSource = Field(alias="resolveSource")
+    status: NodeStatus = Field(alias="status")
+    started_at: Timestamp | None = Field(default=None, alias="startedAt")
+    completed_at: Timestamp | None = Field(default=None, alias="completedAt")
+    output_summary: str | None = Field(default=None, alias="outputSummary")
+    error: str | None = Field(default=None, alias="error")
+    is_fallback: bool | None = Field(default=None, alias="isFallback")
+    fallback_reason: str | None = Field(default=None, alias="fallbackReason")
+    session_id: str | None = Field(default=None, alias="sessionId")
+    external_session_id: str | None = Field(default=None, alias="externalSessionId")
+    worktree_path: str | None = Field(default=None, alias="worktreePath")
+    branch: str | None = Field(default=None, alias="branch")
+    changed_files: list[str] | None = Field(default=None, alias="changedFiles")
+    violation_paths: list[str] | None = Field(default=None, alias="violationPaths")
+
+
+class TaskStatus(StrEnum):
+    DRAFT = "draft"
+    QUEUED = "queued"
+    RUNNING = "running"
+    WAITING_APPROVAL = "waiting_approval"
+    PAUSED = "paused"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
+
+
+class TaskSummaryView(_Base):
+    id: str = Field(alias="id")
+    objective: str = Field(alias="objective")
+    workspace_id: str = Field(alias="workspaceId")
+    workspace_name: str = Field(alias="workspaceName")
+    profile_id: str = Field(alias="profileId")
+    profile_name: str = Field(alias="profileName")
+    status: TaskStatus = Field(alias="status")
+    source: TaskSource = Field(alias="source")
+    created_at: Timestamp = Field(alias="createdAt")
+    updated_at: Timestamp = Field(alias="updatedAt")
+    duration_ms: int | None = Field(default=None, alias="durationMs")
+    current_role: RoleId | None = Field(default=None, alias="currentRole")
+    current_agent: str | None = Field(default=None, alias="currentAgent")
+    pending_approval_id: str | None = Field(default=None, alias="pendingApprovalId")
+    parent_task_id: str | None = Field(default=None, alias="parentTaskId")
+
+
+class TaskDetailView(TaskSummaryView):
+    nodes: list[TaskNodeView] = Field(alias="nodes")
+    artifacts: list[TaskArtifactView] = Field(alias="artifacts")
+    events: list[HubEvent] = Field(alias="events")
+    worktree_path: str | None = Field(default=None, alias="worktreePath")
+    branch: str | None = Field(default=None, alias="branch")
+    failure_reason: str | None = Field(default=None, alias="failureReason")
+    allowed_paths: list[str] | None = Field(default=None, alias="allowedPaths")
+    read_first: list[str] | None = Field(default=None, alias="readFirst")
+    acceptance: list[str] | None = Field(default=None, alias="acceptance")
+    requires_approval: list[DangerousAction] | None = Field(default=None, alias="requiresApproval")
+    result: AgentResult | None = Field(default=None, alias="result")
+    last_event_seq: int | None = Field(default=None, alias="lastEventSeq")
+
+
+class LocalRunView(_Base):
+    id: str = Field(alias="id")
+    conversation_id: str = Field(alias="conversationId")
+    message_id: str = Field(alias="messageId")
+    task_id: str = Field(alias="taskId")
+    scene_snapshot: LocalSceneView = Field(alias="sceneSnapshot")
+    status: TaskStatus = Field(alias="status")
+    created_at: Timestamp = Field(alias="createdAt")
+    updated_at: Timestamp = Field(alias="updatedAt")
+    error: str | None = Field(default=None, alias="error")
+    task: TaskDetailView | None = Field(default=None, alias="task")
+
+
+class NodeResolvedPayload(_Base):
+    role_id: RoleId = Field(alias="roleId")
+    resolved_agent_id: str = Field(alias="resolvedAgentId")
+    resolved_agent_name: str | None = Field(default=None, alias="resolvedAgentName")
+    resolve_source: ResolveSource = Field(alias="resolveSource")
+    is_fallback: bool = Field(alias="isFallback")
+    fallback_reason: str | None = Field(default=None, alias="fallbackReason")
+    missing_capabilities: list[CapabilityId] | None = Field(default=None, alias="missingCapabilities")
 
 
 class PageResult(_Base):
@@ -905,6 +1101,7 @@ class ResumeRequest(_Base):
     external_session_id: str | None = Field(default=None, alias="externalSessionId")
     message: str = Field(alias="message")
     acceptance: list[str] | None = Field(default=None, alias="acceptance")
+    task_spec: AgentTaskSpec | None = Field(default=None, alias="taskSpec")
 
 
 class ResumeSessionInput(_Base):
@@ -941,6 +1138,11 @@ class RoleBindingView(_Base):
     permissions: RolePermissions | None = Field(default=None, alias="permissions")
 
 
+class SaveLocalSceneInput(_Base):
+    roles: list[LocalRoleConfig] = Field(alias="roles")
+    expected_version: int = Field(alias="expectedVersion")
+
+
 class TeamProfilePolicies(_Base):
     missing_agent_strategy: Literal["fallback_then_ask", "fallback_then_fail", "ask"] = Field(alias="missingAgentStrategy")
     allow_one_agent_multiple_roles: bool = Field(alias="allowOneAgentMultipleRoles")
@@ -963,6 +1165,12 @@ class SecuritySettings(_Base):
     require_approval_for_dangerous_actions: bool = Field(alias="requireApprovalForDangerousActions")
     allowed_paths_only: bool = Field(alias="allowedPathsOnly")
     approval_timeout_minutes: int | None = Field(default=None, alias="approvalTimeoutMinutes")
+
+
+class SendLocalMessageInput(_Base):
+    client_message_id: str = Field(alias="clientMessageId")
+    text: str = Field(alias="text")
+    session_mode: Literal["new", "continue"] = Field(alias="sessionMode")
 
 
 class SessionQuery(_Base):
@@ -1025,89 +1233,12 @@ class TaskActionInput(_Base):
     node_id: str | None = Field(default=None, alias="nodeId")
 
 
-class TaskArtifactView(_Base):
-    id: str = Field(alias="id")
-    task_id: str = Field(alias="taskId")
-    title: str = Field(alias="title")
-    path: str = Field(alias="path")
-    type: Literal["file", "diff", "report", "log"] = Field(alias="type")
-    size_bytes: int = Field(alias="sizeBytes")
-    created_at: Timestamp = Field(alias="createdAt")
-
-
 class TaskCreatedPayload(_Base):
     objective: str = Field(alias="objective")
     workspace_id: str = Field(alias="workspaceId")
     profile_id: str = Field(alias="profileId")
     source: TaskSource = Field(alias="source")
     parent_task_id: str | None = Field(default=None, alias="parentTaskId")
-
-
-class TaskNodeView(_Base):
-    id: str = Field(alias="id")
-    task_id: str = Field(alias="taskId")
-    role_id: RoleId = Field(alias="roleId")
-    resolved_agent_id: str = Field(alias="resolvedAgentId")
-    resolved_agent_name: str = Field(alias="resolvedAgentName")
-    resolve_source: ResolveSource = Field(alias="resolveSource")
-    status: NodeStatus = Field(alias="status")
-    started_at: Timestamp | None = Field(default=None, alias="startedAt")
-    completed_at: Timestamp | None = Field(default=None, alias="completedAt")
-    output_summary: str | None = Field(default=None, alias="outputSummary")
-    error: str | None = Field(default=None, alias="error")
-    is_fallback: bool | None = Field(default=None, alias="isFallback")
-    fallback_reason: str | None = Field(default=None, alias="fallbackReason")
-    session_id: str | None = Field(default=None, alias="sessionId")
-    external_session_id: str | None = Field(default=None, alias="externalSessionId")
-    worktree_path: str | None = Field(default=None, alias="worktreePath")
-    branch: str | None = Field(default=None, alias="branch")
-    changed_files: list[str] | None = Field(default=None, alias="changedFiles")
-    violation_paths: list[str] | None = Field(default=None, alias="violationPaths")
-
-
-class TaskStatus(StrEnum):
-    DRAFT = "draft"
-    QUEUED = "queued"
-    RUNNING = "running"
-    WAITING_APPROVAL = "waiting_approval"
-    PAUSED = "paused"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    UNKNOWN = "unknown"
-
-
-class TaskSummaryView(_Base):
-    id: str = Field(alias="id")
-    objective: str = Field(alias="objective")
-    workspace_id: str = Field(alias="workspaceId")
-    workspace_name: str = Field(alias="workspaceName")
-    profile_id: str = Field(alias="profileId")
-    profile_name: str = Field(alias="profileName")
-    status: TaskStatus = Field(alias="status")
-    source: TaskSource = Field(alias="source")
-    created_at: Timestamp = Field(alias="createdAt")
-    updated_at: Timestamp = Field(alias="updatedAt")
-    duration_ms: int | None = Field(default=None, alias="durationMs")
-    current_role: RoleId | None = Field(default=None, alias="currentRole")
-    current_agent: str | None = Field(default=None, alias="currentAgent")
-    pending_approval_id: str | None = Field(default=None, alias="pendingApprovalId")
-    parent_task_id: str | None = Field(default=None, alias="parentTaskId")
-
-
-class TaskDetailView(TaskSummaryView):
-    nodes: list[TaskNodeView] = Field(alias="nodes")
-    artifacts: list[TaskArtifactView] = Field(alias="artifacts")
-    events: list[HubEvent] = Field(alias="events")
-    worktree_path: str | None = Field(default=None, alias="worktreePath")
-    branch: str | None = Field(default=None, alias="branch")
-    failure_reason: str | None = Field(default=None, alias="failureReason")
-    allowed_paths: list[str] | None = Field(default=None, alias="allowedPaths")
-    read_first: list[str] | None = Field(default=None, alias="readFirst")
-    acceptance: list[str] | None = Field(default=None, alias="acceptance")
-    requires_approval: list[DangerousAction] | None = Field(default=None, alias="requiresApproval")
-    result: AgentResult | None = Field(default=None, alias="result")
-    last_event_seq: int | None = Field(default=None, alias="lastEventSeq")
 
 
 class TaskQuery(_Base):

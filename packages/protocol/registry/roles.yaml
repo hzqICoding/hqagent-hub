@@ -150,3 +150,42 @@ roles:
       writablePaths:
         - "**"
       requiresApproval: [git_push, git_merge, delete]
+
+  - id: analyst
+    displayName: 代码分析
+    description: 只读梳理代码与调用链
+    requiredCapabilities: [structured_output]
+    preferredCapabilities: [session_resume, streaming_events]
+    permissions:
+      filesystem: read_only
+      shell: false
+      canApprove: false
+      canMerge: false
+      writablePaths: []
+      requiresApproval: []
+
+  - id: planner
+    displayName: 需求规划
+    description: 只读分析需求并输出方案，不修改业务文件
+    requiredCapabilities: [architecture, structured_output]
+    preferredCapabilities: [session_resume, streaming_events]
+    permissions:
+      filesystem: read_only
+      shell: false
+      canApprove: false
+      canMerge: false
+      writablePaths: []
+      requiresApproval: []
+
+  - id: developer
+    displayName: 项目开发
+    description: 在授权项目的隔离工作树实施并验证
+    requiredCapabilities: [coding, file_write, tool_approval]
+    preferredCapabilities: [session_resume, streaming_events]
+    permissions:
+      filesystem: read_write
+      shell: true
+      canApprove: false
+      canMerge: false
+      writablePaths: ["**"]
+      requiresApproval: [shell, network, delete, git_push, git_merge, deploy, db_migrate]
