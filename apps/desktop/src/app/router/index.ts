@@ -1,7 +1,14 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AppLayout from '../layouts/AppLayout.vue'
+import { useLocalAuthStore } from '@/stores/local-auth.store'
 
 const routes: RouteRecordRaw[] = [
+  {
+    path: '/connect',
+    name: 'connect',
+    component: () => import('@/pages/auth/ConnectPage.vue'),
+    meta: { title: '本地会话连接' },
+  },
   {
     path: '/onboarding',
     name: 'onboarding',
@@ -14,7 +21,19 @@ const routes: RouteRecordRaw[] = [
     children: [
       {
         path: '',
-        redirect: '/overview',
+        redirect: '/chat',
+      },
+      {
+        path: 'chat',
+        name: 'chat',
+        component: () => import('@/pages/chat/ChatPage.vue'),
+        meta: { title: '本地角色对话工作台' },
+      },
+      {
+        path: 'scenes',
+        name: 'scenes',
+        component: () => import('@/pages/scenes/ScenesPage.vue'),
+        meta: { title: '场景与角色配置' },
       },
       {
         path: 'overview',
@@ -99,4 +118,31 @@ if (import.meta.env.DEV) {
 export const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+// Navigation Guard: In real mode, enforce local session check
+router.beforeEach(async (to, _from, next) => {
+  if (
+    to.path === '/connect' ||
+    to.path.startsWith('/onboarding') ||
+    to.path.startsWith('/dev')
+  ) {
+    next()
+    return
+  }
+
+  const authStore = useLocalAuthStore()
+  if (authStore.isMockMode) {
+    next()
+    return
+  }
+
+  if (!authStore.authenticated) {
+    const isAuthed = await authStore.checkAuthStatus()
+    if (!isAuthed) {
+      next({ path: '/connect', query: { redirect: to.fullPath } })
+      return
+    }
+  }
+  next()
 })

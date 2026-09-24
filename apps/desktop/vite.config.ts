@@ -15,6 +15,21 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       strictPort: false,
+      proxy: {
+        '/api': {
+          target: process.env.VITE_WORKER_BASE_URL || 'http://127.0.0.1:49210',
+          changeOrigin: true,
+        },
+        '/ws': {
+          target:
+            process.env.VITE_WORKER_WS_URL ||
+            (process.env.VITE_WORKER_BASE_URL
+              ? process.env.VITE_WORKER_BASE_URL.replace(/^http/, 'ws')
+              : 'ws://127.0.0.1:49210'),
+          ws: true,
+          changeOrigin: true,
+        },
+      },
     },
     build: {
       target: 'esnext',

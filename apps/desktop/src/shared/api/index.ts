@@ -14,3 +14,15 @@ export function getUiGateway(): UiGateway {
   }
   return mockGateway
 }
+
+// N0 Local Chat Gateways & Provider
+export type { LocalChatGateway } from './local-chat-gateway.interface'
+export { RealLocalChatGateway, realLocalChatGateway } from './local-chat-gateway'
+export { MockLocalChatGateway, mockLocalChatGateway } from './mock-local-chat-gateway'
+export {
+  getLocalChatGateway,
+  getLocalChatGatewayMode,
+  setLocalChatGatewayMode,
+  type LocalChatGatewayMode,
+} from './local-chat-provider'
+

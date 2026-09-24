@@ -5,3 +5,7 @@ export * from './team.store'
 export * from './task.store'
 export * from './session.store'
 export * from './approval.store'
+export * from './local-auth.store'
+export * from './chat.store'
+export * from './scenes.store'
+
