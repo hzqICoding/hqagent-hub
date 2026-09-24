@@ -40,6 +40,34 @@ export class RealLocalChatGateway implements LocalChatGateway {
   private async fetchApi<T>(
     endpoint: string,
     options: RequestInit = {},
+    idempotencyKey?: string,
+    timeoutMs = 15000
+  ): Promise<T> {
+    const controller = new AbortController()
+    const cancel = () => controller.abort()
+    options.signal?.addEventListener('abort', cancel, { once: true })
+    if (options.signal?.aborted) cancel()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(new HubApiError('本地服务响应超时，请稍后重试；状态刷新会自动重连', 'HUB_NOT_READY', 503, undefined, true))
+        controller.abort()
+      }, timeoutMs)
+    })
+    try {
+      return await Promise.race([
+        this.fetchEnvelope<T>(endpoint, { ...options, signal: controller.signal }, idempotencyKey),
+        deadline,
+      ])
+    } finally {
+      clearTimeout(timer)
+      options.signal?.removeEventListener('abort', cancel)
+    }
+  }
+
+  private async fetchEnvelope<T>(
+    endpoint: string,
+    options: RequestInit = {},
     idempotencyKey?: string
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`
@@ -166,7 +194,7 @@ export class RealLocalChatGateway implements LocalChatGateway {
     return this.fetchApi<PickLocalDirectoryView>('/api/v2/workspaces/pick', {
       method: 'POST',
       body: JSON.stringify(input),
-    })
+    }, undefined, 125000)
   }
 
   // Scenes
