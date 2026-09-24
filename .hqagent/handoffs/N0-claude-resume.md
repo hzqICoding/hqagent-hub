@@ -25,17 +25,22 @@ stderrPresent=false
   `resumable=true`，让 Hub 生命周期落到 `idle`。
 - `resume()` 必须收到明确 `externalSessionId` 与持久化 `AgentTaskSpec`；Hub 重启后可据此重建
   Adapter 内存状态，不猜测用户历史。
+- `externalSessionId` 必须是小写连字符规范 UUID；`latest`、`continue`、搜索词和非规范 UUID
+  会在任何进程启动前被拒绝。
 - 恢复规格不得改变工作区、角色、路径白名单、只读标志、模型、effort 或角色指令。
+- 续轮使用持久规格复制并替换为本轮 objective，再经统一 `build_task_prompt` 生成中文根目录、
+  角色职责和 acceptance 提示；不会把旧 objective 当成本轮任务。
 - `system.init.session_id` 与 `result.session_id` 必须和目标 UUID 一致。
+- 执行失败使用 `AGENT_EXITED/resumable=false`，避免失败会话被 SessionLifecycle 留在 idle。
 
 ## 定向测试
 
 ```text
 E:\OtherPro\HQAgent-Hub-worktrees\integration\.venv\Scripts\python.exe \
   -m pytest tests\test_claude_resume.py adapters\tests -q -p no:cacheprovider \
-  --basetemp E:\tmp\pytest-claude-resume-gated2
+  --basetemp E:\tmp\pytest-claude-resume-followup
 
-20 passed, 2 warnings in 0.11s
+22 passed, 2 warnings in 0.10s
 ```
 
 两条 warning 是既有 FastAPI/Starlette TestClient 弃用提示。

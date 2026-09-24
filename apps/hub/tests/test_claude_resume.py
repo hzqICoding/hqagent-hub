@@ -83,6 +83,7 @@ def test_resume_rebuilds_missing_registry_state_from_persisted_spec(tmp_path: Pa
                     "sessionId": spec.session_id,
                     "externalSessionId": external_id,
                     "message": "continue exactly this session",
+                    "acceptance": ["new acceptance"],
                     "taskSpec": spec.model_dump(mode="json", by_alias=True),
                 }
             )
@@ -91,8 +92,34 @@ def test_resume_rebuilds_missing_registry_state_from_persisted_spec(tmp_path: Pa
         state = adapter.registry.get(spec.session_id)
         assert state is not None
         assert state.external_session_id == external_id
-        assert state.spec == spec
-        assert adapter.launches == [(external_id, True, "continue exactly this session")]
+        assert state.spec.objective == "continue exactly this session"
+        assert state.spec.acceptance == ["new acceptance"]
+        assert adapter.launches[0][0:2] == (external_id, True)
+        prompt = adapter.launches[0][2]
+        assert "目标：continue exactly this session" in prompt
+        assert "- new acceptance" in prompt
+        assert "目标：analyze" not in prompt
+
+    asyncio.run(scenario())
+
+
+def test_resume_rejects_non_uuid_before_process_launch(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        spec = task_spec(tmp_path)
+        for value in ("latest", "continue", "search words", str(uuid.uuid4()).upper()):
+            adapter = ResumeTestClaude()
+            result = await adapter.resume(
+                ResumeRequest.model_validate(
+                    {
+                        "sessionId": spec.session_id,
+                        "externalSessionId": value,
+                        "message": "x",
+                        "taskSpec": spec.model_dump(mode="json", by_alias=True),
+                    }
+                )
+            )
+            assert isinstance(result, AdapterFailure)
+            assert adapter.launches == []
 
     asyncio.run(scenario())
 
@@ -185,5 +212,53 @@ def test_successful_claude_stream_end_is_resumable(tmp_path: Path) -> None:
         assert state.stream_end is not None
         assert state.stream_end.status is AdapterStreamStatus.ENDED
         assert state.stream_end.resumable is True
+
+    asyncio.run(scenario())
+
+
+def test_failed_claude_stream_end_invalidates_session(tmp_path: Path) -> None:
+    class Reader:
+        def __init__(self, lines: list[dict]) -> None:
+            self.lines = [(json.dumps(item) + "\n").encode() for item in lines]
+
+        async def readline(self) -> bytes:
+            return self.lines.pop(0) if self.lines else b""
+
+    class Process:
+        returncode = 1
+
+        def __init__(self, lines: list[dict]) -> None:
+            self.stdout = Reader(lines)
+
+        async def wait(self) -> int:
+            return 1
+
+    async def scenario() -> None:
+        adapter = ClaudeAdapter()
+        spec = task_spec(tmp_path)
+        external_id = str(uuid.uuid4())
+        state = AdapterSessionState(
+            session_id=spec.session_id,
+            external_session_id=external_id,
+            spec=spec,
+            guard=PathGuard(str(tmp_path), []),
+        )
+        state.process = Process(
+            [
+                {"type": "system", "subtype": "init", "session_id": external_id},
+                {
+                    "type": "result",
+                    "subtype": "error",
+                    "is_error": True,
+                    "session_id": external_id,
+                    "result": "failed",
+                },
+            ]
+        )
+        await adapter._read_stream(state)
+        assert state.failure is not None
+        assert state.stream_end is not None
+        assert state.stream_end.status is AdapterStreamStatus.AGENT_EXITED
+        assert state.stream_end.resumable is False
 
     asyncio.run(scenario())
