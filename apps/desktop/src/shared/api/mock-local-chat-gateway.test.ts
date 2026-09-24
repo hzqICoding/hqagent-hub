@@ -76,6 +76,47 @@ describe('MockLocalChatGateway', () => {
     expect(updated.version).toBe(developScene.version + 1)
   })
 
+  it('persists review mode while keeping existing run snapshots immutable', async () => {
+    const runsBefore = await gateway.listConversationRuns('conv_develop_ui')
+    expect(runsBefore[0].sceneSnapshot.reviewMode).toBe('original_planner')
+    const scenes = await gateway.listLocalScenes()
+    const develop = scenes.find(scene => scene.id === 'develop')!
+
+    const updated = await gateway.saveLocalScene('develop', {
+      roles: develop.roles,
+      expectedVersion: develop.version,
+      reviewMode: 'independent',
+    })
+    expect(updated.reviewMode).toBe('independent')
+
+    const runsAfter = await gateway.listConversationRuns('conv_develop_ui')
+    expect(runsAfter[0].sceneSnapshot.reviewMode).toBe('original_planner')
+  })
+
+  it('maps original planner review to an acceptance node sharing the planner session', async () => {
+    const conv = await gateway.createLocalConversation({
+      title: '原规划者验收测试',
+      workspaceId: 'ws_local_hub',
+      sceneId: 'develop',
+    })
+    const receipt = await gateway.sendLocalMessage(conv.id, {
+      clientMessageId: 'client_original_planner_review',
+      text: '实现并交回原规划者验收',
+      sessionMode: 'new',
+    })
+    const run = await gateway.getLocalRun(receipt.runId)
+    const plannerNode = run.task!.nodes.find(
+      node => node.roleId === 'planner' && node.phase === 'execution'
+    )!
+    const acceptanceNode = run.task!.nodes.find(node => node.phase === 'acceptance')!
+
+    expect(acceptanceNode.roleId).toBe('planner')
+    expect(acceptanceNode.sessionId).toBe(plannerNode.sessionId)
+    expect(acceptanceNode.externalSessionId).toBe(plannerNode.externalSessionId)
+    expect(acceptanceNode.reviewEvidenceId).toBeDefined()
+    expect(acceptanceNode.reviewVerdict).toBeUndefined()
+  })
+
   it('creates conversation, sends message, returns duplicate receipt on repeat clientMessageId', async () => {
     const conv = await gateway.createLocalConversation({
       title: '测试新建会话',

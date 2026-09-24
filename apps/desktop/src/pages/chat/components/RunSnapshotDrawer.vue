@@ -93,6 +93,24 @@ function getNodeStatusBadge(status: string) {
       return { label: status, class: 'bg-panel text-text-muted border-border' }
   }
 }
+
+function getNodeTitle(node: NonNullable<typeof task.value>['nodes'][number]) {
+  if (node.phase === 'acceptance' && node.roleId === 'planner') return '原规划者验收'
+  return node.roleId
+}
+
+function getReviewVerdictMeta(verdict: string) {
+  switch (verdict) {
+    case 'passed':
+      return { label: '验收通过', class: 'bg-success/10 text-success border-success/30' }
+    case 'changes_requested':
+      return { label: '验收不通过：需要修改', class: 'bg-danger/10 text-danger border-danger/30' }
+    case 'insufficient_evidence':
+      return { label: '证据不足', class: 'bg-warning/10 text-warning border-warning/30' }
+    default:
+      return { label: verdict, class: 'bg-panel text-text-muted border-border' }
+  }
+}
 </script>
 
 <template>
@@ -232,6 +250,12 @@ function getNodeStatusBadge(status: string) {
           <p class="text-[11px] text-text-muted leading-relaxed break-words">
             {{ scene?.description }}
           </p>
+          <div class="flex items-center justify-between gap-2 text-[11px]">
+            <span class="text-text-muted">验收方式</span>
+            <HqBadge size="sm" :variant="(scene?.reviewMode ?? 'independent') === 'original_planner' ? 'info' : 'neutral'">
+              {{ (scene?.reviewMode ?? 'independent') === 'original_planner' ? '原规划者验收' : '独立 Reviewer' }}
+            </HqBadge>
+          </div>
 
           <!-- Roles in Snapshot -->
           <div class="pt-2 border-t border-border space-y-1.5">
@@ -264,7 +288,7 @@ function getNodeStatusBadge(status: string) {
             class="p-2 rounded-[var(--radius-sm)] bg-bg-app border border-border space-y-1.5"
           >
             <div class="flex items-center justify-between gap-1">
-              <span class="font-medium text-text text-xs truncate">{{ node.roleId }}</span>
+              <span class="font-medium text-text text-xs truncate">{{ getNodeTitle(node) }}</span>
               <span
                 class="px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0"
                 :class="getNodeStatusBadge(node.status).class"
@@ -281,6 +305,37 @@ function getNodeStatusBadge(status: string) {
                 :fallback-reason="node.fallbackReason"
                 class="shrink-0"
               />
+            </div>
+
+            <div
+              v-if="node.sessionId || node.externalSessionId"
+              class="p-1.5 rounded bg-panel border border-border/80 text-[10px] font-mono text-text-muted space-y-1 break-all"
+            >
+              <div v-if="node.sessionId">Hub Session: {{ node.sessionId }}</div>
+              <div v-if="node.externalSessionId">原生 Session: {{ node.externalSessionId }}</div>
+            </div>
+
+            <div v-if="node.phase === 'acceptance'" class="space-y-1 text-[10px]">
+              <div v-if="node.reviewEvidenceId" class="font-mono text-text-muted break-all">
+                验收证据: {{ node.reviewEvidenceId }}
+              </div>
+              <div v-if="node.reviewSourceNodeId" class="font-mono text-text-muted break-all">
+                来源节点: {{ node.reviewSourceNodeId }}
+              </div>
+              <div
+                v-if="node.reviewVerdict"
+                class="px-2 py-1.5 rounded border font-medium"
+                :class="getReviewVerdictMeta(node.reviewVerdict).class"
+              >
+                {{ getReviewVerdictMeta(node.reviewVerdict).label }}
+              </div>
+              <div
+                v-else-if="node.status === 'failed' || node.error"
+                class="px-2 py-1.5 rounded border bg-danger/10 text-danger border-danger/30"
+              >
+                验收执行出错，未产生有效审核结论<span v-if="node.error">：{{ node.error }}</span>
+              </div>
+              <div v-else class="text-text-muted">尚未产生验收结论</div>
             </div>
 
             <div v-if="node.outputSummary" class="mt-1.5 p-2 rounded-lg bg-bg-app/60 border border-border/50 text-[11px] leading-relaxed break-words">
