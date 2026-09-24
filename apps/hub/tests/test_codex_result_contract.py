@@ -144,6 +144,85 @@ def test_final_answer_phase_wins_over_later_commentary(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_latest_invalid_unknown_phase_does_not_fall_back_to_earlier_done(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        adapter = CodexAdapter()
+        state = state_for(tmp_path)
+        earlier = json.dumps({"status": "done", "summary": "earlier valid result"})
+        private_marker = "latest invalid output"
+
+        await adapter._complete_turn(
+            state,
+            {
+                "turn": {
+                    "status": "completed",
+                    "items": [
+                        result_message(earlier, phase=None, item_id="earlier"),
+                        result_message(private_marker, phase=None, item_id="latest"),
+                    ],
+                }
+            },
+        )
+
+        assert state.result is None
+        assert state.failure is not None
+        assert private_marker not in (state.failure.raw or "")
+        diagnostic = json.loads(state.failure.raw or "{}")
+        assert diagnostic["candidateCount"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_latest_invalid_final_answer_does_not_fall_back_to_earlier_final(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        adapter = CodexAdapter()
+        state = state_for(tmp_path)
+
+        await adapter._complete_turn(
+            state,
+            {
+                "turn": {
+                    "status": "completed",
+                    "items": [
+                        result_message(REAL_FINAL_RESULT, phase="final_answer", item_id="earlier"),
+                        result_message("invalid latest final", phase="final_answer", item_id="latest"),
+                    ],
+                }
+            },
+        )
+
+        assert state.result is None
+        assert state.failure is not None
+        assert json.loads(state.failure.raw or "{}")["candidateCount"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_missing_turn_items_uses_latest_completed_message_from_current_turn(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        adapter = CodexAdapter()
+        state = state_for(tmp_path)
+        await adapter._handle_notification(
+            state,
+            {"method": "turn/started", "params": {"turn": {"id": "turn"}}},
+        )
+        await adapter._handle_notification(
+            state,
+            {
+                "method": "item/completed",
+                "params": {
+                    "item": result_message(REAL_FINAL_RESULT, item_id="completed"),
+                },
+            },
+        )
+        await adapter._complete_turn(state, {"turn": {"status": "completed", "items": []}})
+        assert state.failure is None
+        assert state.result is not None
+        assert len(state.result.changed_files or []) == 3
+
+    asyncio.run(scenario())
+
+
 def test_invalid_public_messages_remain_failed_without_raw_text(tmp_path: Path) -> None:
     async def scenario() -> None:
         adapter = CodexAdapter()

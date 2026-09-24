@@ -22,10 +22,11 @@ JSON；最后一条包含三个 changedFiles 和一个通过测试。该最后 J
 ## 修复
 
 - delta 只发进度事件，不再作为最终结果缓存。
-- turn 完成时优先从 `turn.items` 提取 agentMessage；存在 `final_answer` 时只解析 final，
-  否则按消息顺序从后向前选择第一个严格通过 AgentResult 校验的候选。
-- 若 turn 未携带 items，才使用已完成 vendor items；两者都没有时兼容旧
-  `last_agent_message`。
+- turn 完成时优先从 `turn.items` 提取 agentMessage；存在 `final_answer` 时只解析最后一个
+  final，否则只解析最后一个非空 agentMessage。最新候选无效时直接失败，不回退到更早的
+  `status=done` JSON。
+- 若 turn 未携带 items 或为空，仅使用当前 turn 缓存中最后一个 `item/completed`
+  agentMessage；`turn/started` 会清空缓存，禁止跨 turn 串线。
 - 任意文字不会被包装成 `status=done`。所有候选无效时仍返回 AdapterFailure。
 - 失败诊断只保存候选数量、phase、错误类型/字段位置，不保存候选原文。
 - `commandExecution` 完成事件将真实整数且非 bool 的 `exitCode` 映射到
@@ -42,9 +43,9 @@ cherry-pick 接入，没有手改协议。
 ```text
 E:\OtherPro\HQAgent-Hub-worktrees\integration\.venv\Scripts\python.exe \
   -m pytest tests\test_codex_result_contract.py adapters\tests -q \
-  -p no:cacheprovider --basetemp E:\tmp\pytest-codex-result-contract-final
+  -p no:cacheprovider --basetemp E:\tmp\pytest-codex-result-contract-strict
 
-21 passed, 2 warnings in 0.09s
+24 passed, 2 warnings in 0.10s
 ```
 
 两条 warning 是既有 FastAPI/Starlette TestClient 弃用提示。
