@@ -190,8 +190,10 @@ export const useChatStore = defineStore('chat', () => {
         const detail = await gateway.getLocalRun(targetRunId)
         if (generation !== viewGeneration || activeConversationId.value !== conversationId) return
         activeRun.value = detail
-        if (detail.status === 'failed' && detail.error && /会话|上下文/.test(detail.error)) {
+        if (sessionMode.value === 'continue' && detail.status === 'failed' && detail.error && /会话|上下文/.test(detail.error)) {
           resumptionError.value = detail.error
+        } else if (detail.status !== 'failed' || sessionMode.value === 'new') {
+          resumptionError.value = null
         }
       } else {
         activeRun.value = null
@@ -258,6 +260,9 @@ export const useChatStore = defineStore('chat', () => {
     if (!convId || !text.trim() || isSending.value) return
 
     const mode = modeOverride || sessionMode.value
+    if (mode === 'continue' && resumptionError.value) {
+      throw new HubApiError(resumptionError.value, 'SESSION_NOT_RESUMABLE', 409)
+    }
     const identity = `send:${convId}:${text.trim()}`
     const operation = pendingOperation(identity, { text: text.trim(), sessionMode: mode })
     const clientMessageId = operation.id
