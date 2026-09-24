@@ -159,7 +159,8 @@ class ClaudeAdapter(AgentAdapter):
                 }
             )
         try:
-            probe = await self.runner.run(executable_args(executable, "--version"), timeout=10)
+            probe = await self.runner.run(executable_args(executable, "--version"),
+                                          env=command_environment("claude"), timeout=10)
         except (OSError, TimeoutError) as exc:
             return failure(
                 AdapterFailureKind.TRANSPORT_ERROR,
@@ -196,7 +197,8 @@ class ClaudeAdapter(AgentAdapter):
         started = time.monotonic()
         try:
             probe = await self.runner.run(
-                executable_args(executable, "auth", "status", "--json"), timeout=10
+                executable_args(executable, "auth", "status", "--json"),
+                env=command_environment("claude"), timeout=10
             )
             raw = json.loads(probe.stdout)
         except (OSError, TimeoutError, json.JSONDecodeError) as exc:
