@@ -40,6 +40,6 @@ async function disconnect() {
       </span>
       <button type="button" class="text-xs text-primary hover:underline" @click="disconnect">退出连接</button>
     </header>
-    <main class="flex-1 min-h-0 overflow-auto"><router-view /></main>
+    <main class="flex-1 min-h-0 overflow-hidden flex flex-col"><router-view /></main>
   </div>
 </template>
