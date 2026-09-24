@@ -88,6 +88,8 @@ class _CodexConnection:
         self._next_id = 1
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._write_lock = asyncio.Lock()
+        self._reader_failure_lock = asyncio.Lock()
+        self._reader_failure_reported = False
         self.reader_task = asyncio.create_task(self._reader())
         self.stderr_task = asyncio.create_task(self._drain_stderr())
 
@@ -145,7 +147,7 @@ class _CodexConnection:
             returncode = await self.process.wait()
             await self.on_disconnect(False, f"exitCode={returncode}")
         except Exception as exc:
-            await self.on_disconnect(self.process.returncode is None, str(exc))
+            await self._report_reader_failure("stdio", exc)
         finally:
             error = BrokenPipeError("Codex App Server 已断开")
             for future in self._pending.values():
@@ -155,8 +157,21 @@ class _CodexConnection:
     async def _drain_stderr(self) -> None:
         if self.process.stderr is None:
             return
-        while await self.process.stderr.readline():
-            pass
+        try:
+            while await self.process.stderr.readline():
+                pass
+        except Exception as exc:
+            await self._report_reader_failure("stderr", exc)
+
+    async def _report_reader_failure(self, channel: str, exc: Exception) -> None:
+        async with self._reader_failure_lock:
+            if self._reader_failure_reported:
+                return
+            self._reader_failure_reported = True
+            detail = f"{channel} reader failed ({type(exc).__name__}): {str(exc)[:384]}"
+            await self.on_disconnect(False, detail)
+            if self.process.returncode is None:
+                await terminate_process_tree(self.process)
 
 
 class CodexAdapter(AgentAdapter):
@@ -1041,18 +1056,23 @@ class CodexAdapter(AgentAdapter):
                 )
             )
             return
+        reader_failure = "reader failed" in detail
         state.failure = failure(
-            AdapterFailureKind.TRANSPORT_ERROR if alive else AdapterFailureKind.AGENT_ERROR,
-            "Codex App Server transport 丢失" if alive else "Codex App Server 进程已退出",
-            retryable=alive,
+            AdapterFailureKind.TRANSPORT_ERROR if alive or reader_failure else AdapterFailureKind.AGENT_ERROR,
+            "Codex App Server stdio 读取失败，已清理专属进程树"
+            if reader_failure
+            else ("Codex App Server transport 丢失" if alive else "Codex App Server 进程已退出"),
+            retryable=alive and not reader_failure,
             raw=detail,
         )
         await state.finish(
             AdapterStreamEnd.model_validate(
                 {
-                    "status": AdapterStreamStatus.TRANSPORT_LOST if alive else AdapterStreamStatus.AGENT_EXITED,
+                    "status": AdapterStreamStatus.TRANSPORT_LOST
+                    if alive and not reader_failure
+                    else AdapterStreamStatus.AGENT_EXITED,
                     "endedAt": utc_timestamp(),
-                    "resumable": alive,
+                    "resumable": alive and not reader_failure,
                     "detail": detail[:512],
                 }
             )
