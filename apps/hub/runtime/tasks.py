@@ -562,6 +562,11 @@ class TaskService:
         role_options = (value.role_executions or {}).get(role_id)
         resume_session_id = (value.resume_sessions or {}).get(role_id)
         role_policy = self.runtime.permissions.role_policy(role_id)
+        continued_allowed_paths = (
+            tuple(execution_path["allowed_paths"])
+            if execution_path and "allowed_paths" in execution_path
+            else None
+        )
         requested_approvals = tuple(_text(item) for item in (value.requires_approval or ()))
         effective_approvals = tuple(
             dict.fromkeys([*role_policy.default_requires_approval, *requested_approvals])
@@ -574,7 +579,9 @@ class TaskService:
             role_id=role_id,
             objective=self._node_objective(task_id, value.objective),
             agents=tuple(candidates),
-            allowed_paths=tuple(value.allowed_paths) if value.allowed_paths else None,
+            allowed_paths=continued_allowed_paths
+            if continued_allowed_paths is not None
+            else (tuple(value.allowed_paths) if value.allowed_paths else None),
             read_first=tuple(value.read_first or ()),
             acceptance=tuple(value.acceptance or ()),
             requires_approval=effective_approvals,
@@ -641,11 +648,21 @@ class TaskService:
         role_id: str,
         workspace: dict[str, Any],
         state: dict[str, Any],
-    ) -> dict[str, str] | None:
+    ) -> dict[str, Any] | None:
         path = workspace.get("path")
         if not path:
             return None
         policy = self.runtime.permissions.role_policy(role_id)
+        continued = await self._continued_execution_path(
+            task_id,
+            node,
+            role_id,
+            workspace,
+            state,
+            read_only=policy.read_only,
+        )
+        if continued is not None:
+            return continued
         if policy.read_only:
             inherited = self._inherit_worktree(task_id)
             return inherited or {"path": str(path), "branch": "", "base_commit": ""}
@@ -672,6 +689,121 @@ class TaskService:
         }
         self.state.put(f"task_spec:{task_id}", state)
         return {"path": str(created), "branch": branch, "base_commit": base_commit}
+
+    async def _continued_execution_path(
+        self,
+        task_id: str,
+        node: TaskNodeView,
+        role_id: str,
+        workspace: dict[str, Any],
+        state: dict[str, Any],
+        *,
+        read_only: bool,
+    ) -> dict[str, Any] | None:
+        request = state.get("request") or {}
+        resume_session_id = (request.get("resumeSessions") or {}).get(role_id)
+        if not resume_session_id:
+            return None
+        sessions = getattr(getattr(self.runtime, "sessions", None), "repository", None)
+        if sessions is None or not hasattr(sessions, "get_spec"):
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "恢复会话缺少持久 Session/AgentTaskSpec 仓储",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            )
+        session = await sessions.get(resume_session_id)
+        original_spec = await sessions.get_spec(resume_session_id)
+        workspace_id = request.get("workspaceId")
+        if session is None or original_spec is None:
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "恢复会话或其持久执行规格不存在",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            )
+        if (
+            _text(session.status) != "idle"
+            or not session.is_valid
+            or not session.external_session_id
+        ):
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "恢复会话不是可用的 idle 原生会话",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            )
+        if (
+            session.workspace_id != workspace_id
+            or original_spec.workspace_id != workspace_id
+        ):
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "恢复会话与当前 workspace 不一致",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            )
+        if (
+            _text(session.role_id) != role_id
+            or _text(original_spec.role_id) != role_id
+            or original_spec.session_id != resume_session_id
+        ):
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "恢复会话与当前角色或 Hub Session 不一致",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            )
+        if bool(original_spec.read_only) != read_only:
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "恢复会话的只读权限与当前角色不一致",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            )
+        if not original_spec.worktree_path:
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "恢复会话缺少原执行路径",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            )
+        actual_path = Path(original_spec.worktree_path).resolve()
+        if not actual_path.is_dir():
+            current_root = Path(str(workspace["path"])).resolve()
+            if not read_only or actual_path != current_root:
+                raise HubError(
+                    "SESSION_NOT_RESUMABLE",
+                    "恢复会话的原执行路径已不存在",
+                    detail={"sessionId": resume_session_id, "roleId": role_id},
+                )
+        result: dict[str, Any] = {
+            "path": str(actual_path),
+            "branch": original_spec.branch or "",
+            "base_commit": original_spec.base_commit or "",
+            "allowed_paths": list(original_spec.allowed_paths),
+        }
+        if read_only:
+            return result
+        if self.worktrees is None:
+            raise HubError("FEATURE_UNAVAILABLE", "写任务需要 WorktreeManager")
+        try:
+            actual_path.relative_to(self.worktrees.worktree_root.resolve())
+        except ValueError as exc:
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "写会话的原执行路径不在受控 worktree 根目录",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            ) from exc
+        if not original_spec.branch or not original_spec.base_commit:
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "写会话缺少原 branch/baseCommit，不能安全验证累计改动",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            )
+        repository = Path(str(workspace["path"])).resolve()
+        state.setdefault("worktrees", {})[node.id] = {
+            "repositoryPath": str(repository),
+            "worktreePath": str(actual_path),
+            "branch": original_spec.branch,
+            "baseCommit": original_spec.base_commit,
+            "continuedFromSessionId": resume_session_id,
+        }
+        self.state.put(f"task_spec:{task_id}", state)
+        return result
 
     def _start_pump(self, task_id: str, node_id: str, outcome: Any) -> None:
         self._outcomes[node_id] = outcome
