@@ -807,7 +807,6 @@ class CodexAdapter(AgentAdapter):
             return
         if method == "item/agentMessage/delta":
             delta = str(params.get("delta", ""))
-            state.last_agent_message = (state.last_agent_message or "") + delta
             if delta:
                 await state.emit(
                     AdapterEvent.create(
@@ -997,14 +996,23 @@ class CodexAdapter(AgentAdapter):
                 retryable=False,
             )
         elif status == "completed":
-            try:
-                state.result = parse_agent_result(state.last_agent_message or "")
-            except (ValueError, json.JSONDecodeError, ValidationError) as exc:
+            candidates = self._agent_result_candidates(state, turn)
+            validation_errors: list[dict[str, Any]] = []
+            for candidate in candidates:
+                try:
+                    state.result = parse_agent_result(candidate["text"])
+                    break
+                except (ValueError, json.JSONDecodeError, ValidationError) as exc:
+                    validation_errors.append(self._sanitized_result_error(exc, candidate["phase"]))
+            if state.result is None:
                 state.failure = failure(
                     AdapterFailureKind.AGENT_ERROR,
                     "Codex 返回值不符合 AgentResult",
                     retryable=False,
-                    raw=exc,
+                    raw={
+                        "candidateCount": len(candidates),
+                        "validationErrors": validation_errors,
+                    },
                 )
         elif status == "interrupted":
             state.failure = failure(
@@ -1045,6 +1053,62 @@ class CodexAdapter(AgentAdapter):
         state.expected_termination = True
         if state.connection is not None:
             await state.connection.force_close()
+
+    @staticmethod
+    def _agent_result_candidates(
+        state: AdapterSessionState,
+        turn: dict[str, Any],
+    ) -> list[dict[str, str | None]]:
+        turn_items = turn.get("items")
+        items = (
+            [item for item in turn_items if isinstance(item, dict)]
+            if isinstance(turn_items, list)
+            else list(state.vendor_items.values())
+        )
+        messages = [
+            {
+                "text": str(item.get("text") or item.get("message") or ""),
+                "phase": str(item.get("phase")) if item.get("phase") is not None else None,
+            }
+            for item in items
+            if item.get("type") == "agentMessage"
+            and str(item.get("text") or item.get("message") or "").strip()
+        ]
+        final_messages = [item for item in messages if item["phase"] == "final_answer"]
+        selected = final_messages or messages
+        candidates = list(reversed(selected))
+        fallback = (state.last_agent_message or "").strip()
+        if not candidates and fallback:
+            candidates.append({"text": fallback, "phase": None})
+        return candidates
+
+    @staticmethod
+    def _sanitized_result_error(
+        error: ValueError | json.JSONDecodeError | ValidationError,
+        phase: str | None,
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "phase": phase,
+            "errorType": type(error).__name__,
+        }
+        if isinstance(error, ValidationError):
+            result["issues"] = [
+                {
+                    "location": ".".join(str(part) for part in issue.get("loc", ())),
+                    "type": str(issue.get("type") or "validation_error"),
+                    "message": str(issue.get("msg") or "")[:160],
+                }
+                for issue in error.errors(include_url=False, include_context=False, include_input=False)[:8]
+            ]
+        elif isinstance(error, json.JSONDecodeError):
+            result["issues"] = [
+                {"location": f"char:{error.pos}", "type": "json_invalid", "message": "invalid JSON"}
+            ]
+        else:
+            result["issues"] = [
+                {"location": "", "type": "value_error", "message": "unsupported result value"}
+            ]
+        return result
 
     async def _handle_disconnect(
         self, state: AdapterSessionState, alive: bool, detail: str
