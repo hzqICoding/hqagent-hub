@@ -63,3 +63,18 @@ codex 有自己的默认署名行为。
 - 本轮不修改 `packages/protocol` 或应用源码，不重跑上一轮业务测试；验证文档链接、JSON 样例、关键字段和设计一致性。
 - 复核回执及实际文档校验输出：`.hqagent/reviews/2026-09-24-vnext-design-check.md`。
 - 状态：设计与双路一致性复核已完成，已补齐请求/实际模型区分、历史操作映射、插件传输分支、命令终态、备份世代游标及审批消费状态；跨客户端恢复仍未验证。
+
+## 2026-09-24 N0 前后端独立实施
+
+用户明确让外部Agent负责前端，本会话负责后端，双方完成后再合并。内部仅复用一个执行链子代理，给外部前端保留并发空间。
+
+| 职责 | canonical task | thread ID | session ID | 模型/等级 | 分支/目录 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- |
+| W0协议、后端API/对话/Adapter、整合测试 | `/root` | `01a0ceda-3bd5-7092-a443-c9e36b1eff9c` | 同thread | 主会话，未读取到模型/等级元数据 | `work/vnext-backend`；`E:/OtherPro/HQAgent-Hub-worktrees/vnext-backend` | 代码实现与自动化检查完成，真实模型成功验收有环境阻断 |
+| N0-A执行链实现与交界复核 | `/root/audit_orchestration` | `01a0cf38-30a9-7733-b5ff-4649ad36fecc` | `01a0ceda-3bd5-7092-a443-c9e36b1eff9c`（继承） | `gpt-5.6-sol/high`（复用） | `work/vnext-engine`；`E:/OtherPro/HQAgent-Hub-worktrees/vnext-engine` | 已提交706c807并在后端吸收，可复用 |
+| 前端 | 用户另行启动，未知 | 未提供 | 未提供 | 未提供 | `work/vnext-frontend`；`E:/OtherPro/HQAgent-Hub-worktrees/vnext-frontend` | 已交付开工包，等待用户提供完成回执 |
+
+- 共同基线`3dc0704`；后端代码`f656f0f`；未合并至integration或main、未推送。
+- 后端回执：`.hqagent/handoffs/N0-backend.md`。前端话术：`docs/vnext/前端独立开工说明.md`。
+- 下一步：接收前端提交、联调；待Codex上游429消退及CLI路径就绪后完成真实任务验证。
+- 原生followup在本线程树已验证可复用；不保证跨客户端恢复。外部前端会话ID未获取，不编造登记。
