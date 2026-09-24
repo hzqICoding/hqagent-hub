@@ -27,14 +27,28 @@ const authStore = useLocalAuthStore()
 const isDrawerOpen = ref(true)
 const messageContainerRef = ref<HTMLElement | null>(null)
 const isScrolledUp = ref(false)
+let mounted = false
+
+function refreshOnReturn() {
+  if (mounted && !document.hidden) chatStore.startPolling()
+}
 
 onMounted(async () => {
+  mounted = true
+  window.addEventListener('focus', refreshOnReturn)
+  window.addEventListener('online', refreshOnReturn)
+  document.addEventListener('visibilitychange', refreshOnReturn)
   await chatStore.init()
+  if (!mounted) return
   chatStore.startPolling()
   scrollToBottom()
 })
 
 onUnmounted(() => {
+  mounted = false
+  window.removeEventListener('focus', refreshOnReturn)
+  window.removeEventListener('online', refreshOnReturn)
+  document.removeEventListener('visibilitychange', refreshOnReturn)
   chatStore.stopPolling()
 })
 

@@ -73,6 +73,8 @@ export const useChatStore = defineStore('chat', () => {
   const lastEventSeq = ref(0)
   let pollingTimer: ReturnType<typeof setTimeout> | null = null
   const isPolling = ref(false)
+  let pollingEpoch = 0
+  let activePollEpoch: number | null = null
 
   // Computed
   const activeConversation = computed(() =>
@@ -149,6 +151,7 @@ export const useChatStore = defineStore('chat', () => {
     }
     activeConversationId.value = conversationId
     viewGeneration++
+    const generation = viewGeneration
     pinnedRunId = null
     messages.value = []
     conversationRuns.value = []
@@ -164,6 +167,9 @@ export const useChatStore = defineStore('chat', () => {
       fetchApprovals(),
       backfillEvents(),
     ])
+
+    if (generation !== viewGeneration) return
+    if (isPolling.value) scheduleNextPoll(0)
 
     // If conversation already has completed messages, default next message to continue
     if (messages.value.length > 0) {
@@ -204,14 +210,23 @@ export const useChatStore = defineStore('chat', () => {
       const runs = await gateway.listConversationRuns(conversationId)
       if (generation !== viewGeneration || activeConversationId.value !== conversationId) return
       conversationRuns.value = runs
-      const live = runs.find(r => r.status === 'running' || r.status === 'waiting_approval' || r.status === 'paused')
+      const live = runs.find(r => r.status === 'queued' || r.status === 'running' || r.status === 'waiting_approval' || r.status === 'paused')
+      const conversation = conversations.value.find(c => c.id === conversationId)
+      if (conversation) {
+        conversation.activeRunId = live?.id
+        conversation.lastRunId = runs[0]?.id
+      }
       const targetRunId = pinnedRunId || live?.id || runs[0]?.id
       if (targetRunId) {
         const detail = await gateway.getLocalRun(targetRunId)
         if (generation !== viewGeneration || activeConversationId.value !== conversationId) return
         activeRun.value = detail
-        if (detail.status === 'failed' && detail.error && /会话|上下文/.test(detail.error)) {
+        // Current task progress must not wait behind unrelated historical pages.
+        for (const event of detail.task?.events || []) ingestEvent(event)
+        if (sessionMode.value === 'continue' && detail.status === 'failed' && detail.error && /会话|上下文/.test(detail.error)) {
           resumptionError.value = detail.error
+        } else if (detail.status !== 'failed' || sessionMode.value === 'new') {
+          resumptionError.value = null
         }
       } else {
         activeRun.value = null
@@ -280,6 +295,10 @@ export const useChatStore = defineStore('chat', () => {
     if (!convId || !text.trim() || isSending.value) return
 
     const mode = modeOverride || sessionMode.value
+    if (mode === 'continue' && resumptionError.value) {
+      throw new HubApiError(resumptionError.value, 'SESSION_NOT_RESUMABLE', 409)
+    }
+    const wasRunActive = isCurrentRunActive.value
     const identity = `send:${convId}:${text.trim()}`
     const operation = pendingOperation(identity, { text: text.trim(), sessionMode: mode })
     const clientMessageId = operation.id
@@ -296,7 +315,7 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       const gateway = getLocalChatGateway()
-      await gateway.sendLocalMessage(
+      const receipt = await gateway.sendLocalMessage(
         convId,
         {
           clientMessageId,
@@ -305,8 +324,10 @@ export const useChatStore = defineStore('chat', () => {
         idempotencyKey
       )
       completeOperation(identity)
-      if (activeConversationId.value === convId) sessionMode.value = 'continue'
-      pinnedRunId = null
+      if (activeConversationId.value === convId) {
+        sessionMode.value = 'continue'
+        pinnedRunId = wasRunActive ? null : receipt.runId
+      }
 
       // Refresh messages and runs
       await Promise.all([fetchMessages(convId), fetchConversationRuns(convId)])
@@ -315,7 +336,7 @@ export const useChatStore = defineStore('chat', () => {
       queuedMessages.value = queuedMessages.value.filter((q) => q.id !== clientMessageId)
 
       // Start event polling
-      startPolling()
+      if (isPolling.value) scheduleNextPoll(0)
       return
     } catch (err: unknown) {
       if (definiteRejection(err)) completeOperation(identity)
@@ -397,13 +418,18 @@ export const useChatStore = defineStore('chat', () => {
 
   // Event Polling Loop
   function startPolling(): void {
-    if (isPolling.value) return
-    isPolling.value = true
-    scheduleNextPoll()
+    if (!isPolling.value) {
+      isPolling.value = true
+      pollingEpoch++
+    }
+    // Also repairs an enabled poller whose timer is no longer scheduled.
+    scheduleNextPoll(0)
   }
 
   function stopPolling(): void {
     isPolling.value = false
+    pollingEpoch++
+    viewGeneration++
     if (pollingTimer) {
       clearTimeout(pollingTimer)
       pollingTimer = null
@@ -749,14 +775,14 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function getActivitiesForRun(runId: string): ActivityItem[] {
-    if (activitiesByRunId.value[runId]?.length) {
-      return activitiesByRunId.value[runId]
-    }
     const run =
       conversationRuns.value.find((r) => r.id === runId) ||
       (activeRun.value?.id === runId ? activeRun.value : null)
     if (run?.taskId && activitiesByTaskId.value[run.taskId]?.length) {
       return activitiesByTaskId.value[run.taskId]
+    }
+    if (activitiesByRunId.value[runId]?.length) {
+      return activitiesByRunId.value[runId]
     }
     if (run?.task?.nodes?.length) {
       return run.task.nodes
@@ -780,9 +806,11 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   async function backfillEvents(): Promise<void> {
+    const generation = viewGeneration
     try {
       const gateway = getLocalChatGateway()
-      const page = await gateway.listLocalEvents(0, 200)
+      const page = await gateway.listLocalEvents(lastEventSeq.value, 200)
+      if (generation !== viewGeneration) return
       if (page.events?.length) {
         for (const evt of page.events) {
           ingestEvent(evt)
@@ -797,30 +825,34 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function pollEvents(): Promise<void> {
-    if (!isPolling.value) return
+    if (!isPolling.value || activePollEpoch === pollingEpoch) return
+    const epoch = pollingEpoch
+    activePollEpoch = epoch
+    if (pollingTimer) clearTimeout(pollingTimer)
+    pollingTimer = null
     const generation = viewGeneration
+    let hasMore = false
+    loadError.value = null
+    // Snapshot reads proceed even when the event request is slow or fails.
+    const conversationId = activeConversationId.value
+    const snapshot = conversationId ? Promise.all([
+      fetchMessages(conversationId), fetchConversationRuns(conversationId), fetchApprovals(),
+    ]) : Promise.resolve()
     try {
       const gateway = getLocalChatGateway()
-      const page = await gateway.listLocalEvents(lastEventSeq.value, 100)
-      if (generation !== viewGeneration) return
-      loadError.value = null
-      lastEventSeq.value = page.nextSeq
-
-      if (page.events?.length) {
-        for (const evt of page.events) {
-          ingestEvent(evt)
-        }
-      }
-
-      // Replies may commit after the last task event. Refresh even on an empty page.
-      if (activeConversationId.value) {
-        await Promise.all([
-          fetchMessages(activeConversationId.value),
-          fetchConversationRuns(activeConversationId.value),
-          fetchApprovals(),
-        ])
+      // Bound each batch, then yield to rendering before catching up more pages.
+      for (let count = 0; count < 5; count++) {
+        const after = lastEventSeq.value
+        const page = await gateway.listLocalEvents(after, 200)
+        if (generation !== viewGeneration || epoch !== pollingEpoch) return
+        for (const evt of page.events || []) ingestEvent(evt)
+        lastEventSeq.value = Math.max(lastEventSeq.value, page.nextSeq)
+        hasMore = page.hasMore && page.nextSeq > after
+        if (!hasMore) break
       }
     } catch (err: unknown) {
+      if (generation !== viewGeneration || epoch !== pollingEpoch) return
+      hasMore = false
       if (err instanceof HubApiError && (err.code === 'EVENT_CURSOR_EXPIRED' || err.status === 410)) {
         const latest = err.detail?.latestSeq
         if (typeof latest !== 'number' || latest < 0) {
@@ -829,28 +861,26 @@ export const useChatStore = defineStore('chat', () => {
           return
         }
         lastEventSeq.value = latest
-        if (activeConversationId.value) {
-          await Promise.all([
-            fetchMessages(activeConversationId.value),
-            fetchConversationRuns(activeConversationId.value),
-          ])
-        }
       } else {
         loadError.value = err instanceof Error ? err.message : '服务连接中断，正在重连'
       }
     } finally {
-      if (generation === viewGeneration) scheduleNextPoll()
+      await snapshot
+      if (activePollEpoch === epoch) activePollEpoch = null
+      // View changes invalidate response data, not the page's polling lifecycle.
+      if (epoch === pollingEpoch) scheduleNextPoll(hasMore || generation !== viewGeneration ? 25 : undefined)
     }
   }
 
-  function scheduleNextPoll(): void {
-    if (!isPolling.value) return
+  function scheduleNextPoll(delayMs?: number): void {
+    if (!isPolling.value || activePollEpoch === pollingEpoch) return
     if (pollingTimer) clearTimeout(pollingTimer)
     // Busy interval: 1000ms if run is active; Idle interval: 4000ms
     const interval = isCurrentRunActive.value ? 1000 : 4000
     pollingTimer = setTimeout(() => {
-      pollEvents()
-    }, interval)
+      pollingTimer = null
+      void pollEvents()
+    }, delayMs ?? interval)
   }
 
   function reset(): void {
