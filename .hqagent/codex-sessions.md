@@ -103,3 +103,10 @@ codex 有自己的默认署名行为。
 - 子提交`dc29548`、`0c37e17`，集成`09220d2`、`bafad5f`；主提交集成`6c8a242`。
 - 已完成：原生精确UUID恢复、后台重启后恢复，以及原用户对话的中文追问真实成功。子代理可继续复用，未验证跨客户端恢复。
 - 验收：[N0-claude-continuation](reviews/N0-claude-continuation.md)。
+
+## 2026-09-25 实时进度与续轮目录修复
+
+- 主代理在`live-chat-polling`工作区基于当前前端交付快照修复轮询、超时和界面终态；整合到integration/phase1，输入源文件SHA-256已核对一致。
+- 复用`/root/audit_orchestration`（独立thread `01a0cf38-30a9-7733-b5ff-4649ad36fecc`，父session继承值同前，`gpt-5.6-sol/high`）：先复核计数器实际产物并更新临时预览，再在`continued-worktree`独立修复后端路径投影；未新建子线程。
+- 子提交`d518ae4`、`fda57b7`，集成`a5ebc99`、`c637a40`；前端修复`877028b`。
+- 状态：已完成，可复用。回执：[N0-live-progress](reviews/N0-live-progress.md)。
