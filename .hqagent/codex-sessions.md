@@ -78,3 +78,13 @@ codex 有自己的默认署名行为。
 - 后端回执：`.hqagent/handoffs/N0-backend.md`。前端话术：`docs/vnext/前端独立开工说明.md`。
 - 下一步：接收前端提交、联调；待Codex上游429消退及CLI路径就绪后完成真实任务验证。
 - 原生followup在本线程树已验证可复用；不保证跨客户端恢复。外部前端会话ID未获取，不编造登记。
+
+## 2026-09-24 N0 联合集成
+
+- 接收前端`bc22402`，外部Agent的thread/session未提供，未虚构身份。
+- 主代理在独立`vnext-integration`工作区组装、修复和验证；保留前后端原分支不动。
+- 复用`/root/audit_orchestration`做只读前端契约审核；thread仍为`01a0cf38-30a9-7733-b5ff-4649ad36fecc`，模型/等级保持`gpt-5.6-sol/high`，不新建代理。
+- 合并`3175a4e`，修正`5cb7d5a`；已推进`integration/phase1`，其工作区改为`E:/OtherPro/HQAgent-Hub-worktrees/vnext-integration`。
+- 旧integration工作区切到`preserve/phase1-local-20260924`保留现场，四个未提交修改逐字节不变。
+- 回执：`.hqagent/reviews/N0-joint-integration.md`。启动入口：`docs/vnext/本地试用启动.md`。
+- 状态：联合代码与自动化/HTTP检查完成；可视界面及真实模型成功验收待完成。未推送、未合main。

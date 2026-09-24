@@ -5,6 +5,8 @@
 
 ## 当前设计入口（2026-09-24）
 
+**当前代码入口**：前端bc22402与后端f656f0f已合入`integration/phase1`，实际工作区为`E:/OtherPro/HQAgent-Hub-worktrees/vnext-integration`，联调修正5cb7d5a。后端90项/前端132项测试及HTTP联调通过；浏览器可视验收和真实模型成功验收未完成。详见[联合集成记录](reviews/N0-joint-integration.md)和[本地试用启动](../docs/vnext/本地试用启动.md)。下文旧阶段信息作为历史保留。
+
 用户最新方向为“复用现有底座，先做本地多场景角色对话试用，验证效果后再接手机远程”。本地版不依赖自建Hub Server，但使用云模型的CLI仍需联网。
 新版设计入口为 [`docs/vnext/README.md`](../docs/vnext/README.md)，包含技术方案、接口/插件草案和实施验收。
 现状代码评审见 [`2026-09-24-architecture-review.md`](reviews/2026-09-24-architecture-review.md)。
