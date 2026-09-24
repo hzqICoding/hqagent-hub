@@ -426,6 +426,8 @@ export interface AgentToolCallPayload {
   resultSummary?: string
   durationMs?: number
   failed?: boolean
+  /** 供应商报告的真实命令退出码，仅在命令完成且已知时提供。 */
+  exitCode?: number
 }
 
 /** 事件聚合根类型，用于事件路由和订阅过滤 */
@@ -742,6 +744,11 @@ export interface CreateLocalConversationInput {
   sceneId: LocalSceneId
 }
 
+/** independent使用独立reviewer；original_planner以验收阶段恢复本轮planner原生会话。省略时兼容旧独立模式。 */
+export type ReviewMode =
+  | 'independent'
+  | 'original_planner'
+
 export interface RoleExecutionOptions {
   modelId?: string
   reasoningEffort?: string
@@ -772,6 +779,7 @@ export interface CreateTaskInput {
   workflowRoles?: string[]
   roleExecutions?: Record<string, RoleExecutionOptions>
   resumeSessions?: Record<string, string>
+  reviewMode?: ReviewMode
 }
 
 /** 任务排空步骤，对应 OTA升级架构设计.md §7 的排空序列 */
@@ -970,6 +978,7 @@ export interface LocalSceneView {
   version: number
   roles: LocalRoleConfig[]
   updatedAt: Timestamp
+  reviewMode?: ReviewMode
 }
 
 export interface TaskArtifactView {
@@ -1025,6 +1034,11 @@ export interface TaskNodeView {
   changedFiles?: string[]
   /** 越界修改的路径。非空即判定任务失败，且保留 worktree 供人工查看 */
   violationPaths?: string[]
+  /** acceptance表示验收阶段；原会话验收的roleId仍为planner，保持会话权限一致。 */
+  phase?: 'execution' | 'acceptance'
+  reviewVerdict?: 'passed' | 'changes_requested' | 'insufficient_evidence'
+  reviewSourceNodeId?: string
+  reviewEvidenceId?: string
 }
 
 /** 任务状态。终态：succeeded / failed / cancelled */
@@ -1238,6 +1252,7 @@ export interface RoleBindingView {
 export interface SaveLocalSceneInput {
   roles: LocalRoleConfig[]
   expectedVersion: number
+  reviewMode?: ReviewMode
 }
 
 export interface TeamProfilePolicies {

@@ -7,95 +7,214 @@
     "TaskCreatedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["objective", "workspaceId", "profileId", "source"],
+      "required": [
+        "objective",
+        "workspaceId",
+        "profileId",
+        "source"
+      ],
       "properties": {
-        "objective": { "type": "string" },
-        "workspaceId": { "type": "string" },
-        "profileId": { "type": "string" },
-        "source": { "$ref": "common.json#/$defs/TaskSource" },
-        "parentTaskId": { "type": "string" }
+        "objective": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "profileId": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "common.json#/$defs/TaskSource"
+        },
+        "parentTaskId": {
+          "type": "string"
+        }
       }
     },
     "TaskStatusChangedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["from", "to"],
+      "required": [
+        "from",
+        "to"
+      ],
       "properties": {
-        "from": { "$ref": "common.json#/$defs/TaskStatus" },
-        "to": { "$ref": "common.json#/$defs/TaskStatus" },
-        "reason": { "type": "string" }
+        "from": {
+          "$ref": "common.json#/$defs/TaskStatus"
+        },
+        "to": {
+          "$ref": "common.json#/$defs/TaskStatus"
+        },
+        "reason": {
+          "type": "string"
+        }
       }
     },
     "NodeResolvedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["roleId", "resolvedAgentId", "resolveSource", "isFallback"],
+      "required": [
+        "roleId",
+        "resolvedAgentId",
+        "resolveSource",
+        "isFallback"
+      ],
       "properties": {
-        "roleId": { "$ref": "common.json#/$defs/RoleId" },
-        "resolvedAgentId": { "type": "string" },
-        "resolvedAgentName": { "type": "string" },
-        "resolveSource": { "$ref": "common.json#/$defs/ResolveSource" },
-        "isFallback": { "type": "boolean" },
-        "fallbackReason": { "type": "string" },
-        "missingCapabilities": { "type": "array", "items": { "$ref": "common.json#/$defs/CapabilityId" } }
+        "roleId": {
+          "$ref": "common.json#/$defs/RoleId"
+        },
+        "resolvedAgentId": {
+          "type": "string"
+        },
+        "resolvedAgentName": {
+          "type": "string"
+        },
+        "resolveSource": {
+          "$ref": "common.json#/$defs/ResolveSource"
+        },
+        "isFallback": {
+          "type": "boolean"
+        },
+        "fallbackReason": {
+          "type": "string"
+        },
+        "missingCapabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "common.json#/$defs/CapabilityId"
+          }
+        }
       }
     },
     "AgentStartedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionId", "purpose", "reusePolicy"],
+      "required": [
+        "sessionId",
+        "purpose",
+        "reusePolicy"
+      ],
       "properties": {
-        "sessionId": { "type": "string" },
-        "externalSessionId": { "type": "string" },
-        "purpose": { "$ref": "session.json#/$defs/SessionPurpose" },
-        "reusePolicy": { "$ref": "session.json#/$defs/SessionReusePolicy" },
-        "worktreePath": { "type": "string" },
-        "branch": { "type": "string" }
+        "sessionId": {
+          "type": "string"
+        },
+        "externalSessionId": {
+          "type": "string"
+        },
+        "purpose": {
+          "$ref": "session.json#/$defs/SessionPurpose"
+        },
+        "reusePolicy": {
+          "$ref": "session.json#/$defs/SessionReusePolicy"
+        },
+        "worktreePath": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        }
       }
     },
     "AgentProgressPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["message"],
+      "required": [
+        "message"
+      ],
       "properties": {
-        "message": { "type": "string" },
-        "percent": { "type": "integer", "minimum": 0, "maximum": 100 },
-        "raw": { "type": "object", "description": "未识别的原生事件原文，降级时保留" }
+        "message": {
+          "type": "string"
+        },
+        "percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "raw": {
+          "type": "object",
+          "description": "未识别的原生事件原文，降级时保留"
+        }
       }
     },
     "AgentToolCallPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["toolName"],
+      "required": [
+        "toolName"
+      ],
       "properties": {
-        "toolName": { "type": "string" },
-        "argumentsExcerpt": { "type": "string" },
-        "resultSummary": { "type": "string" },
-        "durationMs": { "type": "integer", "minimum": 0 },
-        "failed": { "type": "boolean" }
+        "toolName": {
+          "type": "string"
+        },
+        "argumentsExcerpt": {
+          "type": "string"
+        },
+        "resultSummary": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "boolean"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "供应商报告的真实命令退出码，仅在命令完成且已知时提供。"
+        }
       }
     },
     "AgentQuestionPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["questionId", "question"],
+      "required": [
+        "questionId",
+        "question"
+      ],
       "properties": {
-        "questionId": { "type": "string" },
-        "question": { "type": "string" },
-        "options": { "type": "array", "items": { "type": "string" } },
-        "expiresAt": { "$ref": "common.json#/$defs/Timestamp" }
+        "questionId": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expiresAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        }
       }
     },
     "ApprovalRequiredPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["approvalId", "action", "targetResource", "riskLevel"],
+      "required": [
+        "approvalId",
+        "action",
+        "targetResource",
+        "riskLevel"
+      ],
       "properties": {
-        "approvalId": { "type": "string" },
-        "action": { "$ref": "common.json#/$defs/DangerousAction" },
-        "targetResource": { "type": "string" },
-        "riskLevel": { "$ref": "common.json#/$defs/RiskLevel" },
-        "expiresAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "approvalId": {
+          "type": "string"
+        },
+        "action": {
+          "$ref": "common.json#/$defs/DangerousAction"
+        },
+        "targetResource": {
+          "type": "string"
+        },
+        "riskLevel": {
+          "$ref": "common.json#/$defs/RiskLevel"
+        },
+        "expiresAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
         "externalRequestId": {
           "type": "string",
           "description": "供应商侧审批请求 ID（裁决 D33）。ApprovalDispatch.externalRequestId 要求 Adapter 做关联，关联 ID 必须随事件走完全程，否则排障时和供应商日志对不上"
@@ -105,128 +224,265 @@
     "ApprovalResolvedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["approvalId", "decision", "decidedAt"],
+      "required": [
+        "approvalId",
+        "decision",
+        "decidedAt"
+      ],
       "properties": {
-        "approvalId": { "type": "string" },
-        "decision": { "$ref": "common.json#/$defs/ApprovalDecision" },
-        "reason": { "type": "string" },
-        "decidedAt": { "$ref": "common.json#/$defs/Timestamp" }
+        "approvalId": {
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "common.json#/$defs/ApprovalDecision"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "decidedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        }
       }
     },
     "AgentCompletedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["result"],
+      "required": [
+        "result"
+      ],
       "properties": {
-        "result": { "$ref": "agent-result.json#/$defs/AgentResult" }
+        "result": {
+          "$ref": "agent-result.json#/$defs/AgentResult"
+        }
       }
     },
     "AgentFailedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["errorCode", "message"],
+      "required": [
+        "errorCode",
+        "message"
+      ],
       "properties": {
-        "errorCode": { "$ref": "common.json#/$defs/ErrorCode" },
-        "message": { "type": "string" },
-        "blockers": { "type": "array", "items": { "$ref": "agent-result.json#/$defs/Blocker" } }
+        "errorCode": {
+          "$ref": "common.json#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string"
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "$ref": "agent-result.json#/$defs/Blocker"
+          }
+        }
       }
     },
     "PathViolationPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["violationPaths", "allowedPaths"],
+      "required": [
+        "violationPaths",
+        "allowedPaths"
+      ],
       "properties": {
-        "violationPaths": { "type": "array", "items": { "type": "string" } },
-        "allowedPaths": { "type": "array", "items": { "type": "string" } },
-        "worktreePath": { "type": "string", "description": "保留现场供人工查看，不自动清理" }
+        "violationPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "worktreePath": {
+          "type": "string",
+          "description": "保留现场供人工查看，不自动清理"
+        }
       }
     },
     "AgentDiscoveryCompletedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "ready"],
+      "required": [
+        "total",
+        "ready"
+      ],
       "properties": {
-        "total": { "type": "integer", "minimum": 0 },
-        "ready": { "type": "integer", "minimum": 0 },
-        "errors": { "type": "array", "items": { "$ref": "agent-instance.json#/$defs/AgentDiscoveryError" } },
-        "durationMs": { "type": "integer", "minimum": 0 }
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ready": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "agent-instance.json#/$defs/AgentDiscoveryError"
+          }
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "SystemMaintenancePayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["active", "reason"],
+      "required": [
+        "active",
+        "reason"
+      ],
       "properties": {
-        "active": { "type": "boolean" },
-        "reason": { "type": "string", "description": "例如 update_install / manual" },
-        "drainProgress": { "$ref": "update-state.json#/$defs/DrainProgress" }
+        "active": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "description": "例如 update_install / manual"
+        },
+        "drainProgress": {
+          "$ref": "update-state.json#/$defs/DrainProgress"
+        }
       }
     },
     "UpdateStateChangedPayload": {
       "type": "object",
       "additionalProperties": false,
       "x-go": true,
-      "required": ["state"],
+      "required": [
+        "state"
+      ],
       "properties": {
-        "state": { "$ref": "update-state.json#/$defs/UpdateStateView" },
-        "previousPhase": { "$ref": "common.json#/$defs/UpdatePhase" }
+        "state": {
+          "$ref": "update-state.json#/$defs/UpdateStateView"
+        },
+        "previousPhase": {
+          "$ref": "common.json#/$defs/UpdatePhase"
+        }
       }
     },
     "UpdateDownloadProgressPayload": {
       "type": "object",
       "additionalProperties": false,
       "x-go": true,
-      "required": ["downloadBytes", "totalBytes", "percent"],
+      "required": [
+        "downloadBytes",
+        "totalBytes",
+        "percent"
+      ],
       "properties": {
-        "downloadBytes": { "type": "integer", "minimum": 0 },
-        "totalBytes": { "type": "integer", "minimum": 0 },
-        "percent": { "type": "number", "minimum": 0, "maximum": 100 },
-        "speedBytesPerSecond": { "type": "integer", "minimum": 0 },
-        "etaSeconds": { "type": "integer", "minimum": 0 }
+        "downloadBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "speedBytesPerSecond": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "etaSeconds": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "UpdateVerificationCompletedPayload": {
       "type": "object",
       "additionalProperties": false,
       "x-go": true,
-      "required": ["passed", "sizeMatched", "sha256Matched", "signatureValid"],
+      "required": [
+        "passed",
+        "sizeMatched",
+        "sha256Matched",
+        "signatureValid"
+      ],
       "properties": {
-        "passed": { "type": "boolean" },
-        "sizeMatched": { "type": "boolean" },
-        "sha256Matched": { "type": "boolean" },
-        "signatureValid": { "type": "boolean" },
-        "keyId": { "type": "string" },
-        "error": { "type": "string", "description": "验签失败没有「忽略并继续」入口" }
+        "passed": {
+          "type": "boolean"
+        },
+        "sizeMatched": {
+          "type": "boolean"
+        },
+        "sha256Matched": {
+          "type": "boolean"
+        },
+        "signatureValid": {
+          "type": "boolean"
+        },
+        "keyId": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string",
+          "description": "验签失败没有「忽略并继续」入口"
+        }
       }
     },
     "UpdateHealthCheckPayload": {
       "type": "object",
       "additionalProperties": false,
       "x-go": true,
-      "required": ["passed", "checks"],
+      "required": [
+        "passed",
+        "checks"
+      ],
       "properties": {
-        "passed": { "type": "boolean" },
-        "checks": { "type": "array", "items": { "$ref": "update-result.json#/$defs/HealthCheckOutcome" } }
+        "passed": {
+          "type": "boolean"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "update-result.json#/$defs/HealthCheckOutcome"
+          }
+        }
       }
     },
     "UpdateRollbackPayload": {
       "type": "object",
       "additionalProperties": false,
       "x-go": true,
-      "required": ["reason"],
+      "required": [
+        "reason"
+      ],
       "properties": {
-        "reason": { "type": "string" },
-        "succeeded": { "type": "boolean" },
-        "restoredDatabaseBackup": { "type": "string" }
+        "reason": {
+          "type": "string"
+        },
+        "succeeded": {
+          "type": "boolean"
+        },
+        "restoredDatabaseBackup": {
+          "type": "string"
+        }
       }
     },
     "UpdateCompletedPayload": {
       "type": "object",
       "additionalProperties": false,
       "x-go": true,
-      "required": ["result"],
+      "required": [
+        "result"
+      ],
       "properties": {
-        "result": { "$ref": "update-result.json#/$defs/UpdateResultView" }
+        "result": {
+          "$ref": "update-result.json#/$defs/UpdateResultView"
+        }
       }
     }
   }
