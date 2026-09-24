@@ -153,5 +153,55 @@ def test_codex_reader_failure_kills_owned_process_tree() -> None:
         assert process.killed is True
         assert observed["alive"] is False
         assert "stdio reader failed" in str(observed["detail"])
+        assert "synthetic oversized frame" not in str(observed["detail"])
+        assert "processTreeCleaned=true" in str(observed["detail"])
+
+    asyncio.run(scenario())
+
+
+def test_codex_reader_does_not_claim_cleanup_when_termination_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BrokenReader:
+        async def readline(self):
+            raise RuntimeError("vendor payload must stay private")
+
+    class EmptyReader:
+        async def readline(self):
+            return b""
+
+    class FakeProcess:
+        stdout = BrokenReader()
+        stderr = EmptyReader()
+        stdin = None
+        returncode = None
+        pid = 67890
+
+    async def cleanup_failed(_process) -> bool:
+        return False
+
+    async def scenario() -> None:
+        monkeypatch.setattr("adapters.codex_adapter.terminate_process_tree", cleanup_failed)
+        disconnected = asyncio.Event()
+        detail_value = ""
+
+        async def on_disconnect(_alive: bool, detail: str) -> None:
+            nonlocal detail_value
+            detail_value = detail
+            disconnected.set()
+
+        async def ignore(_value):
+            return None
+
+        connection = _CodexConnection(
+            FakeProcess(),
+            on_notification=ignore,
+            on_server_request=ignore,
+            on_disconnect=on_disconnect,
+        )
+        await asyncio.wait_for(disconnected.wait(), timeout=1)
+        await asyncio.gather(connection.reader_task, connection.stderr_task)
+        assert "processTreeCleaned=false" in detail_value
+        assert "vendor payload" not in detail_value
 
     asyncio.run(scenario())
