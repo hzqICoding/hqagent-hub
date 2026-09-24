@@ -11,9 +11,24 @@ import type {
   ApprovalView,
   ApprovalResponseInput,
   LocalSceneId,
+  HubEvent,
 } from '@hqagent/protocol'
 import { getLocalChatGateway, HubApiError } from '@/shared/api'
 import { pendingOperation, completeOperation, definiteRejection } from '@/shared/api/local-pending-operation'
+
+export interface ActivityItem {
+  id: string
+  type: 'file' | 'command' | 'thought' | 'tool' | 'progress'
+  verb: string
+  target: string
+  fileName?: string
+  dirPath?: string
+  rawArgs?: string
+  detail?: string
+  status: 'running' | 'done' | 'failed'
+  durationMs?: number
+  timestamp: string
+}
 
 export const useChatStore = defineStore('chat', () => {
   // Conversations
@@ -49,6 +64,10 @@ export const useChatStore = defineStore('chat', () => {
 
   // Approvals
   const approvals = ref<ApprovalView[]>([])
+
+  // Process activities
+  const activitiesByTaskId = ref<Record<string, ActivityItem[]>>({})
+  const activitiesByRunId = ref<Record<string, ActivityItem[]>>({})
 
   // Events & Polling
   const lastEventSeq = ref(0)
@@ -143,6 +162,7 @@ export const useChatStore = defineStore('chat', () => {
       fetchMessages(conversationId),
       fetchConversationRuns(conversationId),
       fetchApprovals(),
+      backfillEvents(),
     ])
 
     // If conversation already has completed messages, default next message to continue
@@ -190,10 +210,8 @@ export const useChatStore = defineStore('chat', () => {
         const detail = await gateway.getLocalRun(targetRunId)
         if (generation !== viewGeneration || activeConversationId.value !== conversationId) return
         activeRun.value = detail
-        if (sessionMode.value === 'continue' && detail.status === 'failed' && detail.error && /会话|上下文/.test(detail.error)) {
+        if (detail.status === 'failed' && detail.error && /会话|上下文/.test(detail.error)) {
           resumptionError.value = detail.error
-        } else if (detail.status !== 'failed' || sessionMode.value === 'new') {
-          resumptionError.value = null
         }
       } else {
         activeRun.value = null
@@ -248,7 +266,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function pickWorkspaceDirectory(): Promise<string | null> {
-    const result = await getLocalChatGateway().pickLocalDirectory({})
+    const gateway = getLocalChatGateway()
+    if (!gateway.pickLocalDirectory) return null
+    const result = await gateway.pickLocalDirectory({})
     return result.cancelled ? null : result.selectedPath || null
   }
 
@@ -260,9 +280,6 @@ export const useChatStore = defineStore('chat', () => {
     if (!convId || !text.trim() || isSending.value) return
 
     const mode = modeOverride || sessionMode.value
-    if (mode === 'continue' && resumptionError.value) {
-      throw new HubApiError(resumptionError.value, 'SESSION_NOT_RESUMABLE', 409)
-    }
     const identity = `send:${convId}:${text.trim()}`
     const operation = pendingOperation(identity, { text: text.trim(), sessionMode: mode })
     const clientMessageId = operation.id
@@ -393,6 +410,392 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function splitPath(fullPath: string): { fileName: string; dirPath: string } {
+    const normalized = fullPath.replace(/\\/g, '/')
+    const lastSlash = normalized.lastIndexOf('/')
+    if (lastSlash === -1) {
+      return { fileName: fullPath, dirPath: '' }
+    }
+    const fileName = normalized.slice(lastSlash + 1)
+    const dirPath = normalized.slice(0, lastSlash)
+    return { fileName: fileName || fullPath, dirPath }
+  }
+
+  function parseToolArgs(toolName: string, rawArgs: string): {
+    target: string
+    fileName?: string
+    dirPath?: string
+    rawArgs?: string
+  } {
+    const trimmed = rawArgs.trim()
+    if (!trimmed) {
+      return { target: toolName }
+    }
+
+    let parsed: Record<string, unknown> | null = null
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        parsed = JSON.parse(trimmed)
+      } catch {
+        // ignore JSON parse error, treat as raw string
+      }
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const pathKeys = ['file_path', 'filePath', 'path', 'targetFile', 'TargetFile', 'file', 'target']
+      let foundPath: string | null = null
+      for (const k of pathKeys) {
+        if (typeof parsed[k] === 'string' && parsed[k]) {
+          foundPath = parsed[k] as string
+          break
+        }
+      }
+
+      const patternKeys = ['pattern', 'query', 'regex', 'search_text']
+      let foundPattern: string | null = null
+      for (const k of patternKeys) {
+        if (typeof parsed[k] === 'string' && parsed[k]) {
+          foundPattern = parsed[k] as string
+          break
+        }
+      }
+
+      const cmdKeys = ['command', 'cmd', 'CommandLine', 'commandLine', 'exec']
+      let foundCmd: string | null = null
+      for (const k of cmdKeys) {
+        if (typeof parsed[k] === 'string' && parsed[k]) {
+          foundCmd = parsed[k] as string
+          break
+        }
+      }
+
+      if (foundPattern) {
+        let target = `"${foundPattern}"`
+        let dirPath = foundPath || undefined
+        let fileName: string | undefined = undefined
+        if (foundPath) {
+          const s = splitPath(foundPath)
+          fileName = s.fileName
+          dirPath = s.dirPath
+          target = `"${foundPattern}" in ${fileName || foundPath}`
+        }
+        return {
+          target,
+          fileName,
+          dirPath,
+          rawArgs: trimmed,
+        }
+      }
+
+      if (foundCmd) {
+        return {
+          target: foundCmd,
+          rawArgs: trimmed,
+        }
+      }
+
+      if (foundPath) {
+        const { fileName, dirPath } = splitPath(foundPath)
+        return {
+          target: foundPath,
+          fileName,
+          dirPath,
+          rawArgs: trimmed,
+        }
+      }
+
+      const entries = Object.entries(parsed)
+      if (entries.length === 1 && typeof entries[0][1] === 'string') {
+        return {
+          target: entries[0][1] as string,
+          rawArgs: trimmed,
+        }
+      }
+    }
+
+    if (trimmed.includes('/') || trimmed.includes('\\')) {
+      const { fileName, dirPath } = splitPath(trimmed)
+      return {
+        target: trimmed,
+        fileName,
+        dirPath,
+        rawArgs: trimmed,
+      }
+    }
+
+    return {
+      target: trimmed,
+      rawArgs: trimmed,
+    }
+  }
+
+  function parseEventToActivity(event: HubEvent): ActivityItem | null {
+    const p = (event.payload || {}) as Record<string, unknown>
+    const eventId = event.eventId || `evt_${event.seq}`
+    const timestamp = event.occurredAt || new Date().toISOString()
+
+    if (event.type === 'agent.tool_call') {
+      const rawToolName = String(p.toolName || '')
+      const args = String(p.argumentsExcerpt || '')
+      const result = p.resultSummary ? String(p.resultSummary) : undefined
+      const failed = Boolean(p.failed)
+      const duration = typeof p.durationMs === 'number' ? p.durationMs : undefined
+
+      const normName = rawToolName.toLowerCase().replace(/[^a-z0-9]/g, '')
+      const parsed = parseToolArgs(rawToolName, args)
+
+      if (
+        normName === 'commandexecution' ||
+        normName === 'bash' ||
+        normName === 'sh' ||
+        normName === 'exec' ||
+        normName === 'shell' ||
+        normName === 'terminal' ||
+        normName === 'runcommand'
+      ) {
+        return {
+          id: eventId,
+          type: 'command',
+          verb: 'Ran',
+          target: parsed.target || 'command',
+          detail: result,
+          status: failed ? 'failed' : 'done',
+          durationMs: duration,
+          timestamp,
+          rawArgs: parsed.rawArgs,
+        }
+      }
+
+      if (
+        normName === 'filechange' ||
+        normName === 'edit' ||
+        normName === 'write' ||
+        normName === 'replacefilecontent' ||
+        normName === 'writetofile' ||
+        normName === 'createfile' ||
+        normName === 'patch'
+      ) {
+        return {
+          id: eventId,
+          type: 'file',
+          verb: normName.includes('write') || normName.includes('create') ? 'Created' : 'Edited',
+          target: parsed.target || 'file',
+          fileName: parsed.fileName,
+          dirPath: parsed.dirPath,
+          detail: result,
+          status: failed ? 'failed' : 'done',
+          durationMs: duration,
+          timestamp,
+          rawArgs: parsed.rawArgs,
+        }
+      }
+
+      if (
+        normName === 'viewfile' ||
+        normName === 'readfile' ||
+        normName === 'read' ||
+        normName === 'cat' ||
+        normName === 'grep' ||
+        normName === 'search' ||
+        normName === 'glob' ||
+        normName === 'find' ||
+        normName === 'list'
+      ) {
+        const isSearch = normName === 'grep' || normName === 'search'
+        return {
+          id: eventId,
+          type: 'file',
+          verb: isSearch ? 'Search' : 'Read',
+          target: parsed.target || 'file',
+          fileName: parsed.fileName,
+          dirPath: parsed.dirPath,
+          detail: result,
+          status: failed ? 'failed' : 'done',
+          durationMs: duration,
+          timestamp,
+          rawArgs: parsed.rawArgs,
+        }
+      }
+
+      return {
+        id: eventId,
+        type: 'tool',
+        verb: rawToolName || 'Tool',
+        target: parsed.target || rawToolName,
+        fileName: parsed.fileName,
+        dirPath: parsed.dirPath,
+        detail: result,
+        status: failed ? 'failed' : 'done',
+        durationMs: duration,
+        timestamp,
+        rawArgs: parsed.rawArgs,
+      }
+    }
+
+    if (event.type === 'agent.progress') {
+      const message = String(p.message || '')
+      if (!message) return null
+      if (
+        message.toLowerCase().includes('thought') ||
+        message.toLowerCase().includes('think') ||
+        message.includes('思考')
+      ) {
+        return {
+          id: eventId,
+          type: 'thought',
+          verb: 'Thought',
+          target: message,
+          detail: typeof p.raw === 'object' ? JSON.stringify(p.raw, null, 2) : undefined,
+          status: 'done',
+          timestamp,
+        }
+      }
+      return {
+        id: eventId,
+        type: 'progress',
+        verb: 'Step',
+        target: message,
+        detail: typeof p.raw === 'object' ? JSON.stringify(p.raw, null, 2) : undefined,
+        status: 'done',
+        timestamp,
+      }
+    }
+
+    if (event.type === 'node.resolved') {
+      return {
+        id: eventId,
+        type: 'progress',
+        verb: 'Assigned',
+        target: `角色 ${event.roleId || ''} 由 ${event.agentInstanceId || 'Agent'} 承接`,
+        status: 'done',
+        timestamp,
+      }
+    }
+
+    return null
+  }
+
+  function ingestEvent(event: HubEvent): void {
+    const taskId = event.taskId || (event.aggregateType === 'task' ? event.aggregateId : undefined)
+    if (!taskId) return
+
+    const p = (event.payload || {}) as Record<string, unknown>
+    const toolName = String(p.toolName || '')
+
+    // Merge tool_result events into preceding tool call
+    if (event.type === 'agent.tool_call' && toolName === 'tool_result') {
+      const taskList = activitiesByTaskId.value[taskId] || []
+      for (let i = taskList.length - 1; i >= 0; i--) {
+        const item = taskList[i]
+        if (item.type === 'file' || item.type === 'command' || item.type === 'tool') {
+          const updatedItem: ActivityItem = {
+            ...item,
+            detail: p.resultSummary ? String(p.resultSummary) : item.detail,
+            status: p.failed ? 'failed' : 'done',
+            durationMs: typeof p.durationMs === 'number' ? p.durationMs : item.durationMs,
+          }
+          const updatedTaskList = [...taskList]
+          updatedTaskList[i] = updatedItem
+          activitiesByTaskId.value = {
+            ...activitiesByTaskId.value,
+            [taskId]: updatedTaskList,
+          }
+
+          const run =
+            conversationRuns.value.find((r) => r.taskId === taskId) ||
+            (activeRun.value?.taskId === taskId ? activeRun.value : null)
+          if (run?.id && activitiesByRunId.value[run.id]) {
+            const runList = activitiesByRunId.value[run.id]
+            const rIdx = runList.findIndex((a) => a.id === item.id)
+            if (rIdx !== -1) {
+              const updatedRunList = [...runList]
+              updatedRunList[rIdx] = updatedItem
+              activitiesByRunId.value = {
+                ...activitiesByRunId.value,
+                [run.id]: updatedRunList,
+              }
+            }
+          }
+          return
+        }
+      }
+    }
+
+    const activity = parseEventToActivity(event)
+    if (!activity) return
+
+    const run =
+      conversationRuns.value.find((r) => r.taskId === taskId) ||
+      (activeRun.value?.taskId === taskId ? activeRun.value : null)
+    const runId = run?.id
+
+    const taskList = activitiesByTaskId.value[taskId] || []
+    if (!taskList.some((a) => a.id === activity.id)) {
+      activitiesByTaskId.value = {
+        ...activitiesByTaskId.value,
+        [taskId]: [...taskList, activity],
+      }
+    }
+
+    if (runId) {
+      const runList = activitiesByRunId.value[runId] || []
+      if (!runList.some((a) => a.id === activity.id)) {
+        activitiesByRunId.value = {
+          ...activitiesByRunId.value,
+          [runId]: [...runList, activity],
+        }
+      }
+    }
+  }
+
+  function getActivitiesForRun(runId: string): ActivityItem[] {
+    if (activitiesByRunId.value[runId]?.length) {
+      return activitiesByRunId.value[runId]
+    }
+    const run =
+      conversationRuns.value.find((r) => r.id === runId) ||
+      (activeRun.value?.id === runId ? activeRun.value : null)
+    if (run?.taskId && activitiesByTaskId.value[run.taskId]?.length) {
+      return activitiesByTaskId.value[run.taskId]
+    }
+    if (run?.task?.nodes?.length) {
+      return run.task.nodes
+        .filter((n) => n.outputSummary || n.status === 'succeeded' || n.status === 'running')
+        .map((n) => ({
+          id: `node_act_${n.id}`,
+          type: 'file' as const,
+          verb: 'Analyzed',
+          target: `${n.resolvedAgentName || n.roleId} 角色执行`,
+          detail: n.outputSummary,
+          status: n.status === 'running' ? ('running' as const) : ('done' as const),
+          timestamp: run.updatedAt,
+        }))
+    }
+    return []
+  }
+
+  const activeRunActivities = computed<ActivityItem[]>(() => {
+    if (!activeRun.value) return []
+    return getActivitiesForRun(activeRun.value.id)
+  })
+
+  async function backfillEvents(): Promise<void> {
+    try {
+      const gateway = getLocalChatGateway()
+      const page = await gateway.listLocalEvents(0, 200)
+      if (page.events?.length) {
+        for (const evt of page.events) {
+          ingestEvent(evt)
+        }
+      }
+      if (page.nextSeq > lastEventSeq.value) {
+        lastEventSeq.value = page.nextSeq
+      }
+    } catch {
+      // ignore backfill errors
+    }
+  }
+
   async function pollEvents(): Promise<void> {
     if (!isPolling.value) return
     const generation = viewGeneration
@@ -402,6 +805,13 @@ export const useChatStore = defineStore('chat', () => {
       if (generation !== viewGeneration) return
       loadError.value = null
       lastEventSeq.value = page.nextSeq
+
+      if (page.events?.length) {
+        for (const evt of page.events) {
+          ingestEvent(evt)
+        }
+      }
+
       // Replies may commit after the last task event. Refresh even on an empty page.
       if (activeConversationId.value) {
         await Promise.all([
@@ -456,6 +866,8 @@ export const useChatStore = defineStore('chat', () => {
     scenes.value = []
     approvals.value = []
     queuedMessages.value = []
+    activitiesByTaskId.value = {}
+    activitiesByRunId.value = {}
     lastEventSeq.value = 0
     loadError.value = null
     sendError.value = null
@@ -488,6 +900,11 @@ export const useChatStore = defineStore('chat', () => {
     approvals,
     pendingApproval,
     isCurrentRunActive,
+    activitiesByTaskId,
+    activitiesByRunId,
+    getActivitiesForRun,
+    activeRunActivities,
+    ingestEvent,
     init,
     fetchConversations,
     selectConversation,

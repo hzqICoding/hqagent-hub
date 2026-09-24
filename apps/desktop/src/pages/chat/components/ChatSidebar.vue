@@ -117,7 +117,7 @@ function formatTime(iso: string) {
 </script>
 
 <template>
-  <aside class="w-80 h-full border-r border-border bg-panel flex flex-col shrink-0 select-none">
+  <aside class="w-72 sm:w-80 h-full border-r border-border bg-panel flex flex-col shrink-0 select-none">
     <!-- Header: Title & New button -->
     <div class="p-3.5 border-b border-border flex items-center justify-between gap-2">
       <div class="flex items-center gap-2">
