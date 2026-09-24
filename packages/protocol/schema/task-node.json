@@ -7,37 +7,103 @@
     "TaskNodeView": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "taskId", "roleId", "resolvedAgentId", "resolvedAgentName", "resolveSource", "status"],
+      "required": [
+        "id",
+        "taskId",
+        "roleId",
+        "resolvedAgentId",
+        "resolvedAgentName",
+        "resolveSource",
+        "status"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "taskId": { "type": "string" },
-        "roleId": { "$ref": "common.json#/$defs/RoleId" },
-        "resolvedAgentId": { "type": "string" },
-        "resolvedAgentName": { "type": "string" },
-        "resolveSource": { "$ref": "common.json#/$defs/ResolveSource" },
-        "status": { "$ref": "common.json#/$defs/NodeStatus" },
-        "startedAt": { "$ref": "common.json#/$defs/Timestamp" },
-        "completedAt": { "$ref": "common.json#/$defs/Timestamp" },
-        "outputSummary": { "type": "string" },
-        "error": { "type": "string" },
-        "isFallback": { "type": "boolean" },
-        "fallbackReason": { "type": "string" },
+        "id": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "roleId": {
+          "$ref": "common.json#/$defs/RoleId"
+        },
+        "resolvedAgentId": {
+          "type": "string"
+        },
+        "resolvedAgentName": {
+          "type": "string"
+        },
+        "resolveSource": {
+          "$ref": "common.json#/$defs/ResolveSource"
+        },
+        "status": {
+          "$ref": "common.json#/$defs/NodeStatus"
+        },
+        "startedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "completedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "outputSummary": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "isFallback": {
+          "type": "boolean"
+        },
+        "fallbackReason": {
+          "type": "string"
+        },
         "sessionId": {
           "type": "string",
           "description": "本节点使用的 Hub 本地会话 ID。同一 Agent 承担实现与审核时，两个节点必须是两个不同的会话（裁决 D7）"
         },
-        "externalSessionId": { "type": "string" },
-        "worktreePath": { "type": "string" },
-        "branch": { "type": "string" },
+        "externalSessionId": {
+          "type": "string"
+        },
+        "worktreePath": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
         "changedFiles": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "git diff --name-only 的结果"
         },
         "violationPaths": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "越界修改的路径。非空即判定任务失败，且保留 worktree 供人工查看"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "execution",
+            "acceptance"
+          ],
+          "description": "acceptance表示验收阶段；原会话验收的roleId仍为planner，保持会话权限一致。"
+        },
+        "reviewVerdict": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "changes_requested",
+            "insufficient_evidence"
+          ]
+        },
+        "reviewSourceNodeId": {
+          "type": "string"
+        },
+        "reviewEvidenceId": {
+          "type": "string"
         }
       }
     }

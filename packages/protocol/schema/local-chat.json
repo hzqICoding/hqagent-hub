@@ -8,16 +8,25 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "initialPath": { "type": "string", "maxLength": 4096 }
+        "initialPath": {
+          "type": "string",
+          "maxLength": 4096
+        }
       }
     },
     "PickLocalDirectoryView": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cancelled"],
+      "required": [
+        "cancelled"
+      ],
       "properties": {
-        "cancelled": { "type": "boolean" },
-        "selectedPath": { "type": "string" }
+        "cancelled": {
+          "type": "boolean"
+        },
+        "selectedPath": {
+          "type": "string"
+        }
       }
     },
     "LocalSceneId": {
@@ -97,6 +106,9 @@
         },
         "updatedAt": {
           "$ref": "common.json#/$defs/Timestamp"
+        },
+        "reviewMode": {
+          "$ref": "local-chat.json#/$defs/ReviewMode"
         }
       }
     },
@@ -117,6 +129,9 @@
         "expectedVersion": {
           "type": "integer",
           "minimum": 1
+        },
+        "reviewMode": {
+          "$ref": "local-chat.json#/$defs/ReviewMode"
         }
       }
     },
@@ -452,6 +467,14 @@
           "type": "string"
         }
       }
+    },
+    "ReviewMode": {
+      "type": "string",
+      "enum": [
+        "independent",
+        "original_planner"
+      ],
+      "description": "independent使用独立reviewer；original_planner以验收阶段恢复本轮planner原生会话。省略时兼容旧独立模式。"
     }
   }
 }
