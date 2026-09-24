@@ -1,0 +1,193 @@
+diff --git a/apps/hub/adapters/claude_adapter.py b/apps/hub/adapters/claude_adapter.py
+index a5d32ce..e93c2d2 100644
+--- a/apps/hub/adapters/claude_adapter.py
++++ b/apps/hub/adapters/claude_adapter.py
+@@ -559,7 +559,9 @@ class ClaudeAdapter(AgentAdapter):
+                     tool_input = content.get("input") if isinstance(content.get("input"), dict) else {}
+                     violations = state.guard.inspect_tool_call(tool_name, tool_input)
+                     if violations:
+-                        await self._fail_path_violation(state, violations, raw)
++                        # 带上工具名：只说「访问越界路径」而不说是哪个工具，
++                        # 排障时分不清是 Agent 想写还是我们的读写判别写错了。
++                        await self._fail_path_violation(state, violations, raw, tool_name)
+                         return
+                     excerpt = json.dumps(tool_input, ensure_ascii=False, default=str)[:512]
+                     payload = AgentToolCallPayload.model_validate(
+@@ -626,11 +628,15 @@ class ClaudeAdapter(AgentAdapter):
+             await state.emit(event)
+ 
+     async def _fail_path_violation(
+-        self, state: AdapterSessionState, violations: list[str], raw: dict[str, Any]
++        self,
++        state: AdapterSessionState,
++        violations: list[str],
++        raw: dict[str, Any],
++        tool_name: str = "",
+     ) -> None:
+         state.failure = failure(
+             AdapterFailureKind.PATH_VIOLATION,
+-            "Claude 尝试在写入前访问越界路径",
++            f"Claude 用工具 {tool_name or '<unknown>'} 访问了越界路径",
+             retryable=False,
+             raw=raw,
+             violation_paths=violations,
+diff --git a/apps/hub/adapters/path_guard.py b/apps/hub/adapters/path_guard.py
+index bd99821..ffb4d5a 100644
+--- a/apps/hub/adapters/path_guard.py
++++ b/apps/hub/adapters/path_guard.py
+@@ -17,6 +17,34 @@ _WRITE_COMMAND = re.compile(
+ )
+ 
+ 
++# 只读工具：它们的入参里也有 path / file_path，但访问不产生写入。
++# 对这些只校验「有没有跑出 worktree」，不校验可写白名单——
++# 否则只读角色（reviewer 的 writablePaths 是空的）连要复核的文件都打不开，
++# 一 Read 就被判越界。这正是集成时 reviewer 节点失败的原因。
++#
++# 名单之外的工具一律按写处理（fail-closed）：不认识的工具宁可误拦，
++# 也不能让一个能写的工具因为没在名单里就绕过白名单。
++_READ_ONLY_TOOLS = frozenset(
++    {
++        "read",
++        "read_file",
++        "readfile",
++        "view",
++        "cat",
++        "glob",
++        "grep",
++        "search",
++        "ls",
++        "list_dir",
++        "list_directory",
++        "notebookread",
++        "websearch",
++        "webfetch",
++        "todowrite",
++    }
++)
++
++
+ class PathGuard:
+     def __init__(self, worktree_path: str, allowed_paths: Iterable[str]) -> None:
+         self.root = Path(worktree_path).resolve()
+@@ -53,8 +81,16 @@ class PathGuard:
+     def violations(self, candidates: Iterable[str]) -> list[str]:
+         return [item for item in candidates if not self.allows(item)]
+ 
++    def contains(self, candidate: str) -> bool:
++        """路径是否落在 worktree 内。只读工具用这个，不看可写白名单。"""
++        return self._relative(candidate) is not None
++
+     def inspect_tool_call(self, tool_name: str, tool_input: dict[str, Any]) -> list[str]:
+         candidates = list(self._extract_paths(tool_input))
++        if tool_name.lower() in _READ_ONLY_TOOLS:
++            # 读操作只要不跑出 worktree 就放行。跑出去仍然拦——
++            # 越界读同样是信息泄漏，不能因为「只是读」就不管。
++            return [item for item in candidates if not self.contains(item)]
+         violations = self.violations(candidates)
+         if violations:
+             return violations
+diff --git a/apps/hub/adapters/tests/test_contract_rules.py b/apps/hub/adapters/tests/test_contract_rules.py
+index 7121e73..9a5f5dc 100644
+--- a/apps/hub/adapters/tests/test_contract_rules.py
++++ b/apps/hub/adapters/tests/test_contract_rules.py
+@@ -390,3 +390,43 @@ def test_explicit_resume_requires_exact_external_id_and_never_uses_latest(
+         assert "--last" in missing.message
+ 
+     asyncio.run(scenario())
++
++
++def test_read_only_tools_are_not_checked_against_the_writable_allowlist(tmp_path) -> None:
++    """只读工具只校验 worktree 边界，不校验可写白名单。
++
++    D22 要求写入前拦下越界路径。但 inspect_tool_call 原来对任何工具都提取
++    path/file_path 去比对可写白名单，而 Read / Grep / Glob 的入参里同样有
++    这些字段——于是只读角色（reviewer 的 writablePaths 是空的）连要复核的
++    文件都打不开，一 Read 就被判越界。集成时 reviewer 节点就是这么失败的。
++    """
++    from adapters.path_guard import PathGuard
++
++    (tmp_path / "backend").mkdir()
++    target = tmp_path / "backend" / "x.txt"
++    target.write_text("hi", encoding="utf-8")
++    guard = PathGuard(str(tmp_path), [])  # 只读角色：可写白名单为空
++
++    assert guard.inspect_tool_call("Read", {"file_path": str(target)}) == []
++    assert guard.inspect_tool_call("Grep", {"path": str(tmp_path / "backend")}) == []
++
++
++def test_read_outside_the_worktree_is_still_blocked(tmp_path) -> None:
++    """越界读同样是信息泄漏，不能因为「只是读」就放行。"""
++    from adapters.path_guard import PathGuard
++
++    guard = PathGuard(str(tmp_path), [])
++    assert guard.inspect_tool_call("Read", {"file_path": "C:/Windows/System32/config/SAM"})
++
++
++def test_unknown_tools_are_treated_as_writes(tmp_path) -> None:
++    """名单外的工具一律按写处理。
++
++    不认识的工具宁可误拦，也不能让一个能写的工具因为没被列进只读名单
++    就绕过可写白名单——这个方向错了就是安全漏洞。
++    """
++    from adapters.path_guard import PathGuard
++
++    (tmp_path / "backend").mkdir()
++    guard = PathGuard(str(tmp_path), [])
++    assert guard.inspect_tool_call("SomeBrandNewTool", {"path": str(tmp_path / "backend" / "z.txt")})
+diff --git a/apps/hub/runtime/tasks.py b/apps/hub/runtime/tasks.py
+index b0dcb52..74f0402 100644
+--- a/apps/hub/runtime/tasks.py
++++ b/apps/hub/runtime/tasks.py
+@@ -41,6 +41,24 @@ from orchestrator.runtime import NodeDispatchRequest
+ from security.worktrees import WorktreeSpec
+ 
+ 
++def _failure_text(failure: Any, fallback: object) -> str:
++    """把 AdapterFailure 拼成人能看懂的一行。
++
++    必须带上 violationPaths：只说「访问越界路径」而不说是哪个路径，
++    用户既不知道该放宽白名单还是该管住 Agent，排障只能靠猜。
++    """
++    kind = getattr(failure, "kind", "agent_error")
++    message = getattr(failure, "message", None) or str(fallback)
++    text = f"{kind}: {message}"
++    paths = getattr(failure, "violation_paths", None)
++    if paths:
++        text += "；越界路径：" + ", ".join(str(p) for p in paths[:5])
++    missing = getattr(failure, "missing_capabilities", None)
++    if missing:
++        text += "；缺少能力：" + ", ".join(str(c) for c in missing)
++    return text
++
++
+ def node_id_or_node(repository: Any, task_id: str, node_id: str) -> Any:
+     return next((n for n in repository.list_nodes(task_id) if n.id == node_id), None)
+ 
+@@ -332,12 +350,7 @@ class TaskService:
+             # Agent 起不来是可处理的状态，不是崩溃。把 AdapterFailureKind
+             # 原样写到节点上——前端要靠它区分「没登录」和「缺能力」，
+             # 这两种的用户动作完全不同（去登录 vs 换 Agent）。
+-            failure = error.failure
+-            await self._fail_node(
+-                task_id,
+-                node,
+-                f"{getattr(failure, 'kind', 'agent_error')}: {getattr(failure, 'message', error)}",
+-            )
++            await self._fail_node(task_id, node, _failure_text(error.failure, error))
+             return
+         except OrchestrationError as error:
+             await self._fail_node(task_id, node, str(error))
+@@ -516,11 +529,10 @@ class TaskService:
+             except asyncio.CancelledError:
+                 raise
+             except AdapterStartFailedError as error:
+-                failure = error.failure
+                 await self._fail_node(
+                     task_id,
+                     node_id_or_node(self.repository, task_id, node_id),
+-                    f"{getattr(failure, 'kind', 'agent_error')}: {getattr(failure, 'message', error)}",
++                    _failure_text(error.failure, error),
+                 )
+             except Exception as error:  # noqa: BLE001 - 抽取失败必须落到节点上，不能静默
+                 node = next((n for n in self.repository.list_nodes(task_id) if n.id == node_id), None)

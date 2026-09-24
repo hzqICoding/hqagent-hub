@@ -1,0 +1,7 @@
+{
+  "sourceWorktree": "E:\\OtherPro\\HQAgent-Hub-worktrees\\integration",
+  "baseCommit": "0824cbbbd97b69efaf53ee0312f718d7ab79c86a",
+  "patchSha256": "c15653987d72c19410f22a99987f14b893e9baf2e15ed68d7bfc6bab440eb957",
+  "patchBytes": 8995,
+  "purpose": "preserve existing integration changes before isolated vNext implementation"
+}

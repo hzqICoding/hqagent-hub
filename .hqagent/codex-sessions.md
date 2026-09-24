@@ -37,3 +37,29 @@ codex 有自己的默认署名行为。
 | --- | --- |
 | W1 Local Hub | 429 限流中断在自测前，代码由 W0 抢救落库并验收 |
 | W5 桌面壳 | 429 限流中断在自测前，代码由 W0 抢救、修编译、补测试 |
+
+## 2026-09-24 现状与架构只读评估
+
+本轮检查了旧登记，当前原生协作工具未发现可复用的存活子代理。因此新建两个窄范围只读审查线程；没有启动旧 CLI 会话或验证跨客户端恢复。主代理负责整合、临时数据库定向验证及已有测试，子代理不运行重复测试、不修改源码。
+
+| 职责 | canonical task | 独立 thread ID | session ID | 模型 / 等级 | 工作目录 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 主审、前端/集成、验证及评审记录 | `/root` | `01a0ceda-3bd5-7092-a443-c9e36b1eff9c` | `01a0ceda-3bd5-7092-a443-c9e36b1eff9c` | 当前主会话，具体模型/等级未由可读元数据确认 | main 记录；integration 只读与测试 | 已完成 |
+| W2 适配、会话、模型配置与插件复核 | `/root/audit_adapters` | `01a0cf37-eece-7160-9a3d-611ebd8c5aba` | `01a0ceda-3bd5-7092-a443-c9e36b1eff9c`（父会话继承） | `gpt-5.6-sol` / `high`（委派配置） | `E:/OtherPro/HQAgent-Hub-worktrees/w2-adapters` | 已完成，可在本线程树继续 |
+| W3 编排、恢复、权限与复杂度复核 | `/root/audit_orchestration` | `01a0cf38-30a9-7733-b5ff-4649ad36fecc` | `01a0ceda-3bd5-7092-a443-c9e36b1eff9c`（父会话继承） | `gpt-5.6-sol` / `high`（委派配置） | `E:/OtherPro/HQAgent-Hub-worktrees/w3-orchestrator` | 已完成，可在本线程树继续 |
+
+- 回执与证据汇总：`.hqagent/reviews/2026-09-24-architecture-review.md`。
+- 可接续工作：技术方案范围确认、核心实体/插件协议设计；本轮未实施重构。
+- 原生子代理可通过 `followup_task` 接续；跨客户端/CLI resume 未验证，不以继承 session ID 冒充独立子线程。
+- 写入范围仅主目录 `.hqagent/` 下的本轮记录。main 与 integration 原有未提交修改均保留。
+
+## 2026-09-24 vNext 方案接续
+
+复用上表 `/root/audit_adapters` 与 `/root/audit_orchestration`，未新建子线程，模型/等级保持 `gpt-5.6-sol / high`。两者继续在原独立 worktree 中只读，分别提供插件/会话契约建议与状态/幂等复核；主代理统一编辑 `docs/vnext/**` 和本轮 `.hqagent` 记录。
+
+- 交付入口：`docs/vnext/README.md`。
+- 技术与协议：`docs/vnext/技术方案.md`、`docs/vnext/接口与插件协议.md`。
+- 实施与验收：`docs/vnext/实施与验收.md`；包含 N0-A 首个实施任务书和 E01–E18 场景。
+- 本轮不修改 `packages/protocol` 或应用源码，不重跑上一轮业务测试；验证文档链接、JSON 样例、关键字段和设计一致性。
+- 复核回执及实际文档校验输出：`.hqagent/reviews/2026-09-24-vnext-design-check.md`。
+- 状态：设计与双路一致性复核已完成，已补齐请求/实际模型区分、历史操作映射、插件传输分支、命令终态、备份世代游标及审批消费状态；跨客户端恢复仍未验证。
