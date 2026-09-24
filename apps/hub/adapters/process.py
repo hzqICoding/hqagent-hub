@@ -18,6 +18,22 @@ _KNOWN_NPM_PACKAGES = {
     "codex": ("@openai/codex", "codex"),
 }
 
+# Safe mode suppresses customizations; carry user transport configuration in the
+# child environment, without enabling hooks/plugins or exposing secrets in argv.
+_CLAUDE_TRANSPORT_ENV = frozenset({
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+    "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_CUSTOM_HEADERS", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CLAUDE_CODE_CLIENT_CERT", "CLAUDE_CODE_CLIENT_KEY", "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
+    "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+    "CLAUDE_CODE_SKIP_BEDROCK_AUTH", "CLAUDE_CODE_SKIP_VERTEX_AUTH", "CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
+    "ANTHROPIC_BEDROCK_BASE_URL", "ANTHROPIC_VERTEX_BASE_URL", "ANTHROPIC_FOUNDRY_BASE_URL",
+    "ANTHROPIC_FOUNDRY_RESOURCE", "ANTHROPIC_FOUNDRY_API_KEY",
+    "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE", "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_BEARER_TOKEN_BEDROCK",
+    "ANTHROPIC_VERTEX_PROJECT_ID", "CLOUD_ML_REGION", "GOOGLE_APPLICATION_CREDENTIALS",
+})
+
 
 @dataclass(frozen=True, slots=True)
 class CommandResult:
@@ -99,13 +115,41 @@ def command_environment(prefix: str) -> dict[str, str]:
 
     env = dict(os.environ)
     if prefix == "claude":
-        for key in tuple(env):
-            if key == "CLAUDECODE" or key == "CLAUDE_PID" or key.startswith("CLAUDE_CODE_"):
-                env.pop(key, None)
+        _inherit_claude_transport_settings(env)
+        for key in ("CLAUDECODE", "CLAUDE_PID"):
+            env.pop(key, None)
     elif prefix == "codex":
         for key in ("CODEX_SESSION_ID", "CODEX_THREAD_ID"):
             env.pop(key, None)
     return env
+
+
+def _inherit_claude_transport_settings(env: dict[str, str]) -> None:
+    """Fill missing transport variables from user settings; never edit that file.
+
+    Explicit Worker environment wins, including empty values. Do not evaluate
+    shell profiles, load arbitrary env (e.g. NODE_OPTIONS), or enable project hooks.
+    Invalid user settings fail closed rather than silently dropping their proxy.
+    """
+    config_dir = env.get("CLAUDE_CONFIG_DIR")
+    root = Path(config_dir).expanduser() if config_dir else Path.home() / ".claude"
+    path = root / "settings.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError):
+        raise OSError("Claude 用户 settings.json 无法读取或解析；请检查网络配置，未回退为直连") from None
+    if not isinstance(raw, dict) or not isinstance(raw.get("env", {}), dict):
+        raise OSError("Claude 用户 settings.json 的 env 必须是对象；未回退为直连")
+    inherited = {key.upper() for key in env}
+    for key, value in raw.get("env", {}).items():
+        if key.upper() not in _CLAUDE_TRANSPORT_ENV or key.upper() in inherited:
+            continue
+        if not isinstance(value, str):
+            raise OSError("Claude 用户 settings.json 的网络环境变量必须是字符串；未回退为直连")
+        env[key] = value
+        inherited.add(key.upper())
 
 
 def executable_args(executable: str, *args: str) -> list[str]:
