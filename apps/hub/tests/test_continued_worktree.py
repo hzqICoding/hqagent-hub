@@ -262,3 +262,31 @@ def test_read_only_continue_keeps_its_own_scope_without_worktree_metadata(tmp_pa
         assert worktrees.create_calls == 0
 
     asyncio.run(scenario())
+
+
+def test_continue_rejects_explicit_allowed_paths_change(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        repository = tmp_path / "repo"
+        old_worktree = tmp_path / "worktrees" / "old-developer"
+        repository.mkdir()
+        old_worktree.mkdir(parents=True)
+        session_id = "session-old"
+        service, _, worktrees = service_for(
+            session_view(session_id),
+            task_spec(old_worktree, session_id),
+            tmp_path / "worktrees",
+            read_only=False,
+        )
+        state = task_state("developer", session_id, repository)
+        state["request"]["allowedPaths"] = ["src/**"]
+
+        with pytest.raises(HubError) as error:
+            await service._prepare_execution_path(
+                "new-task", node(), "developer", {"path": str(repository)}, state
+            )
+
+        assert error.value.code == "SESSION_NOT_RESUMABLE"
+        assert "allowedPaths" in error.value.message
+        assert worktrees.create_calls == 0
+
+    asyncio.run(scenario())

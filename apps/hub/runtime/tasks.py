@@ -755,6 +755,15 @@ class TaskService:
                 "恢复会话的只读权限与当前角色不一致",
                 detail={"sessionId": resume_session_id, "roleId": role_id},
             )
+        if (
+            "allowedPaths" in request
+            and tuple(request.get("allowedPaths") or ()) != tuple(original_spec.allowed_paths)
+        ):
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "当前任务显式 allowedPaths 与原会话权限范围不一致，请使用 New 会话",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            )
         if not original_spec.worktree_path:
             raise HubError(
                 "SESSION_NOT_RESUMABLE",
@@ -763,13 +772,11 @@ class TaskService:
             )
         actual_path = Path(original_spec.worktree_path).resolve()
         if not actual_path.is_dir():
-            current_root = Path(str(workspace["path"])).resolve()
-            if not read_only or actual_path != current_root:
-                raise HubError(
-                    "SESSION_NOT_RESUMABLE",
-                    "恢复会话的原执行路径已不存在",
-                    detail={"sessionId": resume_session_id, "roleId": role_id},
-                )
+            raise HubError(
+                "SESSION_NOT_RESUMABLE",
+                "恢复会话的原执行路径已不存在",
+                detail={"sessionId": resume_session_id, "roleId": role_id},
+            )
         result: dict[str, Any] = {
             "path": str(actual_path),
             "branch": original_spec.branch or "",
