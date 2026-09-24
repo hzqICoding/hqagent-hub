@@ -33,6 +33,7 @@ async function handleSend() {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
+  if (e.isComposing) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     handleSend()
@@ -123,6 +124,7 @@ function switchMode(mode: 'new' | 'continue') {
       <textarea
         v-model="inputText"
         :rows="3"
+        :maxlength="32000"
         placeholder="向角色团队输入任务目标或补充要求... (Enter 发送，Shift + Enter 换行)"
         class="w-full p-2.5 pr-20 text-xs bg-bg-app border border-border rounded-[var(--radius-md)] text-text placeholder-text-muted/60 focus:outline-none focus:border-primary resize-none transition-colors"
         @keydown="handleKeyDown"

@@ -65,6 +65,9 @@ function getSceneLabel(sceneId?: string) {
 
 <template>
   <div class="h-full flex flex-col bg-bg-app overflow-hidden">
+    <div v-if="chatStore.loadError" role="alert" class="px-4 py-2 text-xs text-danger bg-danger/10 border-b border-danger/20">
+      {{ chatStore.loadError }}
+    </div>
     <!-- Mock Mode Warning Banner if active -->
     <div
       v-if="authStore.isMockMode"

@@ -99,6 +99,15 @@ describe('RealLocalChatGateway', () => {
     ).rejects.toThrow(HubApiError)
   })
 
+  it('sends the required idempotency key on approval decisions', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200,
+      json: async () => ({ success: true, data: { id: 'approval-1', status: 'approved' } }) })
+    globalThis.fetch = mockFetch as any
+    await gateway.decideLocalApproval('approval-1', { decision: 'approve' }, 'approval-request-1')
+    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/approvals/approval-1/decisions'),
+      expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': 'approval-request-1' }) }))
+  })
+
   it('handles network failure with retryable HUB_NOT_READY HubApiError', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('Connection refused')) as any
 

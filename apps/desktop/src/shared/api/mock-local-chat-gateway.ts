@@ -31,7 +31,6 @@ import { HubApiError } from './local-hub-gateway'
 // Import contract fixtures
 import analyzeSceneFixture from '@hqagent/fixtures/local-scene.analyze.json'
 import agentsDiscoveryFixture from '@hqagent/fixtures/agents.discovery-partial.json'
-import bootstrapFixture from '@hqagent/fixtures/bootstrap.happy.json'
 
 export class MockLocalChatGateway implements LocalChatGateway {
   public isMock = true

@@ -73,7 +73,8 @@ export interface LocalChatGateway {
   listLocalApprovals(): Promise<ApprovalView[]>
   decideLocalApproval(
     approvalId: string,
-    input: ApprovalResponseInput
+    input: ApprovalResponseInput,
+    idempotencyKey?: string
   ): Promise<ApprovalView>
   listLocalSessions(): Promise<SessionView[]>
 }

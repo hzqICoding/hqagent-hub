@@ -55,6 +55,7 @@ function syncEditBuffer() {
 function handleAgentChange(role: LocalRoleConfig, agentId: string) {
   role.agentInstanceId = agentId
   role.modelId = ''
+  role.reasoningEffort = ''
   if (agentId) {
     scenesStore.fetchAgentModels(agentId)
   }
@@ -94,7 +95,7 @@ function getRoleMeta(roleId: string) {
         title: '需求规划 (Planner)',
         desc: '只读分析需求并输出落地实施方案，不修改业务文件',
         isReadOnly: true,
-        isOptional: false,
+        isOptional: selectedSceneId.value === 'develop',
       }
     case 'developer':
       return {
@@ -118,6 +119,15 @@ function getRoleMeta(roleId: string) {
         isOptional: true,
       }
   }
+}
+
+function selectedModel(role: LocalRoleConfig) {
+  return scenesStore.agentModelsMap[role.agentInstanceId]?.models.find(model => model.id === role.modelId)
+}
+
+function effortOptions(role: LocalRoleConfig) {
+  return [{ label: '继承 Runtime 默认', value: '' },
+    ...(selectedModel(role)?.efforts || []).map(effort => ({ label: effort, value: effort }))]
 }
 </script>
 
@@ -299,7 +309,8 @@ function getRoleMeta(roleId: string) {
                 <!-- If verified models available -->
                 <div v-if="scenesStore.agentModelsMap[role.agentInstanceId]?.verified && (scenesStore.agentModelsMap[role.agentInstanceId]?.models?.length ?? 0) > 0">
                   <HqSelect
-                    v-model="role.modelId"
+                  v-model="role.modelId"
+                  @update:model-value="role.reasoningEffort = ''"
                     :options="
                       (scenesStore.agentModelsMap[role.agentInstanceId]?.models || []).map((m) => ({
                         label: `${m.name} (${m.id})`,
@@ -331,15 +342,12 @@ function getRoleMeta(roleId: string) {
                   思考强度 (Reasoning Effort)
                 </label>
                 <HqSelect
+                  v-if="selectedModel(role)"
                   v-model="role.reasoningEffort"
-                  :options="[
-                    { label: '默认 (Default)', value: '' },
-                    { label: '低强度 (Low)', value: 'low' },
-                    { label: '中强度 (Medium)', value: 'medium' },
-                    { label: '高强度 (High)', value: 'high' },
-                  ]"
+                  :options="effortOptions(role)"
                   placeholder="请选择思考等级"
                 />
+                <input v-else v-model="role.reasoningEffort" class="w-full px-2.5 py-1.5 bg-bg-app border border-border rounded" placeholder="留空继承默认；手填值由后端验证" />
               </div>
             </div>
 

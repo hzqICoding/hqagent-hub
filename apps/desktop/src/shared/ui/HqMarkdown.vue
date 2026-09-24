@@ -99,6 +99,11 @@ const parsedBlocks = computed<Block[]>(() => {
       pLines.push(lines[i])
       i++
     }
+    if (pLines.length === 0) {
+      // Unsupported heading/quote syntax must still consume the line.
+      pLines.push(lines[i])
+      i++
+    }
     blocks.push({ type: 'paragraph', text: pLines.join(' ') })
   }
 
@@ -112,12 +117,18 @@ function formatInline(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 
   return escaped
     .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-content-primary">$1</strong>')
     .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
     .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded bg-muted font-mono text-[11px] text-content-primary">$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-action-primary hover:underline">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, href: string) => {
+      const decoded = href.replace(/&amp;/g, '&')
+      if (!/^(https?:\/\/|mailto:|\/(?!\/)|#)/i.test(decoded) || Array.from(decoded).some(c => c.charCodeAt(0) <= 32)) return label
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-action-primary hover:underline">${label}</a>`
+    })
 }
 </script>
 

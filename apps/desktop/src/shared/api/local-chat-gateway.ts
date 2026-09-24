@@ -276,14 +276,16 @@ export class RealLocalChatGateway implements LocalChatGateway {
 
   async decideLocalApproval(
     approvalId: string,
-    input: ApprovalResponseInput
+    input: ApprovalResponseInput,
+    idempotencyKey?: string
   ): Promise<ApprovalView> {
     return this.fetchApi<ApprovalView>(
       `/api/v2/approvals/${encodeURIComponent(approvalId)}/decisions`,
       {
         method: 'POST',
         body: JSON.stringify(input),
-      }
+      },
+      idempotencyKey || `approval_${approvalId}_${input.decision}`
     )
   }
 

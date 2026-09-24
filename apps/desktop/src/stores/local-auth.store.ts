@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { useChatStore } from './chat.store'
+import { useScenesStore } from './scenes.store'
 import {
   getLocalChatGateway,
   getLocalChatGatewayMode,
@@ -82,10 +84,14 @@ export const useLocalAuthStore = defineStore('localAuth', () => {
       // ignore
     } finally {
       authenticated.value = false
+      useChatStore().reset()
+      useScenesStore().reset()
     }
   }
 
   function setGatewayMode(mode: LocalChatGatewayMode): void {
+    useChatStore().reset()
+    useScenesStore().reset()
     setLocalChatGatewayMode(mode)
     currentMode.value = mode
     checkAuthStatus()

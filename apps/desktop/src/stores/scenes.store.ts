@@ -17,8 +17,10 @@ export const useScenesStore = defineStore('scenes', () => {
   const isSaving = ref(false)
   const error = ref<string | null>(null)
   const conflictError = ref<{ currentVersion: number; message: string } | null>(null)
+  let generation = 0
 
   async function fetchScenes(): Promise<void> {
+    const currentGeneration = generation
     isLoading.value = true
     error.value = null
     conflictError.value = null
@@ -28,13 +30,14 @@ export const useScenesStore = defineStore('scenes', () => {
         gateway.listLocalScenes(),
         gateway.listLocalAgents(),
       ])
+      if (currentGeneration !== generation) return
       scenes.value = scenesRes
       availableAgents.value = agentsRes
       if (!currentScene.value && scenesRes.length > 0) {
-        currentScene.value = scenesRes[0]
+        currentScene.value = JSON.parse(JSON.stringify(scenesRes[0]))
       } else if (currentScene.value) {
-        currentScene.value =
-          scenesRes.find((s) => s.id === currentScene.value?.id) || scenesRes[0] || null
+        currentScene.value = JSON.parse(JSON.stringify(
+          scenesRes.find((s) => s.id === currentScene.value?.id) || scenesRes[0] || null))
       }
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : '加载场景列表失败'
@@ -52,6 +55,7 @@ export const useScenesStore = defineStore('scenes', () => {
   }
 
   async function fetchAgentModels(agentId: string): Promise<LocalAgentModelsView | null> {
+    const currentGeneration = generation
     if (!agentId) return null
     if (agentModelsMap.value[agentId]) {
       return agentModelsMap.value[agentId]
@@ -59,11 +63,22 @@ export const useScenesStore = defineStore('scenes', () => {
     try {
       const gateway = getLocalChatGateway()
       const modelsView = await gateway.getAgentModels(agentId)
+      if (currentGeneration !== generation) return null
       agentModelsMap.value[agentId] = modelsView
       return modelsView
     } catch {
       return null
     }
+  }
+
+  function reset(): void {
+    generation++
+    scenes.value = []
+    currentScene.value = null
+    availableAgents.value = []
+    agentModelsMap.value = {}
+    error.value = null
+    conflictError.value = null
   }
 
   async function saveScene(
@@ -111,5 +126,6 @@ export const useScenesStore = defineStore('scenes', () => {
     selectScene,
     fetchAgentModels,
     saveScene,
+    reset,
   }
 })

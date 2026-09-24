@@ -25,12 +25,16 @@ const newTitle = ref('')
 const selectedWorkspaceId = ref('')
 const selectedSceneId = ref<LocalSceneId>('analyze')
 const isCreating = ref(false)
+const newWorkspacePath = ref('')
+const isRegistering = ref(false)
+const createError = ref<string | null>(null)
 
 function openCreateModal() {
   newTitle.value = ''
   selectedWorkspaceId.value = chatStore.workspaces[0]?.id || ''
   selectedSceneId.value = 'analyze'
   isNewConvModalOpen.value = true
+  createError.value = null
 }
 
 async function handleCreateConversation() {
@@ -43,8 +47,25 @@ async function handleCreateConversation() {
       selectedSceneId.value
     )
     isNewConvModalOpen.value = false
+  } catch (error) {
+    createError.value = error instanceof Error ? error.message : '创建对话失败'
   } finally {
     isCreating.value = false
+  }
+}
+
+async function registerWorkspace() {
+  if (!newWorkspacePath.value.trim() || isRegistering.value) return
+  isRegistering.value = true
+  createError.value = null
+  try {
+    const workspace = await chatStore.registerWorkspace(newWorkspacePath.value)
+    selectedWorkspaceId.value = workspace.id
+    newWorkspacePath.value = ''
+  } catch (error) {
+    createError.value = error instanceof Error ? error.message : '项目目录登记失败'
+  } finally {
+    isRegistering.value = false
   }
 }
 
@@ -179,6 +200,7 @@ function formatTime(iso: string) {
       @close="isNewConvModalOpen = false"
     >
       <form class="space-y-4 py-2 text-xs" @submit.prevent="handleCreateConversation">
+        <p v-if="createError" role="alert" class="text-danger bg-danger/10 p-2 rounded">{{ createError }}</p>
         <div>
           <label class="block font-medium text-text mb-1.5">
             对话标题 <span class="text-danger">*</span>
@@ -204,6 +226,13 @@ function formatTime(iso: string) {
             "
             placeholder="请选择已登记的工作区"
           />
+          <details class="mt-2" :open="chatStore.workspaces.length === 0">
+            <summary class="cursor-pointer text-primary">登记本机已有项目目录</summary>
+            <div class="flex items-center gap-2 mt-2">
+              <HqInput v-model="newWorkspacePath" placeholder="例如 E:\WorkSpace\ua_android" class="flex-1" />
+              <HqButton type="button" size="sm" :disabled="!newWorkspacePath.trim() || isRegistering" @click="registerWorkspace">登记目录</HqButton>
+            </div>
+          </details>
         </div>
 
         <div>

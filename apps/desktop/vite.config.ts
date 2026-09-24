@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       strictPort: false,
       proxy: {
         '/api': {
-          target: process.env.VITE_WORKER_BASE_URL || 'http://127.0.0.1:49210',
+          target: process.env.VITE_WORKER_BASE_URL || 'http://127.0.0.1:8765',
           changeOrigin: true,
         },
         '/ws': {
@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
             process.env.VITE_WORKER_WS_URL ||
             (process.env.VITE_WORKER_BASE_URL
               ? process.env.VITE_WORKER_BASE_URL.replace(/^http/, 'ws')
-              : 'ws://127.0.0.1:49210'),
+              : 'ws://127.0.0.1:8765'),
           ws: true,
           changeOrigin: true,
         },

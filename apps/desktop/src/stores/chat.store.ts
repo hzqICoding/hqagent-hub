@@ -13,6 +13,7 @@ import type {
   LocalSceneId,
 } from '@hqagent/protocol'
 import { getLocalChatGateway, HubApiError } from '@/shared/api'
+import { pendingOperation, completeOperation, definiteRejection } from '@/shared/api/local-pending-operation'
 
 export const useChatStore = defineStore('chat', () => {
   // Conversations
@@ -38,6 +39,9 @@ export const useChatStore = defineStore('chat', () => {
   const queuedMessages = ref<{ id: string; text: string }[]>([])
   const sendError = ref<string | null>(null)
   const resumptionError = ref<string | null>(null)
+  const loadError = ref<string | null>(null)
+  let viewGeneration = 0
+  let pinnedRunId: string | null = null
 
   // Action controls
   const isActionLoading = ref(false)
@@ -85,30 +89,36 @@ export const useChatStore = defineStore('chat', () => {
 
   // Initial load
   async function init(): Promise<void> {
+    const generation = viewGeneration
+    loadError.value = null
     const gateway = getLocalChatGateway()
     try {
       const [wsRes, scenesRes] = await Promise.all([
         gateway.listLocalWorkspaces(),
         gateway.listLocalScenes(),
       ])
+      if (generation !== viewGeneration) return
       workspaces.value = wsRes
       scenes.value = scenesRes
-    } catch {
-      // Handled in individual views
+    } catch (error) {
+      loadError.value = error instanceof Error ? error.message : '加载项目与场景失败'
     }
     await fetchConversations()
   }
 
   async function fetchConversations(): Promise<void> {
+    const generation = viewGeneration
     isLoadingConversations.value = true
     try {
       const gateway = getLocalChatGateway()
-      conversations.value = await gateway.listLocalConversations()
+      const items = await gateway.listLocalConversations()
+      if (generation !== viewGeneration) return
+      conversations.value = items
       if (!activeConversationId.value && conversations.value.length > 0) {
         await selectConversation(conversations.value[0].id)
       }
-    } catch {
-      // ignore
+    } catch (error) {
+      loadError.value = error instanceof Error ? error.message : '加载对话失败'
     } finally {
       isLoadingConversations.value = false
     }
@@ -119,6 +129,12 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
     activeConversationId.value = conversationId
+    viewGeneration++
+    pinnedRunId = null
+    messages.value = []
+    conversationRuns.value = []
+    activeRun.value = null
+    loadError.value = null
     sendError.value = null
     resumptionError.value = null
     actionError.value = null
@@ -138,41 +154,61 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function fetchMessages(conversationId: string): Promise<void> {
+    const generation = viewGeneration
     isLoadingMessages.value = true
     try {
       const gateway = getLocalChatGateway()
-      messages.value = await gateway.listLocalMessages(conversationId, 0, 200)
-    } catch {
-      // ignore
+      let after = messages.value.filter(m => m.conversationId === conversationId).reduce((n, m) => Math.max(n, m.sequence), 0)
+      for (let pageIndex = 0; pageIndex < 50; pageIndex++) {
+        const page = await gateway.listLocalMessages(conversationId, after, 200)
+        if (generation !== viewGeneration || activeConversationId.value !== conversationId) return
+        const merged = new Map(messages.value.map(m => [m.id, m]))
+        for (const message of page) merged.set(message.id, message)
+        messages.value = [...merged.values()].sort((a, b) => a.sequence - b.sequence)
+        const next = page.reduce((n, m) => Math.max(n, m.sequence), after)
+        if (page.length < 200 || next <= after) break
+        after = next
+      }
+    } catch (error) {
+      if (generation === viewGeneration) loadError.value = error instanceof Error ? error.message : '读取消息失败'
     } finally {
       isLoadingMessages.value = false
     }
   }
 
   async function fetchConversationRuns(conversationId: string): Promise<void> {
+    const generation = viewGeneration
     isLoadingRun.value = true
     try {
       const gateway = getLocalChatGateway()
       const runs = await gateway.listConversationRuns(conversationId)
+      if (generation !== viewGeneration || activeConversationId.value !== conversationId) return
       conversationRuns.value = runs
-      const conv = conversations.value.find((c) => c.id === conversationId)
-      const targetRunId = conv?.activeRunId || conv?.lastRunId || runs[0]?.id
+      const live = runs.find(r => r.status === 'running' || r.status === 'waiting_approval' || r.status === 'paused')
+      const targetRunId = pinnedRunId || live?.id || runs[0]?.id
       if (targetRunId) {
-        activeRun.value = await gateway.getLocalRun(targetRunId)
+        const detail = await gateway.getLocalRun(targetRunId)
+        if (generation !== viewGeneration || activeConversationId.value !== conversationId) return
+        activeRun.value = detail
+        if (detail.status === 'failed' && detail.error && /会话|上下文/.test(detail.error)) {
+          resumptionError.value = detail.error
+        }
       } else {
         activeRun.value = null
       }
-    } catch {
-      // ignore
+    } catch (error) {
+      if (generation === viewGeneration) loadError.value = error instanceof Error ? error.message : '读取执行状态失败'
     } finally {
       isLoadingRun.value = false
     }
   }
 
   async function fetchApprovals(): Promise<void> {
+    const generation = viewGeneration
     try {
       const gateway = getLocalChatGateway()
-      approvals.value = await gateway.listLocalApprovals()
+      const items = await gateway.listLocalApprovals()
+      if (generation === viewGeneration) approvals.value = items
     } catch {
       // ignore
     }
@@ -189,11 +225,24 @@ export const useChatStore = defineStore('chat', () => {
       workspaceId,
       sceneId,
     }
-    const idempotencyKey = `create_conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-    const created = await gateway.createLocalConversation(input, idempotencyKey)
-    conversations.value.unshift(created)
-    await selectConversation(created.id)
-    return created
+    const identity = `create:${JSON.stringify(input)}`
+    const operation = pendingOperation(identity, input)
+    try {
+      const created = await gateway.createLocalConversation(operation.payload, operation.id)
+      completeOperation(identity)
+      conversations.value = [created, ...conversations.value.filter(c => c.id !== created.id)]
+      await selectConversation(created.id)
+      return created
+    } catch (error) {
+      if (definiteRejection(error)) completeOperation(identity)
+      throw error
+    }
+  }
+
+  async function registerWorkspace(path: string): Promise<WorkspaceView> {
+    const workspace = await getLocalChatGateway().addLocalWorkspace({ path: path.trim() })
+    workspaces.value = [workspace, ...workspaces.value.filter(w => w.id !== workspace.id)]
+    return workspace
   }
 
   async function sendMessage(
@@ -204,8 +253,10 @@ export const useChatStore = defineStore('chat', () => {
     if (!convId || !text.trim() || isSending.value) return
 
     const mode = modeOverride || sessionMode.value
-    const clientMessageId = `cmsg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-    const idempotencyKey = `idemp_msg_${clientMessageId}`
+    const identity = `send:${convId}:${text.trim()}`
+    const operation = pendingOperation(identity, { text: text.trim(), sessionMode: mode })
+    const clientMessageId = operation.id
+    const idempotencyKey = operation.id
 
     // If currently running, queue it
     if (isCurrentRunActive.value) {
@@ -222,11 +273,13 @@ export const useChatStore = defineStore('chat', () => {
         convId,
         {
           clientMessageId,
-          text: text.trim(),
-          sessionMode: mode,
+          ...operation.payload,
         },
         idempotencyKey
       )
+      completeOperation(identity)
+      if (activeConversationId.value === convId) sessionMode.value = 'continue'
+      pinnedRunId = null
 
       // Refresh messages and runs
       await Promise.all([fetchMessages(convId), fetchConversationRuns(convId)])
@@ -238,6 +291,7 @@ export const useChatStore = defineStore('chat', () => {
       startPolling()
       return
     } catch (err: unknown) {
+      if (definiteRejection(err)) completeOperation(identity)
       queuedMessages.value = queuedMessages.value.filter((q) => q.id !== clientMessageId)
       if (err instanceof HubApiError) {
         if (err.code === 'SESSION_NOT_RESUMABLE') {
@@ -262,15 +316,19 @@ export const useChatStore = defineStore('chat', () => {
   ): Promise<void> {
     isActionLoading.value = true
     actionError.value = null
-    const idempotencyKey = `cmd_${runId}_${action}_${Date.now()}`
+    const identity = `control:${runId}:${action}:${instruction || ''}`
+    const operation = pendingOperation(identity, { action, instruction })
+    const idempotencyKey = operation.id
     try {
       const gateway = getLocalChatGateway()
       const updatedRun = await gateway.controlLocalRun(
         runId,
-        { action, instruction },
+        operation.payload,
         idempotencyKey
       )
+      completeOperation(identity)
       activeRun.value = updatedRun
+      pinnedRunId = updatedRun.id
       if (activeConversationId.value) {
         await Promise.all([
           fetchMessages(activeConversationId.value),
@@ -278,6 +336,7 @@ export const useChatStore = defineStore('chat', () => {
         ])
       }
     } catch (err: unknown) {
+      if (definiteRejection(err)) completeOperation(identity)
       actionError.value = err instanceof Error ? err.message : '执行操作失败'
       throw err
     } finally {
@@ -289,9 +348,12 @@ export const useChatStore = defineStore('chat', () => {
     approvalId: string,
     input: ApprovalResponseInput
   ): Promise<void> {
+    const identity = `approval:${approvalId}:${input.decision}`
+    const operation = pendingOperation(identity, input)
     try {
       const gateway = getLocalChatGateway()
-      await gateway.decideLocalApproval(approvalId, input)
+      await gateway.decideLocalApproval(approvalId, operation.payload, operation.id)
+      completeOperation(identity)
       await fetchApprovals()
       if (activeConversationId.value) {
         await Promise.all([
@@ -300,6 +362,7 @@ export const useChatStore = defineStore('chat', () => {
         ])
       }
     } catch (err: unknown) {
+      if (definiteRejection(err)) completeOperation(identity)
       actionError.value = err instanceof Error ? err.message : '审批提交失败'
       throw err
     }
@@ -322,43 +385,73 @@ export const useChatStore = defineStore('chat', () => {
 
   async function pollEvents(): Promise<void> {
     if (!isPolling.value) return
+    const generation = viewGeneration
     try {
       const gateway = getLocalChatGateway()
       const page = await gateway.listLocalEvents(lastEventSeq.value, 100)
-      if (page.events.length > 0) {
-        lastEventSeq.value = page.nextSeq
-        // If there are task events relevant to active conversation, refresh
-        if (activeConversationId.value) {
-          await Promise.all([
-            fetchMessages(activeConversationId.value),
-            fetchConversationRuns(activeConversationId.value),
-            fetchApprovals(),
-          ])
-        }
+      if (generation !== viewGeneration) return
+      loadError.value = null
+      lastEventSeq.value = page.nextSeq
+      // Replies may commit after the last task event. Refresh even on an empty page.
+      if (activeConversationId.value) {
+        await Promise.all([
+          fetchMessages(activeConversationId.value),
+          fetchConversationRuns(activeConversationId.value),
+          fetchApprovals(),
+        ])
       }
     } catch (err: unknown) {
       if (err instanceof HubApiError && (err.code === 'EVENT_CURSOR_EXPIRED' || err.status === 410)) {
-        // Reset cursor to 0 and refetch
-        lastEventSeq.value = 0
+        const latest = err.detail?.latestSeq
+        if (typeof latest !== 'number' || latest < 0) {
+          loadError.value = '事件游标已失效，请重新连接本机服务'
+          stopPolling()
+          return
+        }
+        lastEventSeq.value = latest
         if (activeConversationId.value) {
           await Promise.all([
             fetchMessages(activeConversationId.value),
             fetchConversationRuns(activeConversationId.value),
           ])
         }
+      } else {
+        loadError.value = err instanceof Error ? err.message : '服务连接中断，正在重连'
       }
     } finally {
-      scheduleNextPoll()
+      if (generation === viewGeneration) scheduleNextPoll()
     }
   }
 
   function scheduleNextPoll(): void {
     if (!isPolling.value) return
+    if (pollingTimer) clearTimeout(pollingTimer)
     // Busy interval: 1000ms if run is active; Idle interval: 4000ms
     const interval = isCurrentRunActive.value ? 1000 : 4000
     pollingTimer = setTimeout(() => {
       pollEvents()
     }, interval)
+  }
+
+  function reset(): void {
+    stopPolling()
+    viewGeneration++
+    pinnedRunId = null
+    conversations.value = []
+    activeConversationId.value = null
+    messages.value = []
+    conversationRuns.value = []
+    activeRun.value = null
+    workspaces.value = []
+    scenes.value = []
+    approvals.value = []
+    queuedMessages.value = []
+    lastEventSeq.value = 0
+    loadError.value = null
+    sendError.value = null
+    actionError.value = null
+    resumptionError.value = null
+    sessionMode.value = 'new'
   }
 
   return {
@@ -379,6 +472,7 @@ export const useChatStore = defineStore('chat', () => {
     queuedMessages,
     sendError,
     resumptionError,
+    loadError,
     isActionLoading,
     actionError,
     approvals,
@@ -391,10 +485,14 @@ export const useChatStore = defineStore('chat', () => {
     fetchConversationRuns,
     fetchApprovals,
     createConversation,
+    registerWorkspace,
     sendMessage,
     controlRun,
     respondApproval,
     startPolling,
     stopPolling,
+    reset,
+    pollEvents,
+    lastEventSeq,
   }
 })

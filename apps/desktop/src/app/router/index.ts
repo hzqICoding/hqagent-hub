@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AppLayout from '../layouts/AppLayout.vue'
+import LocalChatLayout from '../layouts/LocalChatLayout.vue'
 import { useLocalAuthStore } from '@/stores/local-auth.store'
 
 const routes: RouteRecordRaw[] = [
@@ -16,24 +17,22 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '首次使用引导' },
   },
   {
+    path: '/chat',
+    component: LocalChatLayout,
+    children: [{ path: '', name: 'chat', component: () => import('@/pages/chat/ChatPage.vue'), meta: { title: '本地角色对话工作台' } }],
+  },
+  {
+    path: '/scenes',
+    component: LocalChatLayout,
+    children: [{ path: '', name: 'scenes', component: () => import('@/pages/scenes/ScenesPage.vue'), meta: { title: '场景与角色配置' } }],
+  },
+  {
     path: '/',
     component: AppLayout,
     children: [
       {
         path: '',
         redirect: '/chat',
-      },
-      {
-        path: 'chat',
-        name: 'chat',
-        component: () => import('@/pages/chat/ChatPage.vue'),
-        meta: { title: '本地角色对话工作台' },
-      },
-      {
-        path: 'scenes',
-        name: 'scenes',
-        component: () => import('@/pages/scenes/ScenesPage.vue'),
-        meta: { title: '场景与角色配置' },
       },
       {
         path: 'overview',
