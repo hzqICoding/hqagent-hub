@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from protocol.generated.python import (
+    AdapterFailure,
     ApprovalDecision,
     ApprovalDispatch,
     ApprovalResponseInput,
@@ -44,6 +45,7 @@ class ApprovalRequest:
     action: DangerousAction
     target_resource: str
     risk_level: RiskLevel
+    approval_id: str | None = None
     external_request_id: str | None = None
     details: dict[str, object] | None = None
 
@@ -68,7 +70,23 @@ class ApprovalCoordinator:
 
     async def request(self, value: ApprovalRequest) -> ApprovalView:
         now = self.clock()
-        approval_id = f"approval_{uuid.uuid4().hex}"
+        approval_id = value.approval_id or f"approval_{uuid.uuid4().hex}"
+        existing = await self.repository.get(approval_id)
+        if existing is not None:
+            existing_external = (existing.details or {}).get("externalRequestId")
+            if (
+                existing.task_id != value.task_id
+                or existing.node_id != value.node_id
+                or existing.request_agent_id != value.request_agent_id
+                or existing.action != value.action
+                or existing_external != value.external_request_id
+            ):
+                raise ApprovalError(
+                    "CONFLICT",
+                    "同一 approvalId 对应了不同的原生审批请求",
+                    {"approvalId": approval_id},
+                )
+            return existing
         details = dict(value.details or {})
         if value.external_request_id:
             details["externalRequestId"] = value.external_request_id
@@ -120,6 +138,13 @@ class ApprovalCoordinator:
         if approval is None:
             raise ApprovalError("NOT_FOUND", "审批不存在", {"approvalId": approval_id})
         if approval.status != ApprovalStatus.PENDING:
+            expected_status = (
+                ApprovalStatus.APPROVED
+                if value.decision == ApprovalDecision.APPROVE
+                else ApprovalStatus.REJECTED
+            )
+            if approval.status == expected_status and approval.decision == value.decision:
+                return approval
             code = (
                 "APPROVAL_EXPIRED"
                 if approval.status == ApprovalStatus.EXPIRED
@@ -174,7 +199,7 @@ class ApprovalCoordinator:
         # The Hub decision is durable before talking to the Adapter. Adapter
         # transport failure must not turn a user decision back into "pending".
         try:
-            await adapter.approve(
+            dispatch_result = await adapter.approve(
                 ApprovalDispatch.model_validate(
                     {
                         "approvalId": approval.id,
@@ -185,6 +210,12 @@ class ApprovalCoordinator:
                     }
                 )
             )
+            if isinstance(dispatch_result, AdapterFailure):
+                raise ApprovalError(
+                    "INTERNAL",
+                    f"审批决定已保存，但 Adapter 拒绝消费：{dispatch_result.message}",
+                    {"approvalId": approval.id, "adapterFailureKind": dispatch_result.kind.value},
+                )
         except Exception:
             await self._append_task_failure(
                 resolved,

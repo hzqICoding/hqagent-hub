@@ -14,7 +14,7 @@ from typing import Any
 from protocol.generated.python import TaskNodeView, TaskSummaryView
 
 from core.errors import HubError
-from storage.database import Database
+from storage.database import Database, Transaction
 
 
 class TaskRepository:
@@ -22,26 +22,31 @@ class TaskRepository:
         self.database = database
 
     def save(self, task: TaskSummaryView) -> TaskSummaryView:
-        payload = task.model_dump_json(by_alias=True, exclude_none=True)
         with self.database.transaction() as transaction:
-            transaction.connection.execute(
-                "INSERT INTO tasks(task_id,workspace_id,profile_id,objective,status,source,"
-                "payload_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) "
-                "ON CONFLICT(task_id) DO UPDATE SET "
-                "status=excluded.status, payload_json=excluded.payload_json, "
-                "updated_at=excluded.updated_at",
-                (
-                    task.id,
-                    task.workspace_id,
-                    task.profile_id,
-                    task.objective,
-                    str(task.status),
-                    str(task.source),
-                    payload,
-                    task.created_at,
-                    task.updated_at,
-                ),
-            )
+            self.save_in_transaction(transaction, task)
+        return task
+
+    @staticmethod
+    def save_in_transaction(transaction: Transaction, task: TaskSummaryView) -> TaskSummaryView:
+        payload = task.model_dump_json(by_alias=True, exclude_none=True)
+        transaction.connection.execute(
+            "INSERT INTO tasks(task_id,workspace_id,profile_id,objective,status,source,"
+            "payload_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(task_id) DO UPDATE SET "
+            "status=excluded.status, payload_json=excluded.payload_json, "
+            "updated_at=excluded.updated_at",
+            (
+                task.id,
+                task.workspace_id,
+                task.profile_id,
+                task.objective,
+                str(task.status),
+                str(task.source),
+                payload,
+                task.created_at,
+                task.updated_at,
+            ),
+        )
         return task
 
     def get(self, task_id: str) -> TaskSummaryView:
@@ -80,24 +85,29 @@ class TaskRepository:
         return [TaskSummaryView.model_validate_json(row[0]) for row in rows], total
 
     def save_node(self, node: TaskNodeView) -> TaskNodeView:
-        payload = node.model_dump_json(by_alias=True, exclude_none=True)
         with self.database.transaction() as transaction:
-            transaction.connection.execute(
-                "INSERT INTO task_nodes(node_id,task_id,role_id,resolved_agent,resolve_source,"
-                "status,payload_json) VALUES(?,?,?,?,?,?,?) "
-                "ON CONFLICT(node_id) DO UPDATE SET "
-                "resolved_agent=excluded.resolved_agent, resolve_source=excluded.resolve_source, "
-                "status=excluded.status, payload_json=excluded.payload_json",
-                (
-                    node.id,
-                    node.task_id,
-                    str(node.role_id),
-                    node.resolved_agent_id,
-                    str(node.resolve_source),
-                    str(node.status),
-                    payload,
-                ),
-            )
+            self.save_node_in_transaction(transaction, node)
+        return node
+
+    @staticmethod
+    def save_node_in_transaction(transaction: Transaction, node: TaskNodeView) -> TaskNodeView:
+        payload = node.model_dump_json(by_alias=True, exclude_none=True)
+        transaction.connection.execute(
+            "INSERT INTO task_nodes(node_id,task_id,role_id,resolved_agent,resolve_source,"
+            "status,payload_json) VALUES(?,?,?,?,?,?,?) "
+            "ON CONFLICT(node_id) DO UPDATE SET "
+            "resolved_agent=excluded.resolved_agent, resolve_source=excluded.resolve_source, "
+            "status=excluded.status, payload_json=excluded.payload_json",
+            (
+                node.id,
+                node.task_id,
+                str(node.role_id),
+                node.resolved_agent_id,
+                str(node.resolve_source),
+                str(node.status),
+                payload,
+            ),
+        )
         return node
 
     def list_nodes(self, task_id: str) -> Sequence[TaskNodeView]:

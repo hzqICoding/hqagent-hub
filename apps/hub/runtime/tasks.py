@@ -1,84 +1,86 @@
-"""任务应用服务：TaskPort 的实现。
-
-W3 交付了编排的**机制**——WorkflowPlan 管 DAG、WorkflowRuntime 管单个节点的
-分派与收尾、TaskRecoveryService 管按事件流重建状态。但没有一层把它们和
-「用户提交一个目标」连起来，因为那要落库、要驱动、要暴露 HTTP，全在 W1 的路径上。
-这个文件就是那一层。
-
-规则一律不放在这里：能力匹配在 role_resolver，权限在 permissions，
-路径在 paths，会话隔离在 sessions。这里只做编排的推进和持久化。
-
-默认工作流按施工方案 §6.6：实现 → 复核。不做「让 orchestrator 先拆解目标」——
-那本身是一次 Agent 调用，属于 Phase 1.1 的编排增强，现在做会让最简单的
-「派一个任务下去」也依赖一次额外的模型往返。
-"""
+"""Durable task application service for the real Hub composition."""
 from __future__ import annotations
 
 import asyncio
 import uuid
-from pathlib import Path
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from protocol.generated.python import (
     AdapterStreamEnd,
-    AgentResult,
+    ApprovalDecision,
+    ApprovalResponseInput,
     CreateTaskInput,
+    DangerousAction,
     NodeStatus,
     PageResult,
+    RiskLevel,
+    SessionPurpose,
+    SessionReusePolicy,
     TaskActionInput,
     TaskDetailView,
     TaskNodeView,
     TaskStatus,
     TaskSummaryView,
+    TeamProfileView,
 )
 
 from core.errors import HubError
 from orchestrator.domain import ProfileSnapshot, ResolutionGap, RuntimeEventDraft
-from orchestrator.errors import AdapterStartFailedError, InvalidTaskActionError, OrchestrationError
+from orchestrator.errors import AdapterStartFailedError, OrchestrationError
 from orchestrator.runtime import NodeDispatchRequest
+from security.approvals import ApprovalRequest
 from security.worktrees import WorktreeSpec
+from storage.execution_state import ExecutionStateRepository
+from storage.idempotency import IdempotencyRepository
 
 
-def _failure_text(failure: Any, fallback: object) -> str:
-    """把 AdapterFailure 拼成人能看懂的一行。
-
-    必须带上 violationPaths：只说「访问越界路径」而不说是哪个路径，
-    用户既不知道该放宽白名单还是该管住 Agent，排障只能靠猜。
-    """
-    kind = getattr(failure, "kind", "agent_error")
-    message = getattr(failure, "message", None) or str(fallback)
-    text = f"{kind}: {message}"
-    paths = getattr(failure, "violation_paths", None)
-    if paths:
-        text += "；越界路径：" + ", ".join(str(p) for p in paths[:5])
-    missing = getattr(failure, "missing_capabilities", None)
-    if missing:
-        text += "；缺少能力：" + ", ".join(str(c) for c in missing)
-    return text
-
-
-def node_id_or_node(repository: Any, task_id: str, node_id: str) -> Any:
-    return next((n for n in repository.list_nodes(task_id) if n.id == node_id), None)
+DEFAULT_WORKFLOW_ROLES = ("analyst",)
+TERMINAL_TASK_STATES = {
+    TaskStatus.SUCCEEDED.value,
+    TaskStatus.FAILED.value,
+    TaskStatus.CANCELLED.value,
+}
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-# 施工方案 §6.6 的通用执行流程，取一期能闭环的最小形态。
-# reviewer 依赖 implementer：D7 要求同一 Agent 承担两者时必须换会话，
-# 这条链正是用来验证那个约束的。
-DEFAULT_WORKFLOW: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("general_implementer", ()),
-    ("reviewer", ("general_implementer",)),
-)
+def _text(value: object) -> str:
+    return value.value if hasattr(value, "value") else str(value)
+
+
+def _failure_text(failure: Any, fallback: object) -> str:
+    kind = _text(getattr(failure, "kind", "agent_error"))
+    message = getattr(failure, "message", None) or str(fallback)
+    text = f"{kind}: {message}"
+    paths = getattr(failure, "violation_paths", None)
+    if paths:
+        text += "；越界路径：" + ", ".join(str(path) for path in paths[:5])
+    missing = getattr(failure, "missing_capabilities", None)
+    if missing:
+        text += "；缺少能力：" + ", ".join(_text(item) for item in missing)
+    return text
+
+
+def _purpose(role_id: str) -> SessionPurpose:
+    return {
+        "architect": SessionPurpose.ARCHITECT,
+        "planner": SessionPurpose.ARCHITECT,
+        "general_implementer": SessionPurpose.IMPLEMENT,
+        "frontend_implementer": SessionPurpose.IMPLEMENT,
+        "developer": SessionPurpose.IMPLEMENT,
+        "reviewer": SessionPurpose.REVIEW,
+        "tester": SessionPurpose.TEST,
+        "deployer": SessionPurpose.DEPLOY,
+        "integrator": SessionPurpose.INTEGRATE,
+    }.get(role_id, SessionPurpose.ADHOC)
 
 
 class TaskService:
-    """TaskPort 的实现。"""
-
     available = True
     unavailable_reason = None
 
@@ -91,6 +93,7 @@ class TaskService:
         events: Any,
         workspaces: Any,
         worktrees: Any = None,
+        approval_coordinator: Any = None,
     ) -> None:
         self.repository = repository
         self.runtime = runtime
@@ -99,14 +102,16 @@ class TaskService:
         self.events = events
         self.workspaces = workspaces
         self.worktrees = worktrees
+        self.approval_coordinator = approval_coordinator
+        database = getattr(repository, "database", None)
+        if database is None:
+            raise ValueError("TaskService requires a persistent TaskRepository")
+        self.database = database
+        self.state = ExecutionStateRepository(database)
+        self.idempotency = IdempotencyRepository(database)
         self._pumps: dict[str, asyncio.Task[None]] = {}
-        # DispatchOutcome 要留着：collect_result 和 cancel 收的是它整体，
-        # 里面带着 path_scope、role_policy、session 等收尾时才用得上的东西。
         self._outcomes: dict[str, Any] = {}
-        # WorktreeSpec 留着做收尾时的越界复核（git diff --name-only）
-        self._worktree_specs: dict[str, Any] = {}
-
-    # ---------- 查询 ----------
+        self._task_locks: dict[str, asyncio.Lock] = {}
 
     async def list_tasks(self, query: dict[str, Any]) -> PageResult:
         items, total = self.repository.list(query)
@@ -124,29 +129,309 @@ class TaskService:
 
     async def get_task(self, task_id: str) -> TaskDetailView:
         summary = self.repository.get(task_id)
-        nodes = self.repository.list_nodes(task_id)
+        nodes = list(self.repository.list_nodes(task_id))
         events = await self.events.load_task_events(task_id)
+        spec = self._task_spec(task_id)
         raw = summary.model_dump(mode="json", by_alias=True, exclude_none=True)
         raw.update(
             {
-                "nodes": [n.model_dump(mode="json", by_alias=True, exclude_none=True) for n in nodes],
+                "nodes": [node.model_dump(mode="json", by_alias=True, exclude_none=True) for node in nodes],
                 "artifacts": [],
-                "events": [e.model_dump(mode="json", by_alias=True, exclude_none=True) for e in events],
+                "events": [event.model_dump(mode="json", by_alias=True, exclude_none=True) for event in events],
                 "lastEventSeq": events[-1].seq if events else 0,
+                "allowedPaths": spec["request"].get("allowedPaths"),
+                "readFirst": spec["request"].get("readFirst"),
+                "acceptance": spec["request"].get("acceptance"),
+                "requiresApproval": spec["request"].get("requiresApproval"),
+                "failureReason": spec.get("failureReason"),
+                "result": spec.get("result"),
             }
         )
+        last_worktree = next((node for node in reversed(nodes) if node.worktree_path), None)
+        if last_worktree:
+            raw["worktreePath"] = last_worktree.worktree_path
+            raw["branch"] = last_worktree.branch
         return TaskDetailView.model_validate(raw)
 
-    # ---------- 创建与推进 ----------
-
-    async def create_task(self, value: CreateTaskInput, idempotency_key: str | None) -> TaskDetailView:
+    async def create_task(
+        self,
+        value: CreateTaskInput,
+        idempotency_key: str | None,
+    ) -> TaskDetailView:
         profile = await self._profile_for(value)
         workspace = await self._workspace_for(value.workspace_id)
-        # 裁决 D38 的准入检查放在建任务**之前**：工作流里但凡有一个写角色
-        # 这个工作区承接不了，这个任务就永远跑不完。先建再失败只会留下一堆
-        # 半截任务，用户还要一个个去清。
-        self._assert_workflow_supported(workspace)
-        task_id = f"task_{uuid.uuid4().hex[:12]}"
+        workflow = self._workflow(value)
+        self._assert_workflow_supported(workflow, workspace)
+        request_raw = value.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+        def persist(transaction: Any) -> dict[str, str]:
+            task_id = f"task_{uuid.uuid4().hex[:12]}"
+            self._persist_new_task(transaction, task_id, value, profile, workspace, workflow)
+            return {"taskId": task_id}
+
+        receipt = self.idempotency.execute(
+            idempotency_key,
+            "/api/v1/tasks",
+            request_raw,
+            persist,
+        )
+        task_id = str(receipt["taskId"])
+        async with self._lock(task_id):
+            task = self.repository.get(task_id)
+            state = self._task_spec(task_id)
+            if _text(task.status) == TaskStatus.QUEUED.value and not state.get("blockedByParent"):
+                await self._advance(task_id)
+        return await self.get_task(task_id)
+
+    async def act(
+        self,
+        task_id: str,
+        value: TaskActionInput,
+        idempotency_key: str | None,
+    ) -> TaskDetailView:
+        self.repository.get(task_id)
+        request_raw = value.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+        def persist(transaction: Any) -> dict[str, str]:
+            action_id = f"action_{uuid.uuid4().hex}"
+            self.state.put(
+                f"task_action:{action_id}",
+                {
+                    "actionId": action_id,
+                    "taskId": task_id,
+                    "request": request_raw,
+                    "status": "pending",
+                    "createdAt": _now(),
+                },
+                transaction,
+            )
+            return {"taskId": task_id, "actionId": action_id}
+
+        receipt = self.idempotency.execute(
+            idempotency_key,
+            f"/api/v1/tasks/{task_id}/actions",
+            request_raw,
+            persist,
+        )
+        action_id = str(receipt["actionId"])
+        async with self._lock(task_id):
+            action_state = self.state.get(f"task_action:{action_id}") or {}
+            if action_state.get("status") == "completed":
+                return await self.get_task(str(action_state.get("resultTaskId") or task_id))
+            if action_state.get("status") == "failed":
+                raise HubError(
+                    "TASK_ACTION_INVALID",
+                    str(action_state.get("error") or "任务动作此前执行失败"),
+                    detail={"actionId": action_id},
+                )
+            if action_state.get("status") == "executing":
+                raise HubError(
+                    "TASK_ACTION_INVALID",
+                    "上次动作在完成回执前中断，结果未知；请先核对任务状态再发起新动作",
+                    detail={"actionId": action_id, "recoveryRequired": True},
+                )
+            action_state["status"] = "executing"
+            self.state.put(f"task_action:{action_id}", action_state)
+            try:
+                result_task_id = await self._execute_action(task_id, value, action_id)
+            except Exception as error:
+                action_state.update({"status": "failed", "error": str(error), "completedAt": _now()})
+                self.state.put(f"task_action:{action_id}", action_state)
+                raise
+            action_state.update(
+                {"status": "completed", "resultTaskId": result_task_id, "completedAt": _now()}
+            )
+            self.state.put(f"task_action:{action_id}", action_state)
+        return await self.get_task(result_task_id)
+
+    async def recover_pending(self) -> tuple[str, ...]:
+        """Make interrupted work explicit; never replay unknown side effects."""
+        items, _ = self.repository.list({"page": 1, "pageSize": 200})
+        recovered: list[str] = []
+        for task in items:
+            status = _text(task.status)
+            if status not in {
+                TaskStatus.QUEUED.value,
+                TaskStatus.RUNNING.value,
+                TaskStatus.WAITING_APPROVAL.value,
+            }:
+                continue
+            spec = self._task_spec(task.id)
+            if status == TaskStatus.QUEUED.value and spec.get("blockedByParent"):
+                continue
+            reason = "Hub 重启后无法确认先前执行是否仍有副作用，请人工继续或重试"
+            for node in self.repository.list_nodes(task.id):
+                if _text(node.status) in {
+                    NodeStatus.RUNNING.value,
+                    NodeStatus.WAITING_APPROVAL.value,
+                    NodeStatus.RESOLVING.value,
+                }:
+                    self.repository.save_node(
+                        node.model_copy(
+                            update={"status": NodeStatus.FAILED, "error": reason, "completed_at": _now()}
+                        )
+                    )
+            self.repository.save(
+                task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()})
+            )
+            spec.update({"recoveryRequired": True, "failureReason": reason})
+            self.state.put(f"task_spec:{task.id}", spec)
+            await self._emit(task.id, "task.status_changed", {"taskId": task.id, "to": "paused", "reason": reason})
+            recovered.append(task.id)
+        return tuple(recovered)
+
+    async def shutdown(self) -> None:
+        active_task_ids = {outcome.task_id for outcome in self._outcomes.values()}
+        pumps = tuple(self._pumps.values())
+        for pump in pumps:
+            pump.cancel()
+        if pumps:
+            await asyncio.gather(*pumps, return_exceptions=True)
+        for task_id in active_task_ids:
+            task = self.repository.get(task_id)
+            if _text(task.status) in TERMINAL_TASK_STATES:
+                continue
+            reason = "Hub 已停止；原生执行结果未确认，任务需要恢复核对"
+            self.repository.save(
+                task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()})
+            )
+            spec = self._task_spec(task_id)
+            spec.update({"recoveryRequired": True, "failureReason": reason})
+            self.state.put(f"task_spec:{task_id}", spec)
+            await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "paused", "reason": reason})
+
+    async def _execute_action(
+        self,
+        task_id: str,
+        value: TaskActionInput,
+        action_id: str,
+    ) -> str:
+        task = self.repository.get(task_id)
+        action = _text(value.action)
+        status = _text(task.status)
+        if action == "cancel":
+            await self._cancel(task_id)
+            return task_id
+        if action == "pause":
+            spec = self._task_spec(task_id)
+            running = any(
+                _text(node.status) in {NodeStatus.RUNNING.value, NodeStatus.WAITING_APPROVAL.value}
+                for node in self.repository.list_nodes(task_id)
+            )
+            if running:
+                spec["pauseRequested"] = True
+                self.state.put(f"task_spec:{task_id}", spec)
+                await self._emit(
+                    task_id,
+                    "task.status_changed",
+                    {"taskId": task_id, "to": status, "reason": "pause_requested；将在节点边界暂停"},
+                )
+            else:
+                self.repository.save(task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()}))
+                await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "paused"})
+            return task_id
+        if action == "resume":
+            if status != TaskStatus.PAUSED.value:
+                raise HubError("TASK_ACTION_INVALID", "只有 paused 任务可以继续")
+            spec = self._task_spec(task_id)
+            spec.update({"pauseRequested": False, "recoveryRequired": False, "failureReason": None})
+            self.state.put(f"task_spec:{task_id}", spec)
+            for node in self.repository.list_nodes(task_id):
+                if _text(node.status) == NodeStatus.FAILED.value:
+                    self.repository.save_node(self._reset_node(node))
+            self.repository.save(task.model_copy(update={"status": TaskStatus.QUEUED, "updated_at": _now()}))
+            await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "queued"})
+            await self._advance(task_id)
+            return task_id
+        if action == "append_instruction":
+            if not value.instruction:
+                raise HubError("VALIDATION_FAILED", "append_instruction 必须带 instruction")
+            child = await self._create_child(
+                task_id,
+                objective=value.instruction,
+                idempotency_key=f"internal:{action_id}",
+                blocked=status not in TERMINAL_TASK_STATES,
+            )
+            return child.id
+        if action == "retry":
+            if status in TERMINAL_TASK_STATES:
+                child = await self._create_child(
+                    task_id,
+                    objective=task.objective,
+                    idempotency_key=f"internal:{action_id}",
+                    blocked=False,
+                )
+                return child.id
+            failed = [node for node in self.repository.list_nodes(task_id) if _text(node.status) == NodeStatus.FAILED.value]
+            if value.node_id:
+                failed = [node for node in failed if node.id == value.node_id]
+            if not failed:
+                raise HubError("TASK_ACTION_INVALID", "没有可重试的失败节点")
+            for node in failed:
+                self.repository.save_node(self._reset_node(node))
+            self.repository.save(task.model_copy(update={"status": TaskStatus.QUEUED, "updated_at": _now()}))
+            await self._advance(task_id)
+            return task_id
+        raise HubError("TASK_ACTION_INVALID", f"不支持的动作：{action}")
+
+    async def _create_child(
+        self,
+        parent_task_id: str,
+        *,
+        objective: str,
+        idempotency_key: str,
+        blocked: bool,
+    ) -> TaskDetailView:
+        parent_spec = self._task_spec(parent_task_id)
+        raw = dict(parent_spec["request"])
+        raw.update({"objective": objective, "parentTaskId": parent_task_id})
+        resume_sessions: dict[str, str] = {}
+        for node in self.repository.list_nodes(parent_task_id):
+            if node.session_id and _text(node.status) == NodeStatus.SUCCEEDED.value:
+                resume_sessions[_text(node.role_id)] = node.session_id
+        raw["resumeSessions"] = resume_sessions or None
+        child_value = CreateTaskInput.model_validate(raw)
+        profile = TeamProfileView.model_validate(parent_spec["profile"])
+        workspace = dict(parent_spec["workspace"])
+        workflow = self._workflow(child_value)
+        request_raw = child_value.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+        def persist(transaction: Any) -> dict[str, str]:
+            child_id = f"task_{uuid.uuid4().hex[:12]}"
+            self._persist_new_task(
+                transaction,
+                child_id,
+                child_value,
+                profile,
+                workspace,
+                workflow,
+                blocked_by_parent=parent_task_id if blocked else None,
+            )
+            return {"taskId": child_id}
+
+        receipt = self.idempotency.execute(
+            idempotency_key,
+            f"/internal/tasks/{parent_task_id}/child",
+            request_raw,
+            persist,
+        )
+        child_id = str(receipt["taskId"])
+        if not blocked:
+            async with self._lock(child_id):
+                await self._advance(child_id)
+        return await self.get_task(child_id)
+
+    def _persist_new_task(
+        self,
+        transaction: Any,
+        task_id: str,
+        value: CreateTaskInput,
+        profile: Any,
+        workspace: dict[str, Any],
+        workflow: tuple[tuple[str, tuple[str, ...]], ...],
+        *,
+        blocked_by_parent: str | None = None,
+    ) -> None:
         now = _now()
         task = TaskSummaryView.model_validate(
             {
@@ -157,170 +442,107 @@ class TaskService:
                 "profileId": profile.id,
                 "profileName": profile.name,
                 "status": TaskStatus.QUEUED.value,
-                "source": str(value.source) if value.source else "desktop",
+                "source": _text(value.source) if value.source else "desktop",
                 "createdAt": now,
                 "updatedAt": now,
                 "parentTaskId": value.parent_task_id,
             }
         )
-        self.repository.save(task)
-        await self._emit(task_id, "task.created", {"taskId": task_id, "objective": value.objective})
-
-        # 先把整条链的节点落库为 pending，用户立刻能看到「要做几步、分别是什么角色」，
-        # 而不是等第一个节点跑完才知道后面还有什么。
-        for role_id, _deps in DEFAULT_WORKFLOW:
-            self.repository.save_node(
-                TaskNodeView.model_validate(
-                    {
-                        "id": f"node_{uuid.uuid4().hex[:12]}",
-                        "taskId": task_id,
-                        "roleId": role_id,
-                        "resolvedAgentId": "",
-                        "resolvedAgentName": "",
-                        "resolveSource": "manual",
-                        "status": NodeStatus.PENDING.value,
-                    }
-                )
-            )
-
-        await self._advance(task_id, value, profile, workspace)
-        return await self.get_task(task_id)
-
-    async def act(self, task_id: str, value: TaskActionInput, idempotency_key: str | None) -> TaskDetailView:
-        task = self.repository.get(task_id)
-        action = str(value.action)
-
-        if action == "cancel":
-            await self._cancel(task_id)
-        elif action == "pause":
-            # 裁决 D26：pause 只作用于节点之间，不打断正在执行的 Agent。
-            self.repository.save(
-                task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()})
-            )
-            await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "paused"})
-        elif action == "resume":
-            self.repository.save(
-                task.model_copy(update={"status": TaskStatus.QUEUED, "updated_at": _now()})
-            )
-            await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "queued"})
-        elif action == "append_instruction":
-            # 裁决 D26：只在节点 idle 时可用，运行中必须拒绝。
-            if str(task.status) == "running":
-                raise HubError(
-                    "TASK_ACTION_INVALID",
-                    "任务正在执行中，无法追加指令。Adapter Port 没有向运行中会话发消息的入口（裁决 D26）",
-                    detail={"taskId": task_id, "status": str(task.status)},
-                )
-            if not value.instruction:
-                raise HubError("VALIDATION_FAILED", "append_instruction 必须带 instruction")
-        elif action == "retry":
-            self.repository.save(
-                task.model_copy(update={"status": TaskStatus.QUEUED, "updated_at": _now()})
-            )
-        else:
-            raise HubError("TASK_ACTION_INVALID", f"不支持的动作：{action}")
-
-        return await self.get_task(task_id)
-
-    # ---------- 内部 ----------
-
-    async def _profile_for(self, value: CreateTaskInput) -> Any:
-        if value.profile_id:
-            return await self.profiles.get_profile(value.profile_id)
-        for profile in await self.profiles.list_profiles():
-            if profile.is_default:
-                return profile
-        raise HubError(
-            "VALIDATION_FAILED",
-            "没有可用的 Team Profile，请先在团队配置里创建一个",
-        )
-
-    async def _workspace_for(self, workspace_id: str) -> dict[str, Any]:
-        for item in await self.workspaces.list_workspaces(None, None):
-            if getattr(item, "id", None) == workspace_id:
-                capabilities = getattr(item, "capabilities", None)
-                return {
-                    "name": getattr(item, "name", workspace_id),
-                    "path": getattr(item, "path", None),
-                    "vcs": str(getattr(item, "vcs", "none")),
-                    "can_write": bool(getattr(capabilities, "can_run_write_tasks", False)),
-                    "reason": getattr(capabilities, "reason", None),
+        self.repository.save_in_transaction(transaction, task)
+        workflow_rows: list[dict[str, Any]] = []
+        role_to_node = {role_id: f"node_{uuid.uuid4().hex[:12]}" for role_id, _ in workflow}
+        for role_id, deps in workflow:
+            node_id = role_to_node[role_id]
+            node = TaskNodeView.model_validate(
+                {
+                    "id": node_id,
+                    "taskId": task_id,
+                    "roleId": role_id,
+                    "resolvedAgentId": "",
+                    "resolvedAgentName": "",
+                    "resolveSource": "manual",
+                    "status": NodeStatus.PENDING.value,
                 }
-        raise HubError(
-            "NOT_FOUND",
-            f"工作区不存在：{workspace_id}。请先在工作区页面把项目目录加进来",
-            detail={"workspaceId": workspace_id},
-        )
-
-    def _assert_workflow_supported(self, workspace: dict[str, Any]) -> None:
-        """默认工作流里的写角色，这个工作区能不能承接。"""
-        if workspace.get("can_write"):
-            return
-        blocked = [
-            role_id
-            for role_id, _deps in DEFAULT_WORKFLOW
-            if not self.runtime.permissions.role_policy(role_id).read_only
-        ]
-        if not blocked:
-            return
-        raise HubError(
-            "PATH_NOT_ALLOWED",
-            workspace.get("reason") or "该工作区不支持写任务",
-            detail={
-                "blockedRoles": blocked,
-                "vcs": workspace.get("vcs"),
-                "canInitGit": workspace.get("vcs") == "none",
+            )
+            self.repository.save_node_in_transaction(transaction, node)
+            workflow_rows.append(
+                {"nodeId": node_id, "roleId": role_id, "dependsOn": [role_to_node[item] for item in deps]}
+            )
+        self.state.put(
+            f"task_spec:{task_id}",
+            {
+                "request": value.model_dump(mode="json", by_alias=True, exclude_none=True),
+                "profile": profile.model_dump(mode="json", by_alias=True, exclude_none=True),
+                "workspace": workspace,
+                "workflow": workflow_rows,
+                "pauseRequested": False,
+                "blockedByParent": blocked_by_parent,
+                "worktrees": {},
+                "nodeResults": {},
+                "createdAt": now,
             },
+            transaction,
+        )
+        self.events.append_in_transaction(
+            transaction,
+            RuntimeEventDraft(
+                type="task.created",
+                aggregate_type="task",
+                aggregate_id=task_id,
+                task_id=task_id,
+                payload={
+                    "taskId": task_id,
+                    "objective": value.objective,
+                    "workspaceId": value.workspace_id,
+                    "profileId": profile.id,
+                    "parentTaskId": value.parent_task_id,
+                },
+            ),
         )
 
-    def _assert_can_write(self, role_id: str, workspace: dict[str, Any]) -> None:
-        """裁决 D38：非 Git 工作区不能派写任务。
-
-        判定放在分派前而不是等 Adapter 的 preflight 拒绝：Adapter 那边只能说
-        「没有 worktreePath」，说不清「因为这个目录不是 Git 仓库，你可以点一键初始化」。
-        错误要在知道原因的那一层抛出。
-        """
-        if workspace.get("can_write"):
+    async def _advance(self, task_id: str) -> None:
+        task = self.repository.get(task_id)
+        if _text(task.status) in {TaskStatus.PAUSED.value, *TERMINAL_TASK_STATES}:
             return
-        policy = self.runtime.permissions.role_policy(role_id)
-        if policy.read_only:
+        spec = self._task_spec(task_id)
+        if spec.get("pauseRequested"):
+            self.repository.save(task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()}))
             return
-        raise HubError(
-            "PATH_NOT_ALLOWED",
-            workspace.get("reason") or "该工作区不支持写任务",
-            detail={
-                "roleId": role_id,
-                "vcs": workspace.get("vcs"),
-                "canInitGit": workspace.get("vcs") == "none",
-            },
-        )
-
-    async def _advance(self, task_id: str, value: CreateTaskInput, profile: Any, workspace: dict[str, Any]) -> None:
-        """分派下一个就绪节点。"""
-        nodes = list(self.repository.list_nodes(task_id))
-        done = {str(n.role_id) for n in nodes if str(n.status) == "succeeded"}
-        for node, (role_id, deps) in zip(nodes, DEFAULT_WORKFLOW):
-            if str(node.status) != "pending":
+        nodes = {node.id: node for node in self.repository.list_nodes(task_id)}
+        for item in spec["workflow"]:
+            node = nodes[item["nodeId"]]
+            if _text(node.status) != NodeStatus.PENDING.value:
                 continue
-            if not set(deps).issubset(done):
+            if not all(_text(nodes[dep].status) == NodeStatus.SUCCEEDED.value for dep in item["dependsOn"]):
                 continue
-            await self._dispatch_node(task_id, node, role_id, value, profile, workspace)
+            await self._dispatch_node(task_id, node, item["roleId"], spec)
             return
+        if nodes and all(_text(node.status) == NodeStatus.SUCCEEDED.value for node in nodes.values()):
+            self.repository.save(task.model_copy(update={"status": TaskStatus.SUCCEEDED, "updated_at": _now()}))
+            await self._emit(task_id, "task.completed", {"taskId": task_id, "to": "succeeded"})
 
     async def _dispatch_node(
         self,
         task_id: str,
         node: TaskNodeView,
         role_id: str,
-        value: CreateTaskInput,
-        profile: Any,
-        workspace: dict[str, Any],
+        spec: dict[str, Any],
     ) -> None:
+        value = CreateTaskInput.model_validate(spec["request"])
+        profile = TeamProfileView.model_validate(spec["profile"])
+        workspace = dict(spec["workspace"])
         self._assert_can_write(role_id, workspace)
-        worktree = await self._prepare_worktree(task_id, node, role_id, workspace)
+        execution_path = await self._prepare_execution_path(task_id, node, role_id, workspace, spec)
         implementation_agent_id, review_context_paths = self._review_context(task_id, role_id)
         candidates = await self.directory.list_candidates()
         snapshot = ProfileSnapshot.from_view(profile)
+        role_options = (value.role_executions or {}).get(role_id)
+        resume_session_id = (value.resume_sessions or {}).get(role_id)
+        role_policy = self.runtime.permissions.role_policy(role_id)
+        requested_approvals = tuple(_text(item) for item in (value.requires_approval or ()))
+        effective_approvals = tuple(
+            dict.fromkeys([*role_policy.default_requires_approval, *requested_approvals])
+        )
         request = NodeDispatchRequest(
             task_id=task_id,
             node_id=node.id,
@@ -332,36 +554,33 @@ class TaskService:
             allowed_paths=tuple(value.allowed_paths) if value.allowed_paths else None,
             read_first=tuple(value.read_first or ()),
             acceptance=tuple(value.acceptance or ()),
-            requires_approval=tuple(str(a) for a in value.requires_approval) if value.requires_approval else None,
-            global_profile=snapshot if str(profile.scope) == "global" else None,
-            workspace_profile=snapshot if str(profile.scope) == "workspace" else None,
-            worktree_path=worktree["path"] if worktree else None,
-            branch=(worktree["branch"] or None) if worktree else None,
-            base_commit=(worktree["base_commit"] or None) if worktree else None,
-            # D7：同一 Agent 承担实现与复核时必须换会话。W3 靠 implementation_agent_id
-            # 判断要不要强制隔离，靠 review_context_paths 保证复核方真去读了 diff，
-            # 而不是凭上一轮对话的记忆「复核」自己刚写的代码。
+            requires_approval=effective_approvals,
+            task_override_agent_id=(value.role_overrides or {}).get(role_id),
+            global_profile=snapshot if profile.scope == "global" else None,
+            workspace_profile=snapshot if profile.scope == "workspace" else None,
+            session_purpose=_purpose(role_id),
+            reuse_policy=SessionReusePolicy.RESUME_EXPLICIT if resume_session_id else SessionReusePolicy.NEW_SESSION,
+            resume_session_id=resume_session_id,
+            worktree_path=execution_path["path"] if execution_path else None,
+            branch=(execution_path.get("branch") or None) if execution_path else None,
+            base_commit=(execution_path.get("base_commit") or None) if execution_path else None,
             implementation_agent_id=implementation_agent_id,
             review_context_paths=review_context_paths,
+            model_id=role_options.model_id_ if role_options else None,
+            reasoning_effort=role_options.reasoning_effort if role_options else None,
+            role_instructions=role_options.instructions if role_options else None,
         )
         try:
             outcome = await self.runtime.dispatch(request)
         except AdapterStartFailedError as error:
-            # Agent 起不来是可处理的状态，不是崩溃。把 AdapterFailureKind
-            # 原样写到节点上——前端要靠它区分「没登录」和「缺能力」，
-            # 这两种的用户动作完全不同（去登录 vs 换 Agent）。
             await self._fail_node(task_id, node, _failure_text(error.failure, error))
             return
         except OrchestrationError as error:
             await self._fail_node(task_id, node, str(error))
             return
-
         if isinstance(outcome, ResolutionGap):
-            # 解析不出 Agent 不是崩溃，是要用户处理的状态。如实写进节点，
-            # 前端据此显示「缺什么能力」而不是一句「失败」。
             await self._fail_node(task_id, node, outcome.reason)
             return
-
         self.repository.save_node(
             node.model_copy(
                 update={
@@ -374,6 +593,7 @@ class TaskService:
                     "session_id": outcome.session.id,
                     "external_session_id": outcome.session.external_session_id,
                     "worktree_path": outcome.worktree_path,
+                    "branch": request.branch,
                     "started_at": _now(),
                 }
             )
@@ -389,163 +609,65 @@ class TaskService:
                 }
             )
         )
-        self._start_pump(task_id, node.id, outcome, value, profile, workspace)
+        self._start_pump(task_id, node.id, outcome)
 
-    async def _prepare_worktree(
+    async def _prepare_execution_path(
         self,
         task_id: str,
         node: TaskNodeView,
         role_id: str,
         workspace: dict[str, Any],
+        state: dict[str, Any],
     ) -> dict[str, str] | None:
-        """为写节点开一个独立 worktree（施工方案 §3.1 第 8 条、§6.7）。
-
-        只读角色不开：reviewer 读的就是实现节点产出的那份，另开一个空 worktree
-        反而看不到要复核的东西。
-        """
-        if self.worktrees is None or not workspace.get("path"):
+        path = workspace.get("path")
+        if not path:
             return None
-        if self.runtime.permissions.role_policy(role_id).read_only:
-            # 只读角色不新开 worktree，而是**复用前序写节点的那个**。
-            # reviewer 要复核的就是实现节点刚产出的改动，另开一个干净 worktree
-            # 等于让它去看一份没人动过的代码——那就没什么可审的了。
-            return self._inherit_worktree(task_id)
-
-        repository = Path(workspace["path"])
+        policy = self.runtime.permissions.role_policy(role_id)
+        if policy.read_only:
+            inherited = self._inherit_worktree(task_id)
+            return inherited or {"path": str(path), "branch": "", "base_commit": ""}
+        if self.worktrees is None:
+            raise HubError("FEATURE_UNAVAILABLE", "写任务需要 WorktreeManager")
+        existing = (state.get("worktrees") or {}).get(node.id)
+        if existing and Path(existing["worktreePath"]).is_dir():
+            return {
+                "path": existing["worktreePath"],
+                "branch": existing["branch"],
+                "base_commit": existing["baseCommit"],
+            }
+        repository = Path(path)
         base_commit = await self._head_commit(repository)
         branch = f"hq/{task_id}/{role_id}"
-        path = self.worktrees.worktree_root / f"{task_id}-{role_id}"
-        spec = WorktreeSpec(
-            repository_path=repository,
-            worktree_path=path,
-            branch=branch,
-            base_commit=base_commit,
-        )
-        created = await asyncio.to_thread(self.worktrees.create, spec)
-        self._worktree_specs[node.id] = spec
+        worktree_path = self.worktrees.worktree_root / f"{task_id}-{role_id}"
+        worktree = WorktreeSpec(repository, worktree_path, branch, base_commit)
+        created = await asyncio.to_thread(self.worktrees.create, worktree)
+        state.setdefault("worktrees", {})[node.id] = {
+            "repositoryPath": str(repository),
+            "worktreePath": str(created),
+            "branch": branch,
+            "baseCommit": base_commit,
+        }
+        self.state.put(f"task_spec:{task_id}", state)
         return {"path": str(created), "branch": branch, "base_commit": base_commit}
 
-    def _review_context(self, task_id: str, role_id: str) -> tuple[str | None, tuple[str, ...]]:
-        """复核节点要知道「谁实现的」和「去读哪里」。"""
-        if not self.runtime.permissions.role_policy(role_id).read_only:
-            return None, ()
-        for previous in reversed(list(self.repository.list_nodes(task_id))):
-            if str(previous.status) != "succeeded" or not previous.resolved_agent_id:
-                continue
-            paths = tuple(previous.changed_files or ()) or (".",)
-            return previous.resolved_agent_id, paths
-        return None, ()
-
-    def _inherit_worktree(self, task_id: str) -> dict[str, str] | None:
-        for previous in reversed(list(self.repository.list_nodes(task_id))):
-            if previous.worktree_path and str(previous.status) == "succeeded":
-                return {
-                    "path": previous.worktree_path,
-                    "branch": previous.branch or "",
-                    "base_commit": "",
-                }
-        return None
-
-    @staticmethod
-    async def _head_commit(repository: Path) -> str:
-        """解析出明确的 SHA。
-
-        WorktreeManager 拒绝 HEAD 这类会飘的引用——并行任务必须能说清
-        「我是从哪个提交出发的」，否则改动归属就乱了。
-        """
-        process = await asyncio.create_subprocess_exec(
-            "git", "rev-parse", "HEAD",
-            cwd=str(repository),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        stdout, _ = await process.communicate()
-        sha = stdout.decode("utf-8", "replace").strip()
-        if process.returncode != 0 or not sha:
-            raise HubError(
-                "PATH_NOT_ALLOWED",
-                "该仓库还没有任何提交，无法为写任务创建 worktree。"
-                "请先在项目里做一次初始提交（git commit），再派写任务。",
-                detail={"repository": str(repository)},
-            )
-        return sha
-
-    async def _fail_node(self, task_id: str, node: TaskNodeView | None, reason: str) -> None:
-        if node is None:
-            return
-        self.repository.save_node(
-            node.model_copy(
-                update={
-                    "status": NodeStatus.FAILED,
-                    "error": reason,
-                    "completed_at": _now(),
-                }
-            )
-        )
-        task = self.repository.get(task_id)
-        self.repository.save(
-            task.model_copy(
-                update={
-                    "status": TaskStatus.FAILED,
-                    "updated_at": _now(),
-                }
-            )
-        )
-        await self._emit(
-            task_id,
-            "task.status_changed",
-            {"taskId": task_id, "to": "failed", "reason": reason},
-        )
-
-    def _start_pump(
-        self,
-        task_id: str,
-        node_id: str,
-        outcome: Any,
-        value: CreateTaskInput,
-        profile: Any,
-        workspace: dict[str, Any],
-    ) -> None:
-        """后台抽取 Adapter 事件流，结束后收结果并推进下一个节点。
-
-        用 asyncio.Task 而不是同步等待：dispatch 要立刻返回给 HTTP 调用方，
-        Agent 可能跑几分钟到几十分钟。任务句柄留在 _pumps 里，
-        取消时才有东西可取消。
-        """
+    def _start_pump(self, task_id: str, node_id: str, outcome: Any) -> None:
         self._outcomes[node_id] = outcome
 
         async def pump() -> None:
             adapter = self.directory.adapter_for(outcome.resolution.agent.instance_id)
             try:
                 async for item in adapter.stream_events(outcome.session.id):
-                    # 必须用 isinstance 判：AdapterEvent 和 AdapterStreamEnd 都没有 seq
-                    # （全局 seq 归 Hub 分配，裁决 D32），靠有没有 seq 区分会把
-                    # 每一条事件都当成流结束。
                     if isinstance(item, AdapterStreamEnd):
                         await self.runtime.handle_stream_end(outcome, item)
                         break
                     await self._forward(outcome, item)
-                await self._complete_node(task_id, node_id, value, profile, workspace)
+                await self._complete_node(task_id, node_id)
             except asyncio.CancelledError:
                 raise
             except AdapterStartFailedError as error:
-                await self._fail_node(
-                    task_id,
-                    node_id_or_node(self.repository, task_id, node_id),
-                    _failure_text(error.failure, error),
-                )
-            except Exception as error:  # noqa: BLE001 - 抽取失败必须落到节点上，不能静默
-                node = next((n for n in self.repository.list_nodes(task_id) if n.id == node_id), None)
-                if node is not None:
-                    self.repository.save_node(
-                        node.model_copy(
-                            update={"status": NodeStatus.FAILED, "error": str(error), "completed_at": _now()}
-                        )
-                    )
-                task = self.repository.get(task_id)
-                self.repository.save(
-                    task.model_copy(update={"status": TaskStatus.FAILED, "updated_at": _now()})
-                )
+                await self._fail_node(task_id, self._node(task_id, node_id), _failure_text(error.failure, error))
+            except Exception as error:  # noqa: BLE001
+                await self._fail_node(task_id, self._node(task_id, node_id), str(error))
             finally:
                 self._pumps.pop(node_id, None)
                 self._outcomes.pop(node_id, None)
@@ -553,17 +675,51 @@ class TaskService:
         self._pumps[node_id] = asyncio.create_task(pump())
 
     async def _forward(self, outcome: Any, event: Any) -> None:
-        """把 Adapter 的内部事件补齐成 HubEvent 写进事件表。
-
-        裁决 D32：AdapterEvent 故意不带 eventId / seq，由 Hub 在这里补。
-        Adapter 直接产出 HubEvent 会把全局序号的所有权弄乱。
-        """
+        event_type = str(getattr(event, "unified_type", getattr(event, "type", "agent.progress")))
         payload = event.payload
         if hasattr(payload, "model_dump"):
             payload = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
+        if event_type == "approval.required":
+            if self.approval_coordinator is None:
+                raise HubError("FEATURE_UNAVAILABLE", "审批 Broker 尚未接入 TaskService")
+            approval_id = str(payload.get("approvalId") or "")
+            if not approval_id:
+                raise HubError("VALIDATION_FAILED", "Adapter 审批事件缺少 approvalId")
+            task = self.repository.get(outcome.task_id)
+            approval = await self.approval_coordinator.request(
+                ApprovalRequest(
+                    approval_id=approval_id,
+                    task_id=outcome.task_id,
+                    task_objective=task.objective,
+                    node_id=outcome.node_id,
+                    request_agent_id=outcome.resolution.agent.instance_id,
+                    request_agent_name=outcome.resolution.agent.display_name,
+                    role_id=outcome.role_id,
+                    action=DangerousAction(str(payload["action"])),
+                    target_resource=str(payload.get("targetResource") or ""),
+                    risk_level=RiskLevel(str(payload.get("riskLevel") or "high")),
+                    external_request_id=getattr(event, "external_request_id", None)
+                    or payload.get("externalRequestId"),
+                )
+            )
+            if _text(approval.status) != "pending":
+                return
+            node = self._node(outcome.task_id, outcome.node_id)
+            if node:
+                self.repository.save_node(node.model_copy(update={"status": NodeStatus.WAITING_APPROVAL}))
+            self.repository.save(
+                task.model_copy(
+                    update={
+                        "status": TaskStatus.WAITING_APPROVAL,
+                        "pending_approval_id": approval.id,
+                        "updated_at": _now(),
+                    }
+                )
+            )
+            return
         await self.events.append(
             RuntimeEventDraft(
-                type=event.unified_type,
+                type=event_type,
                 aggregate_type="task",
                 aggregate_id=outcome.task_id,
                 payload=payload,
@@ -575,68 +731,131 @@ class TaskService:
             )
         )
 
-    async def _complete_node(
-        self,
-        task_id: str,
-        node_id: str,
-        value: CreateTaskInput,
-        profile: Any,
-        workspace: dict[str, Any],
-    ) -> None:
-        node = next((n for n in self.repository.list_nodes(task_id) if n.id == node_id), None)
-        outcome = self._outcomes.get(node_id)
-        if node is None or outcome is None:
-            return
-        # collect_result 内部会调 adapter.collect_result 并按 path_scope 做后置越界复核
-        # （裁决 D22 的第二道关口），所以这里不要自己再取一次结果。
-        completion = await self.runtime.collect_result(outcome)
-        result = completion.result
-        violations = tuple(getattr(completion, "violation_paths", ()) or ())
-        self.repository.save_node(
-            node.model_copy(
-                update={
-                    "status": NodeStatus.FAILED if violations else NodeStatus.SUCCEEDED,
-                    "output_summary": getattr(result, "summary", None),
-                    "changed_files": [str(c) for c in (getattr(result, "changed_files", None) or [])],
-                    "violation_paths": list(violations),
-                    "completed_at": _now(),
-                }
+    async def _complete_node(self, task_id: str, node_id: str) -> None:
+        async with self._lock(task_id):
+            node = self._node(task_id, node_id)
+            outcome = self._outcomes.get(node_id)
+            if node is None or outcome is None:
+                return
+            completion = await self.runtime.collect_result(outcome, complete_task=False)
+            result = completion.result
+            violations = tuple(completion.violation_paths or ())
+            spec = self._task_spec(task_id)
+            worktree_raw = (spec.get("worktrees") or {}).get(node_id)
+            if worktree_raw and self.worktrees is not None:
+                validation = await asyncio.to_thread(
+                    self.worktrees.validate,
+                    WorktreeSpec(
+                        Path(worktree_raw["repositoryPath"]),
+                        Path(worktree_raw["worktreePath"]),
+                        worktree_raw["branch"],
+                        worktree_raw["baseCommit"],
+                    ),
+                    outcome.path_scope,
+                )
+                violations = tuple(dict.fromkeys([*violations, *validation.violation_paths]))
+            succeeded = result.status == "done" and not violations
+            changed_files = [item.path for item in (result.changed_files or [])]
+            self.repository.save_node(
+                node.model_copy(
+                    update={
+                        "status": NodeStatus.SUCCEEDED if succeeded else NodeStatus.FAILED,
+                        "output_summary": result.summary,
+                        "error": None if succeeded else result.summary,
+                        "changed_files": changed_files,
+                        "violation_paths": list(violations),
+                        "completed_at": _now(),
+                    }
+                )
             )
-        )
-        if violations:
+            result_raw = result.model_dump(mode="json", by_alias=True, exclude_none=True)
+            spec.setdefault("nodeResults", {})[node_id] = result_raw
+            spec["result"] = result_raw
+            self.state.put(f"task_spec:{task_id}", spec)
             task = self.repository.get(task_id)
-            self.repository.save(
-                task.model_copy(update={"status": TaskStatus.FAILED, "updated_at": _now()})
-            )
-            return
-
-        remaining = [n for n in self.repository.list_nodes(task_id) if str(n.status) == "pending"]
-        if remaining:
-            await self._advance(task_id, value, profile, workspace)
-            return
-        task = self.repository.get(task_id)
-        self.repository.save(
-            task.model_copy(update={"status": TaskStatus.SUCCEEDED, "updated_at": _now()})
-        )
+            if not succeeded:
+                reason = (
+                    "Agent 修改了授权范围之外的路径：" + ", ".join(violations)
+                    if violations
+                    else result.summary
+                )
+                spec["failureReason"] = reason
+                self.state.put(f"task_spec:{task_id}", spec)
+                self.repository.save(task.model_copy(update={"status": TaskStatus.FAILED, "updated_at": _now()}))
+                await self._emit(task_id, "task.failed", {"taskId": task_id, "to": "failed", "reason": reason})
+                await self._release_children(task_id)
+                return
+            if spec.get("pauseRequested"):
+                self.repository.save(task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()}))
+                await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "paused"})
+                return
+            await self._advance(task_id)
+            if _text(self.repository.get(task_id).status) == TaskStatus.SUCCEEDED.value:
+                await self._release_children(task_id)
 
     async def _cancel(self, task_id: str) -> None:
-        for node in self.repository.list_nodes(task_id):
-            if str(node.status) != "running" or not node.session_id:
-                continue
-            pump = self._pumps.pop(node.id, None)
-            if pump is not None:
-                pump.cancel()
+        running = [
+            node
+            for node in self.repository.list_nodes(task_id)
+            if _text(node.status) in {NodeStatus.RUNNING.value, NodeStatus.WAITING_APPROVAL.value}
+        ]
+        if not running:
+            task = self.repository.get(task_id)
+            self.repository.save(task.model_copy(update={"status": TaskStatus.CANCELLED, "updated_at": _now()}))
+            await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "cancelled"})
+            await self._release_children(task_id)
+            return
+        for node in running:
             outcome = self._outcomes.get(node.id)
             if outcome is None:
-                continue
-            try:
-                await self.runtime.cancel(outcome, reason="用户取消任务")
-            except InvalidTaskActionError:
-                raise
+                reason = "缺少当前进程内执行句柄，无法确认原生执行已停止"
+                self.repository.save_node(
+                    node.model_copy(update={"status": NodeStatus.FAILED, "error": reason, "completed_at": _now()})
+                )
+                task = self.repository.get(task_id)
+                self.repository.save(task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()}))
+                spec = self._task_spec(task_id)
+                spec.update({"recoveryRequired": True, "failureReason": reason})
+                self.state.put(f"task_spec:{task_id}", spec)
+                return
+            cancellation = await self.runtime.cancel(outcome, reason="用户取消任务")
+            if cancellation.task_status != TaskStatus.CANCELLED:
+                task = self.repository.get(task_id)
+                self.repository.save(task.model_copy(update={"status": cancellation.task_status, "updated_at": _now()}))
+                return
+            pump = self._pumps.pop(node.id, None)
+            if pump:
+                pump.cancel()
+            self.repository.save_node(
+                node.model_copy(update={"status": NodeStatus.CANCELLED, "completed_at": _now()})
+            )
         task = self.repository.get(task_id)
-        self.repository.save(
-            task.model_copy(update={"status": TaskStatus.CANCELLED, "updated_at": _now()})
+        self.repository.save(task.model_copy(update={"status": TaskStatus.CANCELLED, "updated_at": _now()}))
+        await self._release_children(task_id)
+
+    async def _release_children(self, parent_task_id: str) -> None:
+        for key, child_spec in self.state.list_prefix("task_spec:").items():
+            if child_spec.get("blockedByParent") != parent_task_id:
+                continue
+            child_id = key.split(":", 1)[1]
+            child_spec["blockedByParent"] = None
+            self.state.put(key, child_spec)
+            async with self._lock(child_id):
+                await self._advance(child_id)
+
+    async def _fail_node(self, task_id: str, node: TaskNodeView | None, reason: str) -> None:
+        if node is None:
+            return
+        self.repository.save_node(
+            node.model_copy(update={"status": NodeStatus.FAILED, "error": reason, "completed_at": _now()})
         )
+        task = self.repository.get(task_id)
+        self.repository.save(task.model_copy(update={"status": TaskStatus.FAILED, "updated_at": _now()}))
+        spec = self._task_spec(task_id)
+        spec["failureReason"] = reason
+        self.state.put(f"task_spec:{task_id}", spec)
+        await self._emit(task_id, "task.failed", {"taskId": task_id, "to": "failed", "reason": reason})
+        await self._release_children(task_id)
 
     async def _emit(self, task_id: str, event_type: str, payload: dict[str, Any]) -> None:
         await self.events.append(
@@ -649,10 +868,125 @@ class TaskService:
             )
         )
 
+    async def _profile_for(self, value: CreateTaskInput) -> Any:
+        if value.profile_id:
+            return await self.profiles.get_profile(value.profile_id)
+        for profile in await self.profiles.list_profiles():
+            if profile.is_default:
+                return profile
+        raise HubError("VALIDATION_FAILED", "没有可用的 Team Profile，请先创建角色配置")
+
+    async def _workspace_for(self, workspace_id: str) -> dict[str, Any]:
+        for item in await self.workspaces.list_workspaces(None, None):
+            if getattr(item, "id", None) != workspace_id:
+                continue
+            capabilities = getattr(item, "capabilities", None)
+            return {
+                "name": getattr(item, "name", workspace_id),
+                "path": getattr(item, "path", None),
+                "vcs": _text(getattr(item, "vcs", "none")),
+                "can_write": bool(getattr(capabilities, "can_run_write_tasks", False)),
+                "reason": getattr(capabilities, "reason", None),
+            }
+        raise HubError("NOT_FOUND", f"工作区不存在：{workspace_id}", detail={"workspaceId": workspace_id})
+
+    def _workflow(self, value: CreateTaskInput) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        roles = tuple(value.workflow_roles or DEFAULT_WORKFLOW_ROLES)
+        if not roles:
+            raise HubError("VALIDATION_FAILED", "workflowRoles 不能为空")
+        if len(set(roles)) != len(roles):
+            raise HubError("VALIDATION_FAILED", "workflowRoles 暂不支持重复角色")
+        result: list[tuple[str, tuple[str, ...]]] = []
+        previous: str | None = None
+        for role_id in roles:
+            try:
+                self.runtime.permissions.role_policy(role_id)
+            except KeyError as error:
+                raise HubError("VALIDATION_FAILED", f"未注册角色：{role_id}") from error
+            result.append((role_id, (previous,) if previous else ()))
+            previous = role_id
+        return tuple(result)
+
+    def _assert_workflow_supported(
+        self,
+        workflow: tuple[tuple[str, tuple[str, ...]], ...],
+        workspace: dict[str, Any],
+    ) -> None:
+        blocked = [
+            role_id
+            for role_id, _ in workflow
+            if not self.runtime.permissions.role_policy(role_id).read_only and not workspace.get("can_write")
+        ]
+        if blocked:
+            raise HubError(
+                "PATH_NOT_ALLOWED",
+                workspace.get("reason") or "该工作区不支持写任务",
+                detail={"blockedRoles": blocked, "vcs": workspace.get("vcs")},
+            )
+
+    def _assert_can_write(self, role_id: str, workspace: dict[str, Any]) -> None:
+        if self.runtime.permissions.role_policy(role_id).read_only or workspace.get("can_write"):
+            return
+        raise HubError("PATH_NOT_ALLOWED", workspace.get("reason") or "该工作区不支持写任务")
+
+    def _task_spec(self, task_id: str) -> dict[str, Any]:
+        value = self.state.get(f"task_spec:{task_id}")
+        if value is None:
+            raise HubError("INTERNAL", f"任务缺少持久化执行规格：{task_id}")
+        return value
+
+    def _lock(self, task_id: str) -> asyncio.Lock:
+        return self._task_locks.setdefault(task_id, asyncio.Lock())
+
+    def _node(self, task_id: str, node_id: str) -> TaskNodeView | None:
+        return next((node for node in self.repository.list_nodes(task_id) if node.id == node_id), None)
+
+    @staticmethod
+    def _reset_node(node: TaskNodeView) -> TaskNodeView:
+        return node.model_copy(
+            update={
+                "status": NodeStatus.PENDING,
+                "error": None,
+                "started_at": None,
+                "completed_at": None,
+                "output_summary": None,
+                "violation_paths": None,
+            }
+        )
+
+    def _review_context(self, task_id: str, role_id: str) -> tuple[str | None, tuple[str, ...]]:
+        if not self.runtime.permissions.role_policy(role_id).read_only:
+            return None, ()
+        for previous in reversed(list(self.repository.list_nodes(task_id))):
+            if _text(previous.status) != NodeStatus.SUCCEEDED.value or not previous.resolved_agent_id:
+                continue
+            return previous.resolved_agent_id, tuple(previous.changed_files or ()) or (".",)
+        return None, ()
+
+    def _inherit_worktree(self, task_id: str) -> dict[str, str] | None:
+        for previous in reversed(list(self.repository.list_nodes(task_id))):
+            if previous.worktree_path and _text(previous.status) == NodeStatus.SUCCEEDED.value:
+                return {"path": previous.worktree_path, "branch": previous.branch or "", "base_commit": ""}
+        return None
+
+    @staticmethod
+    async def _head_commit(repository: Path) -> str:
+        process = await asyncio.create_subprocess_exec(
+            "git",
+            "rev-parse",
+            "HEAD",
+            cwd=str(repository),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await process.communicate()
+        sha = stdout.decode("utf-8", "replace").strip()
+        if process.returncode != 0 or not sha:
+            raise HubError("PATH_NOT_ALLOWED", "写任务要求工作区已有明确 Git 提交基线")
+        return sha
+
 
 class SessionService:
-    """SessionPort：列出与恢复会话。"""
-
     available = True
     unavailable_reason = None
 
@@ -668,17 +1002,15 @@ class SessionService:
         if session is None:
             raise HubError("NOT_FOUND", f"Session 不存在：{session_id}")
         if not session.is_valid:
-            raise HubError(
-                "SESSION_NOT_RESUMABLE",
-                "该会话不可恢复：Agent 未提供可用的外部会话 ID（裁决 D28）",
-                detail={"sessionId": session_id},
-            )
-        return await self.manager.resume(session, getattr(value, "message", "") or "", None)
+            raise HubError("SESSION_NOT_RESUMABLE", "该会话没有可用的外部恢复凭据")
+        return await self.manager.resume(
+            session,
+            getattr(value, "instruction", getattr(value, "message", "")) or "",
+            getattr(value, "acceptance", None),
+        )
 
 
 class ApprovalService:
-    """ApprovalPort：列出与回应审批。"""
-
     available = True
     unavailable_reason = None
 
@@ -687,7 +1019,94 @@ class ApprovalService:
         self.coordinator = coordinator
 
     async def list_approvals(self, query: dict[str, Any]) -> Sequence[Any]:
-        return await self.repository.list({k: v for k, v in query.items() if v})
+        return await self.repository.list({key: value for key, value in query.items() if value})
 
-    async def respond(self, approval_id: str, value: Any, idempotency_key: str | None) -> Any:
-        return await self.coordinator.decide(approval_id, value)
+    async def respond(
+        self,
+        approval_id: str,
+        value: ApprovalResponseInput,
+        idempotency_key: str | None,
+    ) -> Any:
+        database = getattr(self.repository, "database", None)
+        try:
+            resolved = await self.coordinator.respond(approval_id, value)
+        except Exception:
+            existing = await self.repository.get(approval_id)
+            if database is not None and existing is not None and _text(existing.status) != "pending":
+                from storage.tasks import TaskRepository
+
+                tasks = TaskRepository(database)
+                task = tasks.get(existing.task_id)
+                if _text(task.status) == TaskStatus.WAITING_APPROVAL.value:
+                    node = next(
+                        (item for item in tasks.list_nodes(existing.task_id) if item.id == existing.node_id),
+                        None,
+                    )
+                    if node:
+                        tasks.save_node(
+                            node.model_copy(
+                                update={
+                                    "status": NodeStatus.FAILED,
+                                    "error": "审批决定未被 Adapter 消费",
+                                    "completed_at": _now(),
+                                }
+                            )
+                        )
+                    tasks.save(
+                        task.model_copy(
+                            update={
+                                "status": TaskStatus.FAILED,
+                                "pending_approval_id": None,
+                                "updated_at": _now(),
+                            }
+                        )
+                    )
+            raise
+        if database is not None:
+            from storage.tasks import TaskRepository
+
+            tasks = TaskRepository(database)
+            task = tasks.get(resolved.task_id)
+            node = next(
+                (item for item in tasks.list_nodes(resolved.task_id) if item.id == resolved.node_id),
+                None,
+            )
+            if (
+                value.decision == ApprovalDecision.APPROVE
+                and _text(task.status) == TaskStatus.WAITING_APPROVAL.value
+            ):
+                if node and _text(node.status) == NodeStatus.WAITING_APPROVAL.value:
+                    tasks.save_node(node.model_copy(update={"status": NodeStatus.RUNNING}))
+                tasks.save(
+                    task.model_copy(
+                        update={
+                            "status": TaskStatus.RUNNING,
+                            "pending_approval_id": None,
+                            "updated_at": _now(),
+                        }
+                    )
+                )
+            elif (
+                value.decision == ApprovalDecision.REJECT
+                and _text(task.status) == TaskStatus.WAITING_APPROVAL.value
+            ):
+                if node:
+                    tasks.save_node(
+                        node.model_copy(
+                            update={
+                                "status": NodeStatus.FAILED,
+                                "error": value.reason or "用户拒绝审批",
+                                "completed_at": _now(),
+                            }
+                        )
+                    )
+                tasks.save(
+                    task.model_copy(
+                        update={
+                            "status": TaskStatus.FAILED,
+                            "pending_approval_id": None,
+                            "updated_at": _now(),
+                        }
+                    )
+                )
+        return resolved

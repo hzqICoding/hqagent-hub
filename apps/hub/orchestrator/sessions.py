@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
@@ -7,6 +8,7 @@ from typing import Callable
 from protocol.generated.python import (
     AdapterStreamEnd,
     AdapterStreamStatus,
+    AdapterFailure,
     AgentSessionHandle,
     ResumeRequest,
     SessionPurpose,
@@ -15,7 +17,7 @@ from protocol.generated.python import (
     SessionView,
 )
 
-from .errors import InvalidTaskActionError, SessionNotResumableError
+from .errors import AdapterStartFailedError, InvalidTaskActionError, SessionNotResumableError
 from .ports import AdapterDirectoryPort, SessionRepositoryPort
 
 
@@ -98,6 +100,7 @@ class SessionManager:
         self.repository = repository
         self.adapters = adapters
         self.clock = clock
+        self._locks: dict[str, asyncio.Lock] = {}
 
     async def plan(
         self,
@@ -177,24 +180,40 @@ class SessionManager:
         return value
 
     async def resume(self, session: SessionView, message: str, acceptance: list[str] | None) -> SessionView:
-        adapter = self.adapters.adapter_for(session.agent_instance_id)
-        await adapter.resume(
-            ResumeRequest.model_validate(
-                {
-                    "sessionId": session.id,
-                    "externalSessionId": session.external_session_id,
-                    "message": message,
-                    "acceptance": acceptance,
-                }
+        lock = self._locks.setdefault(session.id, asyncio.Lock())
+        async with lock:
+            current = await self.repository.get(session.id)
+            if current is None:
+                raise SessionNotResumableError(session.id, "指定 Session 不存在")
+            if current.status != SessionStatus.IDLE or not current.is_valid:
+                raise SessionNotResumableError(session.id, "Session 当前不可恢复或已有活跃执行")
+            spec = await self.repository.get_spec(session.id)
+            if spec is None:
+                raise SessionNotResumableError(
+                    session.id,
+                    "Session 缺少持久化 AgentTaskSpec，无法可靠重建 Adapter 状态",
+                )
+            adapter = self.adapters.adapter_for(current.agent_instance_id)
+            result = await adapter.resume(
+                ResumeRequest.model_validate(
+                    {
+                        "sessionId": current.id,
+                        "externalSessionId": current.external_session_id,
+                        "message": message,
+                        "acceptance": acceptance,
+                        "taskSpec": spec.model_dump(mode="json", by_alias=True, exclude_none=True),
+                    }
+                )
             )
-        )
-        active = SessionLifecycle.transition(
-            session,
-            SessionStatus.ACTIVE,
-            now=timestamp(self.clock()),
-        ).model_copy(update={"turn_count": (session.turn_count or 0) + 1})
-        await self.repository.save(active)
-        return active
+            if isinstance(result, AdapterFailure):
+                raise AdapterStartFailedError(result)
+            active = SessionLifecycle.transition(
+                current,
+                SessionStatus.ACTIVE,
+                now=timestamp(self.clock()),
+            ).model_copy(update={"turn_count": (current.turn_count or 0) + 1})
+            await self.repository.save(active)
+            return active
 
     async def apply_stream_end(self, session_id: str, stream_end: AdapterStreamEnd) -> SessionView:
         session = await self.repository.get(session_id)
