@@ -95,3 +95,11 @@ codex 有自己的默认署名行为。
 - 复用`/root/audit_orchestration`（thread `01a0cf38-30a9-7733-b5ff-4649ad36fecc`，继承session见上表，`gpt-5.6-sol/high`）处理Claude npm入口与Codex大行读取，独立工作区`n0-adapter-io`、分支`fix/n0-adapter-io`，基线`98a3f15`。
 - 回执`.hqagent/handoffs/N0-adapter-io.md`；原生followup复用成功，跨客户端恢复仍未验证。
 - 发现外部会话在集成目录并发调整页面布局，已通知用户协调；保留外部改动，前端构建输出改为独立临时目录，避免覆盖对方产物。
+
+## 2026-09-25 Claude 连续对话修复
+
+- 复用`/root/audit_orchestration`，独立thread `01a0cf38-30a9-7733-b5ff-4649ad36fecc`，继承session同前；模型/等级`gpt-5.6-sol/high`。工作区`claude-resume`，分支`fix/claude-resume`，基线`675be1b`，负责原生CLI恢复实测及Claude Adapter。
+- 主代理在`chat-continuation`独立实现提示词与恢复错误交互，再整合进`vnext-integration`，保留外部未提交前端修改。无需新增子线程。
+- 子提交`dc29548`、`0c37e17`，集成`09220d2`、`bafad5f`；主提交集成`6c8a242`。
+- 已完成：原生精确UUID恢复、后台重启后恢复，以及原用户对话的中文追问真实成功。子代理可继续复用，未验证跨客户端恢复。
+- 验收：[N0-claude-continuation](reviews/N0-claude-continuation.md)。
