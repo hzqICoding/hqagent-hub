@@ -898,6 +898,14 @@ class CodexAdapter(AgentAdapter):
             return
         if item_type in {"commandExecution", "fileChange", "mcpToolCall"}:
             tool_name = item_type
+            raw_exit_code = item.get("exitCode")
+            exit_code = (
+                raw_exit_code
+                if item_type == "commandExecution"
+                and isinstance(raw_exit_code, int)
+                and not isinstance(raw_exit_code, bool)
+                else None
+            )
             summary = str(
                 item.get("command")
                 or item.get("path")
@@ -915,6 +923,7 @@ class CodexAdapter(AgentAdapter):
                             "argumentsExcerpt": summary[:512] or None,
                             "resultSummary": str(item.get("aggregatedOutput") or "")[:512] or None,
                             "failed": str(item.get("status", "")).lower() in {"failed", "declined"},
+                            "exitCode": exit_code,
                         }
                     ),
                 )

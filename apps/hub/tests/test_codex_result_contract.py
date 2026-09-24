@@ -184,3 +184,39 @@ def test_agent_message_delta_is_progress_only(tmp_path: Path) -> None:
         assert event.unified_type == "agent.progress"
 
     asyncio.run(scenario())
+
+
+def test_command_execution_completed_exposes_real_integer_exit_code(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        adapter = CodexAdapter()
+        state = state_for(tmp_path)
+        await adapter._handle_item(
+            state,
+            "item/completed",
+            {
+                "id": "command-1",
+                "type": "commandExecution",
+                "command": "node --test tests/counter.test.cjs",
+                "status": "completed",
+                "exitCode": 7,
+                "aggregatedOutput": "tests failed",
+            },
+        )
+        event = await state.queue.get()
+        assert event.payload.exit_code == 7
+
+        await adapter._handle_item(
+            state,
+            "item/completed",
+            {
+                "id": "command-2",
+                "type": "commandExecution",
+                "command": "echo bool",
+                "status": "completed",
+                "exitCode": True,
+            },
+        )
+        bool_event = await state.queue.get()
+        assert bool_event.payload.exit_code is None
+
+    asyncio.run(scenario())
