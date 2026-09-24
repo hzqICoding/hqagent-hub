@@ -1036,6 +1036,15 @@ class PathViolationPayload(_Base):
     worktree_path: str | None = Field(default=None, alias="worktreePath")
 
 
+class PickLocalDirectoryInput(_Base):
+    initial_path: str | None = Field(default=None, alias="initialPath")
+
+
+class PickLocalDirectoryView(_Base):
+    cancelled: bool = Field(alias="cancelled")
+    selected_path: str | None = Field(default=None, alias="selectedPath")
+
+
 class UpdateChannel(StrEnum):
     STABLE = "stable"
     BETA = "beta"

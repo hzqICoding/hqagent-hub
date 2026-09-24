@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import os
 import socket
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -112,6 +113,10 @@ async def run(data_dir: Path | None = None, environment: str = "production", *, 
 
 
 def main() -> None:
+    if len(sys.argv) == 3 and sys.argv[1] == "--pick-directory":
+        from runtime.directory_picker import show_dialog
+        show_dialog(sys.argv[2])
+        return
     args = _parse_args()
     asyncio.run(run(args.data_dir, args.environment, port=args.port, web_dir=args.web_dir))
 

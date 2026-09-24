@@ -6,6 +6,8 @@ import type {
   LocalAgentModelsView,
   WorkspaceView,
   AddWorkspaceInput,
+  PickLocalDirectoryInput,
+  PickLocalDirectoryView,
   LocalSceneView,
   SaveLocalSceneInput,
   LocalConversationView,
@@ -35,6 +37,7 @@ export interface LocalChatGateway {
   // Workspaces
   listLocalWorkspaces(): Promise<WorkspaceView[]>
   addLocalWorkspace(input: AddWorkspaceInput): Promise<WorkspaceView>
+  pickLocalDirectory(input: PickLocalDirectoryInput): Promise<PickLocalDirectoryView>
 
   // Scenes
   listLocalScenes(): Promise<LocalSceneView[]>

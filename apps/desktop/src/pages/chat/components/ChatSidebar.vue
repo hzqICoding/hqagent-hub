@@ -27,6 +27,7 @@ const selectedSceneId = ref<LocalSceneId>('analyze')
 const isCreating = ref(false)
 const newWorkspacePath = ref('')
 const isRegistering = ref(false)
+const isPicking = ref(false)
 const createError = ref<string | null>(null)
 
 function openCreateModal() {
@@ -66,6 +67,22 @@ async function registerWorkspace() {
     createError.value = error instanceof Error ? error.message : '项目目录登记失败'
   } finally {
     isRegistering.value = false
+  }
+}
+
+async function chooseWorkspace() {
+  if (isPicking.value || isRegistering.value) return
+  isPicking.value = true
+  createError.value = null
+  try {
+    const path = await chatStore.pickWorkspaceDirectory()
+    if (!path) return
+    newWorkspacePath.value = path
+    await registerWorkspace()
+  } catch (error) {
+    createError.value = error instanceof Error ? error.message : '无法打开目录选择窗口，请手动输入目录'
+  } finally {
+    isPicking.value = false
   }
 }
 
@@ -226,11 +243,15 @@ function formatTime(iso: string) {
             "
             placeholder="请选择已登记的工作区"
           />
-          <details class="mt-2" :open="chatStore.workspaces.length === 0">
-            <summary class="cursor-pointer text-primary">登记本机已有项目目录</summary>
+          <HqButton type="button" size="sm" class="mt-2" :loading="isPicking" :disabled="isPicking || isRegistering" @click="chooseWorkspace">
+            <FolderGit2 class="w-3.5 h-3.5 mr-1" />
+            {{ isPicking ? '请在本机窗口中选择…' : '选择项目目录' }}
+          </HqButton>
+          <details class="mt-2" :open="!!newWorkspacePath">
+            <summary class="cursor-pointer text-text-muted">手动输入目录</summary>
             <div class="flex items-center gap-2 mt-2">
               <HqInput v-model="newWorkspacePath" placeholder="例如 E:\WorkSpace\ua_android" class="flex-1" />
-              <HqButton type="button" size="sm" :disabled="!newWorkspacePath.trim() || isRegistering" @click="registerWorkspace">登记目录</HqButton>
+              <HqButton type="button" size="sm" :disabled="!newWorkspacePath.trim() || isRegistering || isPicking" @click="registerWorkspace">登记目录</HqButton>
             </div>
           </details>
         </div>

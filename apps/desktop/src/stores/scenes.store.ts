@@ -19,7 +19,7 @@ export const useScenesStore = defineStore('scenes', () => {
   const conflictError = ref<{ currentVersion: number; message: string } | null>(null)
   let generation = 0
 
-  async function fetchScenes(): Promise<void> {
+  async function fetchScenes(rediscover = false): Promise<void> {
     const currentGeneration = generation
     isLoading.value = true
     error.value = null
@@ -28,11 +28,12 @@ export const useScenesStore = defineStore('scenes', () => {
       const gateway = getLocalChatGateway()
       const [scenesRes, agentsRes] = await Promise.all([
         gateway.listLocalScenes(),
-        gateway.listLocalAgents(),
+        rediscover ? gateway.discoverLocalAgents().then(result => result.discovered) : gateway.listLocalAgents(),
       ])
       if (currentGeneration !== generation) return
       scenes.value = scenesRes
       availableAgents.value = agentsRes
+      if (rediscover) agentModelsMap.value = {}
       if (!currentScene.value && scenesRes.length > 0) {
         currentScene.value = JSON.parse(JSON.stringify(scenesRes[0]))
       } else if (currentScene.value) {

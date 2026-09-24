@@ -245,6 +245,11 @@ export const useChatStore = defineStore('chat', () => {
     return workspace
   }
 
+  async function pickWorkspaceDirectory(): Promise<string | null> {
+    const result = await getLocalChatGateway().pickLocalDirectory({})
+    return result.cancelled ? null : result.selectedPath || null
+  }
+
   async function sendMessage(
     text: string,
     modeOverride?: 'new' | 'continue'
@@ -486,6 +491,7 @@ export const useChatStore = defineStore('chat', () => {
     fetchApprovals,
     createConversation,
     registerWorkspace,
+    pickWorkspaceDirectory,
     sendMessage,
     controlRun,
     respondApproval,

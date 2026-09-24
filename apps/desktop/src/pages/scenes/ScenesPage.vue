@@ -77,7 +77,7 @@ async function handleSave() {
 }
 
 async function handleRefresh() {
-  await scenesStore.fetchScenes()
+  await scenesStore.fetchScenes(true)
   syncEditBuffer()
 }
 

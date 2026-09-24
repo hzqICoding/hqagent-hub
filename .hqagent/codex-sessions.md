@@ -88,3 +88,10 @@ codex 有自己的默认署名行为。
 - 旧integration工作区切到`preserve/phase1-local-20260924`保留现场，四个未提交修改逐字节不变。
 - 回执：`.hqagent/reviews/N0-joint-integration.md`。启动入口：`docs/vnext/本地试用启动.md`。
 - 状态：联合代码与自动化/HTTP检查完成；可视界面及真实模型成功验收待完成。未推送、未合main。
+
+## 2026-09-24 本地试用问题修复
+
+- 主代理继续负责目录选择协议/API/界面及本地启动，位于`vnext-integration`；未新建主会话。
+- 复用`/root/audit_orchestration`（thread `01a0cf38-30a9-7733-b5ff-4649ad36fecc`，继承session见上表，`gpt-5.6-sol/high`）处理Claude npm入口与Codex大行读取，独立工作区`n0-adapter-io`、分支`fix/n0-adapter-io`，基线`98a3f15`。
+- 回执`.hqagent/handoffs/N0-adapter-io.md`；原生followup复用成功，跨客户端恢复仍未验证。
+- 发现外部会话在集成目录并发调整页面布局，已通知用户协调；保留外部改动，前端构建输出改为独立临时目录，避免覆盖对方产物。

@@ -1114,6 +1114,15 @@ export interface PathViolationPayload {
   worktreePath?: string
 }
 
+export interface PickLocalDirectoryInput {
+  initialPath?: string
+}
+
+export interface PickLocalDirectoryView {
+  cancelled: boolean
+  selectedPath?: string
+}
+
 /** 升级渠道 */
 export type UpdateChannel =
   | 'stable'

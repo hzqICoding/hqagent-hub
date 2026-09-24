@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 from protocol.generated.python import (
     AddWorkspaceInput, ApprovalResponseInput, CreateLocalConversationInput,
     LocalAgentModelsView, LocalAuthInput, LocalAuthView, LocalEventPage,
+    PickLocalDirectoryInput,
     SaveLocalSceneInput, SendLocalMessageInput, TaskActionInput,
 )
 from api.envelopes import success_response
@@ -15,10 +16,12 @@ from core.errors import HubError
 from core.local_auth import COOKIE_NAME, LocalBrowserAuth
 from core.security import token_matches
 from runtime.local_chat import LocalChatService
+from runtime.directory_picker import LocalDirectoryPicker
 
 
 def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowserAuth,
                          ports: Any, events: Any, token: str) -> None:
+    directory_picker = LocalDirectoryPicker()
     def authenticated(request: Request) -> bool:
         bearer = request.headers.get("authorization", "")
         return auth.valid(request.cookies.get(COOKIE_NAME)) or (
@@ -93,6 +96,10 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
     @router.post("/workspaces")
     async def add_workspace(value: AddWorkspaceInput):
         return success_response(await ports.workspaces.add_workspace(value))
+
+    @router.post("/workspaces/pick")
+    async def pick_directory(value: PickLocalDirectoryInput):
+        return success_response(await directory_picker.pick(value))
 
     @router.get("/scenes")
     async def scenes():

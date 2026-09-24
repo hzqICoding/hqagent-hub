@@ -120,4 +120,13 @@ describe('RealLocalChatGateway', () => {
       expect(err.retryable).toBe(true)
     }
   })
+
+  it('requests a local directory dialog with cookie auth and preserves cancellation', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200,
+      json: async () => ({ success: true, data: { cancelled: true } }) })
+    globalThis.fetch = mockFetch as any
+    expect(await gateway.pickLocalDirectory({})).toEqual({ cancelled: true })
+    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/workspaces/pick'),
+      expect.objectContaining({ method: 'POST', body: '{}', credentials: 'include' }))
+  })
 })

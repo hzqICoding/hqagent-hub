@@ -6,6 +6,8 @@ import type {
   LocalAgentModelsView,
   WorkspaceView,
   AddWorkspaceInput,
+  PickLocalDirectoryInput,
+  PickLocalDirectoryView,
   LocalSceneView,
   SaveLocalSceneInput,
   LocalConversationView,
@@ -154,6 +156,14 @@ export class RealLocalChatGateway implements LocalChatGateway {
 
   async addLocalWorkspace(input: AddWorkspaceInput): Promise<WorkspaceView> {
     return this.fetchApi<WorkspaceView>('/api/v2/workspaces', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
+  // Scenes
+  async pickLocalDirectory(input: PickLocalDirectoryInput): Promise<PickLocalDirectoryView> {
+    return this.fetchApi<PickLocalDirectoryView>('/api/v2/workspaces/pick', {
       method: 'POST',
       body: JSON.stringify(input),
     })

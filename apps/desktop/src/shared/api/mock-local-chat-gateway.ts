@@ -6,6 +6,8 @@ import type {
   LocalAgentModelsView,
   WorkspaceView,
   AddWorkspaceInput,
+  PickLocalDirectoryInput,
+  PickLocalDirectoryView,
   LocalSceneView,
   SaveLocalSceneInput,
   LocalConversationView,
@@ -679,6 +681,12 @@ export class MockLocalChatGateway implements LocalChatGateway {
     }
     this.workspaces.unshift(newWs)
     return newWs
+  }
+
+  // Scenes
+  async pickLocalDirectory(_input: PickLocalDirectoryInput): Promise<PickLocalDirectoryView> {
+    // Mock mode never opens a native dialog or registers a fictitious real folder.
+    return { cancelled: true }
   }
 
   // Scenes

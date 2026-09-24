@@ -6,6 +6,27 @@ info:
     schema below describes data, see x-envelope.
 x-envelope: ../schema/envelope.json#/$defs/ApiEnvelope
 paths:
+  /api/v2/workspaces/pick:
+    post:
+      operationId: pickLocalDirectory
+      description: Opens one native folder dialog on the Worker computer. Only selects an existing directory; registration is a separate explicit operation. Cancellation returns cancelled=true. Concurrent requests return CONFLICT; unavailable desktop or timeout returns FEATURE_UNAVAILABLE.
+      security:
+      - localSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-chat.json#/$defs/PickLocalDirectoryInput
+      responses:
+        '200':
+          description: Selected absolute path, or normal user cancellation.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/PickLocalDirectoryView
   /api/v2/auth/local-session:
     post:
       operationId: openLocalSession
