@@ -4,6 +4,7 @@ import { useChatStore } from '@/stores/chat.store'
 import { useLocalAuthStore } from '@/stores/local-auth.store'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMessageItem from './components/ChatMessageItem.vue'
+import ProcessActivityGroup from './components/ProcessActivityGroup.vue'
 import ChatComposer from './components/ChatComposer.vue'
 import RunSnapshotDrawer from './components/RunSnapshotDrawer.vue'
 import {
@@ -45,7 +46,7 @@ function handleScroll() {
 
 function scrollToBottom(smooth = false) {
   if (messageContainerRef.value) {
-    if (smooth) {
+    if (smooth && typeof messageContainerRef.value.scrollTo === 'function') {
       messageContainerRef.value.scrollTo({
         top: messageContainerRef.value.scrollHeight,
         behavior: 'smooth',
@@ -63,6 +64,17 @@ watch(
     await nextTick()
     if (!isScrolledUp.value) {
       scrollToBottom()
+    }
+  }
+)
+
+// Auto scroll on new process activity if not scrolled up
+watch(
+  () => chatStore.activeRunActivities.length,
+  async () => {
+    await nextTick()
+    if (!isScrolledUp.value) {
+      scrollToBottom(true)
     }
   }
 )
@@ -117,11 +129,11 @@ function applyStarterPrompt(prompt: string) {
   <div class="h-full flex flex-col bg-bg-app overflow-hidden">
     <!-- Load Error Alert -->
     <div
-      v-if="'loadError' in chatStore && (chatStore as any).loadError"
+      v-if="chatStore.loadError"
       role="alert"
       class="px-4 py-2 text-xs text-danger bg-danger/10 border-b border-danger/20"
     >
-      {{ (chatStore as any).loadError }}
+      {{ chatStore.loadError }}
     </div>
 
     <!-- Mock Mode Warning Banner if active -->
@@ -237,6 +249,29 @@ function applyStarterPrompt(prompt: string) {
               :key="msg.id"
               :message="msg"
             />
+
+            <!-- Live In-Progress Execution Activity Accordion -->
+            <div
+              v-if="chatStore.isCurrentRunActive"
+              class="max-w-3xl mx-auto px-4 py-2"
+            >
+              <div class="flex items-start gap-3">
+                <div class="w-7 h-7 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0 mt-0.5 border border-primary/30 shadow-xs animate-pulse">
+                  <Bot class="w-4 h-4" />
+                </div>
+                <div class="flex-1 min-w-0 space-y-1.5">
+                  <div class="flex items-center gap-2 text-[11px] text-text-muted select-none">
+                    <span class="font-semibold text-text text-xs">HQAgent 团队</span>
+                    <span class="text-primary font-medium animate-pulse">正在执行任务...</span>
+                  </div>
+                  <ProcessActivityGroup
+                    :activities="chatStore.activeRunActivities"
+                    :is-live="true"
+                    :initially-expanded="true"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div v-else class="flex-1 min-h-0 flex items-center justify-center p-8">

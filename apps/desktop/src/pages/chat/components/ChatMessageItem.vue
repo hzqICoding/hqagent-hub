@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { LocalMessageView } from '@hqagent/protocol'
 import { HqMarkdown } from '@/shared/ui'
+import { useChatStore } from '@/stores/chat.store'
+import ProcessActivityGroup from './ProcessActivityGroup.vue'
 import {
   Bot,
   Terminal,
@@ -15,10 +17,15 @@ interface Props {
   message: LocalMessageView
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
+const chatStore = useChatStore()
 const isExpanded = ref(true)
 const isCopied = ref(false)
+
+const activities = computed(() =>
+  props.message.runId ? chatStore.getActivitiesForRun(props.message.runId) : []
+)
 
 function formatTime(iso: string) {
   if (!iso) return ''
@@ -144,6 +151,14 @@ async function copyText(text: string) {
             <span>{{ isCopied ? '已复制' : '复制' }}</span>
           </button>
         </div>
+
+        <!-- Collapsible Process Activities (matching PI-Desktop / Agent Timeline) -->
+        <ProcessActivityGroup
+          v-if="activities.length > 0"
+          :activities="activities"
+          :is-live="false"
+          :initially-expanded="false"
+        />
 
         <div class="bg-panel border border-border/80 p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed shadow-sm break-words overflow-x-auto select-text">
           <HqMarkdown :content="message.text" />

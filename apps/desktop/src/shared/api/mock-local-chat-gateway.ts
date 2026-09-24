@@ -25,13 +25,16 @@ import type {
   ErrorCode,
 } from '@hqagent/protocol'
 
-import type { LocalChatGateway } from './local-chat-gateway.interface'
+import type {
+  LocalChatGateway,
+  PickLocalDirectoryInput,
+  PickLocalDirectoryView,
+} from './local-chat-gateway.interface'
 import { HubApiError } from './local-hub-gateway'
 
 // Import contract fixtures
 import analyzeSceneFixture from '@hqagent/fixtures/local-scene.analyze.json'
 import agentsDiscoveryFixture from '@hqagent/fixtures/agents.discovery-partial.json'
-import bootstrapFixture from '@hqagent/fixtures/bootstrap.happy.json'
 
 export class MockLocalChatGateway implements LocalChatGateway {
   public isMock = true
@@ -683,6 +686,12 @@ export class MockLocalChatGateway implements LocalChatGateway {
   }
 
   // Scenes
+  async pickLocalDirectory(_input: PickLocalDirectoryInput): Promise<PickLocalDirectoryView> {
+    // Mock mode never opens a native dialog or registers a fictitious real folder.
+    return { cancelled: true }
+  }
+
+  // Scenes
   async listLocalScenes(): Promise<LocalSceneView[]> {
     return JSON.parse(JSON.stringify(this.scenes))
   }
@@ -859,17 +868,76 @@ export class MockLocalChatGateway implements LocalChatGateway {
     list.push(procMsg)
     this.messages.set(conversationId, list)
 
-    // Emit event
-    this.events.push({
-      eventId: `evt_${this.eventSeq}`,
-      seq: this.eventSeq++,
-      aggregateType: 'task',
-      aggregateId: taskId,
-      type: 'task.status_changed',
-      occurredAt: new Date().toISOString(),
-      payload: { taskId, from: 'queued', to: 'running' },
-      protocolVersion: '0.3.0',
-    })
+    // Emit events
+    this.events.push(
+      {
+        eventId: `evt_${this.eventSeq}`,
+        seq: this.eventSeq++,
+        aggregateType: 'task',
+        aggregateId: taskId,
+        taskId,
+        type: 'task.status_changed',
+        occurredAt: new Date().toISOString(),
+        payload: { taskId, from: 'queued', to: 'running' },
+        protocolVersion: '0.3.0',
+      },
+      {
+        eventId: `evt_${this.eventSeq}`,
+        seq: this.eventSeq++,
+        aggregateType: 'task',
+        aggregateId: taskId,
+        taskId,
+        type: 'agent.started',
+        occurredAt: new Date().toISOString(),
+        payload: { sessionId: `sess_${runId}`, purpose: 'adhoc' },
+        protocolVersion: '0.3.0',
+      },
+      {
+        eventId: `evt_${this.eventSeq}`,
+        seq: this.eventSeq++,
+        aggregateType: 'task',
+        aggregateId: taskId,
+        taskId,
+        type: 'agent.progress',
+        occurredAt: new Date().toISOString(),
+        payload: { message: 'Thought: 分析当前工程架构并定位相关代码模块' },
+        protocolVersion: '0.3.0',
+      },
+      {
+        eventId: `evt_${this.eventSeq}`,
+        seq: this.eventSeq++,
+        aggregateType: 'task',
+        aggregateId: taskId,
+        taskId,
+        type: 'agent.tool_call',
+        occurredAt: new Date().toISOString(),
+        payload: {
+          toolName: 'view_file',
+          argumentsExcerpt: 'apps/desktop/src/shared/ui/HqMarkdown.vue',
+          resultSummary: '文件解析完成，识别 190 行定义',
+          failed: false,
+          durationMs: 120,
+        },
+        protocolVersion: '0.3.0',
+      },
+      {
+        eventId: `evt_${this.eventSeq}`,
+        seq: this.eventSeq++,
+        aggregateType: 'task',
+        aggregateId: taskId,
+        taskId,
+        type: 'agent.tool_call',
+        occurredAt: new Date().toISOString(),
+        payload: {
+          toolName: 'commandExecution',
+          argumentsExcerpt: 'pnpm --filter @hqagent/desktop test',
+          resultSummary: '31 test files passed (137 tests)',
+          failed: false,
+          durationMs: 1250,
+        },
+        protocolVersion: '0.3.0',
+      }
+    )
 
     return {
       commandId: `cmd_${Date.now()}`,

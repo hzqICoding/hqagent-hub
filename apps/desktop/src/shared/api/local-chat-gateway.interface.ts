@@ -21,6 +21,15 @@ import type {
   SessionView,
 } from '@hqagent/protocol'
 
+export interface PickLocalDirectoryInput {
+  initialPath?: string
+}
+
+export interface PickLocalDirectoryView {
+  selectedPath?: string
+  cancelled: boolean
+}
+
 export interface LocalChatGateway {
   // Auth
   getLocalAuthStatus(): Promise<LocalAuthView>
@@ -35,6 +44,7 @@ export interface LocalChatGateway {
   // Workspaces
   listLocalWorkspaces(): Promise<WorkspaceView[]>
   addLocalWorkspace(input: AddWorkspaceInput): Promise<WorkspaceView>
+  pickLocalDirectory?(input: PickLocalDirectoryInput): Promise<PickLocalDirectoryView>
 
   // Scenes
   listLocalScenes(): Promise<LocalSceneView[]>
@@ -73,7 +83,8 @@ export interface LocalChatGateway {
   listLocalApprovals(): Promise<ApprovalView[]>
   decideLocalApproval(
     approvalId: string,
-    input: ApprovalResponseInput
+    input: ApprovalResponseInput,
+    idempotencyKey?: string
   ): Promise<ApprovalView>
   listLocalSessions(): Promise<SessionView[]>
 }
