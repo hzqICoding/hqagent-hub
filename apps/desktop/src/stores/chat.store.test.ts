@@ -48,6 +48,19 @@ describe('ChatStore', () => {
     expect(store.workspaces[0].id).toBe(workspace.id)
   })
 
+  it('does not submit another run after a known resume rejection and permits explicit new context', async () => {
+    const store = useChatStore()
+    await store.init()
+    store.sessionMode = 'continue'
+    store.resumptionError = '该会话无法恢复，请选择新上下文'
+    const send = vi.spyOn(mockLocalChatGateway, 'sendLocalMessage')
+    await expect(store.sendMessage('请用中文')).rejects.toThrow('该会话无法恢复')
+    expect(send).not.toHaveBeenCalled()
+    await store.sendMessage('请用中文', 'new')
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0][1].sessionMode).toBe('new')
+  })
+
   it('sends message, updates message stream, and triggers run update', async () => {
     const store = useChatStore()
     await store.init()

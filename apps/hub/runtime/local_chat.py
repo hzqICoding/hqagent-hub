@@ -205,6 +205,8 @@ class LocalChatService:
                 node = next((n for n in reversed(detail.nodes) if str(n.role_id) == role.role_id), None)
                 session = session_map.get(node.session_id) if node else None
                 if session is None or not session.is_valid or str(session.status) != "idle":
+                    if session is not None and str(session.status) == "closed":
+                        raise HubError("SESSION_NOT_RESUMABLE", f"角色{role.role_id}的上一轮会话已关闭，不能原生续接；请选择新一轮上下文，并附上需要继续处理的上一轮结果")
                     raise HubError("SESSION_NOT_RESUMABLE", f"角色{role.role_id}没有可恢复会话，请明确选择新上下文")
                 resume_sessions[role.role_id] = session.id
         return CreateTaskInput.model_validate({
