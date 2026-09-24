@@ -388,6 +388,20 @@ class ClaudeAdapter(AgentAdapter):
                 "Claude 精确恢复必须提供 externalSessionId，禁止 latest/continue 猜测",
                 retryable=False,
             )
+        try:
+            parsed_external_id = uuid.UUID(request.external_session_id)
+        except (ValueError, AttributeError):
+            return failure(
+                AdapterFailureKind.AGENT_ERROR,
+                "Claude externalSessionId 必须是明确的规范 UUID，禁止 latest/continue/搜索词",
+                retryable=False,
+            )
+        if str(parsed_external_id) != request.external_session_id:
+            return failure(
+                AdapterFailureKind.AGENT_ERROR,
+                "Claude externalSessionId 必须使用小写连字符规范 UUID",
+                retryable=False,
+            )
         if spec.session_id != request.session_id:
             return failure(
                 AdapterFailureKind.AGENT_ERROR,
@@ -430,7 +444,14 @@ class ClaudeAdapter(AgentAdapter):
         state.expected_termination = False
         state.ready = asyncio.Event()
         state.finished = asyncio.Event()
-        launched = await self._launch(state, request.message, resume=True)
+        resume_spec = spec.model_copy(
+            update={
+                "objective": request.message,
+                "acceptance": request.acceptance if request.acceptance is not None else spec.acceptance,
+            }
+        )
+        state.spec = resume_spec
+        launched = await self._launch(state, build_task_prompt(resume_spec), resume=True)
         if isinstance(launched, AdapterFailure):
             return launched
         try:
@@ -547,7 +568,9 @@ class ClaudeAdapter(AgentAdapter):
             returncode = await process.wait()
             state.ready.set()
             if state.stream_end is None:
-                if state.result is not None or state.failure is not None or state.expected_termination:
+                if state.failure is not None:
+                    status = AdapterStreamStatus.AGENT_EXITED
+                elif state.result is not None or state.expected_termination:
                     status = AdapterStreamStatus.ENDED
                 else:
                     status = AdapterStreamStatus.AGENT_EXITED
