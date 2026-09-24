@@ -60,7 +60,9 @@ from adapters.session_registry import AdapterSessionState, STREAM_END, SessionRe
 class ClaudeAdapter(AgentAdapter):
     adapter_id = "claude"
     display_name = "Claude Code"
-    minimum_version = "2.1.263"
+    # Native transcript persistence was re-verified with 2.1.281. The prior
+    # 2.1.263 baseline failed exact --resume in this host environment.
+    minimum_version = "2.1.281"
     vendor_event_mappings = tuple(
         VendorEventMapping.model_validate(item)
         for item in (
@@ -118,7 +120,7 @@ class ClaudeAdapter(AgentAdapter):
             CapabilityId.SHELL: False,
             CapabilityId.FILE_WRITE: False,
             CapabilityId.GIT_WORKTREE: True,
-            CapabilityId.SESSION_RESUME: False,
+            CapabilityId.SESSION_RESUME: True,
             CapabilityId.STREAMING_EVENTS: True,
             CapabilityId.TOOL_APPROVAL: False,
             CapabilityId.STRUCTURED_OUTPUT: True,
@@ -128,7 +130,6 @@ class ClaudeAdapter(AgentAdapter):
         notes = {
             CapabilityId.FILE_WRITE: "当前CLI接入仅开放只读工具；写入需具备可验证的宿主审批",
             CapabilityId.SHELL: "当前CLI接入未开放shell工具",
-            CapabilityId.SESSION_RESUME: "当前宿主实测无法持久化 Claude transcript；精确 --resume 失败",
             CapabilityId.TOOL_APPROVAL: "前台 stream-json 未实测到可回传的 host approval request",
             CapabilityId.VISION: "AgentTaskSpec 没有图片输入字段，本轮不声明",
             CapabilityId.BROWSER: "本轮 Adapter 不启用 Claude in Chrome",
@@ -275,7 +276,7 @@ class ClaudeAdapter(AgentAdapter):
                 "externalSessionId": external_id,
                 "adapterId": self.adapter_id,
                 "startedAt": utc_timestamp(),
-                "supportsResume": False,
+                "supportsResume": True,
                 "workingDirectory": spec.worktree_path,
             }
         )
@@ -374,24 +375,59 @@ class ClaudeAdapter(AgentAdapter):
 
     async def resume(self, request: ResumeRequest) -> OperationResult:
         state = self.registry.get(request.session_id)
+        spec = request.task_spec
+        if spec is None:
+            return failure(
+                AdapterFailureKind.AGENT_ERROR,
+                "Claude 精确恢复需要持久化 AgentTaskSpec，不能猜测上下文",
+                retryable=False,
+            )
+        if not request.external_session_id:
+            return failure(
+                AdapterFailureKind.AGENT_ERROR,
+                "Claude 精确恢复必须提供 externalSessionId，禁止 latest/continue 猜测",
+                retryable=False,
+            )
+        if spec.session_id != request.session_id:
+            return failure(
+                AdapterFailureKind.AGENT_ERROR,
+                "恢复规格的 sessionId 与目标 Hub Session 不一致",
+                retryable=False,
+            )
+        preflight = await self._preflight(spec)
+        if preflight is not None:
+            return preflight
         if state is None:
-            return failure(
-                AdapterFailureKind.AGENT_ERROR,
-                "Hub Session 不存在，不能猜测 latest 会话",
-                retryable=False,
+            state = AdapterSessionState(
+                session_id=request.session_id,
+                external_session_id=request.external_session_id,
+                spec=spec,
+                guard=PathGuard(spec.worktree_path or "", spec.allowed_paths),
             )
-        if request.external_session_id and request.external_session_id != state.external_session_id:
-            return failure(
-                AdapterFailureKind.AGENT_ERROR,
-                "externalSessionId 与已登记会话不一致",
-                retryable=False,
-            )
+            new_state = True
+        else:
+            new_state = False
+            if request.external_session_id != state.external_session_id:
+                return failure(
+                    AdapterFailureKind.AGENT_ERROR,
+                    "externalSessionId 与已登记会话不一致",
+                    retryable=False,
+                )
+            if self._resume_context(spec) != self._resume_context(state.spec):
+                return failure(
+                    AdapterFailureKind.AGENT_ERROR,
+                    "恢复规格试图改变原生会话的工作区、角色、模型或权限边界",
+                    retryable=False,
+                )
+            state.spec = spec
+            state.guard = PathGuard(spec.worktree_path or "", spec.allowed_paths)
         if state.process is not None and state.process.returncode is None:
             return failure(AdapterFailureKind.AGENT_ERROR, "会话仍在运行", retryable=False)
         state.queue = asyncio.Queue()
         state.failure = None
         state.result = None
         state.stream_end = None
+        state.expected_termination = False
         state.ready = asyncio.Event()
         state.finished = asyncio.Event()
         launched = await self._launch(state, request.message, resume=True)
@@ -403,7 +439,27 @@ class ClaudeAdapter(AgentAdapter):
             await self._force_stop(state)
             await self._join_tasks(state)
             return failure(AdapterFailureKind.TIMEOUT, "Claude resume 启动超时", retryable=True)
-        return state.failure
+        if state.failure is not None:
+            return state.failure
+        if new_state:
+            self.registry.add(state)
+        return None
+
+    @staticmethod
+    def _resume_context(spec: AgentTaskSpec) -> tuple[object, ...]:
+        worktree = str(Path(spec.worktree_path or "").resolve())
+        return (
+            spec.workspace_id,
+            str(spec.role_id),
+            worktree,
+            spec.branch,
+            spec.base_commit,
+            tuple(spec.allowed_paths),
+            bool(spec.read_only),
+            spec.model_id_,
+            spec.reasoning_effort,
+            spec.role_instructions,
+        )
 
     async def stream_events(self, session_id: str) -> AsyncIterator[AdapterEvent | AdapterStreamEnd]:
         state = self.registry.get(session_id)
@@ -500,12 +556,18 @@ class ClaudeAdapter(AgentAdapter):
                         f"Claude 进程已退出，exitCode={returncode}",
                         retryable=False,
                     )
+                resumable = bool(
+                    status is AdapterStreamStatus.ENDED
+                    and state.result is not None
+                    and state.failure is None
+                    and state.external_session_id
+                )
                 await state.finish(
                     AdapterStreamEnd.model_validate(
                         {
                             "status": status,
                             "endedAt": utc_timestamp(),
-                            "resumable": False,
+                            "resumable": resumable,
                             "detail": f"exitCode={returncode}",
                         }
                     )
@@ -546,6 +608,18 @@ class ClaudeAdapter(AgentAdapter):
             subtype = str(raw.get("subtype", "unknown"))
             vendor_type = f"system:{subtype}"
             if subtype == "init":
+                native_session_id = str(raw.get("session_id") or "")
+                if not native_session_id or native_session_id != state.external_session_id:
+                    state.failure = failure(
+                        AdapterFailureKind.AGENT_ERROR,
+                        "Claude init 返回的 session_id 与明确目标不一致",
+                        retryable=False,
+                    )
+                    state.ready.set()
+                    state.expected_termination = True
+                    await state.emit(failure_event(state.failure, "system:init"))
+                    await self._force_stop(state)
+                    return
                 state.ready.set()
                 payload = AgentStartedPayload.model_validate(
                     {
@@ -619,6 +693,15 @@ class ClaudeAdapter(AgentAdapter):
             return
         if event_type == "result":
             state.ready.set()
+            result_session_id = raw.get("session_id")
+            if result_session_id and str(result_session_id) != state.external_session_id:
+                state.failure = failure(
+                    AdapterFailureKind.AGENT_ERROR,
+                    "Claude result 返回的 session_id 与明确目标不一致",
+                    retryable=False,
+                )
+                await state.emit(failure_event(state.failure, "result:error"))
+                return
             if raw.get("is_error") or raw.get("subtype") != "success":
                 state.failure = failure(
                     AdapterFailureKind.AGENT_ERROR,

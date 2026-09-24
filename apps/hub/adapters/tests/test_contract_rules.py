@@ -20,6 +20,7 @@ from protocol.generated.python import (
     CancelMode,
     CancelOutcome,
     CancelRequest,
+    CapabilityId,
     DangerousAction,
     ResumeRequest,
     SessionPurpose,
@@ -181,6 +182,9 @@ def test_d20_detect_and_health_are_separate_probes() -> None:
         assert not isinstance(descriptor, AdapterFailure)
         assert len(runner.calls) == 1
         assert "--version" in runner.calls[0]
+        assert descriptor.minimum_version == "2.1.281"
+        resume = next(item for item in descriptor.capabilities if item.id is CapabilityId.SESSION_RESUME)
+        assert resume.supported is False  # the fake 2.1.263 probe is below the resume gate
 
         health = await adapter.health()
         assert isinstance(health, AdapterHealth)
