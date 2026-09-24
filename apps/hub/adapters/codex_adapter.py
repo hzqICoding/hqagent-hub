@@ -788,6 +788,8 @@ class CodexAdapter(AgentAdapter):
         if method == "turn/started":
             turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
             state.active_turn_id = str(turn.get("id") or state.active_turn_id or "") or None
+            state.vendor_items.clear()
+            state.last_agent_message = None
             await state.emit(
                 AdapterEvent.create(
                     method,
@@ -802,7 +804,9 @@ class CodexAdapter(AgentAdapter):
             item = params.get("item") if isinstance(params.get("item"), dict) else {}
             item_id = str(item.get("id", ""))
             if item_id:
-                state.vendor_items[item_id] = item
+                cached_item = dict(item)
+                cached_item["_hqCompleted"] = method == "item/completed"
+                state.vendor_items[item_id] = cached_item
             await self._handle_item(state, method, item)
             return
         if method == "item/agentMessage/delta":
@@ -1069,11 +1073,14 @@ class CodexAdapter(AgentAdapter):
         turn: dict[str, Any],
     ) -> list[dict[str, str | None]]:
         turn_items = turn.get("items")
-        items = (
-            [item for item in turn_items if isinstance(item, dict)]
-            if isinstance(turn_items, list)
-            else list(state.vendor_items.values())
-        )
+        if isinstance(turn_items, list) and turn_items:
+            items = [item for item in turn_items if isinstance(item, dict)]
+        else:
+            items = [
+                item
+                for item in state.vendor_items.values()
+                if item.get("_hqCompleted") is True
+            ]
         messages = [
             {
                 "text": str(item.get("text") or item.get("message") or ""),
@@ -1085,11 +1092,7 @@ class CodexAdapter(AgentAdapter):
         ]
         final_messages = [item for item in messages if item["phase"] == "final_answer"]
         selected = final_messages or messages
-        candidates = list(reversed(selected))
-        fallback = (state.last_agent_message or "").strip()
-        if not candidates and fallback:
-            candidates.append({"text": fallback, "phase": None})
-        return candidates
+        return selected[-1:] if selected else []
 
     @staticmethod
     def _sanitized_result_error(
