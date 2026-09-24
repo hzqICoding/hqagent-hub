@@ -21,6 +21,9 @@ export interface ActivityItem {
   type: 'file' | 'command' | 'thought' | 'tool' | 'progress'
   verb: string
   target: string
+  fileName?: string
+  dirPath?: string
+  rawArgs?: string
   detail?: string
   status: 'running' | 'done' | 'failed'
   durationMs?: number
@@ -407,82 +410,225 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function splitPath(fullPath: string): { fileName: string; dirPath: string } {
+    const normalized = fullPath.replace(/\\/g, '/')
+    const lastSlash = normalized.lastIndexOf('/')
+    if (lastSlash === -1) {
+      return { fileName: fullPath, dirPath: '' }
+    }
+    const fileName = normalized.slice(lastSlash + 1)
+    const dirPath = normalized.slice(0, lastSlash)
+    return { fileName: fileName || fullPath, dirPath }
+  }
+
+  function parseToolArgs(toolName: string, rawArgs: string): {
+    target: string
+    fileName?: string
+    dirPath?: string
+    rawArgs?: string
+  } {
+    const trimmed = rawArgs.trim()
+    if (!trimmed) {
+      return { target: toolName }
+    }
+
+    let parsed: Record<string, unknown> | null = null
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        parsed = JSON.parse(trimmed)
+      } catch {
+        // ignore JSON parse error, treat as raw string
+      }
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const pathKeys = ['file_path', 'filePath', 'path', 'targetFile', 'TargetFile', 'file', 'target']
+      let foundPath: string | null = null
+      for (const k of pathKeys) {
+        if (typeof parsed[k] === 'string' && parsed[k]) {
+          foundPath = parsed[k] as string
+          break
+        }
+      }
+
+      const patternKeys = ['pattern', 'query', 'regex', 'search_text']
+      let foundPattern: string | null = null
+      for (const k of patternKeys) {
+        if (typeof parsed[k] === 'string' && parsed[k]) {
+          foundPattern = parsed[k] as string
+          break
+        }
+      }
+
+      const cmdKeys = ['command', 'cmd', 'CommandLine', 'commandLine', 'exec']
+      let foundCmd: string | null = null
+      for (const k of cmdKeys) {
+        if (typeof parsed[k] === 'string' && parsed[k]) {
+          foundCmd = parsed[k] as string
+          break
+        }
+      }
+
+      if (foundPattern) {
+        let target = `"${foundPattern}"`
+        let dirPath = foundPath || undefined
+        let fileName: string | undefined = undefined
+        if (foundPath) {
+          const s = splitPath(foundPath)
+          fileName = s.fileName
+          dirPath = s.dirPath
+          target = `"${foundPattern}" in ${fileName || foundPath}`
+        }
+        return {
+          target,
+          fileName,
+          dirPath,
+          rawArgs: trimmed,
+        }
+      }
+
+      if (foundCmd) {
+        return {
+          target: foundCmd,
+          rawArgs: trimmed,
+        }
+      }
+
+      if (foundPath) {
+        const { fileName, dirPath } = splitPath(foundPath)
+        return {
+          target: foundPath,
+          fileName,
+          dirPath,
+          rawArgs: trimmed,
+        }
+      }
+
+      const entries = Object.entries(parsed)
+      if (entries.length === 1 && typeof entries[0][1] === 'string') {
+        return {
+          target: entries[0][1] as string,
+          rawArgs: trimmed,
+        }
+      }
+    }
+
+    if (trimmed.includes('/') || trimmed.includes('\\')) {
+      const { fileName, dirPath } = splitPath(trimmed)
+      return {
+        target: trimmed,
+        fileName,
+        dirPath,
+        rawArgs: trimmed,
+      }
+    }
+
+    return {
+      target: trimmed,
+      rawArgs: trimmed,
+    }
+  }
+
   function parseEventToActivity(event: HubEvent): ActivityItem | null {
     const p = (event.payload || {}) as Record<string, unknown>
     const eventId = event.eventId || `evt_${event.seq}`
     const timestamp = event.occurredAt || new Date().toISOString()
 
     if (event.type === 'agent.tool_call') {
-      const toolName = String(p.toolName || '')
+      const rawToolName = String(p.toolName || '')
       const args = String(p.argumentsExcerpt || '')
       const result = p.resultSummary ? String(p.resultSummary) : undefined
       const failed = Boolean(p.failed)
       const duration = typeof p.durationMs === 'number' ? p.durationMs : undefined
 
+      const normName = rawToolName.toLowerCase().replace(/[^a-z0-9]/g, '')
+      const parsed = parseToolArgs(rawToolName, args)
+
       if (
-        toolName === 'commandExecution' ||
-        toolName === 'bash' ||
-        toolName === 'sh' ||
-        toolName === 'exec' ||
-        toolName === 'shell'
+        normName === 'commandexecution' ||
+        normName === 'bash' ||
+        normName === 'sh' ||
+        normName === 'exec' ||
+        normName === 'shell' ||
+        normName === 'terminal' ||
+        normName === 'runcommand'
       ) {
         return {
           id: eventId,
           type: 'command',
           verb: 'Ran',
-          target: args || 'command',
+          target: parsed.target || 'command',
           detail: result,
           status: failed ? 'failed' : 'done',
           durationMs: duration,
           timestamp,
+          rawArgs: parsed.rawArgs,
         }
       }
 
       if (
-        toolName === 'fileChange' ||
-        toolName === 'edit' ||
-        toolName === 'write' ||
-        toolName === 'replace_file_content' ||
-        toolName === 'write_to_file'
+        normName === 'filechange' ||
+        normName === 'edit' ||
+        normName === 'write' ||
+        normName === 'replacefilecontent' ||
+        normName === 'writetofile' ||
+        normName === 'createfile' ||
+        normName === 'patch'
       ) {
         return {
           id: eventId,
           type: 'file',
-          verb: 'Updated',
-          target: args || 'file',
+          verb: normName.includes('write') || normName.includes('create') ? 'Created' : 'Edited',
+          target: parsed.target || 'file',
+          fileName: parsed.fileName,
+          dirPath: parsed.dirPath,
           detail: result,
           status: failed ? 'failed' : 'done',
           durationMs: duration,
           timestamp,
+          rawArgs: parsed.rawArgs,
         }
       }
 
       if (
-        toolName === 'view_file' ||
-        toolName === 'read_file' ||
-        toolName === 'cat'
+        normName === 'viewfile' ||
+        normName === 'readfile' ||
+        normName === 'read' ||
+        normName === 'cat' ||
+        normName === 'grep' ||
+        normName === 'search' ||
+        normName === 'glob' ||
+        normName === 'find' ||
+        normName === 'list'
       ) {
+        const isSearch = normName === 'grep' || normName === 'search'
         return {
           id: eventId,
           type: 'file',
-          verb: 'Analyzed',
-          target: args || 'file',
+          verb: isSearch ? 'Search' : 'Read',
+          target: parsed.target || 'file',
+          fileName: parsed.fileName,
+          dirPath: parsed.dirPath,
           detail: result,
           status: failed ? 'failed' : 'done',
           durationMs: duration,
           timestamp,
+          rawArgs: parsed.rawArgs,
         }
       }
 
       return {
         id: eventId,
         type: 'tool',
-        verb: 'Tool',
-        target: toolName + (args ? `: ${args}` : ''),
+        verb: rawToolName || 'Tool',
+        target: parsed.target || rawToolName,
+        fileName: parsed.fileName,
+        dirPath: parsed.dirPath,
         detail: result,
         status: failed ? 'failed' : 'done',
         durationMs: duration,
         timestamp,
+        rawArgs: parsed.rawArgs,
       }
     }
 
@@ -532,6 +678,48 @@ export const useChatStore = defineStore('chat', () => {
   function ingestEvent(event: HubEvent): void {
     const taskId = event.taskId || (event.aggregateType === 'task' ? event.aggregateId : undefined)
     if (!taskId) return
+
+    const p = (event.payload || {}) as Record<string, unknown>
+    const toolName = String(p.toolName || '')
+
+    // Merge tool_result events into preceding tool call
+    if (event.type === 'agent.tool_call' && toolName === 'tool_result') {
+      const taskList = activitiesByTaskId.value[taskId] || []
+      for (let i = taskList.length - 1; i >= 0; i--) {
+        const item = taskList[i]
+        if (item.type === 'file' || item.type === 'command' || item.type === 'tool') {
+          const updatedItem: ActivityItem = {
+            ...item,
+            detail: p.resultSummary ? String(p.resultSummary) : item.detail,
+            status: p.failed ? 'failed' : 'done',
+            durationMs: typeof p.durationMs === 'number' ? p.durationMs : item.durationMs,
+          }
+          const updatedTaskList = [...taskList]
+          updatedTaskList[i] = updatedItem
+          activitiesByTaskId.value = {
+            ...activitiesByTaskId.value,
+            [taskId]: updatedTaskList,
+          }
+
+          const run =
+            conversationRuns.value.find((r) => r.taskId === taskId) ||
+            (activeRun.value?.taskId === taskId ? activeRun.value : null)
+          if (run?.id && activitiesByRunId.value[run.id]) {
+            const runList = activitiesByRunId.value[run.id]
+            const rIdx = runList.findIndex((a) => a.id === item.id)
+            if (rIdx !== -1) {
+              const updatedRunList = [...runList]
+              updatedRunList[rIdx] = updatedItem
+              activitiesByRunId.value = {
+                ...activitiesByRunId.value,
+                [run.id]: updatedRunList,
+              }
+            }
+          }
+          return
+        }
+      }
+    }
 
     const activity = parseEventToActivity(event)
     if (!activity) return

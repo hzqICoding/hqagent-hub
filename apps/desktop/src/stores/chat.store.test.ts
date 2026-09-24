@@ -78,4 +78,51 @@ describe('ChatStore', () => {
       expect(store.resumptionError).toContain('会话无法恢复')
     }
   })
+
+  it('smartly parses tool call args and merges tool_result into preceding tool activity', async () => {
+    const store = useChatStore()
+    await store.init()
+
+    const taskId = 'task_smart_parse_test'
+    // 1. Emit tool call with JSON file_path
+    store.ingestEvent({
+      eventId: 'evt_tc_1',
+      taskId,
+      type: 'agent.tool_call',
+      occurredAt: '2026-09-24T12:00:00Z',
+      payload: {
+        toolName: 'Read',
+        argumentsExcerpt: '{"file_path": "E:\\\\WorkSpace\\\\ua_android\\\\ua_home\\\\src\\\\main\\\\java\\\\com\\\\example\\\\RtkService.java"}',
+      },
+    } as any)
+
+    const list1 = store.activitiesByTaskId[taskId]
+    expect(list1).toHaveLength(1)
+    expect(list1[0].type).toBe('file')
+    expect(list1[0].verb).toBe('Read')
+    expect(list1[0].fileName).toBe('RtkService.java')
+    expect(list1[0].target).toContain('RtkService.java')
+    expect(list1[0].detail).toBeUndefined()
+
+    // 2. Emit tool_result
+    store.ingestEvent({
+      eventId: 'evt_tr_1',
+      taskId,
+      type: 'agent.tool_call',
+      occurredAt: '2026-09-24T12:00:01Z',
+      payload: {
+        toolName: 'tool_result',
+        resultSummary: 'file content line 1\nfile content line 2',
+        durationMs: 85,
+      },
+    } as any)
+
+    // Should NOT create a second activity; instead, merged into the first!
+    const list2 = store.activitiesByTaskId[taskId]
+    expect(list2).toHaveLength(1)
+    expect(list2[0].detail).toBe('file content line 1\nfile content line 2')
+    expect(list2[0].durationMs).toBe(85)
+    expect(list2[0].status).toBe('done')
+  })
 })
+

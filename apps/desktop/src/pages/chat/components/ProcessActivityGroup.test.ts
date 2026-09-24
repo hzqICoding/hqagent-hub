@@ -109,5 +109,48 @@ describe('ProcessActivityGroup component', () => {
     expect(completedWrapper.text()).toContain('执行了 2 个步骤')
     expect(completedWrapper.find('.spin-indicator').exists()).toBe(false)
   })
+
+  it('renders smart path layout with fileName and dirPath, and expands full target on click', async () => {
+    const pathActivity: ActivityItem[] = [
+      {
+        id: 'act_file_1',
+        type: 'file',
+        verb: 'Read',
+        target: 'E:\\WorkSpace\\ua_android\\ua_home\\src\\main\\java\\com\\example\\RtkService.java',
+        fileName: 'RtkService.java',
+        dirPath: 'E:/WorkSpace/ua_android/ua_home/src/main/java/com/example',
+        rawArgs: '{"file_path":"E:\\\\WorkSpace\\\\ua_android\\\\ua_home\\\\src\\\\main\\\\java\\\\com\\\\example\\\\RtkService.java"}',
+        detail: 'package com.example;\npublic class RtkService {}',
+        status: 'done',
+        durationMs: 45,
+        timestamp: '2026-09-24T12:00:00Z',
+      },
+    ]
+
+    const wrapper = mount(ProcessActivityGroup, {
+      props: {
+        activities: pathActivity,
+        isLive: false,
+        initiallyExpanded: true,
+      },
+    })
+
+    // Filename should be prominent
+    expect(wrapper.text()).toContain('RtkService.java')
+    expect(wrapper.text()).toContain('E:/WorkSpace/ua_android/ua_home')
+
+    // Click item row to expand full details
+    const itemRow = wrapper.find('.group\\/item')
+    await itemRow.trigger('click')
+
+    // Expanded detail card should show full path with break-all and copy button
+    expect(wrapper.text()).toContain('完整目标 / 路径:')
+    expect(wrapper.text()).toContain('E:\\WorkSpace\\ua_android\\ua_home\\src\\main\\java\\com\\example\\RtkService.java')
+    expect(wrapper.text()).toContain('复制目标')
+    expect(wrapper.text()).toContain('调用参数:')
+    expect(wrapper.text()).toContain('执行输出:')
+    expect(wrapper.text()).toContain('public class RtkService')
+  })
 })
+
 

@@ -8,6 +8,7 @@ import {
   Terminal,
   Sparkles,
   Wrench,
+  Search,
   Loader2,
   CheckCircle2,
   AlertCircle,
@@ -50,6 +51,17 @@ async function copyDetail(text: string, id: string) {
     // ignore
   }
 }
+
+function formatArgsPreview(raw?: string): string {
+  if (!raw) return ''
+  try {
+    const obj = JSON.parse(raw)
+    return JSON.stringify(obj, null, 2)
+  } catch {
+    return raw
+  }
+}
+
 
 // Counts
 const fileCount = computed(() => props.activities.filter((a) => a.type === 'file').length)
@@ -134,13 +146,18 @@ const summaryTitle = computed(() => {
       <div
         v-for="item in activities"
         :key="item.id"
-        class="group/item rounded-lg p-1.5 px-2 hover:bg-panel/70 transition-colors text-xs"
+        class="group/item rounded-lg p-1.5 px-2 hover:bg-panel/70 transition-colors text-xs cursor-pointer select-none border border-transparent hover:border-border/40"
+        @click="toggleItemDetail(item.id)"
       >
         <div class="flex items-center justify-between gap-2 min-w-0">
           <div class="flex items-center gap-2 min-w-0 flex-1">
             <!-- Icon by type -->
+            <Search
+              v-if="item.verb === 'Search'"
+              class="w-3.5 h-3.5 text-accent shrink-0"
+            />
             <FileCode2
-              v-if="item.type === 'file'"
+              v-else-if="item.type === 'file'"
               class="w-3.5 h-3.5 text-info shrink-0"
             />
             <Terminal
@@ -161,9 +178,27 @@ const summaryTitle = computed(() => {
               {{ item.verb }}
             </span>
 
-            <!-- Target (mono code or text) -->
+            <!-- Target: smart layout when fileName is available -->
+            <div v-if="item.fileName" class="flex items-baseline gap-1.5 min-w-0 flex-1">
+              <span
+                class="text-[11px] font-mono font-medium text-text shrink-0"
+                :title="item.target"
+              >
+                {{ item.fileName }}
+              </span>
+              <span
+                v-if="item.dirPath"
+                class="text-[10px] font-mono text-text-muted/65 truncate min-w-0"
+                :title="item.dirPath"
+              >
+                {{ item.dirPath }}
+              </span>
+            </div>
+
+            <!-- Target: default mono truncate with title tooltip -->
             <span
-              class="text-[11px] font-mono text-text truncate select-all"
+              v-else
+              class="text-[11px] font-mono text-text truncate min-w-0 flex-1"
               :title="item.target"
             >
               {{ item.target }}
@@ -171,7 +206,7 @@ const summaryTitle = computed(() => {
           </div>
 
           <!-- Right side: duration / expand toggle -->
-          <div class="flex items-center gap-1.5 shrink-0">
+          <div class="flex items-center gap-2 shrink-0">
             <span
               v-if="item.durationMs"
               class="text-[10px] text-text-muted font-mono"
@@ -179,17 +214,24 @@ const summaryTitle = computed(() => {
               {{ Math.round(item.durationMs / 100) / 10 }}s
             </span>
 
+            <!-- Active spinner for running step -->
+            <span
+              v-if="item.status === 'running'"
+              class="inline-flex items-center justify-center spin-indicator text-primary shrink-0"
+            >
+              <Loader2 class="w-3 h-3" />
+            </span>
+
             <!-- Detail toggle chevron -->
             <button
-              v-if="item.detail"
               type="button"
               class="p-0.5 rounded hover:bg-panel text-text-muted hover:text-text transition-colors flex items-center cursor-pointer"
-              :title="expandedItemIds.has(item.id) ? '收起输出' : '展开输出'"
+              :title="expandedItemIds.has(item.id) ? '收起详情' : '展开详情'"
               @click.stop="toggleItemDetail(item.id)"
             >
               <ChevronRight
-                class="w-3 h-3 transition-transform duration-150"
-                :class="expandedItemIds.has(item.id) ? 'rotate-90' : ''"
+                class="w-3.5 h-3.5 transition-transform duration-150"
+                :class="expandedItemIds.has(item.id) ? 'rotate-90 text-text' : ''"
               />
             </button>
           </div>
@@ -197,19 +239,62 @@ const summaryTitle = computed(() => {
 
         <!-- Collapsible detail / output preview -->
         <div
-          v-if="item.detail && expandedItemIds.has(item.id)"
-          class="mt-1.5 p-2 rounded-md bg-panel border border-border/60 text-[10px] font-mono text-text/85 relative group/detail"
+          v-if="expandedItemIds.has(item.id)"
+          class="mt-2 p-2.5 rounded-lg bg-panel/90 border border-border/70 text-[11px] font-mono text-text space-y-2 select-text"
+          @click.stop
         >
-          <button
-            type="button"
-            class="absolute top-1.5 right-1.5 p-1 rounded bg-bg-app hover:bg-panel-hover border border-border/60 text-text-muted hover:text-text transition-all text-[9px] flex items-center gap-1 opacity-0 group-hover/detail:opacity-100"
-            @click.stop="copyDetail(item.detail, item.id)"
-          >
-            <Check v-if="copiedItemId === item.id" class="w-2.5 h-2.5 text-success" />
-            <Copy v-else class="w-2.5 h-2.5" />
-            <span>{{ copiedItemId === item.id ? '已复制' : '复制' }}</span>
-          </button>
-          <pre class="overflow-x-auto whitespace-pre-wrap select-text max-h-36 leading-relaxed">{{ item.detail }}</pre>
+          <!-- Full target / command / file path with wrapping -->
+          <div>
+            <div class="flex items-center justify-between text-[10px] text-text-muted mb-1 select-none">
+              <span class="font-medium">完整目标 / 路径:</span>
+              <button
+                type="button"
+                class="p-0.5 px-1.5 rounded bg-bg-app hover:bg-panel-hover border border-border/60 text-text-muted hover:text-text transition-all text-[9px] flex items-center gap-1 cursor-pointer"
+                @click.stop="copyDetail(item.target, item.id + '_target')"
+              >
+                <Check v-if="copiedItemId === item.id + '_target'" class="w-2.5 h-2.5 text-success" />
+                <Copy v-else class="w-2.5 h-2.5" />
+                <span>{{ copiedItemId === item.id + '_target' ? '已复制' : '复制目标' }}</span>
+              </button>
+            </div>
+            <div class="p-1.5 px-2 rounded bg-bg-app/80 border border-border/50 text-[11px] font-mono break-all whitespace-pre-wrap leading-relaxed select-all">
+              {{ item.target }}
+            </div>
+          </div>
+
+          <!-- Raw arguments (if present and different from target) -->
+          <div v-if="item.rawArgs && item.rawArgs !== item.target">
+            <div class="flex items-center justify-between text-[10px] text-text-muted mb-1 select-none">
+              <span class="font-medium">调用参数:</span>
+              <button
+                type="button"
+                class="p-0.5 px-1.5 rounded bg-bg-app hover:bg-panel-hover border border-border/60 text-text-muted hover:text-text transition-all text-[9px] flex items-center gap-1 cursor-pointer"
+                @click.stop="copyDetail(item.rawArgs, item.id + '_args')"
+              >
+                <Check v-if="copiedItemId === item.id + '_args'" class="w-2.5 h-2.5 text-success" />
+                <Copy v-else class="w-2.5 h-2.5" />
+                <span>{{ copiedItemId === item.id + '_args' ? '已复制' : '复制参数' }}</span>
+              </button>
+            </div>
+            <pre class="p-1.5 px-2 rounded bg-bg-app/80 border border-border/50 text-[10px] font-mono break-all whitespace-pre-wrap leading-relaxed overflow-x-auto max-h-32">{{ formatArgsPreview(item.rawArgs) }}</pre>
+          </div>
+
+          <!-- Execution output / result -->
+          <div v-if="item.detail">
+            <div class="flex items-center justify-between text-[10px] text-text-muted mb-1 select-none">
+              <span class="font-medium">执行输出:</span>
+              <button
+                type="button"
+                class="p-0.5 px-1.5 rounded bg-bg-app hover:bg-panel-hover border border-border/60 text-text-muted hover:text-text transition-all text-[9px] flex items-center gap-1 cursor-pointer"
+                @click.stop="copyDetail(item.detail, item.id + '_out')"
+              >
+                <Check v-if="copiedItemId === item.id + '_out'" class="w-2.5 h-2.5 text-success" />
+                <Copy v-else class="w-2.5 h-2.5" />
+                <span>{{ copiedItemId === item.id + '_out' ? '已复制' : '复制输出' }}</span>
+              </button>
+            </div>
+            <pre class="p-2 rounded bg-bg-app/90 border border-border/50 text-[10px] font-mono break-all whitespace-pre-wrap leading-relaxed overflow-y-auto max-h-48 select-text">{{ item.detail }}</pre>
+          </div>
         </div>
       </div>
     </div>
