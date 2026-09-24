@@ -42,6 +42,18 @@ interface NavItem {
 
 const navItems = computed<NavItem[]>(() => [
   {
+    id: 'chat',
+    label: '角色对话',
+    path: '/chat',
+    icon: MessageSquare,
+  },
+  {
+    id: 'scenes',
+    label: '场景配置',
+    path: '/scenes',
+    icon: Sliders,
+  },
+  {
     id: 'overview',
     label: '总览',
     path: '/overview',
