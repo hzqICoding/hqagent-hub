@@ -88,12 +88,12 @@ function getSceneLabel(sceneId?: string) {
     </div>
 
     <!-- 3-Column Workbench -->
-    <div class="flex-1 flex overflow-hidden">
+    <div class="flex-1 min-h-0 flex overflow-hidden">
       <!-- Left Column: Conversations Sidebar -->
       <ChatSidebar />
 
       <!-- Center Column: Active Chat Stream & Composer -->
-      <main class="flex-1 flex flex-col h-full bg-bg-app min-w-0">
+      <main class="flex-1 flex flex-col h-full bg-bg-app min-w-0 overflow-hidden">
         <!-- Center Header -->
         <header class="p-3 border-b border-border bg-panel flex items-center justify-between gap-3 shrink-0">
           <div v-if="chatStore.activeConversation" class="flex items-center gap-2.5 min-w-0">
@@ -121,12 +121,13 @@ function getSceneLabel(sceneId?: string) {
           <div class="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              class="p-1.5 rounded hover:bg-panel-hover text-text-muted hover:text-text transition-colors"
+              class="p-1.5 rounded hover:bg-panel-hover text-text-muted hover:text-text transition-colors flex items-center gap-1 text-xs"
               :title="isDrawerOpen ? '收起详情抽屉' : '展开详情抽屉'"
               @click="isDrawerOpen = !isDrawerOpen"
             >
-              <PanelRightClose v-if="isDrawerOpen" class="w-4 h-4" />
+              <PanelRightClose v-if="isDrawerOpen" class="w-4 h-4 text-primary" />
               <PanelRightOpen v-else class="w-4 h-4" />
+              <span class="hidden sm:inline text-[11px] text-text-muted">执行详情</span>
             </button>
           </div>
         </header>
@@ -135,7 +136,7 @@ function getSceneLabel(sceneId?: string) {
         <div
           v-if="chatStore.activeConversation"
           ref="messageContainerRef"
-          class="flex-1 overflow-y-auto divide-y divide-border/30"
+          class="flex-1 min-h-0 overflow-y-auto divide-y divide-border/30"
         >
           <div
             v-if="chatStore.messages.length === 0"
@@ -157,7 +158,7 @@ function getSceneLabel(sceneId?: string) {
           />
         </div>
 
-        <div v-else class="flex-1 flex items-center justify-center p-8">
+        <div v-else class="flex-1 min-h-0 flex items-center justify-center p-8">
           <HqEmptyState
             title="选择或新建一个本地对话"
             description="从左侧选择已有任务，或点击「新建」配置项目与角色场景开始协作"
@@ -169,7 +170,10 @@ function getSceneLabel(sceneId?: string) {
       </main>
 
       <!-- Right Column: Run Snapshot & Artifacts & Roles Drawer -->
-      <RunSnapshotDrawer v-if="isDrawerOpen" />
+      <RunSnapshotDrawer
+        v-if="isDrawerOpen"
+        @close="isDrawerOpen = false"
+      />
     </div>
   </div>
 </template>

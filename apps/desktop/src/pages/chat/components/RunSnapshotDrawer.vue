@@ -16,7 +16,10 @@ import {
   XCircle,
   ShieldAlert,
   Package,
+  X,
 } from 'lucide-vue-next'
+
+const emit = defineEmits<{ (e: 'close'): void }>()
 
 const chatStore = useChatStore()
 
@@ -92,31 +95,42 @@ function getNodeStatusBadge(status: string) {
 </script>
 
 <template>
-  <aside class="w-84 h-full border-l border-border bg-panel flex flex-col shrink-0 overflow-y-auto select-none">
+  <aside class="w-[360px] lg:w-[400px] h-full border-l border-border bg-panel flex flex-col shrink-0 overflow-y-auto overflow-x-hidden select-none">
     <!-- Header -->
-    <div class="p-3.5 border-b border-border flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <Layers class="w-4 h-4 text-primary" />
-        <h3 class="text-xs font-semibold text-text">本轮场景与执行详情</h3>
+    <div class="p-3.5 border-b border-border flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <Layers class="w-4 h-4 text-primary shrink-0" />
+        <h3 class="text-xs font-semibold text-text truncate">本轮场景与执行详情</h3>
       </div>
 
-      <HqBadge
-        v-if="activeRun"
-        :variant="
-          activeRun.status === 'succeeded'
-            ? 'success'
-            : activeRun.status === 'running'
-            ? 'primary'
-            : activeRun.status === 'waiting_approval'
-            ? 'warning'
-            : activeRun.status === 'failed'
-            ? 'danger'
-            : 'neutral'
-        "
-        size="sm"
-      >
-        {{ activeRun.status }}
-      </HqBadge>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <HqBadge
+          v-if="activeRun"
+          :variant="
+            activeRun.status === 'succeeded'
+              ? 'success'
+              : activeRun.status === 'running'
+              ? 'primary'
+              : activeRun.status === 'waiting_approval'
+              ? 'warning'
+              : activeRun.status === 'failed'
+              ? 'danger'
+              : 'neutral'
+          "
+          size="sm"
+        >
+          {{ activeRun.status }}
+        </HqBadge>
+
+        <button
+          type="button"
+          class="p-1 rounded hover:bg-panel-hover text-text-muted hover:text-text transition-colors"
+          title="关闭执行详情"
+          @click="emit('close')"
+        >
+          <X class="w-4 h-4" />
+        </button>
+      </div>
     </div>
 
     <!-- Empty State -->
@@ -214,7 +228,7 @@ function getNodeStatusBadge(status: string) {
             <span class="font-medium text-text">{{ scene?.name }}</span>
             <HqBadge size="sm" variant="neutral">{{ scene?.id }}</HqBadge>
           </div>
-          <p class="text-[11px] text-text-muted leading-relaxed">
+          <p class="text-[11px] text-text-muted leading-relaxed break-words">
             {{ scene?.description }}
           </p>
 
@@ -226,13 +240,13 @@ function getNodeStatusBadge(status: string) {
               :key="role.roleId"
               class="p-1.5 rounded bg-panel border border-border/80 text-[11px] space-y-0.5"
             >
-              <div class="flex items-center justify-between">
-                <span class="font-medium text-text">{{ role.roleId }}</span>
-                <span class="text-[10px] text-text-muted font-mono">{{ role.modelId || '默认模型' }}</span>
+              <div class="flex items-center justify-between gap-1 min-w-0">
+                <span class="font-medium text-text truncate">{{ role.roleId }}</span>
+                <span class="text-[10px] text-text-muted font-mono truncate">{{ role.modelId || '默认模型' }}</span>
               </div>
-              <div class="flex items-center justify-between text-[10px] text-text-muted">
-                <span>Agent: {{ role.agentInstanceId }}</span>
-                <span v-if="role.reasoningEffort">effort: {{ role.reasoningEffort }}</span>
+              <div class="flex items-center justify-between gap-1 text-[10px] text-text-muted min-w-0">
+                <span class="truncate">Agent: {{ role.agentInstanceId }}</span>
+                <span v-if="role.reasoningEffort" class="shrink-0">effort: {{ role.reasoningEffort }}</span>
               </div>
             </div>
           </div>
@@ -248,26 +262,27 @@ function getNodeStatusBadge(status: string) {
             :key="node.id"
             class="p-2 rounded-[var(--radius-sm)] bg-bg-app border border-border space-y-1.5"
           >
-            <div class="flex items-center justify-between">
-              <span class="font-medium text-text text-xs">{{ node.roleId }}</span>
+            <div class="flex items-center justify-between gap-1">
+              <span class="font-medium text-text text-xs truncate">{{ node.roleId }}</span>
               <span
-                class="px-1.5 py-0.5 rounded text-[10px] font-medium border"
+                class="px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0"
                 :class="getNodeStatusBadge(node.status).class"
               >
                 {{ getNodeStatusBadge(node.status).label }}
               </span>
             </div>
 
-            <div class="flex items-center justify-between text-[10px]">
-              <span class="text-text-muted">{{ node.resolvedAgentName }}</span>
+            <div class="flex items-center justify-between text-[10px] gap-1 min-w-0">
+              <span class="text-text-muted truncate">{{ node.resolvedAgentName }}</span>
               <ResolveSourceBadge
                 :source="node.resolveSource"
                 :is-fallback="node.isFallback"
                 :fallback-reason="node.fallbackReason"
+                class="shrink-0"
               />
             </div>
 
-            <p v-if="node.outputSummary" class="text-[11px] text-text-muted mt-1 leading-relaxed">
+            <p v-if="node.outputSummary" class="text-[11px] text-text-muted mt-1 leading-relaxed break-words whitespace-pre-wrap">
               {{ node.outputSummary }}
             </p>
           </div>
@@ -284,10 +299,10 @@ function getNodeStatusBadge(status: string) {
           <div
             v-for="file in allChangedFiles"
             :key="file"
-            class="flex items-center gap-1.5 text-text truncate"
+            class="flex items-center gap-1.5 text-text min-w-0"
           >
             <FileCode2 class="w-3 h-3 text-primary shrink-0" />
-            <span class="truncate">{{ file }}</span>
+            <span class="truncate" :title="file">{{ file }}</span>
           </div>
         </div>
       </div>
@@ -298,8 +313,8 @@ function getNodeStatusBadge(status: string) {
           <span class="font-medium">越界修改路径 (违规)</span>
           <span>{{ allViolationPaths.length }} 处</span>
         </div>
-        <div class="p-2 rounded-[var(--radius-sm)] bg-danger/10 border border-danger/30 text-danger text-[11px] font-mono space-y-1">
-          <div v-for="vp in allViolationPaths" :key="vp" class="truncate">
+        <div class="p-2 rounded-[var(--radius-sm)] bg-danger/10 border border-danger/30 text-danger text-[11px] font-mono space-y-1 overflow-x-auto">
+          <div v-for="vp in allViolationPaths" :key="vp" class="break-all">
             {{ vp }}
           </div>
         </div>
@@ -312,13 +327,13 @@ function getNodeStatusBadge(status: string) {
           <div
             v-for="art in task.artifacts"
             :key="art.id"
-            class="p-2 rounded-[var(--radius-sm)] bg-bg-app border border-border flex items-center justify-between text-xs"
+            class="p-2 rounded-[var(--radius-sm)] bg-bg-app border border-border flex items-center justify-between text-xs min-w-0 gap-2"
           >
-            <div class="flex items-center gap-1.5 truncate">
+            <div class="flex items-center gap-1.5 truncate min-w-0">
               <Package class="w-3.5 h-3.5 text-primary shrink-0" />
-              <span class="font-medium text-text truncate">{{ art.title }}</span>
+              <span class="font-medium text-text truncate" :title="art.title">{{ art.title }}</span>
             </div>
-            <span class="text-[10px] text-text-muted font-mono">
+            <span class="text-[10px] text-text-muted font-mono shrink-0">
               {{ (art.sizeBytes / 1024).toFixed(1) }} KB
             </span>
           </div>

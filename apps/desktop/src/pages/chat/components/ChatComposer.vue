@@ -33,6 +33,7 @@ async function handleSend() {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
+  if (e.isComposing) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     handleSend()
@@ -46,15 +47,15 @@ function switchMode(mode: 'new' | 'continue') {
 </script>
 
 <template>
-  <div class="p-3 bg-panel border-t border-border">
+  <div class="p-3 bg-panel border-t border-border shrink-0">
     <!-- Context mode selector & Queue status bar -->
-    <div class="flex items-center justify-between gap-2 mb-2 text-xs">
-      <div class="flex items-center gap-1.5">
-        <span class="text-[11px] text-text-muted">会话上下文模式：</span>
-        <div class="inline-flex p-0.5 rounded-[var(--radius-sm)] bg-bg-app border border-border">
+    <div class="flex items-center justify-between gap-2 mb-2 text-xs flex-wrap">
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <span class="text-[11px] text-text-muted shrink-0">会话上下文模式：</span>
+        <div class="inline-flex p-0.5 rounded-[var(--radius-sm)] bg-bg-app border border-border shrink-0">
           <button
             type="button"
-            class="px-2 py-0.5 rounded text-[11px] transition-colors"
+            class="px-2 py-0.5 rounded text-[11px] transition-colors whitespace-nowrap"
             :class="
               chatStore.sessionMode === 'new'
                 ? 'bg-panel text-primary font-medium shadow-xs'
@@ -66,7 +67,7 @@ function switchMode(mode: 'new' | 'continue') {
           </button>
           <button
             type="button"
-            class="px-2 py-0.5 rounded text-[11px] transition-colors"
+            class="px-2 py-0.5 rounded text-[11px] transition-colors whitespace-nowrap"
             :class="
               chatStore.sessionMode === 'continue'
                 ? 'bg-panel text-primary font-medium shadow-xs'
@@ -79,13 +80,13 @@ function switchMode(mode: 'new' | 'continue') {
         </div>
 
         <HqTooltip text="首条消息建议使用新一轮；多轮追问可选择继续。若底层 Agent 无法恢复上下文，将如实提示原因。">
-          <Info class="w-3.5 h-3.5 text-text-muted/60 hover:text-text cursor-pointer" />
+          <Info class="w-3.5 h-3.5 text-text-muted/60 hover:text-text cursor-pointer shrink-0" />
         </HqTooltip>
       </div>
 
       <!-- Active run queue badge -->
-      <div v-if="chatStore.isCurrentRunActive" class="flex items-center gap-1 text-[11px] text-warning">
-        <Clock class="w-3 h-3 animate-spin" />
+      <div v-if="chatStore.isCurrentRunActive" class="flex items-center gap-1 text-[11px] text-warning shrink-0">
+        <Clock class="w-3 h-3 animate-spin shrink-0" />
         <span>当前轮次正在执行，新指令将自动排队</span>
       </div>
     </div>
@@ -93,18 +94,18 @@ function switchMode(mode: 'new' | 'continue') {
     <!-- Resumption Error Alert -->
     <div
       v-if="chatStore.resumptionError"
-      class="mb-2 p-2.5 rounded-[var(--radius-sm)] bg-danger/10 border border-danger/20 text-xs text-danger flex items-start justify-between gap-2"
+      class="mb-2 p-2.5 rounded-[var(--radius-sm)] bg-danger/10 border border-danger/20 text-xs text-danger flex items-start justify-between gap-2 min-w-0"
     >
-      <div class="flex items-start gap-2">
+      <div class="flex items-start gap-2 min-w-0">
         <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
-        <div>
+        <div class="min-w-0">
           <p class="font-medium">会话恢复失败</p>
-          <p class="text-[11px] text-text-muted mt-0.5 leading-relaxed">
+          <p class="text-[11px] text-text-muted mt-0.5 leading-relaxed break-words">
             {{ chatStore.resumptionError }}
           </p>
         </div>
       </div>
-      <HqButton size="sm" variant="secondary" @click="switchMode('new')">
+      <HqButton size="sm" variant="secondary" class="shrink-0" @click="switchMode('new')">
         切换为新一轮上下文
       </HqButton>
     </div>
@@ -112,10 +113,10 @@ function switchMode(mode: 'new' | 'continue') {
     <!-- Generic Send Error Alert -->
     <div
       v-if="chatStore.sendError"
-      class="mb-2 p-2.5 rounded-[var(--radius-sm)] bg-danger/10 border border-danger/20 text-xs text-danger flex items-center gap-2"
+      class="mb-2 p-2.5 rounded-[var(--radius-sm)] bg-danger/10 border border-danger/20 text-xs text-danger flex items-center gap-2 min-w-0"
     >
       <AlertCircle class="w-4 h-4 shrink-0" />
-      <span>{{ chatStore.sendError }}</span>
+      <span class="break-words">{{ chatStore.sendError }}</span>
     </div>
 
     <!-- Textarea input & send button -->
@@ -123,6 +124,7 @@ function switchMode(mode: 'new' | 'continue') {
       <textarea
         v-model="inputText"
         :rows="3"
+        :maxlength="32000"
         placeholder="向角色团队输入任务目标或补充要求... (Enter 发送，Shift + Enter 换行)"
         class="w-full p-2.5 pr-20 text-xs bg-bg-app border border-border rounded-[var(--radius-md)] text-text placeholder-text-muted/60 focus:outline-none focus:border-primary resize-none transition-colors"
         @keydown="handleKeyDown"
