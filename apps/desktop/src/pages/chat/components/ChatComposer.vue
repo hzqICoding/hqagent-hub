@@ -3,25 +3,31 @@ import { ref, computed, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat.store'
 import {
   HqButton,
-  HqTooltip,
 } from '@/shared/ui'
 import {
   ArrowUp,
   AlertCircle,
   Clock,
-  Info,
   X,
   Square,
+  RotateCcw,
 } from 'lucide-vue-next'
 
 const chatStore = useChatStore()
+const emit = defineEmits<{ (e: 'request-context-reset'): void }>()
 
 const inputText = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const canSend = computed(() => {
-  return inputText.value.trim().length > 0 && !chatStore.isSending
+  return (
+    inputText.value.trim().length > 0 &&
+    !chatStore.isSending &&
+    !chatStore.isLoadingMessages &&
+    !chatStore.isLoadingRun
+  )
 })
+const canRequestContextReset = computed(() => chatStore.canResetContext)
 
 function adjustHeight() {
   if (!textareaRef.value) return
@@ -57,11 +63,6 @@ function handleKeyDown(e: KeyboardEvent) {
     e.preventDefault()
     handleSend()
   }
-}
-
-function switchMode(mode: 'new' | 'continue') {
-  chatStore.sessionMode = mode
-  chatStore.resumptionError = null
 }
 
 function removeQueuedMessage(index: number) {
@@ -104,7 +105,21 @@ function handleStopRun() {
         </div>
       </div>
 
-      <!-- 2. Resumption Error Alert -->
+      <!-- 2. One-shot explicit context reset -->
+      <div
+        v-if="chatStore.pendingContextReset"
+        class="p-2.5 rounded-xl bg-primary/10 border border-primary/25 text-xs text-text flex items-center justify-between gap-3 shadow-xs"
+      >
+        <div class="flex items-center gap-2 min-w-0">
+          <RotateCcw class="w-4 h-4 text-primary shrink-0" />
+          <span class="text-[11px]">下一条消息将使用新的 Agent 会话，不自动携带全部历史。</span>
+        </div>
+        <HqButton size="sm" variant="ghost" class="shrink-0" @click="chatStore.cancelContextReset()">
+          撤销重置
+        </HqButton>
+      </div>
+
+      <!-- 3. Resumption Error Alert -->
       <div
         v-if="chatStore.resumptionError"
         class="p-3 rounded-xl bg-danger/10 border border-danger/25 text-xs text-danger flex items-center justify-between gap-3 shadow-xs"
@@ -118,12 +133,18 @@ function handleStopRun() {
             </p>
           </div>
         </div>
-        <HqButton size="sm" variant="secondary" class="shrink-0" @click="switchMode('new')">
-          切换为新一轮上下文
+        <HqButton
+          size="sm"
+          variant="secondary"
+          class="shrink-0"
+          :disabled="!canRequestContextReset"
+          @click="emit('request-context-reset')"
+        >
+          重置 Agent 上下文
         </HqButton>
       </div>
 
-      <!-- 3. Generic Send Error Alert -->
+      <!-- 4. Generic Send Error Alert -->
       <div
         v-if="chatStore.sendError"
         class="p-2.5 rounded-xl bg-danger/10 border border-danger/25 text-xs text-danger flex items-center justify-between gap-2 shadow-xs"
@@ -141,7 +162,7 @@ function handleStopRun() {
         </button>
       </div>
 
-      <!-- 4. Floating Modern Composer Card (PI-Desktop / Codex style) -->
+      <!-- 5. Floating Modern Composer Card (PI-Desktop / Codex style) -->
       <div
         class="bg-panel border border-border/80 focus-within:border-primary/60 rounded-2xl shadow-sm focus-within:shadow-md transition-all duration-200 overflow-hidden"
       >
@@ -161,38 +182,9 @@ function handleStopRun() {
 
         <!-- Integrated Action Toolbar -->
         <div class="px-3 pb-2.5 pt-1.5 flex items-center justify-between gap-2 border-t border-border/30 select-none flex-wrap">
-          <!-- Left: Context Mode Switcher -->
+          <!-- Left: continuous task context hint -->
           <div class="flex items-center gap-2 min-w-0 flex-wrap">
-            <div class="inline-flex p-0.5 rounded-lg bg-bg-app border border-border/70 text-xs shrink-0">
-              <button
-                type="button"
-                class="px-2.5 py-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap"
-                :class="
-                  chatStore.sessionMode === 'new'
-                    ? 'bg-panel text-primary shadow-xs font-semibold'
-                    : 'text-text-muted hover:text-text'
-                "
-                @click="switchMode('new')"
-              >
-                新一轮上下文 (New)
-              </button>
-              <button
-                type="button"
-                class="px-2.5 py-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap"
-                :class="
-                  chatStore.sessionMode === 'continue'
-                    ? 'bg-panel text-primary shadow-xs font-semibold'
-                    : 'text-text-muted hover:text-text'
-                "
-                @click="switchMode('continue')"
-              >
-                继续已有Agent会话 (Continue)
-              </button>
-            </div>
-
-            <HqTooltip text="首条消息建议使用新一轮；多轮追问可选择继续。若底层 Agent 无法恢复上下文，将如实提示原因。">
-              <Info class="w-3.5 h-3.5 text-text-muted/60 hover:text-text cursor-pointer shrink-0" />
-            </HqTooltip>
+            <span class="text-[11px] text-text-muted">当前任务连续对话</span>
           </div>
 
           <!-- Right: Running indicator & Action Button -->

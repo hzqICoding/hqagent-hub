@@ -32,11 +32,14 @@ const createError = ref<string | null>(null)
 
 function openCreateModal() {
   newTitle.value = ''
-  selectedWorkspaceId.value = chatStore.workspaces[0]?.id || ''
+  selectedWorkspaceId.value =
+    chatStore.activeConversation?.workspaceId || chatStore.workspaces[0]?.id || ''
   selectedSceneId.value = 'analyze'
   isNewConvModalOpen.value = true
   createError.value = null
 }
+
+defineExpose({ openCreateModal })
 
 async function handleCreateConversation() {
   if (!newTitle.value.trim() || !selectedWorkspaceId.value || isCreating.value) return
@@ -130,7 +133,7 @@ function formatTime(iso: string) {
 
       <HqButton size="sm" variant="primary" @click="openCreateModal">
         <Plus class="w-3.5 h-3.5 mr-1" />
-        新建
+        新建任务
       </HqButton>
     </div>
 
@@ -160,7 +163,7 @@ function formatTime(iso: string) {
           class="mt-2 text-primary hover:underline"
           @click="openCreateModal"
         >
-          创建首个对话
+          创建首个任务
         </button>
       </div>
 
@@ -209,18 +212,18 @@ function formatTime(iso: string) {
       </div>
     </div>
 
-    <!-- New Conversation Modal (Does NOT immediately run model, only registers config) -->
+    <!-- New task conversation (does not run a model until the first message) -->
     <HqDialog
       :open="isNewConvModalOpen"
-      title="新建对话"
-      description="配置对话目标、授权工作区与初始场景（不立即执行模型）"
+      title="新建任务"
+      description="创建独立任务对话并配置工作区与初始场景（不立即执行模型）"
       @close="isNewConvModalOpen = false"
     >
       <form class="space-y-4 py-2 text-xs" @submit.prevent="handleCreateConversation">
         <p v-if="createError" role="alert" class="text-danger bg-danger/10 p-2 rounded">{{ createError }}</p>
         <div>
           <label class="block font-medium text-text mb-1.5">
-            对话标题 <span class="text-danger">*</span>
+            任务标题 <span class="text-danger">*</span>
           </label>
           <HqInput
             v-model="newTitle"
@@ -318,7 +321,7 @@ function formatTime(iso: string) {
             :loading="isCreating"
             @click="handleCreateConversation"
           >
-            创建对话
+            创建任务
           </HqButton>
         </div>
       </template>
