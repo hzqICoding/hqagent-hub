@@ -12,6 +12,7 @@ from protocol.generated.python import (
     AdapterStreamEnd,
     ApprovalDecision,
     ApprovalResponseInput,
+    ApprovalStatus,
     CreateTaskInput,
     DangerousAction,
     NodeStatus,
@@ -29,7 +30,7 @@ from protocol.generated.python import (
 
 from core.errors import HubError
 from orchestrator.domain import ProfileSnapshot, ResolutionGap, RuntimeEventDraft
-from orchestrator.errors import AdapterStartFailedError, OrchestrationError
+from orchestrator.errors import AdapterStartFailedError, ApprovalError, OrchestrationError
 from orchestrator.runtime import NodeDispatchRequest
 from security.approvals import ApprovalRequest
 from security.worktrees import WorktreeSpec
@@ -929,6 +930,18 @@ class TaskService:
             if not approval_id:
                 raise HubError("VALIDATION_FAILED", "Adapter 审批事件缺少 approvalId")
             task = self.repository.get(outcome.task_id)
+            def approval_active() -> bool:
+                current_task = self.repository.get(outcome.task_id)
+                current_node = self._node(outcome.task_id, outcome.node_id)
+                return bool(
+                    _text(current_task.status)
+                    in {TaskStatus.RUNNING.value, TaskStatus.WAITING_APPROVAL.value}
+                    and current_node is not None
+                    and _text(current_node.status)
+                    in {NodeStatus.RUNNING.value, NodeStatus.WAITING_APPROVAL.value}
+                    and current_task.pending_approval_id in {None, approval_id}
+                )
+
             approval = await self.approval_coordinator.request(
                 ApprovalRequest(
                     approval_id=approval_id,
@@ -943,7 +956,8 @@ class TaskService:
                     risk_level=RiskLevel(str(payload.get("riskLevel") or "high")),
                     external_request_id=getattr(event, "external_request_id", None)
                     or payload.get("externalRequestId"),
-                )
+                ),
+                active_check=approval_active,
             )
             if _text(approval.status) != "pending":
                 return
@@ -1048,6 +1062,23 @@ class TaskService:
                 await self._release_children(task_id)
 
     async def _cancel(self, task_id: str) -> None:
+        if self.approval_coordinator is None:
+            await self._cancel_locked(task_id)
+            return
+        async with self.approval_coordinator.task_guard(task_id):
+            await self.approval_coordinator.invalidate_task_pending_locked(
+                task_id,
+                reason="任务已取消，未决审批已由系统撤回",
+                invalidated_by="task_cancelled",
+            )
+            await self._cancel_locked(task_id)
+
+    async def _cancel_locked(self, task_id: str) -> None:
+        current_task = self.repository.get(task_id)
+        if _text(current_task.status) in TERMINAL_TASK_STATES:
+            # Cancel is idempotent for an already-cancelled task and must never
+            # rewrite a completed success/failure into cancelled.
+            return
         running = [
             node
             for node in self.repository.list_nodes(task_id)
@@ -1055,7 +1086,8 @@ class TaskService:
         ]
         if not running:
             task = self.repository.get(task_id)
-            self.repository.save(task.model_copy(update={"status": TaskStatus.CANCELLED, "updated_at": _now()}))
+            self.repository.save(task.model_copy(update={
+                "status": TaskStatus.CANCELLED, "pending_approval_id": None, "updated_at": _now()}))
             await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "cancelled"})
             await self._release_children(task_id)
             return
@@ -1067,7 +1099,8 @@ class TaskService:
                     node.model_copy(update={"status": NodeStatus.FAILED, "error": reason, "completed_at": _now()})
                 )
                 task = self.repository.get(task_id)
-                self.repository.save(task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()}))
+                self.repository.save(task.model_copy(update={
+                    "status": TaskStatus.PAUSED, "pending_approval_id": None, "updated_at": _now()}))
                 spec = self._task_spec(task_id)
                 spec.update({"recoveryRequired": True, "failureReason": reason})
                 self.state.put(f"task_spec:{task_id}", spec)
@@ -1075,7 +1108,8 @@ class TaskService:
             cancellation = await self.runtime.cancel(outcome, reason="用户取消任务")
             if cancellation.task_status != TaskStatus.CANCELLED:
                 task = self.repository.get(task_id)
-                self.repository.save(task.model_copy(update={"status": cancellation.task_status, "updated_at": _now()}))
+                self.repository.save(task.model_copy(update={
+                    "status": cancellation.task_status, "pending_approval_id": None, "updated_at": _now()}))
                 return
             pump = self._pumps.pop(node.id, None)
             if pump:
@@ -1084,7 +1118,8 @@ class TaskService:
                 node.model_copy(update={"status": NodeStatus.CANCELLED, "completed_at": _now()})
             )
         task = self.repository.get(task_id)
-        self.repository.save(task.model_copy(update={"status": TaskStatus.CANCELLED, "updated_at": _now()}))
+        self.repository.save(task.model_copy(update={
+            "status": TaskStatus.CANCELLED, "pending_approval_id": None, "updated_at": _now()}))
         await self._release_children(task_id)
 
     async def _release_children(self, parent_task_id: str) -> None:
@@ -1288,7 +1323,28 @@ class ApprovalService:
         self.coordinator = coordinator
 
     async def list_approvals(self, query: dict[str, Any]) -> Sequence[Any]:
-        return await self.repository.list({key: value for key, value in query.items() if value})
+        resolved_query = {key: value for key, value in query.items() if value}
+        approvals = list(await self.repository.list(resolved_query))
+        database = getattr(self.repository, "database", None)
+        if database is None:
+            return approvals
+        from storage.tasks import TaskRepository
+
+        tasks = TaskRepository(database)
+        for approval in approvals:
+            if approval.status != ApprovalStatus.PENDING:
+                continue
+            async with self.coordinator.task_guard(approval.task_id):
+                current = await self.repository.get(approval.id)
+                if current is None or current.status != ApprovalStatus.PENDING:
+                    continue
+                if not self._task_waits_for_approval(tasks, current):
+                    await self.coordinator.invalidate_task_pending_locked(
+                        current.task_id,
+                        reason="任务已不再等待该审批，孤立记录已由系统失效",
+                        invalidated_by="orphan_reconciliation",
+                    )
+        return await self.repository.list(resolved_query)
 
     async def respond(
         self,
@@ -1297,85 +1353,107 @@ class ApprovalService:
         idempotency_key: str | None,
     ) -> Any:
         database = getattr(self.repository, "database", None)
-        try:
-            resolved = await self.coordinator.respond(approval_id, value)
-        except Exception:
-            existing = await self.repository.get(approval_id)
-            if database is not None and existing is not None and _text(existing.status) != "pending":
-                from storage.tasks import TaskRepository
+        approval = await self.repository.get(approval_id)
+        if approval is None:
+            raise ApprovalError("NOT_FOUND", "审批不存在", {"approvalId": approval_id})
+        if database is None:
+            return await self.coordinator.respond(approval_id, value)
+        from storage.tasks import TaskRepository
 
-                tasks = TaskRepository(database)
-                task = tasks.get(existing.task_id)
-                if _text(task.status) == TaskStatus.WAITING_APPROVAL.value:
+        tasks = TaskRepository(database)
+        async with self.coordinator.task_guard(approval.task_id):
+            current = await self.repository.get(approval_id)
+            if current is None:
+                raise ApprovalError("NOT_FOUND", "审批不存在", {"approvalId": approval_id})
+            was_pending = current.status == ApprovalStatus.PENDING
+            if was_pending and not self._task_waits_for_approval(tasks, current):
+                await self.coordinator.invalidate_task_pending_locked(
+                    current.task_id,
+                    reason="任务已不再等待该审批，不能继续放行",
+                    invalidated_by="task_state",
+                )
+                raise ApprovalError(
+                    "APPROVAL_EXPIRED",
+                    "任务已取消、结束或不再等待该审批",
+                    {"approvalId": approval_id, "taskId": current.task_id},
+                )
+            try:
+                resolved = await self.coordinator.respond_locked(approval_id, value)
+            except Exception:
+                failed_delivery = await self.repository.get(approval_id)
+                if (
+                    failed_delivery is not None
+                    and (failed_delivery.details or {}).get("deliveryStatus") == "failed"
+                    and self._task_waits_for_approval(tasks, failed_delivery)
+                ):
+                    task = tasks.get(failed_delivery.task_id)
                     node = next(
-                        (item for item in tasks.list_nodes(existing.task_id) if item.id == existing.node_id),
+                        (
+                            item
+                            for item in tasks.list_nodes(failed_delivery.task_id)
+                            if item.id == failed_delivery.node_id
+                        ),
                         None,
                     )
                     if node:
-                        tasks.save_node(
-                            node.model_copy(
-                                update={
-                                    "status": NodeStatus.FAILED,
-                                    "error": "审批决定未被 Adapter 消费",
-                                    "completed_at": _now(),
-                                }
-                            )
-                        )
-                    tasks.save(
-                        task.model_copy(
-                            update={
-                                "status": TaskStatus.FAILED,
-                                "pending_approval_id": None,
-                                "updated_at": _now(),
-                            }
-                        )
-                    )
-            raise
-        if database is not None:
-            from storage.tasks import TaskRepository
-
-            tasks = TaskRepository(database)
+                        tasks.save_node(node.model_copy(update={
+                            "status": NodeStatus.FAILED,
+                            "error": "审批决定已记录，但 Adapter 未确认消费",
+                            "completed_at": _now(),
+                        }))
+                    tasks.save(task.model_copy(update={
+                        "status": TaskStatus.FAILED,
+                        "pending_approval_id": None,
+                        "updated_at": _now(),
+                    }))
+                raise
+            if not was_pending:
+                return resolved
+            # The execution pump uses TaskService's lock, not the approval
+            # coordinator lock. It may reach a terminal state while the native
+            # approval response is in flight. Never overwrite that newer fact.
+            if not self._task_waits_for_approval(tasks, resolved):
+                return resolved
             task = tasks.get(resolved.task_id)
             node = next(
                 (item for item in tasks.list_nodes(resolved.task_id) if item.id == resolved.node_id),
                 None,
             )
-            if (
-                value.decision == ApprovalDecision.APPROVE
-                and _text(task.status) == TaskStatus.WAITING_APPROVAL.value
-            ):
+            if value.decision == ApprovalDecision.APPROVE:
                 if node and _text(node.status) == NodeStatus.WAITING_APPROVAL.value:
                     tasks.save_node(node.model_copy(update={"status": NodeStatus.RUNNING}))
-                tasks.save(
-                    task.model_copy(
-                        update={
-                            "status": TaskStatus.RUNNING,
-                            "pending_approval_id": None,
-                            "updated_at": _now(),
-                        }
-                    )
-                )
-            elif (
-                value.decision == ApprovalDecision.REJECT
-                and _text(task.status) == TaskStatus.WAITING_APPROVAL.value
-            ):
+                tasks.save(task.model_copy(update={
+                    "status": TaskStatus.RUNNING,
+                    "pending_approval_id": None,
+                    "updated_at": _now(),
+                }))
+            else:
                 if node:
-                    tasks.save_node(
-                        node.model_copy(
-                            update={
-                                "status": NodeStatus.FAILED,
-                                "error": value.reason or "用户拒绝审批",
-                                "completed_at": _now(),
-                            }
-                        )
-                    )
-                tasks.save(
-                    task.model_copy(
-                        update={
-                            "status": TaskStatus.FAILED,
-                            "pending_approval_id": None,
-                            "updated_at": _now(),
-                        }
-                    )
-                )
-        return resolved
+                    tasks.save_node(node.model_copy(update={
+                        "status": NodeStatus.FAILED,
+                        "error": value.reason or "用户拒绝审批",
+                        "completed_at": _now(),
+                    }))
+                tasks.save(task.model_copy(update={
+                    "status": TaskStatus.FAILED,
+                    "pending_approval_id": None,
+                    "updated_at": _now(),
+                }))
+            return resolved
+
+    @staticmethod
+    def _task_waits_for_approval(tasks: Any, approval: Any) -> bool:
+        try:
+            task = tasks.get(approval.task_id)
+        except HubError:
+            return False
+        if (
+            _text(task.status) != TaskStatus.WAITING_APPROVAL.value
+            or task.pending_approval_id != approval.id
+        ):
+            return False
+        node = next(
+            (item for item in tasks.list_nodes(approval.task_id) if item.id == approval.node_id),
+            None,
+        )
+        return bool(node and _text(node.status) == NodeStatus.WAITING_APPROVAL.value)
