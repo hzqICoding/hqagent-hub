@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
 import { useChatStore } from '@/stores/chat.store'
 import { useLocalAuthStore } from '@/stores/local-auth.store'
 import ChatSidebar from './components/ChatSidebar.vue'
@@ -10,6 +10,9 @@ import RunSnapshotDrawer from './components/RunSnapshotDrawer.vue'
 import {
   HqBadge,
   HqEmptyState,
+  HqDialog,
+  HqButton,
+  HqDropdown,
 } from '@/shared/ui'
 import {
   Bot,
@@ -19,15 +22,43 @@ import {
   Radio,
   Sparkles,
   ArrowDown,
+  MoreHorizontal,
+  RotateCcw,
+  Plus,
 } from 'lucide-vue-next'
 
 const chatStore = useChatStore()
 const authStore = useLocalAuthStore()
 
 const isDrawerOpen = ref(true)
+const sidebarRef = ref<{ openCreateModal: () => void } | null>(null)
 const messageContainerRef = ref<HTMLElement | null>(null)
 const isScrolledUp = ref(false)
+const isContextResetDialogOpen = ref(false)
 let mounted = false
+
+const isContextResetDisabled = computed(() => !chatStore.canResetContext)
+
+const conversationMenuItems = computed(() => [
+  {
+    id: 'reset-context',
+    label: '重置 Agent 上下文',
+    icon: RotateCcw,
+    disabled: isContextResetDisabled.value,
+    action: openContextResetDialog,
+  },
+])
+
+function openContextResetDialog() {
+  if (isContextResetDisabled.value) return
+  isContextResetDialogOpen.value = true
+}
+
+function confirmContextReset() {
+  if (chatStore.requestContextReset()) {
+    isContextResetDialogOpen.value = false
+  }
+}
 
 function refreshOnReturn() {
   if (mounted && !document.hidden) chatStore.startPolling()
@@ -175,7 +206,7 @@ function applyStarterPrompt(prompt: string) {
     <!-- 3-Column Workbench -->
     <div class="flex-1 min-h-0 flex overflow-hidden">
       <!-- Left Column: Conversations Sidebar -->
-      <ChatSidebar />
+      <ChatSidebar ref="sidebarRef" />
 
       <!-- Center Column: Active Chat Stream & Composer -->
       <main class="flex-1 flex flex-col h-full bg-bg-app min-w-0 overflow-hidden">
@@ -204,6 +235,30 @@ function applyStarterPrompt(prompt: string) {
 
           <!-- Drawer Toggle -->
           <div class="flex items-center gap-1.5 shrink-0">
+            <HqButton
+              size="sm"
+              variant="primary"
+              title="新建任务"
+              @click="sidebarRef?.openCreateModal()"
+            >
+              <Plus class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline">新建任务</span>
+            </HqButton>
+
+            <HqDropdown
+              v-if="chatStore.activeConversation"
+              :items="conversationMenuItems"
+              placement="right"
+            >
+              <button
+                type="button"
+                class="p-1.5 rounded-lg hover:bg-panel-hover text-text-muted hover:text-text transition-colors"
+                title="更多任务操作"
+              >
+                <MoreHorizontal class="w-4 h-4" />
+              </button>
+            </HqDropdown>
+
             <button
               type="button"
               class="p-1.5 px-2 rounded-lg hover:bg-panel-hover text-text-muted hover:text-text transition-colors flex items-center gap-1.5 text-xs cursor-pointer"
@@ -291,7 +346,7 @@ function applyStarterPrompt(prompt: string) {
           <div v-else class="flex-1 min-h-0 flex items-center justify-center p-8">
             <HqEmptyState
               title="选择或新建一个本地对话"
-              description="从左侧选择已有任务，或点击「新建」配置项目与角色场景开始协作"
+              description="从左侧选择已有任务，或点击「新建任务」配置项目与角色场景开始协作"
             />
           </div>
 
@@ -312,7 +367,10 @@ function applyStarterPrompt(prompt: string) {
         </div>
 
         <!-- Floating Centered Composer Footer -->
-        <ChatComposer v-if="chatStore.activeConversation" />
+        <ChatComposer
+          v-if="chatStore.activeConversation"
+          @request-context-reset="openContextResetDialog"
+        />
       </main>
 
       <!-- Right Column: Run Snapshot & Artifacts & Roles Drawer -->
@@ -321,5 +379,34 @@ function applyStarterPrompt(prompt: string) {
         @close="isDrawerOpen = false"
       />
     </div>
+
+    <HqDialog
+      :open="isContextResetDialogOpen"
+      title="重置 Agent 上下文"
+      description="仅影响当前任务下一条消息"
+      @close="isContextResetDialogOpen = false"
+    >
+      <div class="space-y-3 text-xs leading-relaxed">
+        <p class="text-text">
+          当前任务的聊天历史会继续保留，但下一条消息将使用新的 Agent 会话。
+        </p>
+        <p class="text-text-muted">
+          新会话不会自动携带全部历史。如有必须延续的信息，请在下一条消息中明确说明。
+        </p>
+      </div>
+      <template #footer>
+        <HqButton size="sm" variant="secondary" @click="isContextResetDialogOpen = false">
+          取消
+        </HqButton>
+        <HqButton
+          size="sm"
+          variant="primary"
+          :disabled="isContextResetDisabled"
+          @click="confirmContextReset"
+        >
+          确认重置
+        </HqButton>
+      </template>
+    </HqDialog>
   </div>
 </template>
