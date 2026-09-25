@@ -732,6 +732,29 @@ export class MockLocalChatGateway implements LocalChatGateway {
       )
     }
 
+    if (input.reviewMode === 'original_planner') {
+      const planner = input.roles.find((role) => role.roleId === 'planner')
+      const developer = input.roles.find((role) => role.roleId === 'developer')
+      const reviewer = input.roles.find((role) => role.roleId === 'reviewer')
+      if (!planner?.enabled || !developer?.enabled || !reviewer?.enabled) {
+        throw new HubApiError(
+          '原规划者验收要求 Planner、Developer 与 Reviewer 全部启用。',
+          'VALIDATION_FAILED' as ErrorCode,
+          422
+        )
+      }
+      if (!planner.agentInstanceId?.trim()) {
+        throw new HubApiError(
+          '原规划者验收需要配置 Planner Agent。',
+          'VALIDATION_FAILED' as ErrorCode,
+          422
+        )
+      }
+      reviewer.agentInstanceId = planner.agentInstanceId
+      reviewer.modelId = planner.modelId
+      reviewer.reasoningEffort = planner.reasoningEffort
+    }
+
     scene.roles = input.roles.map((role) => ({ ...role }))
     scene.reviewMode = input.reviewMode ?? 'independent'
     scene.version += 1
