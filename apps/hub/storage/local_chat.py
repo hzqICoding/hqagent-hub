@@ -90,12 +90,11 @@ class LocalChatRepository:
                     raise HubError("VALIDATION_FAILED", "原规划会话验收仅适用于开发场景")
                 planner = next(r for r in roles if r.role_id == "planner")
                 reviewer = next(r for r in roles if r.role_id == "reviewer")
-                if reviewer.enabled:
-                    if not planner.enabled or not planner.agent_instance_id:
-                        raise HubError("VALIDATION_FAILED", "原规划会话验收需要启用并配置planner")
-                    roles = [r.model_copy(update={"agent_instance_id": planner.agent_instance_id,
-                        "model_id_": planner.model_id_, "reasoning_effort": planner.reasoning_effort})
-                        if r.role_id == "reviewer" else r for r in roles]
+                if not planner.enabled or not reviewer.enabled or not planner.agent_instance_id:
+                    raise HubError("VALIDATION_FAILED", "原规划会话验收必须启用planner、developer、reviewer，并配置planner")
+                roles = [r.model_copy(update={"agent_instance_id": planner.agent_instance_id,
+                    "model_id_": planner.model_id_, "reasoning_effort": planner.reasoning_effort})
+                    if r.role_id == "reviewer" else r for r in roles]
             updated = old.model_copy(update={"roles": roles, "review_mode": ReviewMode(mode),
                                              "version": row[0] + 1, "updated_at": now()})
             tx.connection.execute("UPDATE local_scenes SET version=?,payload_json=? WHERE scene_id=?",
