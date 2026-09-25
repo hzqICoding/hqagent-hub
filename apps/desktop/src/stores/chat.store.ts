@@ -51,6 +51,9 @@ export const useChatStore = defineStore('chat', () => {
   // Sending state
   const isSending = ref(false)
   const sessionMode = ref<'new' | 'continue'>('new')
+  // A reset is an explicit, one-message choice within this conversation.
+  // Normal replies continue; a new conversation's first message starts fresh.
+  const pendingContextReset = ref(false)
   const queuedMessages = ref<{ id: string; text: string }[]>([])
   const sendError = ref<string | null>(null)
   const resumptionError = ref<string | null>(null)
@@ -108,6 +111,31 @@ export const useChatStore = defineStore('chat', () => {
     return st === 'running' || st === 'queued' || st === 'waiting_approval'
   })
 
+  const canResetContext = computed(() => Boolean(activeConversationId.value)
+    && !isSending.value && !isActionLoading.value
+    && !isLoadingMessages.value && !isLoadingRun.value
+    && !isCurrentRunActive.value && queuedMessages.value.length === 0
+    && !conversationRuns.value.some(run => ['running', 'queued', 'waiting_approval', 'paused'].includes(run.status)))
+
+  const effectiveSessionMode = computed(() => sessionMode.value)
+
+  function requestContextReset(): boolean {
+    if (!canResetContext.value) return false
+    pendingContextReset.value = true
+    sessionMode.value = 'new'
+    resumptionError.value = null
+    return true
+  }
+
+  function cancelContextReset(): void {
+    pendingContextReset.value = false
+    sessionMode.value = messages.value.length > 0 || conversationRuns.value.length > 0 ? 'continue' : 'new'
+    const detail = activeRun.value
+    if (sessionMode.value === 'continue' && detail?.status === 'failed' && detail.error && /会话|上下文/.test(detail.error)) {
+      resumptionError.value = detail.error
+    }
+  }
+
   // Initial load
   async function init(): Promise<void> {
     const generation = viewGeneration
@@ -156,6 +184,8 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
     conversationRuns.value = []
     activeRun.value = null
+    pendingContextReset.value = false
+    sessionMode.value = 'new'
     loadError.value = null
     sendError.value = null
     resumptionError.value = null
@@ -172,7 +202,7 @@ export const useChatStore = defineStore('chat', () => {
     if (isPolling.value) scheduleNextPoll(0)
 
     // If conversation already has completed messages, default next message to continue
-    if (messages.value.length > 0) {
+    if (messages.value.length > 0 || conversationRuns.value.length > 0) {
       sessionMode.value = 'continue'
     } else {
       sessionMode.value = 'new'
@@ -325,6 +355,7 @@ export const useChatStore = defineStore('chat', () => {
       )
       completeOperation(identity)
       if (activeConversationId.value === convId) {
+        pendingContextReset.value = false
         sessionMode.value = 'continue'
         pinnedRunId = wasRunActive ? null : receipt.runId
       }
@@ -344,7 +375,7 @@ export const useChatStore = defineStore('chat', () => {
       if (err instanceof HubApiError) {
         if (err.code === 'SESSION_NOT_RESUMABLE') {
           resumptionError.value =
-            err.message || '该会话无法继续上下文，请选择「新一轮上下文」发送'
+            err.message || '该会话无法恢复；可新建任务，或明确重置当前任务的 Agent 上下文后发送'
         } else {
           sendError.value = err.message
         }
@@ -904,6 +935,7 @@ export const useChatStore = defineStore('chat', () => {
     actionError.value = null
     resumptionError.value = null
     sessionMode.value = 'new'
+    pendingContextReset.value = false
   }
 
   return {
@@ -921,6 +953,11 @@ export const useChatStore = defineStore('chat', () => {
     scenes,
     isSending,
     sessionMode,
+    effectiveSessionMode,
+    pendingContextReset,
+    canResetContext,
+    requestContextReset,
+    cancelContextReset,
     queuedMessages,
     sendError,
     resumptionError,
