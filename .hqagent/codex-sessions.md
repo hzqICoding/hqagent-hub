@@ -110,3 +110,11 @@ codex 有自己的默认署名行为。
 - 复用`/root/audit_orchestration`（独立thread `01a0cf38-30a9-7733-b5ff-4649ad36fecc`，父session继承值同前，`gpt-5.6-sol/high`）：先复核计数器实际产物并更新临时预览，再在`continued-worktree`独立修复后端路径投影；未新建子线程。
 - 子提交`d518ae4`、`fda57b7`，集成`a5ebc99`、`c637a40`；前端修复`877028b`。
 - 状态：已完成，可复用。回执：[N0-live-progress](reviews/N0-live-progress.md)。
+
+## 2026-09-25 原规划会话验收与结果解析
+
+- 主代理：独立`planner-acceptance`工作区实现W0契约、场景/编排、证据包及验证，整合到integration/phase1。
+- 复用`/root/audit_orchestration`，模型/等级`gpt-5.6-sol/high`，独立thread `01a0cf38-30a9-7733-b5ff-4649ad36fecc`（继承session同前），工作区`codex-result-contract`：定位真实Codex失败样本并修复，最后窄范围审查原会话证据/身份边界；可复用。
+- 新前端会话`/root/planner_acceptance_ui`，委派配置`gpt-5.6-sol/medium`，独立工作区`planner-acceptance-ui`。原生工具仅返回canonical task，独立thread/session UUID未提供，不编造；已完成，可通过本线程树followup接续，跨客户端未验证。
+- 前端交付`63cad31`、`0ac8f65`；适配器交付`e5b75b2`、`35e25ad`、`06d6193`；主代理协议/核心`18a46cb`、`676cd8c`、`5610901`。集成提交见本批次git log，均无AI署名。
+- 验收：[N0-original-planner-acceptance](reviews/N0-original-planner-acceptance.md)。已完成真实Claude→Codex→原Claude流程；没有把新会话或粘贴历史冒充原生恢复。
