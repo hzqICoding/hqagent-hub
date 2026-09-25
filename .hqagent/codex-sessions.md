@@ -118,3 +118,20 @@ codex 有自己的默认署名行为。
 - 新前端会话`/root/planner_acceptance_ui`，委派配置`gpt-5.6-sol/medium`，独立工作区`planner-acceptance-ui`。原生工具仅返回canonical task，独立thread/session UUID未提供，不编造；已完成，可通过本线程树followup接续，跨客户端未验证。
 - 前端交付`63cad31`、`0ac8f65`；适配器交付`e5b75b2`、`35e25ad`、`06d6193`；主代理协议/核心`18a46cb`、`676cd8c`、`5610901`。集成提交见本批次git log，均无AI署名。
 - 验收：[N0-original-planner-acceptance](reviews/N0-original-planner-acceptance.md)。已完成真实Claude→Codex→原Claude流程；没有把新会话或粘贴历史冒充原生恢复。
+
+
+## 2026-09-25 本地可靠性收尾（进行中）
+
+用户明确要求按取消审批联动、运行中取消、重启恢复的顺序完成，并授权多个 Codex 并行。复用已有两个子会话，同时最多3个（含主代理），不新增子代理。
+
+|职责|canonical task|模型/等级|独立工作区|状态|
+|---|---|---|---|---|
+|运行中取消实测、Adapter、整合|/root|主会话实际配置由宿主管理|running-cancel；vnext-integration整合|进行中|
+|取消后审批失效、并发竞态|/root/audit_orchestration|gpt-5.6-sol/high，复用|cancel-approval-lifecycle|进行中|
+|重启恢复与不重放副作用|/root/planner_acceptance_ui|gpt-5.6-sol/medium，复用|restart-recovery|进行中|
+
+共同基线11f0cb5。audit_orchestration独立thread 01a0cf38-30a9-7733-b5ff-4649ad36fecc；planner_acceptance_ui独立UUID暂未提供。父session身份见此前登记，不冒充独立ID。followup复用已成功；跨客户端恢复未验证。任务脚本/数据仅E:/tmp，业务项目不访问。runtime/tasks.py按方法划分：审批线_cancel/ApprovalService，恢复线recover_pending/shutdown，主代理负责合并。
+
+### 本批次完成回执
+
+两子代理已完成，可继续followup复用。审批线63fd942→3b73645，恢复线1a373ab→9d50b07。主代理完成182项全量测试、实际服务无活动任务备份重启、真实Node进程取消与迟到审批410验证。详细记录：[本地可靠性收尾](reviews/N0-reliability-closeout.md)。没有宣称OS断电试验或浏览器视觉验收。
