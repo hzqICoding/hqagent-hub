@@ -19,6 +19,7 @@ from protocol.generated.python import (
     RiskLevel,
     SessionPurpose,
     SessionReusePolicy,
+    SessionStatus,
     TaskActionInput,
     TaskDetailView,
     TaskNodeView,
@@ -249,59 +250,132 @@ class TaskService:
 
     async def recover_pending(self) -> tuple[str, ...]:
         """Make interrupted work explicit; never replay unknown side effects."""
-        items, _ = self.repository.list({"page": 1, "pageSize": 200})
+        return await self._quarantine_nonterminal_tasks(
+            "Hub 重启后无法确认先前执行是否仍有副作用，请人工继续或重试",
+            invalidated_by="restart_recovery",
+        )
+
+    async def _quarantine_nonterminal_tasks(
+        self,
+        reason: str,
+        *,
+        invalidated_by: str,
+    ) -> tuple[str, ...]:
         recovered: list[str] = []
-        for task in items:
-            status = _text(task.status)
-            if status not in {
-                TaskStatus.QUEUED.value,
-                TaskStatus.RUNNING.value,
-                TaskStatus.WAITING_APPROVAL.value,
-            }:
-                continue
-            spec = self._task_spec(task.id)
-            if status == TaskStatus.QUEUED.value and spec.get("blockedByParent"):
-                continue
-            reason = "Hub 重启后无法确认先前执行是否仍有副作用，请人工继续或重试"
-            for node in self.repository.list_nodes(task.id):
-                if _text(node.status) in {
-                    NodeStatus.RUNNING.value,
-                    NodeStatus.WAITING_APPROVAL.value,
-                    NodeStatus.RESOLVING.value,
-                }:
+        page = 1
+        page_size = 200
+        while True:
+            items, total = self.repository.list({"page": page, "pageSize": page_size})
+            for task in items:
+                status = _text(task.status)
+                active_status = status in {
+                    TaskStatus.QUEUED.value,
+                    TaskStatus.RUNNING.value,
+                    TaskStatus.WAITING_APPROVAL.value,
+                }
+                if not active_status and status != TaskStatus.PAUSED.value:
+                    continue
+                spec = self._task_spec(task.id)
+                if status == TaskStatus.PAUSED.value and not spec.get("recoveryRequired"):
+                    continue
+                if status == TaskStatus.QUEUED.value and spec.get("blockedByParent"):
+                    continue
+                nodes = list(self.repository.list_nodes(task.id))
+                interrupted_nodes = [
+                    node
+                    for node in nodes
+                    if _text(node.status) in {
+                        NodeStatus.RUNNING.value,
+                        NodeStatus.WAITING_APPROVAL.value,
+                        NodeStatus.RESOLVING.value,
+                    }
+                ]
+                invalidated_sessions = await self._invalidate_interrupted_sessions(task.id)
+                invalidate = None
+                should_invalidate_approvals = (
+                    status in {TaskStatus.WAITING_APPROVAL.value, TaskStatus.PAUSED.value}
+                    or task.pending_approval_id is not None
+                )
+                if self.approval_coordinator is not None and should_invalidate_approvals:
+                    invalidate = getattr(
+                        self.approval_coordinator,
+                        "invalidate_task_pending",
+                        None,
+                    )
+                    if invalidate is not None:
+                        await invalidate(
+                            task.id,
+                            reason=reason,
+                            invalidated_by=invalidated_by,
+                        )
+                has_legacy_residue = bool(
+                    interrupted_nodes or invalidated_sessions or task.pending_approval_id
+                )
+                if status == TaskStatus.PAUSED.value and not has_legacy_residue:
+                    continue
+                for node in interrupted_nodes:
                     self.repository.save_node(
                         node.model_copy(
-                            update={"status": NodeStatus.FAILED, "error": reason, "completed_at": _now()}
+                            update={
+                                "status": NodeStatus.FAILED,
+                                "error": reason,
+                                "completed_at": _now(),
+                            }
                         )
                     )
-            self.repository.save(
-                task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()})
-            )
-            spec.update({"recoveryRequired": True, "failureReason": reason})
-            self.state.put(f"task_spec:{task.id}", spec)
-            await self._emit(task.id, "task.status_changed", {"taskId": task.id, "to": "paused", "reason": reason})
-            recovered.append(task.id)
+                self.repository.save(
+                    task.model_copy(
+                        update={
+                            "status": TaskStatus.PAUSED,
+                            "pending_approval_id": None,
+                            "updated_at": _now(),
+                        }
+                    )
+                )
+                spec.update({"recoveryRequired": True, "failureReason": reason})
+                self.state.put(f"task_spec:{task.id}", spec)
+                await self._emit(
+                    task.id,
+                    "task.status_changed",
+                    {"taskId": task.id, "to": "paused", "reason": reason},
+                )
+                recovered.append(task.id)
+            if page * page_size >= total:
+                break
+            page += 1
         return tuple(recovered)
 
+    async def _invalidate_interrupted_sessions(self, task_id: str) -> int:
+        sessions = getattr(self.runtime, "sessions", None)
+        repository = getattr(sessions, "repository", None)
+        if repository is None:
+            return 0
+        invalidated = 0
+        for session in await repository.list({"taskId": task_id}):
+            if _text(session.status) != SessionStatus.ACTIVE.value:
+                continue
+            await repository.save(
+                session.model_copy(
+                    update={
+                        "status": SessionStatus.INVALID,
+                        "is_valid": False,
+                        "last_used_at": _now(),
+                    }
+                )
+            )
+            invalidated += 1
+        return invalidated
+
     async def shutdown(self) -> None:
-        active_task_ids = {outcome.task_id for outcome in self._outcomes.values()}
         pumps = tuple(self._pumps.values())
         for pump in pumps:
             pump.cancel()
         if pumps:
             await asyncio.gather(*pumps, return_exceptions=True)
-        for task_id in active_task_ids:
-            task = self.repository.get(task_id)
-            if _text(task.status) in TERMINAL_TASK_STATES:
-                continue
-            reason = "Hub 已停止；原生执行结果未确认，任务需要恢复核对"
-            self.repository.save(
-                task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()})
-            )
-            spec = self._task_spec(task_id)
-            spec.update({"recoveryRequired": True, "failureReason": reason})
-            self.state.put(f"task_spec:{task_id}", spec)
-            await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "paused", "reason": reason})
+        await self._quarantine_nonterminal_tasks(
+            "Hub 已停止；原生执行结果未确认，任务需要恢复核对",
+            invalidated_by="hub_shutdown",
+        )
 
     async def expire_approvals(self) -> None:
         if self.approval_coordinator is None:
