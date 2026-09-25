@@ -93,6 +93,28 @@ describe('MockLocalChatGateway', () => {
     expect(runsAfter[0].sceneSnapshot.reviewMode).toBe('original_planner')
   })
 
+  it('rejects incomplete original planner scene saves', async () => {
+    const scenes = await gateway.listLocalScenes()
+    const develop = scenes.find(scene => scene.id === 'develop')!
+    const planner = develop.roles.find(role => role.roleId === 'planner')!
+    const reviewer = develop.roles.find(role => role.roleId === 'reviewer')!
+
+    reviewer.enabled = false
+    await expect(gateway.saveLocalScene('develop', {
+      roles: develop.roles,
+      expectedVersion: develop.version,
+      reviewMode: 'original_planner',
+    })).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 })
+
+    reviewer.enabled = true
+    planner.agentInstanceId = ''
+    await expect(gateway.saveLocalScene('develop', {
+      roles: develop.roles,
+      expectedVersion: develop.version,
+      reviewMode: 'original_planner',
+    })).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 })
+  })
+
   it('maps original planner review to an acceptance node sharing the planner session', async () => {
     const conv = await gateway.createLocalConversation({
       title: '原规划者验收测试',

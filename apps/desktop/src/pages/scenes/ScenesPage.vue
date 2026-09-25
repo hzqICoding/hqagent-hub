@@ -33,6 +33,25 @@ const isDevelopScene = computed(() => selectedSceneId.value === 'develop')
 const usesOriginalPlannerReview = computed(
   () => isDevelopScene.value && reviewMode.value === 'original_planner'
 )
+const originalPlannerValidationError = computed(() => {
+  if (!usesOriginalPlannerReview.value) return null
+  const planner = findRole('planner')
+  const developer = findRole('developer')
+  const reviewer = findRole('reviewer')
+  if (!planner || !developer || !reviewer) {
+    return '原规划者验收需要完整的 Planner、Developer 与 Reviewer 三阶段配置。'
+  }
+  if (!planner.enabled || !developer.enabled || !reviewer.enabled) {
+    return '原规划者验收要求 Planner、Developer 与 Reviewer（验收阶段）全部启用。'
+  }
+  if (!planner.agentInstanceId?.trim()) {
+    return '原规划者验收需要先为 Planner 配置执行 Agent。'
+  }
+  return null
+})
+const displayedValidationError = computed(
+  () => localValidationError.value ?? originalPlannerValidationError.value
+)
 
 const reviewModeOptions = [
   {
@@ -83,10 +102,13 @@ function findRole(roleId: string) {
 function applyOriginalPlannerInheritance() {
   if (!usesOriginalPlannerReview.value) return
   const planner = findRole('planner')
+  const developer = findRole('developer')
   const reviewer = findRole('reviewer')
-  if (!planner || !reviewer || !reviewer.enabled) return
+  if (!planner || !reviewer) return
 
   if (!planner.enabled) planner.enabled = true
+  if (developer && !developer.enabled) developer.enabled = true
+  if (!reviewer.enabled) reviewer.enabled = true
   if (reviewer.agentInstanceId !== planner.agentInstanceId) {
     reviewer.agentInstanceId = planner.agentInstanceId
   }
@@ -105,18 +127,18 @@ function handleReviewModeChange(value: string | number) {
 }
 
 function handleRoleEnabledChange(role: LocalRoleConfig, enabled: boolean) {
-  role.enabled = enabled
   localValidationError.value = null
-  if (usesOriginalPlannerReview.value && role.roleId === 'reviewer' && enabled) {
-    applyOriginalPlannerInheritance()
+  if (
+    usesOriginalPlannerReview.value &&
+    !enabled &&
+    ['planner', 'developer', 'reviewer'].includes(role.roleId)
+  ) {
+    role.enabled = true
+    localValidationError.value = '原规划者验收已启用，三阶段必须保持启用；如需可选角色请切换为独立 Reviewer。'
+    return
   }
-  if (usesOriginalPlannerReview.value && role.roleId === 'planner' && !enabled) {
-    const reviewer = findRole('reviewer')
-    if (reviewer?.enabled) {
-      role.enabled = true
-      localValidationError.value = '原规划者验收已启用，Planner 必须保持启用。'
-    }
-  }
+  role.enabled = enabled
+  applyOriginalPlannerInheritance()
 }
 
 function handleAgentChange(role: LocalRoleConfig, agentId: string) {
@@ -132,14 +154,11 @@ async function handleSave() {
   const current = scenesStore.currentScene
   if (!current) return
 
+  if (originalPlannerValidationError.value) {
+    localValidationError.value = originalPlannerValidationError.value
+    return
+  }
   if (usesOriginalPlannerReview.value) {
-    const planner = findRole('planner')
-    const developer = findRole('developer')
-    const reviewer = findRole('reviewer')
-    if (!planner?.enabled || !developer?.enabled || !reviewer?.enabled) {
-      localValidationError.value = '原规划者验收要求 Planner、Developer 与 Reviewer（验收阶段）全部启用。'
-      return
-    }
     applyOriginalPlannerInheritance()
   }
 
@@ -290,7 +309,7 @@ function effortOptions(role: LocalRoleConfig) {
             <HqButton
               variant="primary"
               size="sm"
-              :disabled="scenesStore.isSaving"
+              :disabled="scenesStore.isSaving || Boolean(originalPlannerValidationError)"
               :loading="scenesStore.isSaving"
               @click="handleSave"
             >
@@ -321,11 +340,11 @@ function effortOptions(role: LocalRoleConfig) {
         </div>
 
         <div
-          v-if="localValidationError"
+          v-if="displayedValidationError"
           class="mx-4 mt-4 p-3 rounded-[var(--radius-md)] bg-danger/10 border border-danger/30 text-xs text-danger flex items-center gap-2"
         >
           <AlertCircle class="w-4 h-4 shrink-0" />
-          <span>{{ localValidationError }}</span>
+          <span>{{ displayedValidationError }}</span>
         </div>
 
         <!-- Role Cards Stream -->
@@ -349,7 +368,7 @@ function effortOptions(role: LocalRoleConfig) {
               v-if="usesOriginalPlannerReview"
               class="p-2.5 rounded-[var(--radius-sm)] bg-primary/10 border border-primary/20 text-[11px] text-text leading-relaxed"
             >
-              Reviewer 在这里表示“需要验收”。Agent、Model 与 Reasoning Effort 继承 Planner，职责提示仍可编辑；运行时将恢复本轮 Planner 的原生 Session。
+              选择后 Planner、Developer、Reviewer 三阶段固定启用，不可关闭。Reviewer 在这里表示“需要验收”；Agent、Model 与 Reasoning Effort 继承 Planner，职责提示仍可编辑，运行时将恢复本轮 Planner 的原生 Session。
             </div>
           </section>
 
@@ -391,6 +410,7 @@ function effortOptions(role: LocalRoleConfig) {
                   <span class="text-[11px] text-text-muted">启用角色</span>
                   <HqSwitch
                     :model-value="role.enabled"
+                    :disabled="usesOriginalPlannerReview && ['planner', 'reviewer'].includes(role.roleId)"
                     @update:model-value="(value) => handleRoleEnabledChange(role, value)"
                   />
                 </div>

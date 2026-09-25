@@ -45,6 +45,7 @@ describe('ScenesPage', () => {
   it('allows the optional development planner and uses runtime effort levels', async () => {
     const scenes = await mockLocalChatGateway.listLocalScenes()
     const develop = scenes.find(s => s.id === 'develop')!
+    develop.reviewMode = 'independent'
     develop.roles = [
       { roleId: 'planner', agentInstanceId: 'agent-codex', instructions: 'plan', enabled: false, modelId: 'runtime-model' },
       { roleId: 'developer', agentInstanceId: 'agent-codex', instructions: 'develop', enabled: true, modelId: 'runtime-model' },
@@ -61,6 +62,36 @@ describe('ScenesPage', () => {
     const options = wrapper.findAllComponents(HqSelect).flatMap(w => w.props('options'))
     expect(options.some(option => option.value === 'xhigh')).toBe(true)
     expect(options.some(option => option.value === 'max')).toBe(true)
+  })
+
+  it('enables all three stages when original planner review is selected and blocks an incomplete planner', async () => {
+    const develop = (await mockLocalChatGateway.listLocalScenes()).find(s => s.id === 'develop')!
+    develop.reviewMode = 'independent'
+    const planner = develop.roles.find(role => role.roleId === 'planner')!
+    const reviewer = develop.roles.find(role => role.roleId === 'reviewer')!
+    planner.enabled = false
+    planner.agentInstanceId = ''
+    reviewer.enabled = false
+    vi.spyOn(mockLocalChatGateway, 'listLocalScenes').mockResolvedValue([develop])
+
+    const wrapper = mount(ScenesPage)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const originalPlannerRadio = wrapper.findAll('[role="radio"]').find(radio =>
+      radio.element.parentElement?.textContent?.includes('原规划者验收')
+    )!
+    await originalPlannerRadio.trigger('click')
+
+    const plannerSwitch = wrapper.find('[data-role-id="planner"] [role="switch"]')
+    const reviewerSwitch = wrapper.find('[data-role-id="reviewer"] [role="switch"]')
+    expect(plannerSwitch.attributes('aria-checked')).toBe('true')
+    expect(reviewerSwitch.attributes('aria-checked')).toBe('true')
+    expect(plannerSwitch.attributes('disabled')).toBeDefined()
+    expect(reviewerSwitch.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('三阶段固定启用，不可关闭')
+    expect(wrapper.text()).toContain('需要先为 Planner 配置执行 Agent')
+
+    const saveButton = wrapper.findAll('button').find(button => button.text().includes('保存场景配置'))!
+    expect(saveButton.attributes('disabled')).toBeDefined()
   })
 
   it('configures original planner acceptance and saves inherited reviewer identity', async () => {
