@@ -306,6 +306,7 @@ class WorkflowRuntime:
         outcome: DispatchOutcome,
         *,
         complete_task: bool = True,
+        keep_session_on_report: bool = False,
     ) -> CompletionOutcome:
         adapter = self.adapters.adapter_for(outcome.resolution.agent.instance_id)
         result = await adapter.collect_result(outcome.session.id)
@@ -404,7 +405,7 @@ class WorkflowRuntime:
                 )
         session = (
             await self.sessions.finish(outcome.session.id)
-            if result.status == "done"
+            if result.status == "done" or keep_session_on_report
             else await self.sessions.close(outcome.session.id)
         )
         return CompletionOutcome(result, session)

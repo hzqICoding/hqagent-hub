@@ -1,0 +1,29 @@
+{
+  "id": "develop",
+  "name": "原规划会话验收",
+  "description": "规划、实施、回到原规划会话验收",
+  "readOnly": false,
+  "version": 1,
+  "updatedAt": "2026-09-25T00:00:00Z",
+  "reviewMode": "original_planner",
+  "roles": [
+    {
+      "roleId": "planner",
+      "agentInstanceId": "local.claude.default",
+      "instructions": "只读规划",
+      "enabled": true
+    },
+    {
+      "roleId": "developer",
+      "agentInstanceId": "local.codex.default",
+      "instructions": "实施并测试",
+      "enabled": true
+    },
+    {
+      "roleId": "reviewer",
+      "agentInstanceId": "local.claude.default",
+      "instructions": "根据真实证据验收",
+      "enabled": true
+    }
+  ]
+}

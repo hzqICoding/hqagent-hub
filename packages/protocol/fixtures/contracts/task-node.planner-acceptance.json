@@ -1,0 +1,15 @@
+{
+  "id": "node_acceptance",
+  "taskId": "task_demo",
+  "roleId": "planner",
+  "phase": "acceptance",
+  "resolvedAgentId": "local.claude.default",
+  "resolvedAgentName": "Claude",
+  "resolveSource": "task_override",
+  "status": "succeeded",
+  "sessionId": "session_planning",
+  "externalSessionId": "e82457b0-9346-45f7-b936-12d55e8f87de",
+  "reviewSourceNodeId": "node_planning",
+  "reviewEvidenceId": "evidence_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "reviewVerdict": "passed"
+}

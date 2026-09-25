@@ -35,6 +35,7 @@ from security.approvals import ApprovalRequest
 from security.worktrees import WorktreeSpec
 from storage.execution_state import ExecutionStateRepository
 from storage.idempotency import IdempotencyRepository
+from runtime.review_evidence import acceptance_prompt, freeze_evidence, verify_evidence
 
 
 # Keep legacy v1 defaults; local v2 scenes always supply an explicit workflow.
@@ -148,7 +149,8 @@ class TaskService:
                 "result": spec.get("result"),
             }
         )
-        last_worktree = next((node for node in reversed(nodes) if node.worktree_path), None)
+        last_worktree = next((node for node in reversed(nodes) if node.worktree_path and node.id in (spec.get('worktrees') or {})), None)
+        last_worktree = last_worktree or next((node for node in reversed(nodes) if node.worktree_path), None)
         if last_worktree:
             raw["worktreePath"] = last_worktree.worktree_path
             raw["branch"] = last_worktree.branch
@@ -476,11 +478,15 @@ class TaskService:
         role_to_node = {role_id: f"node_{uuid.uuid4().hex[:12]}" for role_id, _ in workflow}
         for role_id, deps in workflow:
             node_id = role_to_node[role_id]
+            original_acceptance = role_id == "reviewer" and str(value.review_mode) == "original_planner"
+            execution_role = "planner" if original_acceptance else role_id
             node = TaskNodeView.model_validate(
                 {
                     "id": node_id,
                     "taskId": task_id,
-                    "roleId": role_id,
+                    "roleId": execution_role,
+                    "phase": "acceptance" if role_id == "reviewer" else "execution",
+                    "reviewSourceNodeId": role_to_node.get("planner") if original_acceptance else None,
                     "resolvedAgentId": "",
                     "resolvedAgentName": "",
                     "resolveSource": "manual",
@@ -489,7 +495,9 @@ class TaskService:
             )
             self.repository.save_node_in_transaction(transaction, node)
             workflow_rows.append(
-                {"nodeId": node_id, "roleId": role_id, "dependsOn": [role_to_node[item] for item in deps]}
+                {"nodeId": node_id, "roleId": execution_role,
+                 "phase": "acceptance" if role_id == "reviewer" else "execution",
+                 "dependsOn": [role_to_node[item] for item in deps]}
             )
         self.state.put(
             f"task_spec:{task_id}",
@@ -538,7 +546,11 @@ class TaskService:
                 continue
             if not all(_text(nodes[dep].status) == NodeStatus.SUCCEEDED.value for dep in item["dependsOn"]):
                 continue
-            await self._dispatch_node(task_id, node, item["roleId"], spec)
+            try:
+                await self._dispatch_node(task_id, node, item["roleId"], spec)
+            except (HubError, OrchestrationError) as error:
+                # Preparation failures belong to this node, not its completed predecessor.
+                await self._fail_node(task_id, self._node(task_id, node.id), str(error))
             return
         if nodes and all(_text(node.status) == NodeStatus.SUCCEEDED.value for node in nodes.values()):
             self.repository.save(task.model_copy(update={"status": TaskStatus.SUCCEEDED, "updated_at": _now()}))
@@ -555,12 +567,20 @@ class TaskService:
         profile = TeamProfileView.model_validate(spec["profile"])
         workspace = dict(spec["workspace"])
         self._assert_can_write(role_id, workspace)
-        execution_path = await self._prepare_execution_path(task_id, node, role_id, workspace, spec)
+        original_acceptance = str(node.phase) == "acceptance" and role_id == "planner" and str(value.review_mode) == "original_planner"
+        original_agent_id = None
+        objective = self._node_objective(task_id, value.objective)
+        if original_acceptance:
+            execution_path, resume_session_id, original_agent_id, objective = await self._planner_acceptance_inputs(task_id, node, spec, value)
+        else:
+            execution_path = await self._prepare_execution_path(task_id, node, role_id, workspace, spec)
+            resume_session_id = (value.resume_sessions or {}).get(role_id)
         implementation_agent_id, review_context_paths = self._review_context(task_id, role_id)
         candidates = await self.directory.list_candidates()
+        if original_agent_id:
+            candidates = [candidate for candidate in candidates if candidate.instance_id == original_agent_id]
         snapshot = ProfileSnapshot.from_view(profile)
         role_options = (value.role_executions or {}).get(role_id)
-        resume_session_id = (value.resume_sessions or {}).get(role_id)
         role_policy = self.runtime.permissions.role_policy(role_id)
         continued_allowed_paths = (
             tuple(execution_path["allowed_paths"])
@@ -577,7 +597,7 @@ class TaskService:
             workspace_id=value.workspace_id,
             workspace_name=workspace["name"],
             role_id=role_id,
-            objective=self._node_objective(task_id, value.objective),
+            objective=objective,
             agents=tuple(candidates),
             allowed_paths=continued_allowed_paths
             if continued_allowed_paths is not None
@@ -585,7 +605,7 @@ class TaskService:
             read_first=tuple(value.read_first or ()),
             acceptance=tuple(value.acceptance or ()),
             requires_approval=effective_approvals,
-            task_override_agent_id=(value.role_overrides or {}).get(role_id),
+            task_override_agent_id=original_agent_id or (value.role_overrides or {}).get(role_id),
             global_profile=snapshot if profile.scope == "global" else None,
             workspace_profile=snapshot if profile.scope == "workspace" else None,
             session_purpose=_purpose(role_id),
@@ -611,6 +631,7 @@ class TaskService:
         if isinstance(outcome, ResolutionGap):
             await self._fail_node(task_id, node, outcome.reason)
             return
+        node = self._node(task_id, node.id)  # evidence metadata was persisted during preparation
         self.repository.save_node(
             node.model_copy(
                 update={
@@ -640,6 +661,50 @@ class TaskService:
             )
         )
         self._start_pump(task_id, node.id, outcome)
+
+    async def _planner_acceptance_inputs(self, task_id: str, node: TaskNodeView,
+                                         state: dict, value: CreateTaskInput):
+        nodes = list(self.repository.list_nodes(task_id))
+        planner = next((n for n in nodes if n.id == node.review_source_node_id), None)
+        developer = next((n for n in reversed(nodes) if str(n.role_id) == "developer"), None)
+        if (planner is None or str(planner.role_id) != "planner" or str(planner.phase) == "acceptance"
+                or str(planner.status) != "succeeded" or not planner.session_id
+                or developer is None or str(developer.status) != "succeeded"):
+            raise HubError("SESSION_NOT_RESUMABLE", "原规划会话验收缺少成功的规划或实施节点")
+        if planner.session_id == developer.session_id:
+            raise HubError("SESSION_NOT_RESUMABLE", "验收不能复用实施者会话")
+        repository = self.runtime.sessions.repository
+        session = await repository.get(planner.session_id)
+        if (session is None or session.agent_instance_id != planner.resolved_agent_id
+                or session.external_session_id != planner.external_session_id):
+            raise HubError("SESSION_NOT_RESUMABLE", "原规划会话身份与本轮规划节点不一致")
+        continued = {**state, "request": {**state['request'],
+                     "resumeSessions": {**(value.resume_sessions or {}), "planner": planner.session_id}}}
+        execution_path = await self._continued_execution_path(task_id, node, "planner", state['workspace'], continued, read_only=True)
+        worktree = (state.get('worktrees') or {}).get(developer.id)
+        developer_spec = await repository.get_spec(developer.session_id)
+        if (not worktree or developer_spec is None
+                or Path(worktree['repositoryPath']).resolve() != Path(state['workspace']['path']).resolve()
+                or Path(worktree['worktreePath']).resolve() != Path(developer.worktree_path or '').resolve()
+                or Path(developer_spec.worktree_path or '').resolve() != Path(worktree['worktreePath']).resolve()
+                or developer_spec.workspace_id != value.workspace_id):
+            raise HubError("PATH_NOT_ALLOWED", "实施证据来源与实际工作树或Session规格不一致")
+        packet = (state.get('acceptanceEvidence') or {}).get(node.id)
+        try:
+            if packet is None:
+                events = list(await self.events.load_task_events(task_id))
+                packet = await asyncio.to_thread(freeze_evidence, worktree, task_id, developer, planner,
+                    (state.get('nodeResults') or {}).get(developer.id, {}), events, value.objective)
+                state.setdefault('acceptanceEvidence', {})[node.id] = packet
+                self.state.put(f'task_spec:{task_id}', state)
+            else:
+                await asyncio.to_thread(verify_evidence, packet)
+        except (OSError, ValueError) as error:
+            raise HubError('VALIDATION_FAILED', '无法完整读取实现源码作为验收证据') from error
+        self.repository.save_node(node.model_copy(update={'review_evidence_id': packet['id']}))
+        review_options = (value.role_executions or {}).get('reviewer')
+        instructions = review_options.instructions if review_options and review_options.instructions else '按原方案检查实现和测试证据，说明结论与不足。'
+        return execution_path, planner.session_id, planner.resolved_agent_id, acceptance_prompt(packet, instructions)
 
     async def _prepare_execution_path(
         self,
@@ -899,10 +964,19 @@ class TaskService:
             outcome = self._outcomes.get(node_id)
             if node is None or outcome is None:
                 return
-            completion = await self.runtime.collect_result(outcome, complete_task=False)
+            completion = await self.runtime.collect_result(outcome, complete_task=False,
+                **({'keep_session_on_report': True} if str(node.phase) == 'acceptance' else {}))
             result = completion.result
             violations = tuple(completion.violation_paths or ())
             spec = self._task_spec(task_id)
+            packet = (spec.get('acceptanceEvidence') or {}).get(node_id)
+            if packet is not None:
+                try:
+                    await asyncio.to_thread(verify_evidence, packet)
+                except HubError as error:
+                    self.repository.save_node(node.model_copy(update={'review_verdict': 'insufficient_evidence'}))
+                    await self._fail_node(task_id, self._node(task_id, node_id), str(error))
+                    return
             worktree_raw = (spec.get("worktrees") or {}).get(node_id)
             if worktree_raw and self.worktrees is not None:
                 validation = await asyncio.to_thread(
@@ -927,6 +1001,8 @@ class TaskService:
                         "changed_files": changed_files,
                         "violation_paths": list(violations),
                         "completed_at": _now(),
+                        "review_verdict": ({'done': 'passed', 'failed': 'changes_requested', 'blocked': 'insufficient_evidence'}.get(str(result.status))
+                                           if str(node.phase) == 'acceptance' and not violations else None),
                     }
                 )
             )
@@ -1058,6 +1134,8 @@ class TaskService:
             raise HubError("VALIDATION_FAILED", "workflowRoles 不能为空")
         if len(set(roles)) != len(roles):
             raise HubError("VALIDATION_FAILED", "workflowRoles 暂不支持重复角色")
+        if str(value.review_mode) == 'original_planner' and 'reviewer' in roles and roles != ('planner', 'developer', 'reviewer'):
+            raise HubError('VALIDATION_FAILED', '原规划会话验收要求planner → developer → reviewer三阶段配置')
         result: list[tuple[str, tuple[str, ...]]] = []
         previous: str | None = None
         for role_id in roles:
