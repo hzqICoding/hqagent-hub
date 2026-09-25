@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
+import shutil
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -9,6 +10,11 @@ from protocol.generated.python import FileChange
 
 
 _ABSOLUTE_WINDOWS_PATH = re.compile(r"(?i)([a-z]:[\\/][^\s\"'|;&<>]+)")
+_QUOTED_WINDOWS_PATH = re.compile(r'''(?i)(["'])([a-z]:[\\/][^\r\n]*?)\1''')
+_POWERSHELL_LAUNCH = re.compile(
+    r'^\s*"([^"]+)"\s+(?:(?:-NoProfile|-NoLogo|-NonInteractive)\s+)*-(?:Command|c)\s+(.+)$',
+    re.IGNORECASE | re.DOTALL,
+)
 _WRITE_COMMAND = re.compile(
     r"(?i)(?:\bset-content\b|\badd-content\b|\bout-file\b|\bremove-item\b|"
     r"\bmove-item\b|\bcopy-item\b|\bnew-item\b|\bdel\b|\berase\b|"
@@ -98,13 +104,42 @@ class PathGuard:
             return violations
         if tool_name.lower() in {"bash", "powershell", "shell", "exec_command"}:
             command = str(tool_input.get("command") or tool_input.get("cmd") or "")
-            absolute_paths = _ABSOLUTE_WINDOWS_PATH.findall(command)
+            command = self._shell_payload(command)
+            absolute_paths = self._command_paths(command)
             violations = self.violations(absolute_paths)
             if violations:
                 return violations
             if _WRITE_COMMAND.search(command) and not absolute_paths:
                 return ["<unresolved shell write target>"]
         return []
+
+    @staticmethod
+    def _shell_payload(command: str) -> str:
+        """An installed PowerShell launcher is executable metadata, not a write target.
+
+        Only unwrap the exact launcher found on this Worker's PATH and the known
+        -Command form. Unknown executables/flags retain the conservative path check.
+        The entire script remains checked, including references to the launcher itself.
+        """
+        match = _POWERSHELL_LAUNCH.match(command)
+        if match is None:
+            return command
+        launcher = Path(match.group(1)).resolve()
+        known = {Path(found).resolve() for name in ('pwsh.exe', 'powershell.exe')
+                 if (found := shutil.which(name))}
+        return match.group(2) if launcher in known else command
+
+    @staticmethod
+    def _command_paths(command: str) -> list[str]:
+        # Preserve quoted resource paths containing spaces; don't report C:\Program
+        # for a literal C:\Program Files\... argument.
+        paths = []
+        remainder = list(command)
+        for match in _QUOTED_WINDOWS_PATH.finditer(command):
+            paths.append(match.group(2))
+            remainder[match.start():match.end()] = ' ' * (match.end() - match.start())
+        paths.extend(_ABSOLUTE_WINDOWS_PATH.findall(''.join(remainder)))
+        return list(dict.fromkeys(paths))
 
     def validate_changes(self, changes: Iterable[FileChange] | None) -> list[str]:
         if not changes:
