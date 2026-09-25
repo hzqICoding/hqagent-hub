@@ -925,6 +925,11 @@ export interface LocalAuthView {
   protocolVersion: string
 }
 
+export interface LocalConnectionCodeView {
+  code: string
+  expiresInSeconds: number
+}
+
 export interface LocalConversationView {
   id: string
   title: string

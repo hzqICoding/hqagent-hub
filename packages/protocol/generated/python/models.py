@@ -854,6 +854,11 @@ class LocalAuthView(_Base):
     protocol_version: str = Field(alias="protocolVersion")
 
 
+class LocalConnectionCodeView(_Base):
+    code: str = Field(alias="code")
+    expires_in_seconds: int = Field(alias="expiresInSeconds")
+
+
 class LocalConversationView(_Base):
     id: str = Field(alias="id")
     title: str = Field(alias="title")
