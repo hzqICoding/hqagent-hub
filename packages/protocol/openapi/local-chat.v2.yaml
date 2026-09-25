@@ -6,6 +6,21 @@ info:
     schema below describes data, see x-envelope.
 x-envelope: ../schema/envelope.json#/$defs/ApiEnvelope
 paths:
+  /internal/auth/connection-code:
+    post:
+      operationId: renewLocalConnectionCode
+      description: Local operator only. Issues a one-use browser code without restarting the Worker or invalidating existing browser sessions. Cookie authentication is not accepted. Never returns the operator bearer.
+      security:
+      - hubOperator: []
+      responses:
+        '200':
+          description: Pairing code with relative expiry, Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalConnectionCodeView
   /api/v2/workspaces/pick:
     post:
       operationId: pickLocalDirectory
@@ -504,6 +519,10 @@ paths:
                 $ref: ../schema/envelope.json#/$defs/ApiEnvelope
 components:
   securitySchemes:
+    hubOperator:
+      type: http
+      scheme: bearer
+      description: Private local operator credential read from the runtime descriptor; never sent to the browser.
     localSession:
       type: apiKey
       in: cookie

@@ -4,6 +4,15 @@
   "title": "N0 本地场景与连续对话契约",
   "description": "0.3.0 additive local API. Lifecycle uses legacy TaskStatus until explicit v2 migration.",
   "$defs": {
+    "LocalConnectionCodeView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "expiresInSeconds"],
+      "properties": {
+        "code": { "type": "string", "minLength": 6, "maxLength": 128 },
+        "expiresInSeconds": { "type": "integer", "minimum": 1 }
+      }
+    },
     "PickLocalDirectoryInput": {
       "type": "object",
       "additionalProperties": false,

@@ -17,6 +17,7 @@ from protocol.generated.python import (
     ApprovalResponseInput,
     CreateTaskInput,
     HealthView,
+    LocalConnectionCodeView,
     ResolveTeamProfileInput,
     ResumeSessionInput,
     SaveTeamProfileInput,
@@ -512,6 +513,15 @@ def create_application(
         enabled = bool(body.get("enabled", True))
         drain.set_maintenance(enabled, str(body.get("reason", "")))
         return success_response({"maintenance": maintenance.enabled, "reason": maintenance.reason})
+
+    @app.post("/internal/auth/connection-code")
+    async def renew_connection_code() -> JSONResponse:
+        # LocalBoundaryMiddleware requires the operator bearer for /internal/**.
+        # A browser cookie alone must never be enough to mint pairing codes.
+        response = success_response(LocalConnectionCodeView(
+            code=local_auth.issue_code(), expires_in_seconds=int(local_auth.code_ttl)))
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/internal/drain/state")
     async def drain_state() -> JSONResponse:
