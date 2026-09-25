@@ -135,3 +135,10 @@ codex 有自己的默认署名行为。
 ### 本批次完成回执
 
 两子代理已完成，可继续followup复用。审批线63fd942→3b73645，恢复线1a373ab→9d50b07。主代理完成182项全量测试、实际服务无活动任务备份重启、真实Node进程取消与迟到审批410验证。详细记录：[本地可靠性收尾](reviews/N0-reliability-closeout.md)。没有宣称OS断电试验或浏览器视觉验收。
+
+
+## 2026-09-25 对话交互收敛（进行中）
+
+用户指定右上角详情左侧新建任务，输入框去除New/Continue，当前任务默认继续。主代理在chat-session-state负责store及行为回归，源3841a5e；复用/root/planner_acceptance_ui（gpt-5.6-sol/medium），独立chat-session-ui负责pages/chat组件与页面测试。协议和后端不改。可用浏览器枚举为空，采用DOM组件、类型及构建验证，不宣称可视浏览器验收。
+
+本轮完成：UI3170cfc→1937277，Store3841a5e→571710c；前端176 tests通过，静态热部署不重启Worker。/root/planner_acceptance_ui已完成可复用。验收见[连续任务对话交互](reviews/N0-continuous-chat-ui.md)。
