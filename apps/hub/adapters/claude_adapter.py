@@ -48,6 +48,7 @@ from adapters.base import (
     OperationResult,
     StartResult,
 )
+from adapters.claude_catalog import query_models
 from adapters.event_mapper import EventMapper
 from adapters.events import AdapterEvent, diagnostic_raw, utc_timestamp
 from adapters.failures import failure, failure_event, parse_agent_result, version_tuple
@@ -142,6 +143,9 @@ class ClaudeAdapter(AgentAdapter):
             )
             for item in CapabilityId
         ]
+
+    async def list_models(self, agent_instance_id: str):
+        return await query_models(self.runner, agent_instance_id)
 
     async def detect(self) -> DetectResult:
         executable = self.runner.find("claude")
