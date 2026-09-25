@@ -123,7 +123,7 @@ async def test_adapter_approval_id_is_preserved_and_duplicate_event_is_idempoten
 
 @async_test
 async def test_adapter_failure_is_not_treated_as_consumed_approval() -> None:
-    coordinator, _, _, events, adapter = build_coordinator()
+    coordinator, _, repository, events, adapter = build_coordinator()
     approval = await coordinator.request(replace(request_value(), approval_id="approval_failure"))
 
     async def fail_approval(dispatch):
@@ -144,3 +144,15 @@ async def test_adapter_failure_is_not_treated_as_consumed_approval() -> None:
 
     assert error.value.code == "INTERNAL"
     assert events.events[-1].type == "task.failed"
+    stored = repository.items[approval.id]
+    assert stored.status == ApprovalStatus.APPROVED
+    assert stored.details["deliveryStatus"] == "failed"
+    assert "未确认消费" in stored.reason
+    before = len(adapter.approvals)
+    with pytest.raises(ApprovalError) as repeated:
+        await coordinator.respond(
+            approval.id,
+            ApprovalResponseInput.model_validate({"decision": "approve"}),
+        )
+    assert repeated.value.code == "INTERNAL"
+    assert len(adapter.approvals) == before

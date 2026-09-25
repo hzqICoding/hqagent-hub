@@ -195,6 +195,27 @@ class ApprovalRepository:
                 ),
             )
 
+    async def compare_and_set(
+        self,
+        approval: ApprovalView,
+        *,
+        expected_status: str,
+    ) -> bool:
+        payload = approval.model_dump_json(by_alias=True, exclude_none=True)
+        with self.database.transaction() as transaction:
+            cursor = transaction.connection.execute(
+                "UPDATE approvals SET status=?,payload_json=?,decided_at=? "
+                "WHERE approval_id=? AND status=?",
+                (
+                    str(approval.status),
+                    payload,
+                    approval.decided_at,
+                    approval.id,
+                    expected_status,
+                ),
+            )
+        return int(cursor.rowcount) == 1
+
     async def list(self, query: dict[str, Any]) -> Sequence[ApprovalView]:
         clauses: list[str] = []
         params: list[Any] = []
