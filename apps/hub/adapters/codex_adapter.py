@@ -576,17 +576,13 @@ class CodexAdapter(AgentAdapter):
     async def approve(self, dispatch: ApprovalDispatch) -> OperationResult:
         for state in self.registry.values():
             pending = state.approvals.get(dispatch.approval_id)
-            if pending is None and dispatch.external_request_id:
-                pending = next(
-                    (
-                        item
-                        for item in state.approvals.values()
-                        if item.external_request_id == dispatch.external_request_id
-                    ),
-                    None,
-                )
             if pending is None:
                 continue
+            # RPC ids are only unique inside one App Server connection (often 0).
+            # The Hub approval UUID is the cross-session identity; never fall back
+            # to a matching numeric id in a different native session.
+            if dispatch.external_request_id and dispatch.external_request_id != pending.external_request_id:
+                return failure(AdapterFailureKind.AGENT_ERROR, "审批原生编号与指定请求不一致", retryable=False)
             if pending.agent_timed_out or pending.resolved or state.connection is None:
                 return failure(
                     AdapterFailureKind.AGENT_ERROR,
@@ -605,7 +601,8 @@ class CodexAdapter(AgentAdapter):
                     raw=exc,
                 )
             pending.resolved = True
-        return None
+            return None
+        return failure(AdapterFailureKind.AGENT_ERROR, "找不到对应的 Codex 审批请求", retryable=False)
 
     @staticmethod
     async def _model_rows(connection: _CodexConnection) -> list[dict[str, Any]]:
@@ -644,12 +641,6 @@ class CodexAdapter(AgentAdapter):
         finally:
             if connection is not None:
                 await connection.force_close()
-        return failure(
-            AdapterFailureKind.AGENT_ERROR,
-            "找不到对应的 Codex 审批请求",
-            retryable=False,
-        )
-
     async def cancel(self, request: CancelRequest) -> CancelResult:
         started = time.monotonic()
         state = self.registry.get(request.session_id)
