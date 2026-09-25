@@ -9,6 +9,8 @@
     "task.failed-with-fallback.json": "TaskDetailView",
     "update.downloading.json": "UpdateStateView",
     "update.draining.json": "UpdateStateView",
-    "local-scene.analyze.json": "LocalSceneView"
+    "local-scene.analyze.json": "LocalSceneView",
+    "local-scene.original-planner.json": "LocalSceneView",
+    "task-node.planner-acceptance.json": "TaskNodeView"
   }
 }

@@ -195,6 +195,8 @@ class LocalChatService:
                 raise HubError("SESSION_NOT_RESUMABLE", "没有可继续的上一轮；请选择新一轮上下文")
             old = previous[0]
             old_scene = LocalSceneView.model_validate_json(old["scene_json"])
+            if str(scene.review_mode or "independent") != str(old_scene.review_mode or "independent"):
+                raise HubError("SESSION_NOT_RESUMABLE", "验收方式已变化，请选择新一轮上下文")
             old_roles = {r.role_id: r for r in old_scene.roles if r.enabled}
             detail = await self.ports.tasks.get_task(old["task_id"])
             sessions = await self.ports.sessions.list_sessions({"taskId": old["task_id"]})
@@ -202,6 +204,9 @@ class LocalChatService:
             for role in roles:
                 if role.role_id not in old_roles or role.model_dump() != old_roles[role.role_id].model_dump():
                     raise HubError("SESSION_NOT_RESUMABLE", "角色或模型配置已变化，请选择新一轮上下文")
+                if str(scene.review_mode) == "original_planner" and role.role_id == "reviewer":
+                    # Acceptance resolves the current planning node's exact session.
+                    continue
                 node = next((n for n in reversed(detail.nodes) if str(n.role_id) == role.role_id), None)
                 session = session_map.get(node.session_id) if node else None
                 if session is None or not session.is_valid or str(session.status) != "idle":
@@ -216,6 +221,7 @@ class LocalChatService:
             "roleExecutions": {r.role_id: {"modelId": r.model_id_, "reasoningEffort": r.reasoning_effort,
                 "instructions": r.instructions} for r in roles},
             "resumeSessions": resume_sessions or None,
+            "reviewMode": scene.review_mode or "independent",
         })
 
     @staticmethod
@@ -223,7 +229,8 @@ class LocalChatService:
         sections = []
         for node in task.nodes:
             if node.output_summary:
-                sections.append(f"### {node.role_id}\n\n{node.output_summary}")
+                label = "原规划者验收" if str(node.phase) == "acceptance" and str(node.role_id) == "planner" else str(node.role_id)
+                sections.append(f"### {label}\n\n{node.output_summary}")
             if node.error:
                 sections.append(f"{node.role_id}：{node.error}")
         if task.result and task.result.summary and not sections:
