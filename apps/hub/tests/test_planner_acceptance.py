@@ -20,13 +20,14 @@ from tests.test_task_service_live import Workspaces, build_service, settle
 
 
 class AcceptanceAdapter(FakeAdapter):
-    def __init__(self, verdict='done', *, mutate=False, oversize=False, resumable=True, pause=False):
+    def __init__(self, verdict='done', *, mutate=False, oversize=False, resumable=True, pause=False, corrupt_developer=False):
         super().__init__()
         self.verdict, self.mutate, self.oversize = verdict, mutate, oversize
         self.resumable, self.pause = resumable, pause
         self.specs, self.results = {}, {}
         self.developer_path = None
         self.service = None
+        self.corrupt_developer = corrupt_developer
 
     async def start(self, spec):
         self.started.append(spec)
@@ -56,6 +57,10 @@ class AcceptanceAdapter(FakeAdapter):
 
     async def collect_result(self, session_id):
         spec = self.specs[session_id]
+        if self.corrupt_developer and str(spec.role_id) == 'developer':
+            repository = self.service.runtime.sessions.repository
+            session = await repository.get(session_id)
+            await repository.save(session.model_copy(update={'external_session_id': 'wrong-native-session'}))
         if self.pause and str(spec.role_id) == 'developer':
             state = self.service._task_spec(spec.task_id)
             state['pauseRequested'] = True
@@ -138,6 +143,7 @@ def test_original_planner_acceptance_uses_same_session_with_real_evidence(tmp_pa
     ({'mutate': True}, '发生变化', 1), ({'oversize': True}, '大小上限', 0),
     ({'mutate': 'extra'}, '发生变化', 1),
     ({'resumable': False}, 'idle', 0),
+    ({'corrupt_developer': True}, '证据来源', 0),
 ])
 def test_bad_evidence_or_unavailable_session_blocks_without_new_reviewer(tmp_path, options, error, expected_resumes):
     async def scenario():
@@ -189,12 +195,28 @@ def test_scene_rejects_missing_planner_and_freezes_original_identity(tmp_path):
         with pytest.raises(HubError, match='planner'):
             repo.save_scene('develop', SaveLocalSceneInput(roles=roles, expectedVersion=scene.version, reviewMode='original_planner'))
         roles[0] = roles[0].model_copy(update={'enabled': True})
+        disabled = [r.model_copy(update={'enabled': False}) if r.role_id == 'reviewer' else r for r in roles]
+        with pytest.raises(HubError, match='reviewer'):
+            repo.save_scene('develop', SaveLocalSceneInput(roles=disabled, expectedVersion=scene.version, reviewMode='original_planner'))
         updated = repo.save_scene('develop', SaveLocalSceneInput(roles=roles, expectedVersion=scene.version, reviewMode='original_planner'))
         assert updated.roles[2].agent_instance_id == updated.roles[0].agent_instance_id == 'planning'
         assert str(updated.review_mode) == 'original_planner'
         assert scene.review_mode is None  # old snapshot object is not mutated
     finally:
         db.close()
+
+
+def test_original_mode_cannot_silently_omit_acceptance_stage(tmp_path):
+    async def scenario():
+        service, adapter, db, _ = setup(tmp_path)
+        try:
+            value = request().model_copy(update={'workflow_roles': ['planner', 'developer']})
+            with pytest.raises(HubError, match='三阶段'):
+                await service.create_task(value, 'missing-acceptance')
+            assert adapter.started == []
+        finally:
+            db.close()
+    asyncio.run(scenario())
 
 
 def test_review_evidence_refuses_outside_and_binary_files(tmp_path):

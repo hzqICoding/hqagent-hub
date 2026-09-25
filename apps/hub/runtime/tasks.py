@@ -683,11 +683,27 @@ class TaskService:
         execution_path = await self._continued_execution_path(task_id, node, "planner", state['workspace'], continued, read_only=True)
         worktree = (state.get('worktrees') or {}).get(developer.id)
         developer_spec = await repository.get_spec(developer.session_id)
-        if (not worktree or developer_spec is None
+        developer_session = await repository.get(developer.session_id)
+        if (not worktree or developer_spec is None or developer_session is None
+                or developer_spec.session_id != developer.session_id
+                or developer_session.id != developer.session_id
+                or str(developer_session.status) not in {'idle', 'closed'}
+                or str(developer_spec.role_id) != 'developer'
+                or str(developer_session.role_id) != 'developer'
+                or developer_spec.read_only
+                or developer_session.agent_instance_id != developer.resolved_agent_id
+                or not developer.external_session_id
+                or developer_session.external_session_id != developer.external_session_id
+                or developer_session.workspace_id != value.workspace_id
+                or developer_spec.task_id != developer_session.task_id
+                or developer_spec.node_id != developer_session.node_id
+                or (developer_session.task_id != task_id and (value.resume_sessions or {}).get('developer') != developer.session_id)
                 or Path(worktree['repositoryPath']).resolve() != Path(state['workspace']['path']).resolve()
                 or Path(worktree['worktreePath']).resolve() != Path(developer.worktree_path or '').resolve()
                 or Path(developer_spec.worktree_path or '').resolve() != Path(worktree['worktreePath']).resolve()
-                or developer_spec.workspace_id != value.workspace_id):
+                or developer_spec.workspace_id != value.workspace_id
+                or developer_spec.base_commit != worktree['baseCommit']
+                or developer_spec.branch != worktree['branch']):
             raise HubError("PATH_NOT_ALLOWED", "实施证据来源与实际工作树或Session规格不一致")
         packet = (state.get('acceptanceEvidence') or {}).get(node.id)
         try:
@@ -1134,7 +1150,7 @@ class TaskService:
             raise HubError("VALIDATION_FAILED", "workflowRoles 不能为空")
         if len(set(roles)) != len(roles):
             raise HubError("VALIDATION_FAILED", "workflowRoles 暂不支持重复角色")
-        if str(value.review_mode) == 'original_planner' and 'reviewer' in roles and roles != ('planner', 'developer', 'reviewer'):
+        if str(value.review_mode) == 'original_planner' and roles != ('planner', 'developer', 'reviewer'):
             raise HubError('VALIDATION_FAILED', '原规划会话验收要求planner → developer → reviewer三阶段配置')
         result: list[tuple[str, tuple[str, ...]]] = []
         previous: str | None = None
