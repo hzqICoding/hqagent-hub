@@ -35,3 +35,40 @@ pytest -q -p no:cacheprovider
 - 宿主审批截止本地时间11:45:04；供应商如提前终止，必须重新核对，不能伪装审批成功。
 
 下一步由用户点击“拒绝拦截”，随后核对持久化审批状态、原生工具回执、文件仍不存在且没有替代写入。批准及重复点击测试尚未开始，不计为已验收。
+
+## 拒绝测试结果：通过
+
+用户于11:19:26点击拒绝后确认“已拒绝”。实际核对：
+
+```text
+approval.status = rejected
+approval.decision = reject
+run.status = failed（拒绝阻断，预期）
+marker_exists = False
+git status --porcelain = 空
+```
+
+只有同一命令的开始/拒绝两条工具事件；拒绝回执failed=true、exitCode为空，没有替代写入命令。任务报告“人工审批拒绝已成功阻止写入操作”。
+
+## 批准测试准备与关联修复
+
+准备下一条申请时发现Codex Adapter按externalRequestId在多个Session中回退匹配；各原生连接都可能使用编号0，旧请求会错误匹配新任务。还存在找不到请求却返回成功的问题。
+
+修复为仅匹配完整Hub approvalId，再校验该请求的externalRequestId；未知、错配、已结束请求均明确失败，不发送到其他会话。回归覆盖两个连接同编号、旧请求已处理、新请求未处理、未知Hub ID及原生编号不一致。提交`a45627c`，集成`d62b762`。
+
+```text
+pytest tests/test_approval_correlation.py tests/test_approval_shell_paths.py adapters/tests security/tests -q -p no:cacheprovider
+40 passed, 1 warning in 0.19s
+pytest -q -p no:cacheprovider
+156 passed, 4 warnings in 22.13s
+```
+
+先前准备的正向Run `run_6030ebaf9a8a4e8c9f3ec065823de35a` 已通过任务取消命令撤回，未代替用户做批准/拒绝，标记文件不存在。新的正向申请：
+
+- 对话：`conversation_eef215d1e9874c9db007c6c313d033d9`，标题“人工审批测试：批准后只执行一次”。
+- Run：`run_a6286c7bafd348839f26bd0cdca8a8cc`，Task：`task_2e7c06a05211`。
+- Approval：`approval_0498d232d7fd4575a8c971e82c2c107c`。
+- 状态：waiting_approval / pending，`approval-approved.txt`尚不存在。
+- 预期内容：`APPROVAL_EXECUTED_ONCE`，以`flag=wx`独占创建，不允许覆盖。
+
+等待用户点击最新申请的“批准放行”，然后核对真实执行和重复决定的幂等性。此时尚不宣称批准测试通过。
