@@ -136,6 +136,20 @@ MIGRATIONS = (
         CREATE INDEX idx_local_runs_queue ON local_runs(conversation_id, created_at);
         """,
     ),
+    Migration(
+        5,
+        """
+        CREATE TABLE local_role_templates (
+            template_id TEXT PRIMARY KEY,
+            base_role_id TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_local_role_templates_updated ON local_role_templates(updated_at DESC);
+        """,
+    ),
 )
 
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version

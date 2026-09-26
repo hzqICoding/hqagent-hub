@@ -7,16 +7,23 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from protocol.generated.python import (
-    CreateLocalConversationInput, LocalConversationView, LocalMessageReceipt,
+    CreateLocalConversationInput, CreateLocalSceneInput, LocalConversationView, LocalMessageReceipt,
     LocalMessageView, LocalRunView, LocalSceneView, SaveLocalSceneInput,
     SendLocalMessageInput, TaskStatus, UpdateLocalConversationInput, ReviewMode,
 )
 from core.errors import HubError
+from orchestrator.catalog import BuiltinCatalog
 from storage.database import Database, Transaction
 from storage.idempotency import request_hash
+from storage.local_role_templates import BASE_ROLES, LocalRoleTemplateRepository
 
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
+BUILTIN_SCENES = {
+    "analyze": ({"analyst"}, "analyst"),
+    "plan": ({"planner"}, "planner"),
+    "develop": ({"planner", "developer", "reviewer"}, "developer"),
+}
 
 
 def now() -> str:
@@ -30,6 +37,8 @@ def uid(prefix: str) -> str:
 class LocalChatRepository:
     def __init__(self, database: Database) -> None:
         self.database = database
+        self.role_templates = LocalRoleTemplateRepository(database)
+        self._role_catalog = BuiltinCatalog.load()
         self._seed_scenes()
 
     def _seed_scenes(self) -> None:
@@ -48,6 +57,7 @@ class LocalChatRepository:
                 value = LocalSceneView.model_validate({
                     "id": scene_id, "name": name, "description": description,
                     "readOnly": read_only, "version": 1, "updatedAt": now(),
+                    "isBuiltin": True,
                     "roles": [{"roleId": role, "agentInstanceId": "", "instructions": text,
                                "enabled": enabled} for role, enabled, text in roles],
                 })
@@ -57,7 +67,9 @@ class LocalChatRepository:
     def scenes(self) -> list[LocalSceneView]:
         with self.database.locked_connection() as db:
             rows = db.execute("SELECT payload_json FROM local_scenes ORDER BY rowid").fetchall()
-        return [LocalSceneView.model_validate_json(row[0]) for row in rows]
+        values = [LocalSceneView.model_validate_json(row[0]) for row in rows]
+        return [value.model_copy(update={"is_builtin": str(value.id) in BUILTIN_SCENES})
+                for value in values]
 
     def scene(self, scene_id: str) -> LocalSceneView:
         for value in self.scenes():
@@ -65,40 +77,149 @@ class LocalChatRepository:
                 return value
         raise HubError("NOT_FOUND", "场景不存在")
 
-    def save_scene(self, scene_id: str, value: SaveLocalSceneInput) -> LocalSceneView:
-        required = {"analyze": "analyst", "plan": "planner", "develop": "developer"}
-        permitted = {"analyze": {"analyst"}, "plan": {"planner"},
-                     "develop": {"planner", "developer", "reviewer"}}
-        if scene_id not in required:
-            raise HubError("NOT_FOUND", "场景不存在")
-        ids = [role.role_id for role in value.roles]
-        enabled = {role.role_id for role in value.roles if role.enabled}
-        if len(ids) != len(set(ids)) or set(ids) != permitted[scene_id] or required[scene_id] not in enabled:
-            raise HubError("VALIDATION_FAILED", "角色集合不匹配或必需角色未启用")
-        for role in value.roles:
+    @staticmethod
+    def _scene_text(name: Any, description: Any) -> tuple[str, str]:
+        if not isinstance(name, str):
+            raise HubError("VALIDATION_FAILED", "场景名称不能为null")
+        normalized_name = name.strip()
+        if not normalized_name or len(normalized_name) > 120:
+            raise HubError("VALIDATION_FAILED", "场景名称必须为1到120字符")
+        if not isinstance(description, str):
+            raise HubError("VALIDATION_FAILED", "场景描述不能为null")
+        if len(description) > 2000:
+            raise HubError("VALIDATION_FAILED", "场景描述不能超过2000字符")
+        return normalized_name, description
+
+    def _prepare_scene(self, connection: Any, roles: list[Any], review_mode: Any,
+                       builtin_id: str | None = None) -> tuple[list[Any], ReviewMode, bool]:
+        if not 1 <= len(roles) <= 4:
+            raise HubError("VALIDATION_FAILED", "场景必须配置1到4个角色")
+        ids = [str(role.role_id) for role in roles]
+        if any(role_id not in BASE_ROLES for role_id in ids):
+            raise HubError("VALIDATION_FAILED", "场景包含未知基础角色")
+        if len(ids) != len(set(ids)):
+            raise HubError("VALIDATION_FAILED", "同一基础角色在场景中只能出现一次")
+        enabled_ids = [str(role.role_id) for role in roles if role.enabled]
+        if not enabled_ids:
+            raise HubError("VALIDATION_FAILED", "场景至少启用一个角色")
+        if builtin_id is not None:
+            permitted, required = BUILTIN_SCENES[builtin_id]
+            if set(ids) != permitted or required not in enabled_ids:
+                raise HubError("VALIDATION_FAILED", "内置场景角色集合不匹配或必需角色未启用")
+        for role in roles:
+            if not isinstance(role.instructions, str):
+                raise HubError("VALIDATION_FAILED", "角色职责不能为null")
             if len(role.instructions) > 12000:
-                raise HubError("VALIDATION_FAILED", "角色职责过长")
+                raise HubError("VALIDATION_FAILED", "角色职责不能超过12000字符")
+            if role.role_name is not None and (
+                not isinstance(role.role_name, str) or len(role.role_name) > 120
+            ):
+                raise HubError("VALIDATION_FAILED", "角色显示名不能超过120字符")
+            if role.model_id_ is not None and (
+                not isinstance(role.model_id_, str) or len(role.model_id_) > 200
+            ):
+                raise HubError("VALIDATION_FAILED", "模型标识不能超过200字符")
+            if role.reasoning_effort is not None and (
+                not isinstance(role.reasoning_effort, str) or len(role.reasoning_effort) > 30
+            ):
+                raise HubError("VALIDATION_FAILED", "推理等级不能超过30字符")
+            self.role_templates.validate_reference(connection, role)
+        try:
+            mode = ReviewMode(str(review_mode or "independent"))
+        except ValueError as error:
+            raise HubError("VALIDATION_FAILED", "验收方式不受支持") from error
+        prepared = roles
+        if mode == ReviewMode.ORIGINAL_PLANNER:
+            if enabled_ids != ["planner", "developer", "reviewer"]:
+                raise HubError(
+                    "VALIDATION_FAILED",
+                    "原规划会话验收要求启用角色顺序严格为planner、developer、reviewer",
+                )
+            planner = next(role for role in roles if str(role.role_id) == "planner")
+            if not planner.agent_instance_id:
+                raise HubError("VALIDATION_FAILED", "原规划会话验收必须配置planner Agent")
+            prepared = [
+                role.model_copy(update={
+                    "agent_instance_id": planner.agent_instance_id,
+                    "model_id_": planner.model_id_,
+                    "reasoning_effort": planner.reasoning_effort,
+                }) if str(role.role_id) == "reviewer" else role
+                for role in roles
+            ]
+        read_only = all(
+            self._role_catalog.role(role_id).permissions.filesystem == "read_only"
+            for role_id in enabled_ids
+        )
+        return prepared, mode, read_only
+
+    def create_scene(self, value: CreateLocalSceneInput, key: str) -> LocalSceneView:
+        request = value.model_dump(mode="json", by_alias=True, exclude_unset=True)
+
+        def create(tx: Transaction) -> dict:
+            if "description" in value.model_fields_set and value.description is None:
+                raise HubError("VALIDATION_FAILED", "场景描述不能为null")
+            name, description = self._scene_text(
+                value.name, "" if value.description is None else value.description
+            )
+            roles, mode, read_only = self._prepare_scene(
+                tx.connection, value.roles, value.review_mode
+            )
+            stamp = now()
+            scene = LocalSceneView.model_validate({
+                "id": uid("custom_scene"),
+                "name": name,
+                "description": description,
+                "readOnly": read_only,
+                "version": 1,
+                "roles": roles,
+                "updatedAt": stamp,
+                "reviewMode": mode,
+                "isBuiltin": False,
+            })
+            tx.connection.execute(
+                "INSERT INTO local_scenes VALUES(?,?,?)",
+                (scene.id, 1, scene.model_dump_json(by_alias=True, exclude_none=True)),
+            )
+            return scene.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+        result, _ = self.command("scene.create", key, request, create)
+        return LocalSceneView.model_validate(result)
+
+    def save_scene(self, scene_id: str, value: SaveLocalSceneInput) -> LocalSceneView:
         with self.database.transaction() as tx:
+            if value.expected_version < 1:
+                raise HubError("VALIDATION_FAILED", "expectedVersion必须大于等于1")
             row = tx.connection.execute("SELECT version,payload_json FROM local_scenes WHERE scene_id=?", (scene_id,)).fetchone()
+            if row is None:
+                raise HubError("NOT_FOUND", "场景不存在")
             if row[0] != value.expected_version:
-                raise HubError("IDEMPOTENCY_MISMATCH", "场景已更新，请刷新后再保存", detail={"currentVersion": row[0]})
+                raise HubError("IDEMPOTENCY_MISMATCH", "场景已更新，请刷新后再保存",
+                               detail={"currentVersion": row[0]})
             old = LocalSceneView.model_validate_json(row[1])
             mode = str(value.review_mode or old.review_mode or "independent")
-            roles = value.roles
-            if mode == "original_planner":
-                if scene_id != "develop":
-                    raise HubError("VALIDATION_FAILED", "原规划会话验收仅适用于开发场景")
-                planner = next(r for r in roles if r.role_id == "planner")
-                reviewer = next(r for r in roles if r.role_id == "reviewer")
-                if not planner.enabled or not reviewer.enabled or not planner.agent_instance_id:
-                    raise HubError("VALIDATION_FAILED", "原规划会话验收必须启用planner、developer、reviewer，并配置planner")
-                roles = [r.model_copy(update={"agent_instance_id": planner.agent_instance_id,
-                    "model_id_": planner.model_id_, "reasoning_effort": planner.reasoning_effort})
-                    if r.role_id == "reviewer" else r for r in roles]
-            updated = old.model_copy(update={"roles": roles, "review_mode": ReviewMode(mode),
-                                             "version": row[0] + 1, "updated_at": now()})
+            roles, review_mode, read_only = self._prepare_scene(
+                tx.connection, value.roles, mode,
+                scene_id if scene_id in BUILTIN_SCENES else None,
+            )
+            name_value = old.name
+            if "name" in value.model_fields_set:
+                name_value, _ = self._scene_text(value.name, old.description)
+            description_value = old.description
+            if "description" in value.model_fields_set:
+                _, description_value = self._scene_text(old.name, value.description)
+            stamp = now()
+            updated = old.model_copy(update={
+                "name": name_value,
+                "description": description_value,
+                "read_only": read_only,
+                "roles": roles,
+                "review_mode": review_mode,
+                "is_builtin": scene_id in BUILTIN_SCENES,
+                "version": row[0] + 1,
+                "updated_at": stamp,
+            })
             tx.connection.execute("UPDATE local_scenes SET version=?,payload_json=? WHERE scene_id=?",
-                                  (updated.version, updated.model_dump_json(by_alias=True), scene_id))
+                                  (updated.version, updated.model_dump_json(by_alias=True, exclude_none=True), scene_id))
         return updated
 
     def command(self, route: str, key: str, request: Any, operation: Callable[[Transaction], dict]) -> tuple[dict, bool]:
