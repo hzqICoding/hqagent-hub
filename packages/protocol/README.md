@@ -50,7 +50,9 @@ import "hqagent.local/protocol"   // 通过 replace 指向 packages/protocol/gen
 - `$ref: "<file>.json#/$defs/<Name>"`
 - 自定义关键字：`x-registry`（值域来自注册表）、`x-generic-params` / `x-generic`（泛型容器）、`x-extends`（继承）、`x-map-value`（Record）、`x-go`（同时生成 Go）
 
-**不支持** `oneOf` / `anyOf` / `allOf` / 条件校验。需要时先改 Schema 设计，或扩生成器——不要绕过它手写类型。
+支持 `oneOf` 的 TS 联合与 Python `RootModel`、显式 `null`。新远程对象可用 `x-wire-strict` 启用边界约束；旧DTO保持原语义。Go的 `x-go` 闭包不启用联合。
+
+**不支持** `anyOf` / `allOf` / 条件校验；跨消息关系由契约语义和消费方验证。不要绕过生成器手写DTO。
 
 ## 命名约定
 
@@ -67,3 +69,8 @@ FZ-1 冻结时三端均实测通过，不是"应该能用"：
 | TypeScript | `tsc --noEmit`（strict） | 0 |
 | Python | pydantic v2 对 7 个 Fixture `model_validate` + 按别名 round-trip | 7/7 |
 | Go | `go build ./...` + `go vet ./...` | 0 / 0 |
+
+
+## R1远程通信（0.6.0）
+
+结构：`schema/remote.json`；HTTP：`openapi/remote-hub.v2.yaml`；连接帧、owner隔离、控制结果与事务规则：[R1-contract.md](remote/R1-contract.md)。D40/D41沿用现有执行内核，不引入Attempt或新TaskStatus，不改变本地接口。

@@ -5,7 +5,7 @@
 
 ## 1. 包络
 
-所有事件共用一个包络 `HubEvent`（见 `schema/envelope.json`）。不存在第二种事件类型。
+本地Hub事件共用包络 `HubEvent`（见 `schema/envelope.json`），下表仍是原本地事件定义。R1新增的远程传输帧由 `schema/remote.json` 定义，语义见 [R1远程契约](../remote/R1-contract.md)；它是传输投影，不替换本表、不扩展Adapter的既有事件映射。
 
 ```jsonc
 {

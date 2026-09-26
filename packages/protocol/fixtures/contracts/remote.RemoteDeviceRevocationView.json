@@ -1,0 +1,6 @@
+{
+  "workerId": "worker_demo",
+  "revokedAt": "2026-09-26T12:00:00Z",
+  "status": "revoked",
+  "executionMayStillBeRunning": true
+}

@@ -1,0 +1,7 @@
+{
+  "workspaceId": "workspace_demo",
+  "name": "Example",
+  "displayPath": "E:/tmp/remote-demo",
+  "vcs": "git",
+  "canWrite": false
+}

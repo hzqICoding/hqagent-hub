@@ -1,0 +1,19 @@
+{
+  "type": "worker.event",
+  "serverCursor": "opaque_owner_cursor_example_001",
+  "recordedAt": "2026-09-26T12:00:00Z",
+  "payload": {
+    "type": "command.accepted",
+    "protocolVersion": "0.6.0",
+    "eventId": "event_demo",
+    "workerId": "worker_demo",
+    "workerStoreId": "store_demo",
+    "workerEpoch": "boot_demo",
+    "seq": 1,
+    "occurredAt": "2026-09-26T12:00:00Z",
+    "commandId": "command_demo",
+    "conversationId": "conversation_demo",
+    "receivedAt": "2026-09-26T12:00:00Z",
+    "status": "accepted"
+  }
+}

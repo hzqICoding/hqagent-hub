@@ -1,0 +1,8 @@
+{
+  "outcome": "rejected",
+  "executionMayStillBeRunning": true,
+  "orphanProcessIds": [],
+  "reason": "Worker confirmed at node boundary",
+  "evidence": "adapter_refused",
+  "observedAt": "2026-09-26T12:00:00Z"
+}

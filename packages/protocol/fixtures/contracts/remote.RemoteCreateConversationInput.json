@@ -1,0 +1,8 @@
+{
+  "targetWorkerId": "worker_demo",
+  "title": "Remote test conversation",
+  "workspaceId": "workspace_demo",
+  "sceneId": "analyze",
+  "sceneVersion": 1,
+  "workerStoreId": "store_demo"
+}

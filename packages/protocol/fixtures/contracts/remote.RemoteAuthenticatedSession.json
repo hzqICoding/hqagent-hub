@@ -1,0 +1,9 @@
+{
+  "authenticated": true,
+  "account": {
+    "loginName": "demo-user",
+    "displayName": "Demo"
+  },
+  "expiresAt": "2026-09-26T12:05:00Z",
+  "csrfToken": "csrf_example_not_a_real_token_000000000000"
+}
