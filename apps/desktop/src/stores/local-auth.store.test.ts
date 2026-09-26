@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useLocalAuthStore } from './local-auth.store'
+import { PROTOCOL_VERSION } from '@hqagent/protocol'
 import { setLocalChatGatewayMode } from '@/shared/api'
 
 describe('LocalAuthStore', () => {
@@ -14,7 +15,7 @@ describe('LocalAuthStore', () => {
     const isAuthed = await store.checkAuthStatus()
     expect(isAuthed).toBe(true)
     expect(store.authenticated).toBe(true)
-    expect(store.protocolVersion).toBe('0.5.0')
+    expect(store.protocolVersion).toBe(PROTOCOL_VERSION)
     expect(store.authError).toBeNull()
   })
 

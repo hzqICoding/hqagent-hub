@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { MockLocalChatGateway } from './mock-local-chat-gateway'
 import { HubApiError } from './local-hub-gateway'
+import { PROTOCOL_VERSION } from '@hqagent/protocol'
 
 describe('MockLocalChatGateway', () => {
   let gateway: MockLocalChatGateway
@@ -12,7 +13,7 @@ describe('MockLocalChatGateway', () => {
   it('provides default authenticated status and allows login/logout', async () => {
     let auth = await gateway.getLocalAuthStatus()
     expect(auth.authenticated).toBe(true)
-    expect(auth.protocolVersion).toBe('0.5.0')
+    expect(auth.protocolVersion).toBe(PROTOCOL_VERSION)
 
     await gateway.logoutLocalSession()
     auth = await gateway.getLocalAuthStatus()

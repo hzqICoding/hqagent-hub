@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { PROTOCOL_VERSION } from '@hqagent/protocol'
 import { useChatStore } from './chat.store'
 import { useScenesStore } from './scenes.store'
 import {
@@ -12,7 +13,7 @@ import {
 
 export const useLocalAuthStore = defineStore('localAuth', () => {
   const authenticated = ref(false)
-  const protocolVersion = ref('0.5.0')
+  const protocolVersion = ref<string>(PROTOCOL_VERSION)
   const isChecking = ref(false)
   const isConnecting = ref(false)
   const authError = ref<string | null>(null)
