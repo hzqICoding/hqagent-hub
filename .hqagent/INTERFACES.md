@@ -118,3 +118,13 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 | --- | --- | --- | --- |
 | 2026-09-05 | 0.1.0 | FZ-1 初次冻结 | `f56c891` |
 | 2026-09-05 | 0.1.0 | FZ-1 重新裁切：补齐 W1/W5 规格要求的 EVENT_CURSOR_EXPIRED、FEATURE_UNAVAILABLE、`instanceId`、`FeatureAvailability`、`waitPids`/`backupCompleted`、Session `status`。**在任何工作包开工之前完成**，因此不构成破坏性变更 | `a3e1047` |
+
+
+## R1-P0 远程协议预检：未冻结（2026-09-26）
+
+- 状态：needs-decision；协议仍为0.5.0；冻结SHA：无。
+- 设计基线855d871，代码基线6f38217。
+- 草案长期Task/独立Attempt与当前LocalRun→Task实现不同；取消recovery_required与FZ-2、现有TaskStatus及实际取消实现不同，需明确映射。
+- 按本轮“文档与代码不符即指出并停下”要求记录证据，未修改业务代码或生成未经裁决的0.6.0类型。
+- 证据、两项待决问题及基线真实输出：[R1-P0回执](handoffs/R1-P0-remote-protocol.md)。
+- **本记录不解锁P1服务端、P2 Worker连接、P3 Web B阶段的远程协议实施门。**
