@@ -1,11 +1,85 @@
 openapi: 3.1.0
 info:
   title: HQAgent N0 Local Chat
-  version: 0.4.0
+  version: 0.5.0
   description: N0 additive contract. Responses use the existing ApiEnvelope; response
     schema below describes data, see x-envelope.
 x-envelope: ../schema/envelope.json#/$defs/ApiEnvelope
 paths:
+  /api/v2/role-templates/{templateId}:
+    put:
+      operationId: updateLocalRoleTemplate
+      description: Update a role template name and instructions; base role is immutable. expectedVersion mismatch is CONFLICT. Existing scene copies and run snapshots are unchanged. Writes require Idempotency-Key and do not execute a model.
+      security:
+      - localSession: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: templateId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-chat.json#/$defs/UpdateLocalRoleTemplateInput
+      responses:
+        '200':
+          description: Saved role template; identical idempotency replay returns the original receipt.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalRoleTemplateView
+  /api/v2/role-templates:
+    get:
+      operationId: listLocalRoleTemplates
+      security:
+      - localSession: []
+      responses:
+        '200':
+          description: Persisted custom role templates.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            type: array
+            items:
+              $ref: ../schema/local-chat.json#/$defs/LocalRoleTemplateView
+    post:
+      operationId: createLocalRoleTemplate
+      description: Create a reusable role template from one builtin base role. The template does not define or elevate permissions. Writes require Idempotency-Key and do not execute a model.
+      security:
+      - localSession: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-chat.json#/$defs/CreateLocalRoleTemplateInput
+      responses:
+        '201':
+          description: Saved role template; identical idempotency replay returns the original receipt.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalRoleTemplateView
   /internal/auth/connection-code:
     post:
       operationId: renewLocalConnectionCode
@@ -93,6 +167,32 @@ paths:
       security:
       - localSession: []
   /api/v2/scenes:
+    post:
+      operationId: createLocalScene
+      description: Creates a custom scene with server-generated ID and derived readOnly. One to four unique builtin execution roles, at least one enabled, in execution order. original_planner requires enabled planner then developer then reviewer and inherits planner runtime/model/effort for acceptance. Template references are copied provenance; template changes never silently mutate scenes or frozen runs. Requires a matching template baseRoleId and a positive source revision no newer than the saved template.
+      security:
+      - localSession: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-chat.json#/$defs/CreateLocalSceneInput
+      responses:
+        '201':
+          description: Created custom scene; repeated identical key returns original receipt.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalSceneView
     get:
       operationId: listLocalScenes
       responses:
