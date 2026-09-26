@@ -1,6 +1,5 @@
 {
   "type": "capability.changed",
-  "protocolVersion": "0.6.0",
   "eventId": "event_demo",
   "workerId": "worker_demo",
   "workerStoreId": "store_demo",
@@ -36,5 +35,6 @@
       "shell"
     ],
     "workerStoreId": "store_demo"
-  }
+  },
+  "wireRevision": 1
 }

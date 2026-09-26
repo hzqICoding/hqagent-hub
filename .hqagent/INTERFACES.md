@@ -133,3 +133,15 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 - 基线未改业务代码和旧断言：Hub199 passed；前端typecheck通过、201 passed；协议专用120 passed；validate -CheckGenerated通过。
 - 完整类型/错误清单、取舍及P2业务接线项：[R1-P0回执](handoffs/R1-P0-remote-protocol.md)。这是协议门，不是远程功能已实现或已部署的声明。
 - 历史预检`302ae44`的Q1/Q2已由主代理D40/D41关闭；旧needs-decision状态不再有效。
+
+## FZ-R1.1 / 0.6.1 — 已冻结（2026-09-26）
+
+**FZ-R1.1 / 0.6.1 已冻结。P2 与 P3-B 的本机配对界面以此为准。**
+
+- 契约冻结 SHA：`7bfbe953df9cbdfca74cee81e9db6632db69f8d2`；基线 `872a909`，分支 `feat/remote-protocol`，未合并 integration/phase1。
+- D42：27 个 Worker 帧使用整数 wireRevision=1。仅 hello 的 protocolVersion 保留为 semver 诊断信息；helloAck 回显修订，helloRejected 带 supportedWireRevisions。修订内结构冻结，升级窗口支持 N 与 N-1，包版本不决定线路兼容性。
+- P1 修改握手、帧派发与回执构造的版本判断。浏览器 remote-hub.v2.yaml 未修改。
+- D43：本机 v1 新增连接查询、配对、取消配对、解绑四个操作；7 个新类型；事件 remote.link.changed；LocalConversationView.authority 可选、缺省 local。沿用现有 v1 鉴权，视图与事件不暴露凭据。解绑不把已有 remote 对话降级为 local，本机只读。
+- 继续遵守 D40/D41：远程契约映射现有执行内核；vNext 技术方案 §4、§5.1 为目标模型，本轮不迁移。
+- 验证：258 类型 / 109 Fixture；协议 187 passed；Hub 199 passed；前端 typecheck 通过，41 文件 / 201 passed。
+- [FZ-R1.1 回执](handoffs/R1-FZ11-remote-protocol.md) 记录输出来源、下游接线与待确认项。本次是协议冻结，不表示远程功能已实现或部署。

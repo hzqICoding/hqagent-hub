@@ -364,3 +364,22 @@ Phase 1.1 的三 Agent 目标后移**。另两个选项存档备查：
 - 浏览器分开展示传输状态、控制结果、执行状态。unconfirmed不能发送伪造command.completed；command.completed也不能一概显示成开发成功。
 
 **影响**：保留FZ-2；远程通信层提供显式映射，不替代执行内核。具体字段与命令终态矩阵见packages/protocol/remote/R1-contract.md。
+
+
+### D42 远程线路修订与协议包版本分离（主代理裁决，2026-09-26）
+
+**背景**：原27个Worker↔Server帧把protocolVersion固定为0.6.0，会使异步部署的服务端/Worker因无关包升级互拒。
+
+**决定**：所有这些帧使用整数wireRevision，本轮const 1。仅hello另带semver格式的protocolVersion用于诊断，不能参与版本协商。helloAck回显接受的修订；helloRejected带supportedWireRevisions，尤其REMOTE_PROTOCOL_UNSUPPORTED时不得省略。修订内帧结构冻结，严格校验下加可选字段也要开新修订；升级窗口服务端同时支持N与N-1。包版本升级与线路修订无关。浏览器remote-hub.v2 HTTP API不改。
+
+**影响**：P1调整Worker握手/帧派发/回执构造与版本测试；P2按线路修订序列化，而不是包版本相等判断。0.6.1中的初始线路为1。
+
+### D43 本机远程连接管理与对话authority（主代理裁决，2026-09-26）
+
+**背景**：只有远程协议不足以让本机用户发起配对、看短码与连接状态、取消或解绑；P2不能自建第二套路由事实源。
+
+**决定**：增量冻结GET /api/v1/remote/link、POST/DELETE /api/v1/remote/pairing、POST /api/v1/remote/unlink及RemoteLinkView。沿用v1现有鉴权，状态unpaired/pairing/paired/revoked/frozen，任何视图/事件均不得含设备secret、Authorization或Hub Token。serverOrigin只接受HTTPS，开发调试可允许127.0.0.1/localhost HTTP。本机WS增加remote.link.changed，payload为同一RemoteLinkView。
+
+解绑删除本机凭据并断开，尽力通知服务端撤销，完成状态unpaired；不能冒称服务端必已撤销，不扩远程HTTP或给设备Bearer授予owner权限。既有remote对话不回退local，本机只读。LocalConversationView追加可选authority=local/remote，缺省视为local以兼容旧对象。后续如何接续解绑对话另行设计。
+
+**影响**：P2实现连接状态/凭据生命周期和authority写拦截，P3-B本机配对界面消费此契约。具体状态字段、并发与通知边界见R1-contract.md§12。

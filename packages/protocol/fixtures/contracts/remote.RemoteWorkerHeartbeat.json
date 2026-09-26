@@ -1,10 +1,10 @@
 {
   "type": "worker.heartbeat",
-  "protocolVersion": "0.6.0",
   "connectionId": "connection_demo",
   "workerId": "worker_demo",
   "workerStoreId": "store_demo",
   "workerEpoch": "boot_demo",
   "sentAt": "2026-09-26T12:00:00Z",
-  "lastServerAck": null
+  "lastServerAck": null,
+  "wireRevision": 1
 }

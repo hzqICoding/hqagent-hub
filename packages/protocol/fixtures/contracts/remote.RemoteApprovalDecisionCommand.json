@@ -1,6 +1,5 @@
 {
   "type": "approval.decide",
-  "protocolVersion": "0.6.0",
   "commandId": "command_demo",
   "conversationId": "conversation_demo",
   "targetWorkerId": "worker_demo",
@@ -11,5 +10,6 @@
     "runId": "run_demo",
     "approvalId": "approval_demo",
     "decision": "approve"
-  }
+  },
+  "wireRevision": 1
 }
