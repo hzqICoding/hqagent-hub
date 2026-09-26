@@ -1,0 +1,247 @@
+# R1-P3B 交付回执：手机 H5 远程网关与远程页面
+
+- 分支：`feat/remote-web-gateway`
+- 工作区：`E:\OtherPro\HQAgent-Hub-worktrees\remote-web-gateway`
+- 基线：`typecheck` 通过，`test` 207 passed
+- **验证声明**：**未连接真实服务端验证**（全部验收与交互验证基于遵循协议冻结标准的 `MockRemoteGateway` 及契约 Fixtures）
+
+---
+
+## 1. 变更文件清单
+
+本次改动严格限定在 `apps/desktop/**` 与 `.hqagent/handoffs/**`，未改动 `packages/protocol/**`、`apps/hub/**`、`apps/server/**` 或任何根目录配置文件。所有协议 DTO 均直接导入自 `@hqagent/protocol` 生成物。
+
+### 新增文件
+1. `apps/desktop/src/shared/config/runtime-mode.ts`：运行模式判定模块 (`AppRuntimeMode`)
+2. `apps/desktop/src/shared/i18n/remote-errors.ts`：全部 `REMOTE_*` 错误码与 `CONVERSATION_AUTHORITY_MISMATCH` 中文翻译映射
+3. `apps/desktop/src/shared/api/remote-gateway.interface.ts`：`IRemoteGateway` 强类型接口定义
+4. `apps/desktop/src/shared/api/remote-gateway.ts`：面向云端 Hub Server `/api/v2/*` 的真实网关实现（Cookie 认证、内存 CSRF 管理、`Idempotency-Key`、429 `Retry-After` 处理）
+5. `apps/desktop/src/shared/api/mock-remote-gateway.ts`：基于协议契约 Fixtures 的 Mock 远程网关（支持速率限制、配对异常、离线 Worker、控制结果、游标过期、高风险审批与指令撤回等状态模拟）
+6. `apps/desktop/src/shared/api/remote-provider.ts`：网关提供器（根据环境变量或测试注入切换实现）
+7. `apps/desktop/src/stores/remote-auth.store.ts`：无持久化纯内存认证状态管理（登录限流倒计时、会话探活、登出状态擦除）
+8. `apps/desktop/src/stores/remote-chat.store.ts`：远程通信主工作台状态管理（设备、会话、消息、运行、三层状态分离、游标事件轮询、快照重建、高风险动作过滤）
+9. `apps/desktop/src/pages/remote/RemoteLoginPage.vue`：手机端远程登录页
+10. `apps/desktop/src/pages/remote/RemotePairingPage.vue`：手机端 8 位短码配对确认页
+11. `apps/desktop/src/pages/remote/RemoteDevicesPage.vue`：已配对设备管理与撤销确认页
+12. `apps/desktop/src/pages/remote/RemoteChatPage.vue`：手机端远程聊天工作台（三层状态展示、抽屉导航、离线排队横幅、指令撤回与审批）
+13. 测试套件（5 个测试文件，22 个新增测试）：
+    - `apps/desktop/src/pages/remote/RemoteGateway.test.ts`
+    - `apps/desktop/src/pages/remote/RemoteAuth.test.ts`
+    - `apps/desktop/src/pages/remote/RemotePairing.test.ts`
+    - `apps/desktop/src/pages/remote/RemoteChat.test.ts`
+    - `apps/desktop/src/pages/remote/RemoteModeIsolation.test.ts`
+14. 页面截图：
+    - `.hqagent/handoffs/screenshots/r1-p3b/remote-login.png`
+    - `.hqagent/handoffs/screenshots/r1-p3b/remote-pair.png`
+    - `.hqagent/handoffs/screenshots/r1-p3b/remote-devices.png`
+    - `.hqagent/handoffs/screenshots/r1-p3b/remote-chat.png`
+
+### 修改文件
+1. `apps/desktop/src/app/router/index.ts`：增加 `/remote/login`、`/remote/pair`、`/remote/devices`、`/remote/chat` 路由与路由守卫（未登录自动重定向到登录页并保留重定向目标）
+2. `apps/desktop/src/shared/api/index.ts`：导出远程网关类与接口
+3. `apps/desktop/src/shared/i18n/index.ts`：集成远程错误文案映射
+4. `apps/desktop/src/env.d.ts`：增加 `VITE_GATEWAY_MODE` 与 `VITE_REMOTE_MOCK` 类型声明
+
+---
+
+## 2. 运行模式判定机制
+
+在 `apps/desktop/src/shared/config/runtime-mode.ts` 中实现判定逻辑，在应用启动阶段确定一次：
+
+```ts
+export function getRuntimeMode(): 'local' | 'remote' {
+  if (runtimeModeOverride) return runtimeModeOverride
+  if (import.meta.env.VITE_GATEWAY_MODE === 'remote') return 'remote'
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/remote')) return 'remote'
+  return 'local'
+}
+```
+
+- **本机桌面模式 (`local`)**：当处于 Tauri 桌面壳或默认访问路径时，运行模式为 `local`。保持原有 `LocalHubGateway`、`LocalChatGateway` 行为不变，所有既有单测 100% 保持原有行为通过。
+- **远程 H5 模式 (`remote`)**：当环境变量 `VITE_GATEWAY_MODE === 'remote'` 或浏览器 URL 路径以 `/remote` 开头时，启用远程模式。
+- **凭据零泄露原则**：所有认证凭据由云端 Hub Server 下发的 HttpOnly Cookie (`__Host-hqremote`) 维护，CSRF Token 与用户基础信息仅存在于 Pinia 内存；`localStorage`、`sessionStorage`、`IndexedDB` 中**零凭据、零 Token、零密码**。
+
+---
+
+## 3. 三层状态分离架构与组件映射
+
+按照协议契约强制要求，三层状态严格解耦独立展示：
+
+| 层级 | 语义来源 | 渲染组件与位置 | 状态判定与展示规则 |
+| --- | --- | --- | --- |
+| **1. 传输状态 (Transport)** | Hub Server 路由感知与排队收据 (`RemoteQueuedReceipt.deliveryState` / `workerOnline`) | `RemoteChatPage.vue` 顶部 Header 状态徽章、顶部离线警告横幅、以及每条消息右下角投递标识 | • 当 `!workerOnline` 或 `deliveryState === 'queued_offline'` 时，明确展示为「**电脑离线，指令已排队**」。<br>• **绝不显示为「执行中」**。<br>• 当 `deliveryState === 'sent'` 时展示为「已投递至电脑」。 |
+| **2. 控制结果 (Control Result)** | 指令执行确认状态 (`RemoteControlOutcomeView`) | `RemoteChatPage.vue` 顶部三层状态面板中的「控制结果」模块 | • `confirmed`:「已确认生效」<br>• `rejected`:「已被拒绝 (执行可能仍在进行)」<br>• `unconfirmed`:「未能确认 (需回电脑核对)」 |
+| **3. 执行状态 (Execution)** | 电脑端 Worker 实际执行进度 (`TaskStatus`) | `RemoteChatPage.vue` 顶部三层状态面板中的「执行状态」模块（通过 `HqBadge` 原样展示） | • `running`:「Worker 执行中」<br>• `paused`:「Worker 已暂停」<br>• `completed`:「Worker 执行完成」<br>• `failed`:「Worker 失败」<br>• `accepted` / `command.completed` 仅作为控制回执，**绝不代表业务执行成功**。 |
+
+---
+
+## 4. 关键功能实现细节
+
+### 4.1 认证与安全凭据
+- **统一登录提示**：登录失败统一报错「用户名或口令错误」，防用户名枚举攻击。
+- **限流重试倒计时**：拦截 HTTP 429 与 `REMOTE_RATE_LIMITED` 错误，解析 `Retry-After` 响应头，UI 实时展示「请求被限流，请等待 N 秒后重试」倒计时，倒计时期间禁用提交按钮。
+- **CSRF 自动注入**：写请求（POST / PATCH / DELETE）自动附带 `X-CSRF-Token` 头与 `Idempotency-Key`。
+- **状态清空**：登出操作彻底销毁内存中用户信息、CSRF Token、设备列表与对话消息。
+
+### 4.2 手机端配对流程
+- 自动格式化输入为 8 位大写英数字短码（`^[A-Z0-9]{8}$`）。
+- 两步确认流程：输入 8 位短码后，先调用 `/preview` 获取被配对电脑的设备名称、平台、Worker ID 与过期时间；用户二次确认后再调用 `/confirm` 绑定。
+- 完整覆盖契约要求的三种错误码反馈：
+  - `REMOTE_PAIRING_EXPIRED`:「配对短码已过期，请在电脑端重新生成」
+  - `REMOTE_PAIRING_CONFLICT`:「该短码已被使用或设备已被绑定」
+  - `REMOTE_PAIRING_INVALID`:「配对短码无效，请检查后重新输入」
+
+### 4.3 设备管理与撤销二次确认
+- 展示设备列表与当前电脑在线/离线状态。
+- 撤销设备操作提供二次确认弹窗，并明确标注风险提示：「解除绑定后，正在执行的任务可能仍会在电脑端继续运行 (`executionMayStillBeRunning: true`)」。
+
+### 4.4 事件增量拉取与游标过期快照回退
+- 轮询 `/api/v2/events` 使用服务端下发的不透明 `serverCursor` 原样保存并回传，不解析内部格式，不以 Worker 的 seq 替代。
+- 当服务端返回 `REMOTE_CURSOR_EXPIRED` 或 `REMOTE_CURSOR_INVALID` 时，自动降级调用 `/api/v2/conversations/{id}/snapshot` 拉取完整快照全量重建前端视图。
+
+### 4.5 队列指令撤回
+- 仅针对 `deliveryState === 'queued_offline'` 或 `queued_online` 的未投递指令显示撤回入口。
+- 精准处理撤回异常：
+  - `REMOTE_WITHDRAWAL_TOO_LATE`:「指令已被投递给电脑端，无法撤回」
+  - `REMOTE_WITHDRAWAL_UNCONFIRMED`:「撤回状态未能确认，请回到电脑端核对」
+
+### 4.6 审批分级限制
+- 针对高风险危险动作（`git_push`、`deploy`、`delete`、`db_migrate` 或服务端下发 `remoteApprovalAllowed: false`）：
+  - 严格隐藏手机端批准按钮，展示警告文案「高风险操作，请回到电脑上处理」。
+  - 允许在手机端执行拒绝（Reject）操作。
+  - 若尝试调用审批被拒，准确提示 `REMOTE_APPROVAL_FORBIDDEN`:「当前操作需要更高的权限或需在电脑端确认」。
+
+---
+
+## 5. 页面截图（375×812 移动端视口）
+
+四张关键页面已在 375×812 移动端视口下完成捕获并保存在 `.hqagent/handoffs/screenshots/r1-p3b/`：
+
+### 1. 登录页 (`remote-login.png`)
+![Remote Login](screenshots/r1-p3b/remote-login.png)
+
+### 2. 配对确认页 (`remote-pair.png`)
+![Remote Pairing](screenshots/r1-p3b/remote-pair.png)
+
+### 3. 设备列表页 (`remote-devices.png`)
+![Remote Devices](screenshots/r1-p3b/remote-devices.png)
+
+### 4. 远程对话工作台与三层状态 (`remote-chat.png`)
+![Remote Chat](screenshots/r1-p3b/remote-chat.png)
+
+---
+
+## 6. 明确不做项与能力边界
+
+按任务书要求，本轮明确不做以下项：
+1. **电脑端配对面板**：发起配对与显示 8 位短码依赖本机接口 0.6.1，等待后续协议冻结。
+2. **附件上传**：等待远程文件传输协议规范。
+3. **飞书对接**：不属于 H5 远程网关范围。
+4. **原生会话支持**：仅支持标准远程对话。
+5. **小程序签名审批**：UI 上未留任何多余入口或占位按钮。
+
+---
+
+## 7. 需要服务端 / 协议配合的问题
+
+1. **CSRF Token 获取与刷新时机**：契约中登录接口会下发 `csrfToken`，但对于已有 Cookie 免密恢复会话的场景 (`/api/v2/session`)，建议明确 `RemoteBrowserSessionView` 中是否常驻回传最新 `csrfToken`，以便前端在页面刷新后更新请求头。
+2. **离线指令撤回竞争时序**：当手机端触发撤回的同时电脑上线，服务端返回 `REMOTE_WITHDRAWAL_UNCONFIRMED` 时，建议后续增量事件补充该 Command 的最终判定事件 (`command.withdrawn` 或 `command.dispatched`)，让前端可自动抹平未确认状态。
+
+---
+
+## 8. 真实命令验证输出
+
+### 8.1 单元测试（229 tests passed，原有 207 个基线测试 100% 保持通过）
+
+```text
+$ pnpm --filter @hqagent/desktop test
+
+ RUN  v2.1.9 E:/OtherPro/HQAgent-Hub-worktrees/remote-web-gateway/apps/desktop
+
+ ✓ src/shared/api/local-chat-gateway.test.ts (8 tests)
+ ✓ src/shared/api/local-hub-gateway.test.ts (8 tests)
+ ✓ src/pages/remote/RemoteGateway.test.ts (4 tests)
+ ✓ src/shared/api/mock-local-chat-gateway.test.ts (16 tests)
+ ✓ src/pages/chat/components/ProcessActivityGroup.test.ts (5 tests)
+ ✓ src/stores/chat.polling.test.ts (6 tests)
+ ✓ src/stores/chat.reliability.test.ts (7 tests)
+ ✓ src/stores/chat.context.test.ts (7 tests)
+ ✓ src/stores/chat.store.test.ts (9 tests)
+ ✓ src/stores/task.store.test.ts (7 tests)
+ ✓ src/stores/scenes.store.test.ts (6 tests)
+ ✓ src/shared/api/mock-gateway.test.ts (10 tests)
+ ✓ src/stores/app.store.test.ts (8 tests)
+ ✓ src/pages/remote/RemoteAuth.test.ts (4 tests)
+ ✓ src/shared/ui/HqMarkdown.test.ts (6 tests)
+ ✓ src/pages/chat/components/ChatSidebar.test.ts (3 tests)
+ ✓ src/pages/chat/components/ChatComposer.test.ts (7 tests)
+ ✓ src/pages/chat/components/RunSnapshotDrawer.test.ts (1 test)
+ ✓ src/pages/remote/RemotePairing.test.ts (4 tests)
+ ✓ src/pages/remote/RemoteChat.test.ts (7 tests)
+ ✓ src/pages/tasks/TaskDetailPage.test.ts (5 tests)
+ ✓ src/stores/approval.store.test.ts (4 tests)
+ ✓ src/pages/remote/RemoteModeIsolation.test.ts (3 tests)
+ ✓ src/pages/scenes/ScenesPage.test.ts (9 tests)
+ ✓ src/shared/theme/theme.engine.test.ts (5 tests)
+ ✓ src/pages/chat/components/ChatMessageItem.test.ts (3 tests)
+ ✓ src/pages/chat/ChatMobile.test.ts (6 tests)
+ ✓ src/pages/chat/ChatPage.test.ts (7 tests)
+ ✓ src/stores/chat.action-scope.test.ts (2 tests)
+ ✓ src/shared/api/local-chat-timeout.test.ts (3 tests)
+ ✓ src/pages/approvals/ApprovalsPage.test.ts (3 tests)
+ ✓ src/stores/workspace.store.test.ts (3 tests)
+ ✓ src/pages/tasks/TasksPage.test.ts (3 tests)
+ ✓ src/app/layouts/AppLayout.test.ts (3 tests)
+ ✓ src/pages/sessions/SessionsPage.test.ts (3 tests)
+ ✓ src/pages/templates/TemplatesPage.test.ts (3 tests)
+ ✓ src/stores/team.store.test.ts (5 tests)
+ ✓ src/pages/agents/AgentsPage.test.ts (3 tests)
+ ✓ src/stores/agent.store.test.ts (3 tests)
+ ✓ src/pages/auth/ConnectPage.test.ts (2 tests)
+ ✓ src/pages/onboarding/OnboardingPage.test.ts (2 tests)
+ ✓ src/pages/workspaces/WorkspacesPage.test.ts (3 tests)
+ ✓ src/pages/teams/TeamsPage.test.ts (3 tests)
+ ✓ src/stores/local-auth.store.test.ts (2 tests)
+ ✓ src/pages/overview/OverviewPage.test.ts (2 tests)
+ ✓ src/shared/ui/HqButton.test.ts (4 tests)
+ ✓ src/stores/session.store.test.ts (2 tests)
+
+ Test Files  47 passed (47)
+      Tests  229 passed (229)
+   Duration  8.46s
+```
+
+### 8.2 类型检查（Typecheck 0 错误）
+
+```text
+$ pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+# 检查通过，退出码 0
+```
+
+### 8.3 代码风格检查（Lint 0 错误 0 警告）
+
+```text
+$ pnpm --filter @hqagent/desktop lint
+$ eslint src
+# 检查通过，退出码 0
+```
+
+### 8.4 生产构建（Build 成功）
+
+```text
+$ pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1732 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                                   2.56 kB │ gzip:  1.04 kB
+dist/assets/RemoteChatPage-C01ulRdE.js                           17.34 kB │ gzip:  5.82 kB
+dist/assets/RemotePairingPage-D-kf0ZGD.js                         4.80 kB │ gzip:  2.25 kB
+dist/assets/RemoteLoginPage-rdwT2_br.js                           3.73 kB │ gzip:  1.78 kB
+dist/assets/RemoteDevicesPage-Fhm4QBd0.js                         5.18 kB │ gzip:  2.53 kB
+dist/assets/remote-chat.store-CPpQMp5m.js                         5.19 kB │ gzip:  2.22 kB
+✓ built in 6.82s
+```

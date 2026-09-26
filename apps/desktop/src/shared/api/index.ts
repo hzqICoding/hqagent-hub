@@ -26,3 +26,12 @@ export {
   type LocalChatGatewayMode,
 } from './local-chat-provider'
 
+// R1 Remote Gateway & Provider
+export type { IRemoteGateway } from './remote-gateway.interface'
+export { RemoteGateway, remoteGateway, RemoteApiError } from './remote-gateway'
+export { MockRemoteGateway, mockRemoteGateway } from './mock-remote-gateway'
+export {
+  getRemoteGateway,
+  setRemoteGatewayForTesting,
+} from './remote-provider'
+
