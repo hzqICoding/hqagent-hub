@@ -199,3 +199,16 @@ def _bind_workspaces(application: Any, ports: HubPorts) -> None:
     except ImportError:  # pragma: no cover - 打包漏文件时才会走到
         return
     ports.workspaces = WorkspaceService(WorkspaceRepository(application.database))
+
+
+def build_remote_worker(database, events, local_chat, paths, token, *, development=False):
+    from runtime.remote.commands import CommandBridge
+    from runtime.remote.link import LinkService
+    from runtime.remote.security import CredentialVault
+    from runtime.remote.worker import RemoteWorker
+    from storage.remote import RemoteRepository
+
+    directory = paths.root / "remote"
+    repository = RemoteRepository(database, events, directory)
+    link = LinkService(repository, CredentialVault(directory), development=development, hub_token=token)
+    return RemoteWorker(repository, link, CommandBridge(repository, local_chat, link))
