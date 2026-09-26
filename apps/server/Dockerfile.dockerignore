@@ -1,0 +1,16 @@
+# Dockerfile-specific context allowlist; never send local runtime data or .venv.
+**
+!apps/
+!apps/server/
+!apps/server/requirements.txt
+!apps/server/server/
+!apps/server/server/**
+!packages/
+!packages/protocol/
+!packages/protocol/**
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/.tmp/
+**/*.sqlite*
+**/*.key
