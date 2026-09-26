@@ -1,163 +1,201 @@
 ---
 wp: R1-P2
-status: needs-decision
+status: done
 scope_declared: [apps/hub/runtime/remote/**, apps/hub/storage/remote*.py, apps/hub/storage/migrations.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/tasks.py, apps/hub/storage/local_chat.py, apps/hub/api/local_chat.py, apps/hub/api/app.py, apps/hub/runtime/composition.py, apps/hub/tests/**, .hqagent/handoffs/R1-P2-remote-worker.md]
-scope_touched: [apps/hub/runtime/remote/__init__.py, apps/hub/runtime/remote/security.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/api.py, apps/hub/runtime/remote/link.py, apps/hub/runtime/remote/commands.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/worker.py, apps/hub/storage/remote.py, apps/hub/storage/migrations.py, apps/hub/storage/local_chat.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/tasks.py, apps/hub/runtime/composition.py, apps/hub/api/app.py, .hqagent/handoffs/R1-P2-remote-worker.md]
-build: fail
-tests: fail (7 failed)
-commit: 2bc366d3aac4802fab9c9b3788e98276ac5b08af
-open_questions: 1
+scope_touched: [apps/hub/runtime/remote/__init__.py, apps/hub/runtime/remote/api.py, apps/hub/runtime/remote/commands.py, apps/hub/runtime/remote/link.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/security.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/storage/remote.py, apps/hub/storage/migrations.py, apps/hub/storage/local_chat.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/tasks.py, apps/hub/runtime/composition.py, apps/hub/api/app.py, apps/hub/tests/test_custom_scenes.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_remote_worker.py, apps/hub/tests/test_remote_controls.py, apps/hub/tests/test_remote_faults.py, apps/hub/tests/test_remote_guards.py, apps/hub/tests/test_remote_admission.py, apps/hub/tests/test_remote_dispatch.py, apps/hub/tests/fixtures/remote/test-cert.pem, apps/hub/tests/fixtures/remote/test-key.pem, .hqagent/handoffs/R1-P2-remote-worker.md]
+build: pass
+tests: pass
+commit: 4df001826073e83b1459316213bab5798add9eed
+open_questions: 0
 ---
 
-# R1-P2 Worker 草稿与阻断回执
+# R1-P2 Worker 交付回执
 
-本包未完成，不能合并作为可用的远程 Worker。工作目录仅为 `E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`，分支 `feat/remote-worker`，基线 `8268c5c8be7ed5411f82a9fa6c126facb05e2978`。未与真实服务端联调。
+工作目录 `E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`，分支 `feat/remote-worker`，协议基线 `8268c5c8be7ed5411f82a9fa6c126facb05e2978`。头部 commit 是最终实现与测试提交；本回执单独提交以避免自引用。未合并、推送或部署。**未与真实服务端联调**。
 
-头部 commit 指实现草稿末次提交；本回执另提交，避免自引用。build=fail 表示整体交付门未通过，不表示运行过且通过编译/打包；本轮只验证了 Python 模块导入和 Hub 全量 pytest。
+远程层负责设备连接、持久接单和事实投影，所有执行仍进入原 LocalChatService、TaskService、WorkflowRuntime 与 Adapter。没有云端模型调用、模型凭据上传、执行内核迁移、Attempt 或长期 Task。
 
-## 必须先裁决的范围冲突
+## 第 0 步与审核修复
 
-工作包同时要求“storage/migrations.py 只追加新迁移”“原 199 个测试一个不少、全部通过”及“tests/** 只新增测试，不放宽、不删除既有断言”。基线测试 `apps/hub/tests/test_custom_scenes.py:117` 的 `test_migration_v5_preserves_v4_chat_data` 中：
+先按主题提交主代理已验证的现状，没有回滚：`199382e`、`577647b`。这两笔提交正文均注明“验证结果见主代理复跑”；来源是本轮用户提供的 Hub 257 passed、前端 typecheck/201 passed、协议 258 类型/109 Fixture 通过。
 
-```python
-upgraded = Database(path)
-upgraded.initialize()
-upgraded_repository = LocalChatRepository(upgraded)
-assert upgraded.schema_version == 5
-```
+### G1：逐条坏命令持久拒绝
 
-`Database.initialize()` 默认参数是 `LATEST_SCHEMA_VERSION`。本包追加 migration 6 后，正确的默认初始化版本变为 6，原断言必然失败。保留默认迁移行为、追加迁移且不改既有测试，不能同时满足验收。没有修改既有测试、没有隐藏新迁移、没有为 pytest 添加生产代码分支。
+`runtime/remote/commands.py` 将接单抽为 `_admit()`。逐条命令错误导致原接单事务完整回滚，然后 `_record_rejection()` **另开事务**保存 rejected Inbox、拒绝事件/Outbox 和排序占位，返回 `command.rejected`，不向 consume 抛出业务错误。
 
-**Q1（唯一待裁决项）**：是否允许仅将该 v5 专项测试的升级调用显式指定 `target_version=5`，保留 `assert upgraded.schema_version == 5` 和所有数据保留断言，并另增“v5 → 最新版本”的迁移测试？这会修改既有测试的设置语句，超出本次“只新增测试”的授权，因此未自行实施。另一种处理是由集成线先修订这个测试并提供新基线。
+- 处理 `_bind_conversation` 的目标/authority 错误、`_slot` 冲突、撤回目标不匹配和非法日历时间等。
+- 拒绝按当前 worker/store、规范化请求 hash 缓存；相同输入重投返回同一 eventId、seq、epoch、时间和错误码，普通重启和 Outbox 裁剪后仍保持。
+- 若 commandId 已接单，冲突副本有独立拒绝缓存，不能覆盖原 Inbox/接单回执。
+- 被拒 submit 仍消费其 conversationSeq；已有合法槽不可覆盖。同一 ID 的冲突副本若使用另一个空序号，则在 remote_state 保存独立拒绝槽，保留原真实槽的同时避免新缺口。
+- 尚未合法绑定的目标只保存拒绝槽/游标，不把 local 或其它世代对话改成 remote；后续合法绑定继承已消费的拒绝序号。
+- store/epoch/link 状态、凭据反射、线路修订、事件确认或持久性等连接/世代故障仍断开或冻结。
 
-按任务“契约与现状矛盾就停下写 needs-decision”的要求，发现冲突后停止实现，保留草稿。其余 6 项失败是本包代码回归，不是需要产品裁决的问题，也不是环境问题；恢复工作时必须修复。
+对应 `tests/test_remote_admission.py`：6 类坏命令后正常命令在同一 WSS 执行；拒绝回执重放；失败事务 ROLLBACK 后独立 BEGIN/COMMIT；ack/重启后原回执；冲突 ID 不覆盖原接单；冲突副本新序号占位；已缓冲的后续消息被拒绝槽释放。原 store 不匹配冻结用例保留。
 
-## 真实命令与结果
+### G2：接单与执行分离
 
-工作目录为 worktree 根：
+`receive()` 不再 await `_execute()`；全局锁仅覆盖接单、持久提交和后台任务登记，回执立即返回。控制执行在后台，只通过 `_finish` / `_completed` / `_failed` 的持久事件报告结果。
 
-```powershell
-New-Item -ItemType Directory -Force .tmp | Out-Null
-$env:TEMP=(Resolve-Path .tmp).Path
-$env:TMP=$env:TEMP
-.venv/Scripts/python.exe -B -c "import sys; sys.path.insert(0, 'apps/hub'); from runtime.remote.worker import RemoteWorker; from runtime.remote.wire import WIRE_REVISION; print('remote imports OK; wireRevision =', WIRE_REVISION)"
-```
+- `_execute_serialized()` 按 runId 加锁，同 run 按接单顺序执行；不同 run 和新消息接单不相互等待。
+- 每个 store/worker/commandId 至多一个正在执行的后台任务。重复接单/recover 不会再启动一个；结束后清理任务计数和 run 锁。
+- 连接结束会收尾后台控制任务，不取消 LocalChat 执行轮次。已进入 executing 但缺结果的控制由 recover 报 unconfirmed；未执行的 admitted 按持久顺序恢复。
+- recover 不持全局锁等待执行。此前控制投递未确认时，后续 resume/retry 不能借串行队列绕过本机核对。
+- WS 队列仍限 200 条，满时 `await queue.put()` 背压，不因 QueueFull 断线。
 
-```text
-remote imports OK; wireRevision = 1
-```
+对应 `tests/test_remote_dispatch.py`：真实等待数秒的 cancel 期间另一对话立即 accepted、另一 run 的 cancel 完成、同 run 后续控制等待；重复投递/recover 不重复启动；重连后未知控制不重发且不自动 resume；205 条积压命令排空后正常命令执行，连接保持一次。
 
-工作目录为 `apps/hub`：
+### G3：暂缓
+
+未实施 seal 提交后唤醒 publish 的优化。仍每 0.2 秒扫描、每 5 秒检查 catalog、每 15 秒重传未确认帧。此项留作后续性能工作，本轮不扩大事件唤醒范围。
+
+## 真实验证与来源
+
+### 本轮最终 Hub 全量
+
+cwd：`apps/hub`；串行，无 pytest 并行 worker。
 
 ```powershell
 $env:TEMP=(Resolve-Path ../../.tmp).Path
 $env:TMP=$env:TEMP
-../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/pytest-baseline --tb=short
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/pytest-r1p2-complete --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r1p2-complete-hub-tests.log; exit $LASTEXITCODE
 ```
 
 ```text
-FAILED tests/test_cancel_approval_lifecycle.py::test_cancel_invalidates_pending_and_late_approval_cannot_reach_adapter
-FAILED tests/test_cancel_approval_lifecycle.py::test_cancel_wins_race_before_approval_dispatch
-FAILED tests/test_cancel_approval_lifecycle.py::test_approve_first_then_cancel_serializes_without_replay_or_running_overwrite
-FAILED tests/test_cancel_approval_lifecycle.py::test_late_cancel_preserves_existing_terminal_task[succeeded]
-FAILED tests/test_cancel_approval_lifecycle.py::test_late_cancel_preserves_existing_terminal_task[failed]
-FAILED tests/test_cancel_approval_lifecycle.py::test_late_cancel_preserves_existing_terminal_task[cancelled]
-FAILED tests/test_custom_scenes.py::test_migration_v5_preserves_v4_chat_data
-7 failed, 192 passed, 4 warnings in 25.72s
+........................................................................ [ 26%]
+........................................................................ [ 53%]
+........................................................................ [ 80%]
+......................................................                   [100%]
+270 passed, 4 warnings in 83.30s (0:01:23)
 ```
 
-关键失败输出：
+原 199 项全部保留，本包新增 71 项，其中本轮审核修复新增 13 项。4 个 warning 是既有 Starlette/httpx 和 websockets 弃用提示。TEMP、TMP、--basetemp 均在 worktree 内被 git 忽略的 `.tmp`，避开默认 pytest 临时目录的 WinError 5。
+
+完整输出：[r1p2-complete-hub-tests.log](../../.tmp/r1p2-complete-hub-tests.log)。日志为本机忽略文件，未越权提交其它路径。
+
+### 本轮最终协议校验
+
+cwd：worktree 根。
+
+```powershell
+$env:PATH=(Join-Path (Get-Location) '.venv/Scripts') + ';' + $env:PATH
+$env:TEMP=(Resolve-Path .tmp).Path
+$env:TMP=$env:TEMP
+pwsh -NoProfile -File scripts/protocol/validate.ps1 -CheckGenerated 2>&1 | Tee-Object -FilePath .tmp/r1p2-complete-protocol-validation.log; exit $LASTEXITCODE
+```
 
 ```text
-runtime\tasks.py:1311: in _task_spec
-    value = self.state.get(f"task_spec:{task_id}")
-E   AttributeError: 'TaskService' object has no attribute 'state'
-
-tests\test_custom_scenes.py:130: in test_migration_v5_preserves_v4_chat_data
-    assert upgraded.schema_version == 5
-E   assert 6 == 5
+协议校验通过：258 个类型，109 个 Contract Fixture
 ```
 
-取消生命周期测试使用 `object.__new__(TaskService)` 构建最小测试实例，没有 `state`。新增证据采集无条件读取了此属性，破坏了原测试能够调用的取消路径。不能修改测试来掩盖这一回归。
+退出码 0。输出：[r1p2-complete-protocol-validation.log](../../.tmp/r1p2-complete-protocol-validation.log)。没有修改协议源、生成物或增加兼容字段，没有安装依赖。
 
-原 199 项全部被执行，无 xdist、无跳过、无删减断言。TEMP、TMP、--basetemp 均指向 worktree 内已有 gitignore 规则覆盖的 `.tmp`；未使用默认沙箱临时目录。4 个 warning 为 Starlette/httpx 和 websockets 的弃用提示。本轮没有遇到 0xC0000142，没有安装依赖或访问外网。
+### 前端来自主代理复跑
 
-`git diff --check` 在草稿提交前退出 0，无输出。前端 typecheck、test 和 `pwsh scripts/protocol/validate.ps1 -CheckGenerated` **未运行**：发现阻断后停工，不引用前序工作包的结果冒充本轮验证。
+本轮按要求**未启动 Vitest，也未启动新的前端检查进程**。使用主代理复跑并由用户提供的结果：
 
-## 草稿模块与表结构
+```text
+typecheck 通过
+201 passed
+```
 
-迁移 1–5 未修改；追加 migration 6：
+本轮仅调整 Hub 与测试。apps/desktop、packages/protocol 相对协议基线无 diff。不把主代理的结果冒充本轮亲自执行，不虚构前端日志路径或耗时。
 
-| 表 | 草稿用途 |
+### 定向验证与历史失败
+
+- G1：`16 passed, 1 warning in 11.10s`。
+- G2 首次组合为 11 passed / 1 failed：假服务端主动关闭 WSS 后仍发送 ack，Starlette 抛 WebSocketDisconnected。夹具显式处理此传输关闭异常，未隐藏 DTO 校验或执行断言。
+- G2 修正夹具后：`12 passed, 1 warning in 16.22s`。
+- 最后拒绝槽补充的 G1/G2：`13 passed, 1 warning in 18.34s`。
+- 补充前全量 269 passed；最终源码全量为上面的 270 passed。
+
+前两轮曾因 0xC0000142 按要求停工；本轮未遇到。没有并行测试、网络安装或真实模型调用。
+
+## Q1、原回归与范围
+
+Q1 已按裁决落实：test_custom_scenes.py 仅把 `upgraded.initialize()` 改为 `upgraded.initialize(target_version=5)`，`assert upgraded.schema_version == 5` 和全部数据保留断言不变。新增测试覆盖 v5 → 最新迁移、旧数据保留、remote 表可用、缺省 authority=local。
+
+原 6 项最小 TaskService 实例回归已修复：缺少 state 或持久 spec 时返回 `evidenceAvailable=False`；观察代码不阻断原取消语义，远程 Mapper 判 unconfirmed，没有 pytest 专用分支。原取消生命周期测试未改。
+
+本轮只按新语义调整本包自新增测试：逐条目标错误断言相同错误码的 rejected 回执而非异常，后台撤回等待实际持久结果后保留原断言。相对协议基线，原测试文件的修改仍只有获准的一行。
+
+`git diff --check` 通过。相对 `8268c5c`，packages/protocol、apps/desktop、apps/server、docs、scripts/protocol 无 diff。迁移 1–5 原文前缀比较输出：
+
+```text
+Migrations 1-5 unchanged
+```
+
+## 模块与表结构
+
+仅追加 migration 6，旧迁移未改。
+
+| 表 | 用途 |
 | --- | --- |
-| remote_state | identity（store/epoch/ack/高水位/覆盖游标/见证版本）、link 操作世代与安全重试意图、本机策略 |
-| remote_inbox | worker+command 唯一键、规范化 hash、原命令、接单回执、run 引用、执行前结构化观测 |
-| remote_slots | worker+conversation+sequence 唯一顺序槽，submit/skip/tombstone |
-| remote_conversations | 对话绑定的 worker/store、固定目标和已消费序号 |
-| remote_outbox | store+seq、不可变 frame、eventId 和 hash |
-| remote_operations | 本机配对/取消/解绑的幂等键与操作世代 |
-| remote_projections | Run/消息/审批/catalog 投影 hash |
+| remote_state | store/epoch/ack/分配高水位/覆盖游标、见证版本、link 世代/重试意图、策略/catalog 修订、拒绝缓存及补充拒绝槽/游标 |
+| remote_inbox | worker+command 去重、规范化 hash、原命令、接单回执、Run 引用与执行前观测 |
+| remote_slots | submit/skip/撤回/拒绝的对话有序槽，原槽不可覆盖 |
+| remote_conversations | 固定 worker/store/Workspace/Scene 目标与已消费序号 |
+| remote_outbox | store+seq、eventId、原始 frame/hash，确认后裁剪 |
+| remote_operations | 配对/取消/解绑的幂等键与操作世代 |
+| remote_projections | Run、消息、审批投影 hash |
 
-LocalConversation.authority 存在原 payload_json 内，旧数据读 Mapper 缺省为 local，远程新建记录明确写 remote。没有把旧对话批量转换。
+authority 保存在既有 LocalConversation.payload_json；旧记录缺省 local，远程新建明确 remote，解绑不降级。
 
-## 契约规则的草稿落点（不是验收通过声明）
+## 契约规则落点
 
-| 规则 | 文件与当前实现意图 |
+| 规则 | 文件/入口 |
 | --- | --- |
-| D43 本机四个操作、沿用鉴权 | runtime/remote/api.py；api/app.py 沿用 v1 中间件 |
-| link 持久化、统一 Mapper、提交后事件 | storage/remote.py 的 set_view/view 与既有 EventStore.after_commit |
-| origin 解析、规范化、开发例外 | runtime/remote/security.py；仅本机 HQAGENT_REMOTE_DEVELOPMENT=1 开启例外 |
-| 设备 secret | security.py 的 CredentialVault，32 随机字节、Windows DPAPI、解绑删除 |
-| 配对世代与迟到隔离 | runtime/remote/link.py |
-| 本机解绑、撤销未确认 | link.py，unpaired.lastErrorCode=REMOTE_AUTH_REQUIRED，不调用 owner 撤销接口 |
-| hello/心跳/退避/epoch | runtime/remote/worker.py 与 wire.py |
-| 生成 DTO 校验 | wire.py、api.py、link.py；wireRevision 从生成模型 Literal[1] 取值，包版本从生成 PROTOCOL_VERSION 导入 |
-| Inbox/slot/LocalRun/receipt/Outbox 同事务 | runtime/remote/commands.py、storage/remote.py、storage/local_chat.py 的 transaction 参数 |
-| 内核消费入口 | runtime/local_chat.py 的 consume_remote_control / wake_remote_queue |
-| authority 检查 | storage/local_chat.py、runtime/local_chat.py、api/app.py 的 Task/Session 写入口 |
-| 结构化控制证据 | runtime/tasks.py 的内部读接口与采集点；remote/commands.py 的 control_result |
-| 当前审批与策略 | remote/commands.py 的 guard；runtime/tasks.py 在 ApprovalService 锁内调用 current_guard |
-| 上行事件/ack/omitted | storage/remote.py、runtime/remote/projection.py、worker.py |
-| 有界 Workspace/Scene catalog | runtime/remote/projection.py，只取已登记列表，不上传角色模型配置 |
+| 四个 v1 remote 操作、统一生成 DTO Mapper | runtime/remote/api.py、link.py、storage/remote.py 的 view/set_view |
+| Bearer/Host/Origin、提交后 remote.link.changed | api/app.py 原中间件；storage/remote.py 复用 EventStore.after_commit |
+| origin/host/port 校验、规范化、开发例外 | runtime/remote/security.py，例外仅 Worker 配置可开启 |
+| 256-bit secret、DPAPI/文件权限、解绑删除 | security.py 的 CredentialVault，link.py 的操作事务与世代 |
+| 服务端撤销未确认，不借 owner 权限 | link.py 的 unlink，返回 REMOTE_AUTH_REQUIRED |
+| WSS/hello/心跳/退避/修订 | worker.py、wire.py；生成 PROTOCOL_VERSION 与 Literal[1] |
+| Inbox/slot/LocalRun/accepted/Outbox 同事务 | commands.py、storage/remote.py、storage/local_chat.py 的事务入队 |
+| 去重、顺序、撤回、逐条持久拒绝 | commands.py 的 _admit/_withdraw/_drain/_record_rejection |
+| 专用内部消费、authority 防绕过 | runtime/local_chat.py、storage/local_chat.py、api/app.py，包含 Task/Session/父 Task/Profile |
+| D41 结构化控制证据 | runtime/tasks.py 的 control_observation、commands.py 的 control_result |
+| seq/ack/原 epoch/hash 重传/omitted | storage/remote.py、projection.py、worker.py |
+| pending 审批与当前策略、未知消费不重放 | commands.py 的锁内 current_guard，runtime/tasks.py 的 ApprovalService |
+| 有界登记目录与场景索引 | projection.py，仅 Workspace/Scene 摘要 |
 
-## 对既有内核的改动与边界
+## 既有内核的最小改动
 
-- storage/local_chat.py：增加持久 authority 的读/检查方法；enqueue 接受调用者事务，复用原插入逻辑。未改 Task、Node、Session 模型。
-- runtime/local_chat.py：原 control 前加本机 authority 检查；内部消费入口复用原控制方法，仍由原 supervisor/_execute 创建 Task；未迁移执行内核。
-- runtime/tasks.py：记录取消结果、节点边界暂停和恢复证据；提供只返回结构化标记的内部接口；给审批响应增加锁内检查回调。这部分已有 6 项回归，尚不能称为符合最小改动验收。
-- api/app.py：装配远程服务及生命周期，原中间件补 PATCH/DELETE CORS 方法，Task/Session 写入口核对持久对话归属。
-- runtime/composition.py：增加远程服务工厂，复用现有 database/events/local_chat/ports。
-- api/local_chat.py 未改；没有改 packages/protocol、apps/desktop、apps/server、docs 或根共享文件。
+- storage/local_chat.py 复用原 enqueue SQL/约束，增加调用方事务参数与 authority/引用链检查，没有新增执行身份。
+- runtime/local_chat.py 增加本机写检查、内部控制入口、提交后唤醒、恢复派发检查，仍由原 supervisor/_execute 每轮创建 Task。
+- runtime/tasks.py 观察式保存真实 CancellationOutcome/CancelResult、orphan PID、节点边界暂停与恢复证据；无 state 不影响原动作。增加审批锁内回调及派发前更新见证的可选提交观察器，没有修改 _create_child/_reset_node 语义。
+- api/app.py、runtime/composition.py 装配生命周期与既有 ports，并检查 Task/Session/父 Task/内部 Profile 归属。api/local_chat.py 未改。
+- 新远程类型不进入旧 Adapter 固定事件映射；Adapter、orchestrator、security 内核目录未改。
 
-## 设计取舍与未完成事项
+## 设计取舍、限制与未做事项
 
-1. secret 默认使用现有 HubPaths.root 下 remote/device.credential，即 Windows 默认 `%LOCALAPPDATA%\HQAgent-Hub\remote\`；数据目录覆盖沿用既有 HubPaths 配置。Windows DPAPI 为当前用户保护；非 Windows 为目录 0700、文件 0600，**未做非 Windows 实机验证**。
-2. 握手禁止重定向；HTTP 配对关闭 follow_redirects 和环境代理，WSS 使用专属静默 logger 防止 DEBUG 输出请求头。实际捕获日志脱敏测试尚未编写。
-3. 外置 store.witness 在提交前写入，试图检测 hub.db 回滚并冻结；见证文件本身与数据库一起回滚、全目录恢复等情形尚需明确运营恢复入口和故障测试，不能声称解决所有恢复场景。
-4. 新远程事件复用本机 events.seq，Outbox 保留原 epoch/hash。当前 cover_private 对未投影的原生事件统一作无内容覆盖，**尚未证明不会覆盖远程关键事件语义**；需在继续工作时审查并修正。
-5. 配对取消/解绑的幂等记录与凭据删除失败之间尚有重放窗口；删除失败不能在重试时被误报成功，需补事务/操作状态和故障测试。
-6. 控制证据采集尚未覆盖所有暂停/恢复分支；当前 running 分支的 pauseRequested 可能留下旧证据，必须修正后再验收。取消拒绝、残留 PID 和恢复标记也需要真实 TaskService 用例验证。
-7. 审批实际消费成功标记在现有 ApprovalCoordinator 中是 `deliveryStatus=consumed`；草稿桥接错误地检查了 `delivered`，尚未修复。审批消费不明时保持 accepted/unconfirmed 的路径也需补齐，不能一概记 failed。
-8. 重连后 executing/admitted 控制命令的恢复和不重复放行路径、retry 引用与顺序边界、撤回已接单未启动情形尚未完成故障验证。当前可见 Run 的撤回统一拒绝，不能据此声称全部撤回矩阵已实现。
-9. 所有本机写入口的 authority 防绕过仍需系统验证，现有 Task parent/Session/Approval 等引用链不能只靠 UI 隐藏。
-10. **尚未新增假服务端测试，也未完成任何用户要求的新验收场景**。所有收发帧/本机响应的生成 DTO 校验只有实现调用点，没有完整集成测试证据。未执行前端及协议验证。
+1. 默认凭据在 `%LOCALAPPDATA%\HQAgent-Hub\remote\`，沿用 HubPaths 数据目录覆盖。Windows DPAPI 已实测；非 Windows 至少目录 0700、文件 0600，未做跨平台实机验收。测试证书/密钥是专用 TLS fixture，不是设备 secret。
+2. 生产使用 HTTPS/WSS；仅 Worker 的 `HQAGENT_REMOTE_DEVELOPMENT=1` 允许 loopback HTTP，请求不能开启，重连/轮询也重新校验。HTTP/WSS 不自动重定向，设备凭据仅用于 Authorization，不借浏览器 Cookie 或 Hub Token。
+3. store.witness 独立于 hub.db 备份，在接单和新 Task 提交前更新。恢复旧库/无法证明连续性时换 store、清 ack、冻结并暂停恢复的远程队列；测试覆盖断网执行后的旧库恢复不重放。正常恢复应停止 Hub；整个文件系统连同见证一起回滚时仍需要服务端观测和运营核对，不宣称单机可独立证明未执行。
+4. Adapter refused、recovery、orphan、消费不明优先于状态标签。仅有终态标签而没有停止证据时保持 unconfirmed；ALREADY_FINISHED 从真实取消回执确认，不解析 reason/error 文本。
+5. 远程 retry 对终态 Run 复用 _create_child，resultRef 返回新 Run/Task 和 parentExecutionTaskId；非终态节点重置返回策略拒绝，保留本机 _reset_node。有未核实副作用时不允许远程 resume/retry 清掉旧证据。
+6. git_push/deploy/delete/db_migrate、generic shell、本机策略禁止项不能远程 approve；reject 可以。审批在原锁内重读真实请求/当前策略，未知消费不重批。高风险本机审批仍走原本机能力，不新增 R5/签名入口。
+7. 不直接上传原生日志、环境变量、认证内容或私有思考，只投影白名单事实及脱敏消息。私有事件（包括短码）用 omitted，远程关键状态/审批不被 omitted 掩盖。未完成的执行引用绑定先等待。
+8. 超长答案完整留本机，远程发布明确 system 上限提示，真实终态仍发布，不静默截断或伪造失败。超界 catalog 报错，不上传部分索引。
+9. G3 的发布唤醒优化留作后续，当前仍有 0.2 秒扫描。
+10. 未做附件、R3 原生会话、飞书、小程序签名、电脑端 UI、长期 Task/Attempt；未与真实服务端联调。
 
-这些都是实现未完成项，不能以 Q1 代替解释；Q1 裁决后仍需继续开发、修复、补测试和全量验收，不能直接将 status 改成 done。
+## P1 与电脑端前端接线
 
-## P1 与电脑端前端接线提示
+- 使用冻结的 pairing-requests 与 /ws/v2/worker。wireRevision=1 与包版本独立，hello.protocolVersion 取生成常量。
+- accepted 是持久接单，不是执行完成。逐条 rejected 可在原连接处理、原回执重放；被拒 submit 仍有顺序占位。同 run 控制串行，不同 run 和新消息可独立接单。
+- unknown 控制保持 unconfirmed，重连不会重发可能已消费的原生决定。
+- 四个本机 remote API 在 v1，复用桌面 Bearer/Host/Origin；远程浏览器 Cookie 不授予 v1 权限，JSON/事件不提供 Hub Token 或设备 secret。
+- GET 与 remote.link.changed 共用 RemoteLinkView。pairCode 只在 pairing；lastConnectedAt=null 表示尚未成功握手；frozen+online 仍不能投递执行命令。
+- unlink 后 unpaired.lastErrorCode=REMOTE_AUTH_REQUIRED 表示“本机已解绑、服务端撤销未确认”，不承诺取消运行中的任务。旧 remote 对话仍只读；local 不自动转换、同步或重放历史。
 
-目前只有草稿，请勿作为联调就绪版本。未与真实服务端联调。
-
-- P1 使用已冻结 pairing-requests 和 /ws/v2/worker；设备 Bearer 没有 owner 撤销权限。本机解绑仅保证本机清理，服务端撤销未确认。
-- 四个本机 remote API 位于 v1；v2 浏览器 Cookie 不授予 v1 权限。前端需要复用已有桌面鉴权，不从本机 JSON 获取 Hub Token 或设备 secret。
-- lastConnectedAt=null 表示尚未成功握手；frozen+online 不允许提交执行命令。remote 对话解绑后不降级。
-- 生成物没有独立导出的 WIRE_REVISION 名称，草稿从生成 RemoteWorkerHello.wire_revision 的 Literal 常量读取 1；未手写兼容字段，未改生成物。
-
-## 草稿提交
+## 本轮提交
 
 ```text
-7222317 Add draft remote persistence and conversation authority boundaries
-2bc366d Add draft worker pairing transport and execution bridge
+199382e 完善远程连接与本机执行证据隔离
+577647b 增加远程 Worker 故障与契约集成测试
+4c4c35a 持久化逐条命令拒绝并推进拒绝序号槽
+dcab012 分离远程命令接单与按轮次串行执行
+4df0018 为命令冲突副本保留独立拒绝序号占位
 ```
 
-两次提交后均运行 `git log -1 --format=%B`，输出仅上列主题，无署名或 Co-Authored-By。没有合并其它分支、没有推送或部署。
+每次提交后均运行 `git log -1 --format=%B` 自查，没有署名、Co-Authored-By 或生成工具标记。本回执另作交付记录提交。
