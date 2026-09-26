@@ -11,6 +11,8 @@
     "update.draining.json": "UpdateStateView",
     "local-scene.analyze.json": "LocalSceneView",
     "local-scene.original-planner.json": "LocalSceneView",
-    "task-node.planner-acceptance.json": "TaskNodeView"
+    "task-node.planner-acceptance.json": "TaskNodeView",
+    "local-conversation.archived.json": "LocalConversationView",
+    "local-conversation.update.json": "UpdateLocalConversationInput"
   }
 }
