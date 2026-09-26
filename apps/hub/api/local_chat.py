@@ -6,10 +6,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, Query, Request
 from protocol.generated.python import (
     AddWorkspaceInput, ApprovalResponseInput, CreateLocalConversationInput,
+    CreateLocalRoleTemplateInput, CreateLocalSceneInput,
     LocalAgentModelsView, LocalAuthInput, LocalAuthView, LocalEventPage,
     PickLocalDirectoryInput,
     SaveLocalSceneInput, SendLocalMessageInput, TaskActionInput,
-    UpdateLocalConversationInput,
+    UpdateLocalConversationInput, UpdateLocalRoleTemplateInput,
 )
 from api.envelopes import success_response
 from core.constants import PROTOCOL_VERSION
@@ -106,9 +107,41 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
     async def scenes():
         return success_response(service.repository.scenes())
 
+    @router.post("/scenes")
+    async def create_scene(value: CreateLocalSceneInput,
+                           idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+        return success_response(
+            service.repository.create_scene(value, require_key(idempotency_key)), 201
+        )
+
     @router.put("/scenes/{scene_id}")
     async def save_scene(scene_id: str, value: SaveLocalSceneInput):
         return success_response(service.repository.save_scene(scene_id, value))
+
+    @router.get("/role-templates")
+    async def role_templates():
+        return success_response(service.repository.role_templates.templates())
+
+    @router.post("/role-templates")
+    async def create_role_template(
+        value: CreateLocalRoleTemplateInput,
+        idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    ):
+        return success_response(
+            service.repository.role_templates.create(value, require_key(idempotency_key)), 201
+        )
+
+    @router.put("/role-templates/{template_id}")
+    async def update_role_template(
+        template_id: str,
+        value: UpdateLocalRoleTemplateInput,
+        idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    ):
+        return success_response(
+            service.repository.role_templates.update(
+                template_id, value, require_key(idempotency_key)
+            )
+        )
 
     @router.get("/conversations")
     async def conversations():

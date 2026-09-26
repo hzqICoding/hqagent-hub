@@ -232,7 +232,7 @@ class LocalChatService:
         profile_id = f"local-profile:{record['run_id']}"
         profile = SaveTeamProfileInput.model_validate({
             "id": profile_id, "name": f"{scene.name} · 本轮快照", "scope": "global", "isDefault": False,
-            "roleBindings": {r.role_id: {"roleId": r.role_id, "roleName": r.role_id,
+            "roleBindings": {r.role_id: {"roleId": r.role_id, "roleName": r.role_name or r.role_id,
                 "primaryAgentId": r.agent_instance_id, "fallbackAgentIds": []} for r in roles},
         })
         await self.ports.team_profiles.save_profile(profile_id, profile)
