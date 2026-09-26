@@ -81,3 +81,28 @@ def test_periodic_fallback_delivers_if_notification_is_lost(env, paired, monkeyp
         monkeypatch.setattr(connection, 'wake', lambda: None)
         receipt = paired.send(paired.conv)
         assert paired.receive()['commandId'] == receipt['commandId']
+
+
+def test_heartbeats_do_not_postpone_delivery_fallback(env, paired, monkeypatch):
+    monkeypatch.setattr('server.worker.FALLBACK_INTERVAL', 0.2)
+    env.settings.monotonic = time.monotonic
+    with paired.connect():
+        with env.service.repo.transaction() as tx:
+            owner = env.service.security.session(tx, env.alice.cookie)['owner']
+        connection = env.service.connections[(owner, paired.worker)]
+        monkeypatch.setattr(connection, 'wake', lambda: None)
+        receipt = paired.send(paired.conv)
+        deadline = time.perf_counter() + 1
+        delivered = False
+        while time.perf_counter() < deadline:
+            paired.ws.send_json(dict(type='worker.heartbeat', wireRevision=1, connectionId=paired.ack['connectionId'],
+                                     workerId=paired.worker, workerStoreId=paired.store, workerEpoch=paired.epoch,
+                                     sentAt=stamp(env.clock()), lastServerAck=None))
+            frame = paired.receive()
+            if frame['type'] == 'run.submit':
+                assert frame['commandId'] == receipt['commandId']
+                delivered = True
+                break
+            assert frame['type'] == 'server.heartbeat'
+            time.sleep(0.04)
+        assert delivered

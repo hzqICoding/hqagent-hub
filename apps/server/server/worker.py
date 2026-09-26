@@ -149,8 +149,12 @@ class WorkerTransport:
             sent = set()
             connection.wakeup.set()
             receiving = asyncio.create_task(socket.receive_text())
+            next_fallback = self.s.settings.monotonic() + FALLBACK_INTERVAL
             while not connection.closed:
                 require(self.s.settings.monotonic() - connection.last_seen < 45, "REMOTE_DEVICE_OFFLINE")
+                if self.s.settings.monotonic() >= next_fallback:
+                    connection.wakeup.set()
+                    next_fallback = self.s.settings.monotonic() + FALLBACK_INTERVAL
                 if connection.wakeup.is_set():
                     connection.wakeup.clear()
                     with self.s.repo.transaction() as tx:
@@ -165,11 +169,13 @@ class WorkerTransport:
                 waking = asyncio.create_task(connection.wakeup.wait())
                 try:
                     remaining = max(0, 45 - (self.s.settings.monotonic() - connection.last_seen))
-                    done, _ = await asyncio.wait({receiving, waking}, timeout=min(FALLBACK_INTERVAL, remaining), return_when=asyncio.FIRST_COMPLETED)
+                    until_fallback = max(0, next_fallback - self.s.settings.monotonic())
+                    done, _ = await asyncio.wait({receiving, waking}, timeout=min(until_fallback, remaining), return_when=asyncio.FIRST_COMPLETED)
                 finally:
                     cancel_task(waking)
                 if not done:
                     connection.wakeup.set()  # expiry/missed-notification fallback, at most once per 5s
+                    next_fallback = self.s.settings.monotonic() + FALLBACK_INTERVAL
                 if receiving not in done:
                     continue
                 raw = receiving.result()
