@@ -43,6 +43,118 @@ tags:
   - name: internal
 
 paths:
+  # ---- FZ-R1.1: local remote-link controls (existing v1 Bearer boundary) ----
+  /api/v1/remote/link:
+    get:
+      tags: [system]
+      operationId: getRemoteLink
+      summary: 读取本机远程绑定与连接状态
+      description: 只读本机状态，不启动模型或泄露设备凭据。沿用顶层bearerAuth、Host/Origin规则。
+      responses:
+        "200":
+          description: ApiEnvelope.data为RemoteLinkView；Cache-Control:no-store。
+          content:
+            application/json:
+              schema:
+                $ref: "../schema/envelope.json#/$defs/ApiEnvelope"
+          x-dataSchema:
+            $ref: "../schema/remote-link.json#/$defs/RemoteLinkView"
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/v1/remote/pairing:
+    post:
+      tags: [system]
+      operationId: startRemotePairing
+      summary: 在本机发起远程设备配对
+      description: |
+        输入仅serverOrigin/deviceName，由Worker内部生成和保存设备secret。
+        只有取得有效服务端短码才返回state=pairing。已在配对时不同请求返回REMOTE_PAIRING_IN_PROGRESS，
+        paired/revoked/frozen须先显式unlink，返回REMOTE_PAIRING_CONFLICT，不覆盖旧凭据。
+        serverOrigin校验失败为REMOTE_SERVER_ORIGIN_INVALID；服务端无法连接/响应未确认为REMOTE_SERVER_UNREACHABLE。
+        幂等重放不新建secret/请求、不续期短码；所有写入沿用v1鉴权及Host/Origin规则。
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schema/remote-link.json#/$defs/RemoteLinkPairingInput"
+      responses:
+        "200":
+          description: ApiEnvelope.data为RemoteLinkView，成功发起时state=pairing；Cache-Control:no-store。
+          content:
+            application/json:
+              schema:
+                $ref: "../schema/envelope.json#/$defs/ApiEnvelope"
+          x-dataSchema:
+            $ref: "../schema/remote-link.json#/$defs/RemoteLinkView"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [system]
+      operationId: cancelRemotePairing
+      summary: 取消本机进行中的配对
+      description: |
+        取消当前候选配对、轮询和候选凭据，成功返回unpaired。已经unpaired时幂等成功；
+        已paired/revoked/frozen不得当作取消配对，须调用unlink，否则REMOTE_PAIRING_CONFLICT。
+        取消前已发送的服务端请求可能仍生效，迟到结果不得复活本机绑定；未通知成功不宣称服务端也已撤销。
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        "200":
+          description: ApiEnvelope.data为RemoteLinkView，state=unpaired；不再返回短码。
+          content:
+            application/json:
+              schema:
+                $ref: "../schema/envelope.json#/$defs/ApiEnvelope"
+          x-dataSchema:
+            $ref: "../schema/remote-link.json#/$defs/RemoteLinkView"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/remote/unlink:
+    post:
+      tags: [system]
+      operationId: unlinkRemote
+      summary: 本机删除远程设备凭据并断开绑定
+      description: |
+        完成本机断开和凭据删除后才返回state=unpaired，通知服务端撤销为best-effort，不能冒充服务端已确认。
+        不把设备Bearer当浏览器Cookie调用远程owner撤销接口；缺乏可用授权通知途径或离线也不阻塞本机解绑，
+        可通过unpaired.lastErrorCode报告REMOTE_AUTH_REQUIRED或REMOTE_SERVER_UNREACHABLE。
+        凭据删除失败不得返回成功。既有remote对话authority保持remote，本机只读，不自动回退local或重放消息。
+        本操作不承诺取消已在运行的任务。所有写操作使用v1既有鉴权，不新增凭据。
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        "200":
+          description: ApiEnvelope.data为RemoteLinkView，state=unpaired；仅保证本机已断开并清理凭据。
+          content:
+            application/json:
+              schema:
+                $ref: "../schema/envelope.json#/$defs/ApiEnvelope"
+          x-dataSchema:
+            $ref: "../schema/remote-link.json#/$defs/RemoteLinkView"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /healthz:
     get:
       tags: [system]

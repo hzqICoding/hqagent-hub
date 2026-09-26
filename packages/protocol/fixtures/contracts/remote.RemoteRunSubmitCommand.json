@@ -1,0 +1,19 @@
+{
+  "type": "run.submit",
+  "commandId": "command_demo",
+  "conversationId": "conversation_demo",
+  "conversationSeq": 1,
+  "targetWorkerId": "worker_demo",
+  "expectedWorkerStoreId": "store_demo",
+  "createdAt": "2026-09-26T12:00:00Z",
+  "expiresAt": "2026-09-26T12:05:00Z",
+  "payload": {
+    "clientMessageId": "client_message_demo",
+    "workspaceId": "workspace_demo",
+    "sceneId": "analyze",
+    "sceneVersion": 1,
+    "sessionMode": "new",
+    "text": "只读分析已登记项目，不修改文件。"
+  },
+  "wireRevision": 1
+}

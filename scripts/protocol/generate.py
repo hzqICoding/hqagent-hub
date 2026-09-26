@@ -29,7 +29,8 @@ SUPPORTED（本生成器支持的 Schema 子集）：
     - x-extends: 继承（TS extends / Python 基类）
     - x-map-value / x-map-value-primitive: Record<string, X>
     - x-go: 该类型同时生成 Go 版本
-不支持 oneOf/anyOf/allOf/条件校验，需要时先改 Schema 再扩生成器。
+支持 oneOf 的 TypeScript/Python 联合与显式 null；Go远程联合未启用。
+不支持 anyOf/allOf/条件校验。x-wire-strict 仅对新远程DTO启用字段边界检查。
 """
 
 from __future__ import annotations
@@ -184,6 +185,12 @@ class Emitter:
         return "string"
 
     def expr(self, node: dict, owner: str = "") -> str:
+        if "oneOf" in node:
+            if self.lang == 2:
+                raise SystemExit("oneOf is not supported for Go consumers")
+            return " | ".join(self.expr(branch, owner) for branch in node["oneOf"])
+        if node.get("type") == "null":
+            return {0: "null", 1: "None", 2: "any"}[self.lang]
         if "$ref" in node:
             return self.named(ref_name(node["$ref"]))
         if "x-generic" in node:
@@ -198,8 +205,15 @@ class Emitter:
             return self.union([node["const"]]) if self.lang != 2 else PRIMITIVES[node.get("type", "string")][2]
         node_type = node.get("type")
         if node_type == "array":
-            inner = self.expr(node.get("items", {"type": "string"}), owner)
-            return {0: f"{inner}[]", 1: f"list[{inner}]", 2: f"[]{inner}"}[self.lang]
+            item = node.get("items", {"type": "string"})
+            inner = self.expr(item, owner)
+            if self.lang == 1 and self.index.get(owner, {}).get("def", {}).get("x-wire-strict") and item.get("type") in ("integer", "string", "boolean") and "enum" not in item and "const" not in item:
+                constraints = ["strict=True"]
+                for source, target in (("minimum", "ge"), ("maximum", "le"), ("minLength", "min_length"), ("maxLength", "max_length"), ("pattern", "pattern")):
+                    if source in item:
+                        constraints.append(f"{target}={item[source]!r}")
+                inner = f"Annotated[{inner}, Field({', '.join(constraints)})]"
+            return {0: f"({inner})[]" if " | " in inner else f"{inner}[]", 1: f"list[{inner}]", 2: f"[]{inner}"}[self.lang]
         if node_type == "object" and "properties" not in node:
             return {0: "Record<string, unknown>", 1: "dict[str, Any]", 2: "map[string]any"}[self.lang]
         if "enum" in node:
@@ -264,6 +278,10 @@ def emit_ts(index: dict, registries: dict, order: list[str], version: str) -> st
         desc = d.get("description")
         if desc:
             out.append(f"/** {desc} */")
+        if "oneOf" in d:
+            out.append(f"export type {name} = {em.expr(d, name)}")
+            out.append("")
+            continue
         values = registry_values(d, registries)
         if values is not None:
             out.append(f"export type {name} =")
@@ -338,9 +356,9 @@ def emit_py(index: dict, registries: dict, order: list[str], version: str) -> st
         "from __future__ import annotations",
         "",
         "from enum import StrEnum",
-        "from typing import Any, Literal",
+        "from typing import Annotated, Any, Literal",
         "",
-        "from pydantic import BaseModel, ConfigDict, Field",
+        "from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer, model_validator",
         "",
         f'PROTOCOL_VERSION = "{version}"',
         "",
@@ -352,8 +370,50 @@ def emit_py(index: dict, registries: dict, order: list[str], version: str) -> st
         "",
     ]
 
+    if any(item["def"].get("x-wire-strict") for item in index.values()):
+        out.extend([
+            "", "class _RemoteBase(_Base):",
+            '    """R1 wire DTOs: omitted optional fields are allowed; explicit null is opt-in."""',
+            "", '    @model_validator(mode="before")', "    @classmethod",
+            "    def _check_wire_scalars(cls, value):",
+            "        if isinstance(value, dict):",
+            "            by_alias = {field.alias: field for field in cls.model_fields.values()}",
+            "            for key, item in value.items():",
+            "                field = by_alias.get(key) or cls.model_fields.get(key)",
+            "                if field is None:", "                    continue",
+            "                rules = field.json_schema_extra or {}",
+            '                if item is None and not rules.get("wireNullable"):',
+            '                    raise ValueError(f"{key} must be omitted rather than null")',
+            '                if rules.get("wireType") == "boolean" and not isinstance(item, bool):',
+            '                    raise ValueError(f"{key} must be a boolean")',
+            '                if rules.get("wireType") == "integer" and (not isinstance(item, int) or isinstance(item, bool)):',
+            '                    raise ValueError(f"{key} must be an integer")',
+            "        return value", "",
+            '    @model_serializer(mode="wrap")',
+            "    def _serialize_wire(self, handler, info):",
+            "        data = handler(self)",
+            "        for name, field in type(self).model_fields.items():",
+            '            if not (field.json_schema_extra or {}).get("wireNullable") or getattr(self, name) is not None:',
+            "                continue",
+            "            if info.exclude and name in info.exclude:", "                continue",
+            "            if info.include is not None and name not in info.include:", "                continue",
+            "            if field.is_required() or name in self.model_fields_set:",
+            "                data[field.alias if info.by_alias else name] = None",
+            "        return data", "",
+        ])
+    def union_expr(node):
+        if "$ref" in node:
+            definition = index[ref_name(node["$ref"])]["def"]
+            if "oneOf" in definition:
+                return union_expr(definition)
+        if "oneOf" in node:
+            return " | ".join(union_expr(branch) for branch in node["oneOf"])
+        return em.expr(node)
     for name in order:
         d = index[name]["def"]
+        if "oneOf" in d:
+            out.extend(["", f"class {name}(RootModel[{union_expr(d)}]):", "    pass", ""])
+            continue
         values = registry_values(d, registries)
         if values is not None:
             out.append("")
@@ -392,7 +452,7 @@ def emit_py(index: dict, registries: dict, order: list[str], version: str) -> st
             out.append("")
             continue
 
-        base = d.get("x-extends", "_Base")
+        base = d.get("x-extends", "_RemoteBase" if d.get("x-wire-strict") else "_Base")
         out.append("")
         out.append(f"class {name}({base}):")
         desc = d.get("description")
@@ -412,7 +472,23 @@ def emit_py(index: dict, registries: dict, order: list[str], version: str) -> st
             if keyword.iskeyword(attr) or attr.startswith("model_"):
                 attr += "_"
             expr = em.expr(node, name)
-            if prop in required:
+            if d.get("x-wire-strict"):
+                options = [f'alias="{prop}"']
+                if prop not in required:
+                    expr += " | None"
+                    options.insert(0, "default=None")
+                for schema_key, field_key in (("minLength", "min_length"), ("maxLength", "max_length"),
+                    ("minimum", "ge"), ("maximum", "le"), ("minItems", "min_length"), ("maxItems", "max_length"),
+                    ("pattern", "pattern")):
+                    if schema_key in node:
+                        options.append(f"{field_key}={node[schema_key]!r}")
+                if node.get("type") in ("string", "integer", "number", "boolean") and "const" not in node and "enum" not in node:
+                    options.append("strict=True")
+                rules = {"wireNullable": any(branch.get("type") == "null" for branch in node.get("oneOf", [])),
+                         "wireType": node.get("type")}
+                options.append(f"json_schema_extra={rules!r}")
+                out.append(f"    {attr}: {expr} = Field({', '.join(options)})")
+            elif prop in required:
                 out.append(f'    {attr}: {expr} = Field(alias="{prop}")')
             else:
                 out.append(f'    {attr}: {expr} | None = Field(default=None, alias="{prop}")')
@@ -456,6 +532,8 @@ def emit_go(index: dict, registries: dict, version: str) -> str:
 
     for name in names:
         d = index[name]["def"]
+        if "oneOf" in d:
+            raise SystemExit("oneOf is not supported for Go consumers")
         values = registry_values(d, registries)
         if values is not None or ("enum" in d and "properties" not in d):
             vals = values if values is not None else [str(v) for v in d["enum"]]

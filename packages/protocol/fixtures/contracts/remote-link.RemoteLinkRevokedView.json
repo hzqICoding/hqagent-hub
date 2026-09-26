@@ -1,0 +1,9 @@
+{
+  "state": "revoked",
+  "serverOrigin": "https://hub.example.invalid",
+  "deviceName": "Office PC",
+  "workerId": "worker_demo",
+  "connectionStatus": "offline",
+  "lastConnectedAt": "2026-09-26T12:00:00Z",
+  "lastErrorCode": "REMOTE_DEVICE_REVOKED"
+}

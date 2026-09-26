@@ -5,7 +5,7 @@
 
 ## 1. 包络
 
-所有事件共用一个包络 `HubEvent`（见 `schema/envelope.json`）。不存在第二种事件类型。
+本地Hub事件共用包络 `HubEvent`（见 `schema/envelope.json`），下表仍是原本地事件定义。R1新增的远程传输帧由 `schema/remote.json` 定义，语义见 [R1远程契约](../remote/R1-contract.md)；它是传输投影，不替换本表、不扩展Adapter的既有事件映射。
 
 ```jsonc
 {
@@ -140,3 +140,18 @@
 |------|---------|------|
 | 2026-09-05 | 0.1.0 | 初版。合并施工方案 §8.3 的业务事件与 OTA §13.2 的升级事件；`approval.requested` 更名为 `approval.required`；新增 `node.resolved`、`task.path_violation`、`task.status_changed`、`agent.tool_call`、`agent.discovery.completed`、`system.maintenance`；补齐事件到状态的迁移表 |
 | 2026-09-06 | 0.2.1 | FZ-2.1：统一「无法映射」的措辞（D34）；明确 `raw` 2048 上限指序列化总长（D35）；成功取消不再产生 `agent.failed`（D27）；版本号跟进（D36） |
+
+
+## 8. FZ-R1.1 本机远程连接事件（协议包0.6.1）
+
+| # | type | aggregateType | payload | 触发方 | 说明 |
+|---|------|---------------|---------|--------|------|
+| 29 | `remote.link.changed` | system | `RemoteLinkView` | Worker本机连接服务 | 配对/取消/完成绑定、连接状态变更、撤销、冻结、解绑持久化后发送完整无secret视图 |
+
+- 使用现有本机HubEvent与events.seq，aggregateId为`remote-link`；这是本机WS事件，不是Worker↔Server线路帧。
+- 本机包络protocolVersion仍为协议包版本；D42的wireRevision只用于Worker↔Server帧。
+- WS仍通过v1现有Bearer换取一次性Ticket，校验Origin/过期/重放；HTTP读写沿用已有鉴权。
+- payload与GET /api/v1/remote/link一致，pairCode仅在pairing状态且有有效挑战时存在；永不包含设备secret、Authorization或本机Hub Token。
+- 先持久化状态和事件，再广播；幂等重放不重复发事件。迟到的配对响应不得把已取消/解绑的绑定复活。
+- 不通过远程事件Outbox转发此本机事件；其本机seq按既有非远程可见覆盖规则处理，不能向远程广播本机短码。
+- 原28条业务/升级事件不改，Adapter无需新增供应商映射；本事件由本机连接服务产生。

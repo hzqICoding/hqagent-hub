@@ -153,3 +153,123 @@ errors:
     http: 500
     retryable: true
     description: 未分类的内部错误，detail 里带 requestId 供查日志
+
+  # ---- R1 remote communication, 0.6.0 ----
+  - code: REMOTE_AUTH_REQUIRED
+    http: 401
+    retryable: false
+    description: 远程账号会话缺失或失效；与本机Hub Token鉴权分离
+  - code: REMOTE_CSRF_REJECTED
+    http: 403
+    retryable: false
+    description: 远程浏览器写请求的Origin或会话CSRF校验失败
+  - code: REMOTE_DEVICE_OFFLINE
+    http: 409
+    retryable: true
+    description: 目标设备离线；可排队命令仍返回202和queued_offline，不将离线误报执行失败
+  - code: REMOTE_DEVICE_REVOKED
+    http: 403
+    retryable: false
+    description: 设备配对已撤销，禁止新连接与后续命令；不宣称已停止本机执行
+  - code: REMOTE_DEVICE_AUTH_FAILED
+    http: 401
+    retryable: false
+    description: 设备凭据验证失败；响应不区分其他所有者设备的存在性
+  - code: REMOTE_PAIRING_EXPIRED
+    http: 410
+    retryable: false
+    description: 一次性配对请求或配对码已过期
+  - code: REMOTE_PAIRING_CONFLICT
+    http: 409
+    retryable: false
+    description: 配对已消费或设备凭据已绑定；不得重新归属另一用户
+  - code: REMOTE_PAIRING_INVALID
+    http: 404
+    retryable: false
+    description: 无效配对码或请求；不泄露已绑定账号信息
+  - code: REMOTE_COMMAND_EXPIRED
+    http: 410
+    retryable: false
+    description: 命令接单前已过期，不再执行；已分配执行序号须留跳过记录
+  - code: REMOTE_COMMAND_WITHDRAWN
+    http: 409
+    retryable: false
+    description: 命令在未派发时撤回或经Worker核实撤回；拒绝迟到重复执行
+  - code: REMOTE_WITHDRAWAL_UNCONFIRMED
+    http: 409
+    retryable: false
+    description: 已可能派发，不能仅删服务端记录宣称撤回；须Worker核实
+  - code: REMOTE_STORE_CHANGED
+    http: 409
+    retryable: false
+    description: Worker存储世代变化，冻结旧世代未决命令自动投递等待对账
+  - code: REMOTE_EPOCH_STALE
+    http: 409
+    retryable: false
+    description: 非当前已认证连接或旧Worker启动实例的帧被拒绝
+  - code: REMOTE_PROTOCOL_UNSUPPORTED
+    http: 409
+    retryable: false
+    description: 协议版本不兼容；不静默降级远程命令语义
+  - code: REMOTE_EVENT_CONFLICT
+    http: 409
+    retryable: false
+    description: 同事件ID或存储世代序号/覆盖区间对应不同不可变内容
+  - code: REMOTE_ACK_CONFLICT
+    http: 409
+    retryable: false
+    description: 确认位置错误、跨存储世代或服务端确认回退，需要对账而非裁剪Outbox
+  - code: REMOTE_SEQUENCE_GAP
+    http: 409
+    retryable: true
+    description: 执行对话序号存在缺口，先补命令或跳过记录，控制命令不占执行序号
+  - code: REMOTE_APPROVAL_FORBIDDEN
+    http: 403
+    retryable: false
+    description: R1禁止远程批准此高风险或Worker策略禁止的动作；本机可处理
+  - code: CONVERSATION_AUTHORITY_MISMATCH
+    http: 409
+    retryable: false
+    description: 本地写接口不能写remote对话，必须走权威服务端；旧local对话不自动转换
+  - code: REMOTE_TARGET_MISMATCH
+    http: 409
+    retryable: false
+    description: 命令目标、对话固定Worker或执行引用不匹配；跨owner资源统一NOT_FOUND
+  - code: REMOTE_SCENE_VERSION_MISMATCH
+    http: 409
+    retryable: false
+    description: Worker场景版本与已排队请求不一致，不静默换用最新角色配置
+  - code: REMOTE_CURSOR_EXPIRED
+    http: 410
+    retryable: false
+    description: 浏览器opaque游标已失效，需重新获取owner范围快照
+  - code: REMOTE_CURSOR_INVALID
+    http: 400
+    retryable: false
+    description: 游标无效或与当前资源/认证范围不符，不泄露游标归属
+  - code: REMOTE_RATE_LIMITED
+    http: 429
+    retryable: true
+    description: 远程登录/配对/提交限流，按Retry-After重试，不能绕过单次码或幂等规则
+  - code: REMOTE_FRAME_TOO_LARGE
+    http: 413
+    retryable: false
+    description: 远程帧超过256KiB，拒绝而不是截断关键内容后继续
+  - code: REMOTE_WITHDRAWAL_TOO_LATE
+    http: 409
+    retryable: false
+    description: 原提交已形成可见Run或已执行结束，不能声称撤回从未执行；已知Run应按runId控制
+
+  # ---- FZ-R1.1 local pairing controls ----
+  - code: REMOTE_PAIRING_IN_PROGRESS
+    http: 409
+    retryable: false
+    description: 本机已有配对请求进行中；同幂等请求可重放，新请求须先取消旧配对
+  - code: REMOTE_SERVER_UNREACHABLE
+    http: 503
+    retryable: true
+    description: 配置的远程服务无法连接或响应未确认；不得伪造配对或服务端撤销成功
+  - code: REMOTE_SERVER_ORIGIN_INVALID
+    http: 422
+    retryable: false
+    description: serverOrigin不是允许的HTTPS origin，或未获本机开发模式允许的localhost/127.0.0.1 HTTP origin

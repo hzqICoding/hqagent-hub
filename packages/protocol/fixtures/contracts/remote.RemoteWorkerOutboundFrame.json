@@ -1,0 +1,12 @@
+{
+  "type": "worker.hello",
+  "protocolVersion": "0.6.1",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "platform": "windows",
+  "architecture": "x86_64",
+  "capabilityRevision": 1,
+  "lastServerAck": null,
+  "wireRevision": 1
+}

@@ -116,6 +116,7 @@ class TaskService:
         self._pumps: dict[str, asyncio.Task[None]] = {}
         self._outcomes: dict[str, Any] = {}
         self._task_locks: dict[str, asyncio.Lock] = {}
+        self.execution_commit_observer = None
 
     async def list_tasks(self, query: dict[str, Any]) -> PageResult:
         items, total = self.repository.list(query)
@@ -420,6 +421,7 @@ class TaskService:
             )
             if running:
                 spec["pauseRequested"] = True
+                spec["controlEvidence"] = {"kind": "pause_requested", "observedAt": _now()}
                 self.state.put(f"task_spec:{task_id}", spec)
                 await self._emit(
                     task_id,
@@ -427,6 +429,7 @@ class TaskService:
                     {"taskId": task_id, "to": status, "reason": "pause_requested；将在节点边界暂停"},
                 )
             else:
+                self._record_control_evidence(task_id, "node_boundary_paused")
                 self.repository.save(task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()}))
                 await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "paused"})
             return task_id
@@ -442,6 +445,7 @@ class TaskService:
             self.repository.save(task.model_copy(update={"status": TaskStatus.QUEUED, "updated_at": _now()}))
             await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "queued"})
             await self._advance(task_id)
+            self._record_control_evidence(task_id, "supervisor_resumed")
             return task_id
         if action == "append_instruction":
             if not value.instruction:
@@ -605,6 +609,10 @@ class TaskService:
                 },
             ),
         )
+        if self.execution_commit_observer is not None:
+            # Optional persistence observer; no execution policy or state change.
+            # It seals the remote recovery witness before a new Task can dispatch.
+            self.execution_commit_observer(transaction)
 
     async def _advance(self, task_id: str) -> None:
         task = self.repository.get(task_id)
@@ -612,6 +620,7 @@ class TaskService:
             return
         spec = self._task_spec(task_id)
         if spec.get("pauseRequested"):
+            self._record_control_evidence(task_id, "node_boundary_paused")
             self.repository.save(task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()}))
             return
         nodes = {node.id: node for node in self.repository.list_nodes(task_id)}
@@ -1128,6 +1137,8 @@ class TaskService:
                 await self._release_children(task_id)
                 return
             if spec.get("pauseRequested"):
+                spec["controlEvidence"] = {"kind": "node_boundary_paused", "observedAt": _now()}
+                self.state.put(f"task_spec:{task_id}", spec)
                 self.repository.save(task.model_copy(update={"status": TaskStatus.PAUSED, "updated_at": _now()}))
                 await self._emit(task_id, "task.status_changed", {"taskId": task_id, "to": "paused"})
                 return
@@ -1152,13 +1163,22 @@ class TaskService:
         if _text(current_task.status) in TERMINAL_TASK_STATES:
             # Cancel is idempotent for an already-cancelled task and must never
             # rewrite a completed success/failure into cancelled.
+            evidence = self.control_observation(task_id).get("controlEvidence") or {}
+            if evidence.get("kind") not in {"cancellation", "adapter_confirmed"}:
+                # A terminal label by itself isn't an Adapter stop receipt.
+                # ALREADY_FINISHED is confirmed through CancellationOutcome;
+                # previously confirmed cancellations retain that exact evidence.
+                self._record_control_evidence(task_id, "terminal_unverified")
             return
+        # Keep recovery flags, but do not mix receipts from separate attempts.
+        self._record_control_evidence(task_id, "cancel_requested")
         running = [
             node
             for node in self.repository.list_nodes(task_id)
             if _text(node.status) in {NodeStatus.RUNNING.value, NodeStatus.WAITING_APPROVAL.value}
         ]
         if not running:
+            self._record_control_evidence(task_id, "adapter_confirmed", cancellations=[])
             task = self.repository.get(task_id)
             self.repository.save(task.model_copy(update={
                 "status": TaskStatus.CANCELLED, "pending_approval_id": None, "updated_at": _now()}))
@@ -1168,6 +1188,7 @@ class TaskService:
         for node in running:
             outcome = self._outcomes.get(node.id)
             if outcome is None:
+                self._record_control_evidence(task_id, "missing_execution_handle")
                 reason = "缺少当前进程内执行句柄，无法确认原生执行已停止"
                 self.repository.save_node(
                     node.model_copy(update={"status": NodeStatus.FAILED, "error": reason, "completed_at": _now()})
@@ -1180,6 +1201,18 @@ class TaskService:
                 self.state.put(f"task_spec:{task_id}", spec)
                 return
             cancellation = await self.runtime.cancel(outcome, reason="用户取消任务")
+            prior = self.control_observation(task_id).get("controlEvidence") or {}
+            results = list(prior.get("cancellations", []))
+            # Detail is display-only and can contain native provider output.
+            # Persist only the structured cancellation facts for the bridge.
+            result = getattr(cancellation, "result", None)
+            if result is not None and hasattr(result, "model_dump"):
+                results.append(result.model_dump(mode="json", by_alias=True, exclude_none=True,
+                                                  exclude={"detail"}))
+                self._record_control_evidence(task_id, "cancellation", cancellations=results,
+                                              expectedHandles=len(running))
+            else:
+                self._record_control_evidence(task_id, "receipt_unavailable")
             if cancellation.task_status != TaskStatus.CANCELLED:
                 task = self.repository.get(task_id)
                 self.repository.save(task.model_copy(update={
@@ -1299,6 +1332,30 @@ class TaskService:
         if value is None:
             raise HubError("INTERNAL", f"任务缺少持久化执行规格：{task_id}")
         return value
+
+    def control_observation(self, task_id: str) -> dict[str, Any]:
+        """Structured internal evidence; no interpretation of labels or error text."""
+        state = getattr(self, "state", None)
+        spec = state.get(f"task_spec:{task_id}") if state is not None else None
+        if spec is None:
+            return {"evidenceAvailable": False}
+        return {"evidenceAvailable": True, **{key: spec.get(key) for key in (
+            "recoveryRequired", "pauseRequested", "controlEvidence", "unresolvedCancellation")}}
+
+    def _record_control_evidence(self, task_id: str, kind: str, **values: Any) -> None:
+        state = getattr(self, "state", None)
+        spec = state.get(f"task_spec:{task_id}") if state is not None else None
+        if spec is None:
+            # Evidence collection is observational. A minimally composed service
+            # can still cancel through its runtime without a durable state port.
+            return
+        spec["controlEvidence"] = {"kind": kind, "observedAt": _now(), **values}
+        results = values.get("cancellations", [])
+        if kind == "missing_execution_handle" or any(
+            r["outcome"] in {"refused", "not_found"} or r.get("orphanProcessIds") for r in results
+        ):
+            spec["unresolvedCancellation"] = spec["controlEvidence"]
+        self.state.put(f"task_spec:{task_id}", spec)
 
     def _lock(self, task_id: str) -> asyncio.Lock:
         return self._task_locks.setdefault(task_id, asyncio.Lock())
@@ -1425,6 +1482,8 @@ class ApprovalService:
         approval_id: str,
         value: ApprovalResponseInput,
         idempotency_key: str | None,
+        *,
+        current_guard: Any = None,
     ) -> Any:
         database = getattr(self.repository, "database", None)
         approval = await self.repository.get(approval_id)
@@ -1439,6 +1498,8 @@ class ApprovalService:
             current = await self.repository.get(approval_id)
             if current is None:
                 raise ApprovalError("NOT_FOUND", "审批不存在", {"approvalId": approval_id})
+            if current_guard is not None:
+                current_guard(current)
             was_pending = current.status == ApprovalStatus.PENDING
             if was_pending and not self._task_waits_for_approval(tasks, current):
                 await self.coordinator.invalidate_task_pending_locked(

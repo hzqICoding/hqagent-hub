@@ -118,3 +118,30 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 | --- | --- | --- | --- |
 | 2026-09-05 | 0.1.0 | FZ-1 初次冻结 | `f56c891` |
 | 2026-09-05 | 0.1.0 | FZ-1 重新裁切：补齐 W1/W5 规格要求的 EVENT_CURSOR_EXPIRED、FEATURE_UNAVAILABLE、`instanceId`、`FeatureAvailability`、`waitPids`/`backupCompleted`、Session `status`。**在任何工作包开工之前完成**，因此不构成破坏性变更 | `a3e1047` |
+
+
+## R1 — 已冻结（2026-09-26，协议0.6.0）
+
+**R1 远程协议已冻结，P1 服务端 / P2 Worker 连接 / P3 Web B 阶段可以开工。**
+
+- 契约冻结SHA：`c443e126496c5b5115fe23efed60f9e4a2b4043f`；生成器前置：`068140a`；本分支尚未合并integration/phase1，等待主代理审核。
+- 0.6.0远程契约映射到**现有执行内核**；vNext技术方案§4、§5.1是目标模型，不是本轮已迁移的状态机。
+- D40：conversationId → runId(LocalRun) → executionTaskId/nodeId/sessionId。旧LocalRunView.taskId不变；不引入Attempt或retryOfRunId。
+- D41：执行状态保持TaskStatus/FZ-2；confirmed/rejected/unconfirmed控制结果携带Worker结构化证据，不能解析报错文本猜测。command.completed不是任务成功的同义词。
+- 新增86个远程类型、26个错误码；每个新类型均有Fixture。总计251类型、100个Contract Fixture。
+- 结构：`packages/protocol/schema/remote.json`；HTTP/Worker WSS绑定：`packages/protocol/openapi/remote-hub.v2.yaml`；关系、授权、顺序及事务语义：[R1契约](../packages/protocol/remote/R1-contract.md)。
+- 基线未改业务代码和旧断言：Hub199 passed；前端typecheck通过、201 passed；协议专用120 passed；validate -CheckGenerated通过。
+- 完整类型/错误清单、取舍及P2业务接线项：[R1-P0回执](handoffs/R1-P0-remote-protocol.md)。这是协议门，不是远程功能已实现或已部署的声明。
+- 历史预检`302ae44`的Q1/Q2已由主代理D40/D41关闭；旧needs-decision状态不再有效。
+
+## FZ-R1.1 / 0.6.1 — 已冻结（2026-09-26）
+
+**FZ-R1.1 / 0.6.1 已冻结。P2 与 P3-B 的本机配对界面以此为准。**
+
+- 契约冻结 SHA：`7bfbe953df9cbdfca74cee81e9db6632db69f8d2`；基线 `872a909`，分支 `feat/remote-protocol`，未合并 integration/phase1。
+- D42：27 个 Worker 帧使用整数 wireRevision=1。仅 hello 的 protocolVersion 保留为 semver 诊断信息；helloAck 回显修订，helloRejected 带 supportedWireRevisions。修订内结构冻结，升级窗口支持 N 与 N-1，包版本不决定线路兼容性。
+- P1 修改握手、帧派发与回执构造的版本判断。浏览器 remote-hub.v2.yaml 未修改。
+- D43：本机 v1 新增连接查询、配对、取消配对、解绑四个操作；7 个新类型；事件 remote.link.changed；LocalConversationView.authority 可选、缺省 local。沿用现有 v1 鉴权，视图与事件不暴露凭据。解绑不把已有 remote 对话降级为 local，本机只读。
+- 继续遵守 D40/D41：远程契约映射现有执行内核；vNext 技术方案 §4、§5.1 为目标模型，本轮不迁移。
+- 验证：258 类型 / 109 Fixture；协议 187 passed；Hub 199 passed；前端 typecheck 通过，41 文件 / 201 passed。
+- [FZ-R1.1 回执](handoffs/R1-FZ11-remote-protocol.md) 记录输出来源、下游接线与待确认项。本次是协议冻结，不表示远程功能已实现或部署。

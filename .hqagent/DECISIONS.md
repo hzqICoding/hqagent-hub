@@ -334,3 +334,52 @@ Phase 1.1 的三 Agent 目标后移**。另两个选项存档备查：
 
 **影响**：需要补工作区的增删与 `git init` 路由（当前 openapi 只有
 `GET /api/v1/workspaces`），属相容扩展，见 FZ-2.2。
+
+
+### D40 R1远程契约沿用现有执行身份，不引入Attempt（主代理裁决，2026-09-26）
+
+**背景**：vNext技术方案§4中的长期Task/独立Attempt是目标模型；当前每个LocalRun创建执行Task，非终态重试重置Node，终态重试创建子Task。远程定位是通信工具，本轮不迁移执行内核。
+
+**决定**：
+
+- 身份链为conversationId → runId（LocalRun，一轮用户要求）→ executionTaskId/nodeId/sessionId；远程控制和结果使用runId作为用户可见句柄。
+- 远程对内核Task的引用叫executionTaskId；现有LocalRunView.taskId不改名、不改变其语义。
+- 远程DTO不得包含attemptId，连可选空字段也不提供，不得用Node或Session ID伪造它。
+- 终态retry由Worker依现有_create_child逻辑产生子执行Task；command.completed.resultRef报告新引用，parentExecutionTaskId仅映射既有Task.parentTaskId。不发明retryOfRunId。
+- 长期Task/Attempt另立后续内核迁移工作包及兼容映射。
+
+**影响**：P1只保存执行引用/投影，P2负责与当前LocalRun/Task对接，P3以runId导航。0.6.0不改变旧DTO或本机执行逻辑。
+
+### D41 R1控制结果与执行状态分离（主代理裁决，2026-09-26）
+
+**背景**：草案cancel_requested/recovery_required不是当前TaskStatus；FZ-2的Adapter refused返回failed，无句柄等场景在内部task spec保存recoveryRequired并将Task置paused。
+
+**决定**：
+
+- 执行状态继续使用现有TaskStatus和FZ-2，不新增recovery_required/cancel_requested等执行状态。
+- 远程控制结果独立为confirmed/rejected/unconfirmed，携带executionMayStillBeRunning、orphanProcessIds、结构化evidence、reason与observedAt。
+- confirmed必须有实际生效证据；cancel需确认停止或本来已结束，pause需节点边界真正paused。收到请求/写入意图不等于生效。
+- Adapter refused报告rejected；无句柄、recoveryRequired、回执不明报告unconfirmed，不靠解析错误文本或failed/paused标签猜测。
+- P2从CancelResult/CancelOutcome、orphanProcessIds及TaskService.state的task_spec:<executionTaskId>中取得结构化标记。公开这些信息属于P2后续业务实现，本轮仅定义契约。
+- 浏览器分开展示传输状态、控制结果、执行状态。unconfirmed不能发送伪造command.completed；command.completed也不能一概显示成开发成功。
+
+**影响**：保留FZ-2；远程通信层提供显式映射，不替代执行内核。具体字段与命令终态矩阵见packages/protocol/remote/R1-contract.md。
+
+
+### D42 远程线路修订与协议包版本分离（主代理裁决，2026-09-26）
+
+**背景**：原27个Worker↔Server帧把protocolVersion固定为0.6.0，会使异步部署的服务端/Worker因无关包升级互拒。
+
+**决定**：所有这些帧使用整数wireRevision，本轮const 1。仅hello另带semver格式的protocolVersion用于诊断，不能参与版本协商。helloAck回显接受的修订；helloRejected带supportedWireRevisions，尤其REMOTE_PROTOCOL_UNSUPPORTED时不得省略。修订内帧结构冻结，严格校验下加可选字段也要开新修订；升级窗口服务端同时支持N与N-1。包版本升级与线路修订无关。浏览器remote-hub.v2 HTTP API不改。
+
+**影响**：P1调整Worker握手/帧派发/回执构造与版本测试；P2按线路修订序列化，而不是包版本相等判断。0.6.1中的初始线路为1。
+
+### D43 本机远程连接管理与对话authority（主代理裁决，2026-09-26）
+
+**背景**：只有远程协议不足以让本机用户发起配对、看短码与连接状态、取消或解绑；P2不能自建第二套路由事实源。
+
+**决定**：增量冻结GET /api/v1/remote/link、POST/DELETE /api/v1/remote/pairing、POST /api/v1/remote/unlink及RemoteLinkView。沿用v1现有鉴权，状态unpaired/pairing/paired/revoked/frozen，任何视图/事件均不得含设备secret、Authorization或Hub Token。serverOrigin只接受HTTPS，开发调试可允许127.0.0.1/localhost HTTP。本机WS增加remote.link.changed，payload为同一RemoteLinkView。
+
+解绑删除本机凭据并断开，尽力通知服务端撤销，完成状态unpaired；不能冒称服务端必已撤销，不扩远程HTTP或给设备Bearer授予owner权限。既有remote对话不回退local，本机只读。LocalConversationView追加可选authority=local/remote，缺省视为local以兼容旧对象。后续如何接续解绑对话另行设计。
+
+**影响**：P2实现连接状态/凭据生命周期和authority写拦截，P3-B本机配对界面消费此契约。具体状态字段、并发与通知边界见R1-contract.md§12。

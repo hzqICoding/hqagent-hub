@@ -152,6 +152,39 @@ MIGRATIONS = (
     ),
 )
 
+# R1-P2 appends a migration; older migration bytes remain unchanged.
+MIGRATIONS += (
+    Migration(6, """
+        CREATE TABLE remote_state (key TEXT PRIMARY KEY, value_json TEXT NOT NULL);
+        CREATE TABLE remote_inbox (
+            worker_id TEXT NOT NULL, command_id TEXT NOT NULL, digest TEXT NOT NULL,
+            command_json TEXT NOT NULL, status TEXT NOT NULL, run_id TEXT,
+            receipt_json TEXT, observation_json TEXT,
+            PRIMARY KEY(worker_id, command_id)
+        );
+        CREATE TABLE remote_slots (
+            worker_id TEXT NOT NULL, conversation_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+            command_id TEXT NOT NULL, kind TEXT NOT NULL,
+            PRIMARY KEY(worker_id, conversation_id, sequence),
+            UNIQUE(worker_id, command_id)
+        );
+        CREATE TABLE remote_conversations (
+            conversation_id TEXT PRIMARY KEY, worker_id TEXT NOT NULL, store_id TEXT NOT NULL,
+            consumed_seq INTEGER NOT NULL DEFAULT 0, target_json TEXT
+        );
+        CREATE TABLE remote_outbox (
+            store_id TEXT NOT NULL, seq INTEGER NOT NULL, event_id TEXT NOT NULL UNIQUE,
+            frame_json TEXT NOT NULL, digest TEXT NOT NULL,
+            PRIMARY KEY(store_id, seq)
+        );
+        CREATE TABLE remote_operations (
+            route TEXT NOT NULL, key TEXT NOT NULL, digest TEXT NOT NULL,
+            generation INTEGER NOT NULL, PRIMARY KEY(route, key)
+        );
+        CREATE TABLE remote_projections (key TEXT PRIMARY KEY, digest TEXT NOT NULL);
+    """),
+)
+
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
 
 

@@ -1,0 +1,12 @@
+{
+  "type": "events.omitted",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 8,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "firstSeq": 1,
+  "reason": "not_remote_visible",
+  "wireRevision": 1
+}

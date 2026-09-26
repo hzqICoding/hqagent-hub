@@ -1,0 +1,926 @@
+openapi: 3.1.0
+info:
+  title: HQAgent R1 Remote Communication
+  version: 0.6.0
+  description: Remote HTTPS origin only. Owner derives from authenticated session, never request parameters. D40/D41
+    map current execution core. No model invocation/credentials, native history, attachments or signed approvals.
+servers:
+- url: https://{hubHost}
+  variables:
+    hubHost:
+      default: hub.example.invalid
+x-envelope: ../schema/envelope.json#/$defs/ApiEnvelope
+paths:
+  /api/v2/auth/login:
+    post:
+      operationId: remoteLogin
+      description: Validate account password with rate limits and same-origin Origin checks; set HttpOnly Secure
+        cookie. Same login intent must not create duplicate sessions. Authentication headers/response handling uses
+        dedicated secure auth storage, never command response_json logs. Account provisioning is out-of-band operator
+        bootstrap; no public registration or model subscription API.
+      security: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteAuthenticatedSession
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote.json#/$defs/RemoteLoginInput
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+  /api/v2/auth/session:
+    get:
+      operationId: getRemoteSession
+      description: Current browser session or authenticated=false. Cache-Control:no-store. No owner selector.
+      security: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteBrowserSessionView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+  /api/v2/auth/logout:
+    post:
+      operationId: remoteLogout
+      description: Invalidate current session and clear cookie; never select another account/session in body.
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteAnonymousSession
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
+  /api/v2/worker/pairing-requests:
+    post:
+      operationId: requestRemotePairing
+      description: 'Bootstrap exception: unknown high-entropy device bearer registers ONLY an unclaimed short-lived
+        authentication challenge, never a usable device. Persist credential verifier, not secret. Rate limit and
+        require TLS; Idempotency-Key bound to verifier. Once paired a credential cannot be registered/reassigned
+        again.'
+      security:
+      - workerDevice: []
+      responses:
+        '201':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemotePairingChallenge
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote.json#/$defs/RemotePairingRequestInput
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+  /api/v2/worker/pairing-requests/{pairRequestId}:
+    get:
+      operationId: getRemotePairingStatus
+      description: Only the registering device credential can poll this request. Expired/revoked cannot connect
+        as Worker.
+      security:
+      - workerDevice: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemotePairingStatusView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: pairRequestId
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v2/pairings/preview:
+    post:
+      operationId: previewRemotePairing
+      description: Resolve short code without consuming it; require logged-in browser and throttle guesses. Preview
+        is not authorization to execute.
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemotePairingPreview
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote.json#/$defs/RemotePairingPreviewInput
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
+  /api/v2/pairings/{pairRequestId}/confirm:
+    post:
+      operationId: confirmRemotePairing
+      description: Consume unexpired one-use code and bind device to the CURRENT authenticated owner atomically.
+        Code must match path request. Never accept owner/account identifier. Cross-user code replay reveals no owner.
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteDeviceView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote.json#/$defs/RemotePairingConfirmInput
+      parameters:
+      - name: pairRequestId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
+  /api/v2/devices:
+    get:
+      operationId: listRemoteDevices
+      description: ''
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteDevicePage
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 2048
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+  /api/v2/devices/{workerId}:
+    get:
+      operationId: getRemoteDevice
+      description: ''
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteDeviceView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: workerId
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v2/devices/{workerId}/revocations:
+    post:
+      operationId: revokeRemoteDevice
+      description: Atomically revoke credential, fence connections and stop delivery; do not claim current local
+        execution stopped. Owner-derived authorization required.
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteDeviceRevocationView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote.json#/$defs/RemoteDeviceRevokeInput
+      parameters:
+      - name: workerId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
+  /api/v2/devices/{workerId}/catalog:
+    get:
+      operationId: getRemoteWorkerCatalog
+      description: Last committed Worker catalog in current store; observedAt is not proof offline paths still exist.
+        No catalog yet => REMOTE_DEVICE_OFFLINE or FEATURE_UNAVAILABLE, not fabricated directories. Directory browsing/registration
+        beyond this indexed selection is not frozen here.
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteCatalogView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: workerId
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v2/conversations:
+    get:
+      operationId: listRemoteConversations
+      description: ''
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteConversationPage
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 2048
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+    post:
+      operationId: createRemoteConversation
+      description: Create remote conversation for owner-bound device/store and indexed workspace/scene, including
+        while device is offline. Fixed target in R1; never replay imported local history as commands.
+      security:
+      - remoteSession: []
+      responses:
+        '201':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteConversationView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote.json#/$defs/RemoteCreateConversationInput
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
+  /api/v2/conversations/{conversationId}:
+    get:
+      operationId: getRemoteConversation
+      description: ''
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteConversationView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v2/conversations/{conversationId}/messages:
+    post:
+      operationId: sendRemoteMessage
+      description: Atomically store message + command + outbox and allocate one conversationSeq only for execution
+        message. clientMessageId and Idempotency-Key both deduplicate within authenticated owner/conversation. Offline
+        returns202 queued_offline, never running. Accepted commands do not expire mid-execution.
+      security:
+      - remoteSession: []
+      responses:
+        '202':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteQueuedReceipt
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote.json#/$defs/RemoteSendMessageInput
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
+    get:
+      operationId: listRemoteMessages
+      description: ''
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteMessagePage
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 2048
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+  /api/v2/conversations/{conversationId}/runs:
+    get:
+      operationId: listRemoteRuns
+      description: ''
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteRunPage
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 2048
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+  /api/v2/conversations/{conversationId}/commands:
+    get:
+      operationId: listRemoteCommands
+      description: ''
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteCommandPage
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 2048
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+  /api/v2/runs/{runId}:
+    get:
+      operationId: getRemoteRun
+      description: ''
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteRunView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v2/runs/{runId}/commands:
+    post:
+      operationId: controlRemoteRun
+      description: runId is LocalRun user handle. Resolve all execution references in owner/device/conversation
+        scope. No conversationSeq. Worker retains existing TaskStatus and retry child Task semantics. A transport202
+        is not a confirmed control outcome.
+      security:
+      - remoteSession: []
+      responses:
+        '202':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteQueuedReceipt
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote.json#/$defs/RemoteRunControlInput
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
+  /api/v2/commands/{commandId}:
+    get:
+      operationId: getRemoteCommand
+      description: ''
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteCommandView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: commandId
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v2/commands/{commandId}/cancellations:
+    post:
+      operationId: withdrawRemoteCommand
+      description: 'Only for run.submit before a visible Run is bound. Never-dispatched: reject original command
+        with REMOTE_COMMAND_WITHDRAWN and persist ordered skip in same transaction. Possibly dispatched: withdrawalState=requested
+        plus an unsequenced command.withdraw; cannot mark confirmed before Worker reconciliation. A known Run must
+        use cancel by runId. Race/unknown outcome stays pending, not success.'
+      security:
+      - remoteSession: []
+      responses:
+        '202':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteCommandView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote.json#/$defs/RemoteCommandWithdrawalInput
+      parameters:
+      - name: commandId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
+  /api/v2/approvals/{approvalId}:
+    get:
+      operationId: getRemoteApproval
+      description: Owner-scoped last Worker projection, not server permission authority.
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteApprovalView
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: approvalId
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v2/approvals/{approvalId}/decisions:
+    post:
+      operationId: decideRemoteApproval
+      description: R1 remote approve of git_push/deploy/delete/db_migrate or locally blocked actions => REMOTE_APPROVAL_FORBIDDEN403;
+        no command enqueued. Worker repeats check from actual pending request and current local policy. Remote reject
+        may be delivered without granting permission. A202 is not consumed approval.
+      security:
+      - remoteSession: []
+      responses:
+        '202':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteQueuedReceipt
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote.json#/$defs/RemoteApprovalDecisionInput
+      parameters:
+      - name: approvalId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
+  /api/v2/events:
+    get:
+      operationId: listRemoteEvents
+      description: Owner-wide events with independent opaque serverCursor; no numeric Worker seq resume. Missing
+        after returns current tail and empty items; first load selected conversation snapshot then replay after
+        its cursor. Expired cursor => REMOTE_CURSOR_EXPIRED410, never silently reset.
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteBrowserEventPage
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 2048
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 100
+  /api/v2/conversations/{conversationId}/snapshot:
+    get:
+      operationId: getRemoteConversationSnapshot
+      description: Transactionally consistent selected-conversation projection and stream cursor. Fetch more bounded
+        history when hasMore=true, then apply subsequent events by cursor. Event endpoint may be polled; browser
+        websocket streaming is not required by R1-P0.
+      security:
+      - remoteSession: []
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteConversationSnapshot
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
+            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+components:
+  securitySchemes:
+    remoteSession:
+      type: apiKey
+      in: cookie
+      name: __Host-hqremote
+      description: HttpOnly; Secure; SameSite=Strict; Path=/; no Domain; rotate on authentication; no session credential
+        in JSON.
+    workerDevice:
+      type: http
+      scheme: bearer
+      description: Worker-generated independent device secret, at least 256 bits. TLS headers only; server stores
+        only verification material, never plaintext or reversible secret. Browser never receives it.
+x-worker-websocket:
+  path: /ws/v2/worker
+  security:
+  - workerDevice: []
+  clientFrames: ../schema/remote.json#/$defs/RemoteWorkerOutboundFrame
+  serverFrames: ../schema/remote.json#/$defs/RemoteServerOutboundFrame
+  maxFrameBytes: 262144
+  description: Device paired and unrevoked before upgrade; first frame hello within 10s; no query-token fallback.
+    15s heartbeats/45s offline. One active connection per worker; authenticated new epoch fences old connection.
+    Events retain original epoch on retransmit; session heartbeats must match current epoch.

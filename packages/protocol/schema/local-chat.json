@@ -224,6 +224,14 @@
         },
         "lastRunStatus": {
           "$ref": "common.json#/$defs/TaskStatus"
+        },
+        "authority": {
+          "type": "string",
+          "enum": [
+            "local",
+            "remote"
+          ],
+          "description": "Optional for compatibility. Missing means local at the consuming boundary. A persisted remote conversation never reverts to local after unlink and remains locally read-only."
         }
       }
     },

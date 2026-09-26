@@ -1,0 +1,3927 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "remote.json",
+  "title": "R1 remote communication contract",
+  "description": "Protocol package 0.6.1; Worker/Server wire revision 1. D40/D41 preserve current execution identity and TaskStatus. No model credentials, model invocation, attachments, native history, notification channels or signed approvals.",
+  "$defs": {
+    "RemoteError": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "common.json#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "description": "Sanitized error. No credential, raw environment, owner locator or arbitrary detail object."
+    },
+    "RemoteAccountView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "loginName",
+        "displayName"
+      ],
+      "properties": {
+        "loginName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120
+        }
+      },
+      "description": "Current authenticated account only. No ownerId/accountId selector is exposed."
+    },
+    "RemoteLoginInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "loginName",
+        "password"
+      ],
+      "properties": {
+        "loginName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "password": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "writeOnly": true,
+          "description": "Hub Server account password, never a model credential. Never reflected in responses/logs."
+        }
+      }
+    },
+    "RemoteAuthenticatedSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "authenticated",
+        "account",
+        "expiresAt",
+        "csrfToken"
+      ],
+      "properties": {
+        "authenticated": {
+          "type": "boolean",
+          "const": true
+        },
+        "account": {
+          "$ref": "remote.json#/$defs/RemoteAccountView"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "csrfToken": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 256,
+          "description": "Session-bound CSRF value, not authentication. Browser authentication remains an HttpOnly Secure cookie."
+        }
+      }
+    },
+    "RemoteAnonymousSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "authenticated"
+      ],
+      "properties": {
+        "authenticated": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "RemoteBrowserSessionView": {
+      "oneOf": [
+        {
+          "$ref": "remote.json#/$defs/RemoteAuthenticatedSession"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteAnonymousSession"
+        }
+      ]
+    },
+    "RemotePairingRequestInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "deviceName",
+        "workerStoreId",
+        "platform",
+        "architecture"
+      ],
+      "properties": {
+        "deviceName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "windows",
+            "linux",
+            "darwin"
+          ]
+        },
+        "architecture": {
+          "type": "string",
+          "enum": [
+            "x86_64",
+            "aarch64"
+          ]
+        }
+      },
+      "description": "Worker sends its locally generated 256-bit device secret only in Authorization header. Body contains no credential. Unclaimed requests are short-lived authentication challenges, not owner-visible devices."
+    },
+    "RemotePairingChallenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "pairRequestId",
+        "workerId",
+        "pairCode",
+        "expiresAt",
+        "status"
+      ],
+      "properties": {
+        "pairRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "pairCode": {
+          "type": "string",
+          "pattern": "^[A-HJ-NP-Z2-9]{8}$",
+          "minLength": 8,
+          "maxLength": 8
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "status": {
+          "type": "string",
+          "const": "pending"
+        }
+      },
+      "description": "Five-minute one-use code; no device secret. Never put the code in a URL."
+    },
+    "RemotePairingPreviewInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "pairCode"
+      ],
+      "properties": {
+        "pairCode": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 8,
+          "pattern": "^[A-HJ-NP-Z2-9]{8}$"
+        }
+      }
+    },
+    "RemotePairingPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "pairRequestId",
+        "deviceName",
+        "platform",
+        "architecture",
+        "expiresAt"
+      ],
+      "properties": {
+        "pairRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "deviceName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "windows",
+            "linux",
+            "darwin"
+          ]
+        },
+        "architecture": {
+          "type": "string",
+          "enum": [
+            "x86_64",
+            "aarch64"
+          ]
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Authenticated browser preview for explicit device confirmation; does not claim or grant access."
+    },
+    "RemotePairingConfirmInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "pairCode"
+      ],
+      "properties": {
+        "pairCode": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 8,
+          "pattern": "^[A-HJ-NP-Z2-9]{8}$"
+        }
+      }
+    },
+    "RemotePairingStatusView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "pairRequestId",
+        "workerId",
+        "status",
+        "expiresAt"
+      ],
+      "properties": {
+        "pairRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "paired",
+            "expired",
+            "revoked"
+          ]
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Device-authenticated status poll scoped to this exact request/credential. Reveals no owner or raw credential."
+    },
+    "RemoteDeviceView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "workerId",
+        "deviceName",
+        "platform",
+        "architecture",
+        "status",
+        "workerStoreId",
+        "capabilityRevision",
+        "observedAt",
+        "pairedAt"
+      ],
+      "properties": {
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "deviceName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "windows",
+            "linux",
+            "darwin"
+          ]
+        },
+        "architecture": {
+          "type": "string",
+          "enum": [
+            "x86_64",
+            "aarch64"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "online",
+            "offline",
+            "revoked",
+            "reconciliation_required"
+          ]
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "capabilityRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "lastSeenAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "pairedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "revokedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      }
+    },
+    "RemoteDevicePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "items",
+        "hasMore"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteDeviceView"
+          },
+          "maxItems": 100
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        }
+      }
+    },
+    "RemoteDeviceRevokeInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      }
+    },
+    "RemoteDeviceRevocationView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "workerId",
+        "revokedAt",
+        "status",
+        "executionMayStillBeRunning"
+      ],
+      "properties": {
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "revokedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "status": {
+          "type": "string",
+          "const": "revoked"
+        },
+        "executionMayStillBeRunning": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "description": "Revokes transport rights, does not claim execution was cancelled or stopped."
+    },
+    "RemoteEventPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "workerStoreId",
+        "seq"
+      ],
+      "properties": {
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "description": "Highest durably committed contiguous event seq for this Worker store, never the largest observed seq."
+    },
+    "RemoteWorkerHello": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "protocolVersion",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "platform",
+        "architecture",
+        "capabilityRevision",
+        "lastServerAck"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.hello"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "protocolVersion": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "description": "Protocol package semantic version for diagnostics only. Never negotiate or reject based on this value."
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "windows",
+            "linux",
+            "darwin"
+          ]
+        },
+        "architecture": {
+          "type": "string",
+          "enum": [
+            "x86_64",
+            "aarch64"
+          ]
+        },
+        "capabilityRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "lastServerAck": {
+          "oneOf": [
+            {
+              "$ref": "remote.json#/$defs/RemoteEventPosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "First frame after device-authenticated WSS. Same store preserves seq across boots; new store requires null ack. Credentials never appear in frames."
+    },
+    "RemoteWorkerHelloAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "connectionId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "commandDelivery",
+        "lastServerAck",
+        "pendingCommandCursor",
+        "heartbeatIntervalSeconds",
+        "offlineAfterSeconds",
+        "serverTime"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.hello_ack"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "commandDelivery": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "frozen"
+          ]
+        },
+        "lastServerAck": {
+          "oneOf": [
+            {
+              "$ref": "remote.json#/$defs/RemoteEventPosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pendingCommandCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "heartbeatIntervalSeconds": {
+          "type": "integer",
+          "const": 15
+        },
+        "offlineAfterSeconds": {
+          "type": "integer",
+          "const": 45
+        },
+        "reason": {
+          "$ref": "remote.json#/$defs/RemoteError"
+        },
+        "serverTime": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Frozen delivery requires a reason. Store changes or ack regression require reconciliation; R1 exposes no automatic force-unfreeze API."
+    },
+    "RemoteWorkerHelloRejected": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "error",
+        "supportedWireRevisions"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.hello_rejected"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "error": {
+          "$ref": "remote.json#/$defs/RemoteError"
+        },
+        "supportedWireRevisions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "description": "Server supported wire revisions, mandatory on rejection (including REMOTE_PROTOCOL_UNSUPPORTED). Initially [1]; during upgrades advertise N and N-1."
+        }
+      }
+    },
+    "RemoteWorkerHeartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "connectionId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "sentAt",
+        "lastServerAck"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.heartbeat"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sentAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "lastServerAck": {
+          "oneOf": [
+            {
+              "$ref": "remote.json#/$defs/RemoteEventPosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "Sent every 15 seconds. It reports liveness only, not durable business-event progress."
+    },
+    "RemoteServerHeartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "connectionId",
+        "receivedAt"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "server.heartbeat"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "receivedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Heartbeat acknowledgement is not event ack. After 45 seconds without authenticated Worker traffic mark offline without modifying execution state."
+    },
+    "RemoteEventAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "connectionId",
+        "workerId",
+        "position"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.events_ack"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "position": {
+          "$ref": "remote.json#/$defs/RemoteEventPosition"
+        }
+      },
+      "description": "Only advances after event persistence AND projection/browser-outbox commit; old store ack never trims new store outbox."
+    },
+    "RemoteConversationGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "conversationId",
+        "expectedSeq",
+        "receivedSeq"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "conversation.gap"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "receivedSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "description": "Worker requests missing commands or skip records. Never run a later user message across a sequence gap."
+    },
+    "RemoteResultRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "runId"
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "executionTaskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "parentExecutionTaskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Existing kernel Task.parentTaskId only. Never invented retryOfRunId or a long-lived Task identity."
+        }
+      },
+      "description": "D40: runId is LocalRun, the user-visible control handle. executionTaskId is the current per-run kernel Task; not a long-lived business Task. No Attempt identity."
+    },
+    "RemoteControlConfirmed": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "outcome",
+        "executionMayStillBeRunning",
+        "orphanProcessIds",
+        "reason",
+        "evidence",
+        "observedAt"
+      ],
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "const": "confirmed"
+        },
+        "executionMayStillBeRunning": {
+          "type": "boolean"
+        },
+        "orphanProcessIds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "maxItems": 0
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "evidence": {
+          "type": "string",
+          "enum": [
+            "adapter_confirmed",
+            "node_boundary_paused",
+            "already_terminal",
+            "retry_enqueued",
+            "supervisor_resumed",
+            "inbox_tombstone"
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist."
+    },
+    "RemoteControlRejected": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "outcome",
+        "executionMayStillBeRunning",
+        "orphanProcessIds",
+        "reason",
+        "evidence",
+        "observedAt"
+      ],
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "const": "rejected"
+        },
+        "executionMayStillBeRunning": {
+          "type": "boolean",
+          "description": "Must be true for adapter_refused without positive stop evidence. Policy rejection before execution may be false; never infer from terminal label or empty orphan list alone."
+        },
+        "orphanProcessIds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "maxItems": 256
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "evidence": {
+          "type": "string",
+          "enum": [
+            "adapter_refused",
+            "worker_policy",
+            "already_terminal"
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist."
+    },
+    "RemoteControlUnconfirmed": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "outcome",
+        "executionMayStillBeRunning",
+        "orphanProcessIds",
+        "reason",
+        "evidence",
+        "observedAt"
+      ],
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "const": "unconfirmed"
+        },
+        "executionMayStillBeRunning": {
+          "type": "boolean",
+          "const": true
+        },
+        "orphanProcessIds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "maxItems": 256
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "evidence": {
+          "type": "string",
+          "enum": [
+            "missing_execution_handle",
+            "delivery_unknown",
+            "recovery_flag",
+            "supervisor_unconfirmed"
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist."
+    },
+    "RemoteControlResult": {
+      "oneOf": [
+        {
+          "$ref": "remote.json#/$defs/RemoteControlConfirmed"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteControlRejected"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteControlUnconfirmed"
+        }
+      ]
+    },
+    "RemoteRunSubmitPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "clientMessageId",
+        "workspaceId",
+        "sceneId",
+        "sceneVersion",
+        "sessionMode",
+        "text"
+      ],
+      "properties": {
+        "clientMessageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sceneId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sceneVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "sessionMode": {
+          "type": "string",
+          "enum": [
+            "new",
+            "continue"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32000
+        }
+      },
+      "description": "References registered Worker workspace and scene revision. No model account/config credentials, arbitrary executable, attachment or server filesystem path. An append message is another run.submit, not mutation of a running turn."
+    },
+    "RemoteRunControlPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "runId"
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      },
+      "description": "All controls address LocalRun. Optional nodeId is valid only for retry of an existing node within this run."
+    },
+    "RemoteApprovalDecisionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "runId",
+        "approvalId",
+        "decision"
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "approvalId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "decision": {
+          "$ref": "common.json#/$defs/ApprovalDecision"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      },
+      "description": "Worker looks up current pending approval/action/policy locally. Browser and server cannot supply a lower risk/action classification."
+    },
+    "RemoteCommandWithdrawalPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "targetCommandId",
+        "targetConversationSeq"
+      ],
+      "properties": {
+        "targetCommandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "targetConversationSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "description": "Existing target submit sequence, not a new control sequence. Required to persist an ordered tombstone when withdrawal arrives before the original submit."
+        }
+      },
+      "description": "Targets an in-flight submit command whose delivery/acceptance is uncertain. Worker persists a tombstone or stops its bound run; server must not claim success first."
+    },
+    "RemoteRunSubmitCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "conversationSeq",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.submit"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunSubmitPayload"
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemotePauseCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.pause"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunControlPayload"
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteResumeCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.resume"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunControlPayload"
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteCancelCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.cancel"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunControlPayload"
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteRetryCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.retry"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunControlPayload"
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteApprovalDecisionCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "approval.decide"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteApprovalDecisionPayload"
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteCommandWithdrawalCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.withdraw"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteCommandWithdrawalPayload"
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteCommandEnvelope": {
+      "oneOf": [
+        {
+          "$ref": "remote.json#/$defs/RemoteRunSubmitCommand"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemotePauseCommand"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteResumeCommand"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteCancelCommand"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteRetryCommand"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteApprovalDecisionCommand"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteCommandWithdrawalCommand"
+        }
+      ]
+    },
+    "RemoteConversationSkip": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "conversationSeq",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "reason",
+        "recordedAt"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "conversation.skip"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "withdrawn_before_dispatch",
+            "expired_before_dispatch"
+          ]
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Durable ordered tombstone for a never-dispatched submit. Not an execution/control command; cannot be used to erase accepted work. Retain until gap replay/snapshot acknowledgement is safe."
+    },
+    "RemoteSkipRecorded": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "conversationSeq"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "conversation.skip_recorded"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "description": "Worker records ordered skip in the same durable inbox ordering ledger as submits."
+    },
+    "RemoteCommandAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "receivedAt",
+        "status"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.accepted"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "receivedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "status": {
+          "type": "string",
+          "const": "accepted"
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        }
+      },
+      "description": "Durable inbox admission, not model/execution success. Duplicate immutable commands return the original receipt/event."
+    },
+    "RemoteCommandRejected": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "receivedAt",
+        "status",
+        "error"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.rejected"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "receivedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "status": {
+          "type": "string",
+          "const": "rejected"
+        },
+        "error": {
+          "$ref": "remote.json#/$defs/RemoteError"
+        }
+      },
+      "description": "Pre-admission rejection only. An expired sequenced submit consumes its ordered slot without execution."
+    },
+    "RemoteCommandCompleted": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "resultStatus"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.completed"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultStatus": {
+          "type": "string",
+          "enum": [
+            "succeeded",
+            "cancelled",
+            "confirmed",
+            "retry_enqueued",
+            "approval_consumed",
+            "withdrawn"
+          ]
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "controlResult": {
+          "$ref": "remote.json#/$defs/RemoteControlConfirmed"
+        }
+      },
+      "description": "Not universally task success. Retry completes on durable new execution reference; execute completes on actual terminal Run success/cancellation. Cancel/pause/resume require confirmed structured control result."
+    },
+    "RemoteCommandFailed": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "resultStatus",
+        "error"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.failed"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultStatus": {
+          "type": "string",
+          "enum": [
+            "failed",
+            "rejected"
+          ]
+        },
+        "error": {
+          "$ref": "remote.json#/$defs/RemoteError"
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "controlResult": {
+          "$ref": "remote.json#/$defs/RemoteControlRejected"
+        }
+      },
+      "description": "Failure after admission. A refused control is distinct from unconfirmed cancellation; do not infer that an Agent process has stopped."
+    },
+    "RemoteControlObserved": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "controlResult"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.control_result"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "controlResult": {
+          "$ref": "remote.json#/$defs/RemoteControlResult"
+        },
+        "executionStatus": {
+          "$ref": "common.json#/$defs/TaskStatus"
+        }
+      },
+      "description": "D41: unconfirmed leaves command accepted and pending reconciliation. Run-scoped controls include resultRef/executionStatus. Before a Run exists (withdrawal reconciliation), omit both rather than invent an identity or execution state."
+    },
+    "RemoteRunView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "runId",
+        "conversationId",
+        "status",
+        "observedAt",
+        "workerOnline"
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "executionTaskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "status": {
+          "$ref": "common.json#/$defs/TaskStatus"
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "workerOnline": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "parentExecutionTaskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Existing kernel Task.parentTaskId only. Never invented retryOfRunId or a long-lived Task identity."
+        }
+      },
+      "description": "Worker-owned execution projection. Offline does not change status. D40 maps LocalRun.taskId to executionTaskId only at remote boundary; existing LocalRunView is unchanged."
+    },
+    "RemoteRunStateEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.state_changed"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunStatePayload"
+        }
+      },
+      "description": "Worker creates/binds LocalRun and execution Task using existing semantics; it does not invent long-lived Task or retryOfRunId."
+    },
+    "RemoteMessageView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "messageId",
+        "conversationId",
+        "role",
+        "text",
+        "createdAt"
+      ],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "user",
+            "assistant",
+            "system"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 32000
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      }
+    },
+    "RemoteWorkerMessagePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "messageId",
+        "conversationId",
+        "role",
+        "text",
+        "createdAt"
+      ],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "assistant",
+            "system"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 32000
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Worker may emit assistant/system messages, never impersonate a user or allocate conversationSeq."
+    },
+    "RemoteMessageEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "conversationId",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "message.appended"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteWorkerMessagePayload"
+        }
+      }
+    },
+    "RemoteApprovalView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "approvalId",
+        "resultRef",
+        "action",
+        "targetSummary",
+        "riskLevel",
+        "status",
+        "requestedAt",
+        "expiresAt",
+        "remoteApprovalAllowed",
+        "workerPolicyRevision"
+      ],
+      "properties": {
+        "approvalId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "action": {
+          "$ref": "common.json#/$defs/DangerousAction"
+        },
+        "targetSummary": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "riskLevel": {
+          "$ref": "common.json#/$defs/RiskLevel"
+        },
+        "status": {
+          "$ref": "common.json#/$defs/ApprovalStatus"
+        },
+        "requestedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "remoteApprovalAllowed": {
+          "type": "boolean"
+        },
+        "workerPolicyRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "denialCode": {
+          "$ref": "common.json#/$defs/ErrorCode"
+        }
+      },
+      "description": "Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely."
+    },
+    "RemoteApprovalEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "conversationId",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "approval.state_changed"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteApprovalView"
+        }
+      }
+    },
+    "RemoteProgressEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "conversationId",
+        "resultRef",
+        "message"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.progress"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 4000
+        }
+      },
+      "description": "Sanitized observable progress only. Never private model reasoning, raw provider auth, full environment, or credential files."
+    },
+    "RemoteWorkspaceSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "workspaceId",
+        "name",
+        "displayPath",
+        "vcs",
+        "canWrite"
+      ],
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "displayPath": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "vcs": {
+          "$ref": "common.json#/$defs/Vcs"
+        },
+        "canWrite": {
+          "type": "boolean"
+        }
+      },
+      "description": "Worker-exported registered workspace index. displayPath is display-only; no server filesystem path resolution or remote arbitrary folder execution."
+    },
+    "RemoteSceneSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "sceneId",
+        "name",
+        "version",
+        "readOnly"
+      ],
+      "properties": {
+        "sceneId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "readOnly": {
+          "type": "boolean"
+        }
+      },
+      "description": "Worker scene index only; model/provider credential or installation/subscription data is not relayed."
+    },
+    "RemoteCatalogView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "workerId",
+        "capabilityRevision",
+        "observedAt",
+        "workspaces",
+        "scenes",
+        "remotelyBlockedActions",
+        "workerStoreId"
+      ],
+      "properties": {
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "capabilityRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteWorkspaceSummary"
+          },
+          "maxItems": 1000
+        },
+        "scenes": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteSceneSummary"
+          },
+          "maxItems": 1000
+        },
+        "remotelyBlockedActions": {
+          "type": "array",
+          "items": {
+            "$ref": "common.json#/$defs/DangerousAction"
+          },
+          "maxItems": 32
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Atomic bounded complete catalog for R1. Reject oversized catalogs instead of truncating; offline entries are last observed, not proof that paths still exist."
+    },
+    "RemoteCatalogEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "capability.changed"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteCatalogView"
+        }
+      }
+    },
+    "RemoteCommandReceipt": {
+      "oneOf": [
+        {
+          "$ref": "remote.json#/$defs/RemoteCommandAccepted"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteCommandRejected"
+        }
+      ]
+    },
+    "RemoteWorkerEvent": {
+      "oneOf": [
+        {
+          "$ref": "remote.json#/$defs/RemoteVisibleWorkerEvent"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteOmittedEvents"
+        }
+      ]
+    },
+    "RemoteWorkerOutboundFrame": {
+      "oneOf": [
+        {
+          "$ref": "remote.json#/$defs/RemoteWorkerHello"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteWorkerHeartbeat"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteConversationGap"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteWorkerEvent"
+        }
+      ]
+    },
+    "RemoteServerOutboundFrame": {
+      "oneOf": [
+        {
+          "$ref": "remote.json#/$defs/RemoteWorkerHelloAck"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteWorkerHelloRejected"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteServerHeartbeat"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteEventAck"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteCommandEnvelope"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteConversationSkip"
+        }
+      ]
+    },
+    "RemoteConversationView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "conversationId",
+        "targetWorkerId",
+        "authority",
+        "title",
+        "workspaceId",
+        "sceneId",
+        "sceneVersion",
+        "createdAt",
+        "updatedAt",
+        "workerStoreId"
+      ],
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "authority": {
+          "type": "string",
+          "const": "remote"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sceneId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sceneVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "updatedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Owner implicitly comes from browser authentication. Fixed Worker for the lifetime of R1 conversation; no dual writer or automatic migration of existing local history."
+    },
+    "RemoteCreateConversationInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "targetWorkerId",
+        "title",
+        "workspaceId",
+        "sceneId",
+        "sceneVersion",
+        "workerStoreId"
+      ],
+      "properties": {
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sceneId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sceneVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "IDs must belong to current owner/target device exported catalog. New remote conversations may be created while device is offline; no model starts on creation."
+    },
+    "RemoteSendMessageInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "clientMessageId",
+        "text",
+        "sessionMode"
+      ],
+      "properties": {
+        "clientMessageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32000
+        },
+        "sessionMode": {
+          "type": "string",
+          "enum": [
+            "new",
+            "continue"
+          ]
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Server fixes target/workspace/scene from owner-scoped conversation, assigns sequence atomically. Default TTL 24h, max 7d; client cannot choose owner/sequence/type/risk."
+    },
+    "RemoteRunControlInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "pause",
+            "resume",
+            "cancel",
+            "retry"
+          ]
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Path runId is mandatory user-visible identity; only retry may supply nodeId. Does not allocate conversationSeq."
+    },
+    "RemoteApprovalDecisionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "decision"
+      ],
+      "properties": {
+        "decision": {
+          "$ref": "common.json#/$defs/ApprovalDecision"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      },
+      "description": "Only current owner. approve on blocked action is forbidden in R1; reject does not grant execution permission."
+    },
+    "RemoteCommandWithdrawalInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      }
+    },
+    "RemoteQueuedReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "commandId",
+        "conversationId",
+        "status",
+        "deliveryState",
+        "workerOnline",
+        "expiresAt"
+      ],
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "type": "string",
+          "const": "queued"
+        },
+        "deliveryState": {
+          "type": "string",
+          "enum": [
+            "queued_online",
+            "queued_offline",
+            "reconciliation_required"
+          ]
+        },
+        "workerOnline": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "HTTP202 after command and server outbox commit. conversationSeq present only for run.submit. No fabricated runId before Worker assigns it."
+    },
+    "RemoteCommandView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "type",
+        "status",
+        "deliveryState",
+        "withdrawalState",
+        "workerOnline",
+        "observedAt",
+        "createdAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "run.submit",
+            "run.pause",
+            "run.resume",
+            "run.cancel",
+            "run.retry",
+            "approval.decide",
+            "command.withdraw"
+          ]
+        },
+        "conversationSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "accepted",
+            "rejected",
+            "completed",
+            "failed"
+          ]
+        },
+        "deliveryState": {
+          "type": "string",
+          "enum": [
+            "queued_online",
+            "queued_offline",
+            "sent",
+            "acknowledged",
+            "reconciliation_required"
+          ]
+        },
+        "withdrawalState": {
+          "type": "string",
+          "enum": [
+            "none",
+            "requested",
+            "confirmed",
+            "denied"
+          ]
+        },
+        "workerOnline": {
+          "type": "boolean"
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "resultStatus": {
+          "type": "string",
+          "enum": [
+            "succeeded",
+            "cancelled",
+            "confirmed",
+            "retry_enqueued",
+            "approval_consumed",
+            "withdrawn",
+            "failed",
+            "rejected"
+          ]
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "controlResult": {
+          "$ref": "remote.json#/$defs/RemoteControlResult"
+        },
+        "error": {
+          "$ref": "remote.json#/$defs/RemoteError"
+        },
+        "withdrawalCommandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Three layers must be displayed separately: transport/delivery, Worker controlResult, execution status from RemoteRunView. No inference from disconnected transport or command.completed to task success."
+    },
+    "RemoteConversationPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "items",
+        "hasMore"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteConversationView"
+          },
+          "maxItems": 100
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        }
+      },
+      "description": "Bounded owner/resource-scoped page. hasMore=true requires nextCursor; cursor is not a Worker seq."
+    },
+    "RemoteMessagePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "items",
+        "hasMore"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteMessageView"
+          },
+          "maxItems": 100
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        }
+      },
+      "description": "Bounded owner/resource-scoped page. hasMore=true requires nextCursor; cursor is not a Worker seq."
+    },
+    "RemoteCommandPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "items",
+        "hasMore"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteCommandView"
+          },
+          "maxItems": 100
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        }
+      },
+      "description": "Bounded owner/resource-scoped page. hasMore=true requires nextCursor; cursor is not a Worker seq."
+    },
+    "RemoteRunPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "items",
+        "hasMore"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteRunView"
+          },
+          "maxItems": 100
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        }
+      },
+      "description": "Bounded owner/resource-scoped page. hasMore=true requires nextCursor; cursor is not a Worker seq."
+    },
+    "RemoteBrowserWorkerEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "serverCursor",
+        "recordedAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.event"
+        },
+        "serverCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteVisibleWorkerEvent"
+        }
+      },
+      "description": "Owner-scoped browser event; ordering/resume is only by opaque serverCursor, never by payload Worker seq."
+    },
+    "RemoteBrowserCommandEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "serverCursor",
+        "recordedAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.updated"
+        },
+        "serverCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteCommandView"
+        }
+      },
+      "description": "Owner-scoped browser event; ordering/resume is only by opaque serverCursor, never by payload Worker seq."
+    },
+    "RemoteBrowserConversationEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "serverCursor",
+        "recordedAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "conversation.updated"
+        },
+        "serverCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteConversationView"
+        }
+      },
+      "description": "Owner-scoped browser event; ordering/resume is only by opaque serverCursor, never by payload Worker seq."
+    },
+    "RemoteBrowserMessageEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "serverCursor",
+        "recordedAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "message.appended"
+        },
+        "serverCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteMessageView"
+        }
+      },
+      "description": "Owner-scoped browser event; ordering/resume is only by opaque serverCursor, never by payload Worker seq."
+    },
+    "RemoteBrowserEvent": {
+      "oneOf": [
+        {
+          "$ref": "remote.json#/$defs/RemoteBrowserWorkerEvent"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteBrowserCommandEvent"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteBrowserConversationEvent"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteBrowserMessageEvent"
+        }
+      ]
+    },
+    "RemoteBrowserEventPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "items",
+        "nextServerCursor",
+        "hasMore"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteBrowserEvent"
+          },
+          "maxItems": 200
+        },
+        "nextServerCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      },
+      "description": "GET after opaque serverCursor. Unknown/expired cursor requires snapshot; never silently reset to zero."
+    },
+    "RemoteConversationSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "conversation",
+        "serverCursor",
+        "observedAt",
+        "runs",
+        "commands",
+        "messages",
+        "hasMore"
+      ],
+      "properties": {
+        "conversation": {
+          "$ref": "remote.json#/$defs/RemoteConversationView"
+        },
+        "serverCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteRunView"
+          },
+          "maxItems": 100
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteCommandView"
+          },
+          "maxItems": 100
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteMessageView"
+          },
+          "maxItems": 100
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      },
+      "description": "Consistent selected-conversation projection and cursor transaction. For larger history, fetch bounded resource pages while replaying events after this cursor. No whole-history batch or credential content."
+    },
+    "RemoteRunStatePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "runId",
+        "conversationId",
+        "status",
+        "observedAt"
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "executionTaskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "status": {
+          "$ref": "common.json#/$defs/TaskStatus"
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "parentExecutionTaskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Existing kernel Task.parentTaskId only. Never invented retryOfRunId or a long-lived Task identity."
+        }
+      },
+      "description": "Worker execution facts only. Server derives workerOnline for browser RemoteRunView; Worker cannot declare server transport liveness."
+    },
+    "RemoteOmittedEvents": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "firstSeq",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "events.omitted"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 1,
+          "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "firstSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "reason": {
+          "type": "string",
+          "const": "not_remote_visible"
+        }
+      },
+      "description": "Worker local event seq continuity without publishing local-only history. Covers inclusive [firstSeq,seq], firstSeq<=seq. Opaque tombstone only, no local conversation/path/model data. Cannot cover any already published event or remote-critical event; immutable bounded ranges are replayed whole. Persist range coverage before advancing contiguous ack."
+    },
+    "RemoteVisibleWorkerEvent": {
+      "oneOf": [
+        {
+          "$ref": "remote.json#/$defs/RemoteCommandAccepted"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteCommandRejected"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteCommandCompleted"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteCommandFailed"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteControlObserved"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteRunStateEvent"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteMessageEvent"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteApprovalEvent"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteProgressEvent"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteCatalogEvent"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteSkipRecorded"
+        }
+      ]
+    }
+  }
+}
