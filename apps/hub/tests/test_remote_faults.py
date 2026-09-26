@@ -63,13 +63,13 @@ def test_unlink_repair_does_not_transfer_old_conversation_or_outbox(tmp_path):
                 assert system.repo.get("identity")["ack"] is None
                 assert system.repo.frames() == []
                 # This fake reuses workerId; store identity still prevents transfer.
-                with pytest.raises(HubError) as mismatch:
-                    await system.bridge.receive(system.command("new", seq=2))
-                assert mismatch.value.code == "REMOTE_TARGET_MISMATCH"
+                mismatch, _ = await system.bridge.receive(system.command("new", seq=2))
+                assert mismatch["type"] == "command.rejected"
+                assert mismatch["error"]["code"] == "REMOTE_TARGET_MISMATCH"
                 same_id_new_binding = {**original, "expectedWorkerStoreId": system.repo.get("identity")["store"]}
-                with pytest.raises(HubError) as replay:
-                    await system.bridge.receive(same_id_new_binding)
-                assert replay.value.code == "REMOTE_TARGET_MISMATCH"
+                replay, _ = await system.bridge.receive(same_id_new_binding)
+                assert replay["type"] == "command.rejected"
+                assert replay["error"]["code"] == "REMOTE_TARGET_MISMATCH"
                 assert system.chat.repository.conversation(original["conversationId"]).authority == "remote"
         finally:
             await system.close()

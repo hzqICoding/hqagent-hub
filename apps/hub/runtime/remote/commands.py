@@ -14,6 +14,9 @@ from runtime.remote.link import expired
 from runtime.remote.wire import WIRE_REVISION, canonical
 
 BLOCKED_ACTIONS = frozenset({"git_push", "deploy", "delete", "db_migrate", "shell"})
+CONNECTION_ERRORS = frozenset({"REMOTE_STORE_CHANGED", "REMOTE_EPOCH_STALE",
+    "REMOTE_DEVICE_AUTH_FAILED", "REMOTE_DEVICE_REVOKED", "REMOTE_PROTOCOL_UNSUPPORTED",
+    "REMOTE_ACK_CONFLICT", "REMOTE_FRAME_TOO_LARGE", "INTERNAL"})
 
 
 def error_view(code):
@@ -58,7 +61,9 @@ class CommandBridge:
     async def receive(self, frame):
         frame = RemoteServerOutboundFrame.model_validate(frame).model_dump(mode="json", by_alias=True, exclude_none=True)
         if self.link.contains_credentials(canonical(frame)):
-            raise HubError("REMOTE_TARGET_MISMATCH", "远程命令包含不允许传播的凭据")
+            # A receipt must echo command/conversation IDs. Treat credential
+            # reflection as a connection fault rather than echo secret material.
+            raise HubError("REMOTE_DEVICE_AUTH_FAILED", "远程连接包含不允许传播的凭据")
         async with self.lock:
             if not self.repo.check_continuity():
                 raise HubError("REMOTE_STORE_CHANGED", "存储世代需要对账")
@@ -66,8 +71,6 @@ class CommandBridge:
             identity = self.repo.get("identity")
             if link["state"] != "paired":
                 raise HubError("REMOTE_STORE_CHANGED", "当前连接禁止命令投递")
-            if frame["targetWorkerId"] != link["workerId"]:
-                raise HubError("REMOTE_TARGET_MISMATCH", "命令目标设备不匹配")
             if frame["expectedWorkerStoreId"] != identity["store"]:
                 self.repo.freeze("REMOTE_STORE_CHANGED")
                 raise HubError("REMOTE_STORE_CHANGED", "命令目标存储世代不匹配")
@@ -75,56 +78,119 @@ class CommandBridge:
             registered = {w.id for w in workspaces}
             if self.repo.get("link")["view"] != link or self.repo.get("identity")["store"] != identity["store"]:
                 raise HubError("REMOTE_EPOCH_STALE", "接单前绑定状态已变化")
-            gaps, execute = [], False
-            with self.repo.database.transaction() as tx:
-                binding = tx.connection.execute("SELECT worker_id,store_id FROM remote_conversations WHERE conversation_id=?", (frame["conversationId"],)).fetchone()
-                if binding and (binding[0] != frame["targetWorkerId"] or binding[1] != frame["expectedWorkerStoreId"]):
-                    raise HubError("REMOTE_TARGET_MISMATCH", "对话不属于当前设备绑定")
-                prior = self.repo.inbox(frame["commandId"], tx)
-                digest = request_hash(frame)
-                if prior:
-                    if prior["digest"] == "tombstone":
-                        original = json.loads(prior["command_json"])
-                        if frame["type"] != "run.submit" or any(frame.get(k) != original.get(k) for k in ("conversationId", "conversationSeq")):
-                            raise HubError("REMOTE_TARGET_MISMATCH", "撤回记录与迟到命令不匹配")
-                        # Learn the first late immutable submit's hash, retaining
-                        # the refusal; later ID/content conflicts remain visible.
-                        tx.connection.execute("UPDATE remote_inbox SET digest=? WHERE worker_id=? AND command_id=?", (digest, link["workerId"], frame["commandId"]))
-                    if prior["digest"] not in {digest, "tombstone"}:
-                        receipt = self._reject(tx, frame, "IDEMPOTENCY_MISMATCH", persist=False)
-                    else:
-                        receipt = json.loads(prior["receipt_json"]) if prior["receipt_json"] else None
-                        execute = prior["status"] == "admitted"
-                    self.repo.seal(tx)
-                else:
-                    tx.connection.execute("INSERT INTO remote_inbox(worker_id,command_id,digest,command_json,status) VALUES(?,?,?,?,?)",
-                        (link["workerId"], frame["commandId"], digest, canonical(frame), "received"))
-                    self._bind_conversation(tx, frame)
-                    if frame["type"] in {"run.submit", "conversation.skip"}:
-                        self._slot(tx, frame["conversationId"], frame["conversationSeq"], frame["commandId"], frame["type"])
-                        if frame["type"] == "run.submit" and frame["payload"]["workspaceId"] not in registered:
-                            self._reject(tx, frame, "NOT_FOUND")
-                        gaps = self._drain(tx, frame["conversationId"], registered)
-                    elif frame["type"] == "command.withdraw":
-                        self._withdraw(tx, frame)
-                        gaps = self._drain(tx, frame["conversationId"], registered)
-                        execute = self.repo.inbox(frame["commandId"], tx)["status"] == "admitted"
-                    elif self._expired(frame):
-                        self._reject(tx, frame, "REMOTE_COMMAND_EXPIRED")
-                    else:
-                        try:
-                            record = self._bound_run(frame)
-                            self._accept(tx, frame, record["run_id"], status="admitted")
-                            execute = True
-                        except HubError as error:
-                            self._reject(tx, frame, error.code)
-                    receipt_row = self.repo.inbox(frame["commandId"], tx)
-                    receipt = json.loads(receipt_row["receipt_json"]) if receipt_row["receipt_json"] else None
-                    tx.after_commit(self.chat.wake_remote_queue)
-                    self.repo.seal(tx)
+            try:
+                with self.repo.database.transaction() as tx:
+                    receipt, gaps, execute = self._admit(tx, frame, registered)
+            except HubError as error:
+                if error.code in CONNECTION_ERRORS:
+                    raise
+                # The failed admission is fully rolled back before this separate
+                # transaction commits the immutable rejection and ordering slot.
+                receipt, gaps = self._record_rejection(frame, error.code, registered)
+                execute = False
             if execute:
                 await self._execute(frame)
             return receipt, gaps
+
+    def _scope_key(self, prefix, value):
+        return prefix + request_hash({"store": self.repo.get("identity")["store"],
+            "worker": self.repo.get("link")["view"]["workerId"], "value": value})
+
+    def _admit(self, tx, frame, registered):
+        cached = self.repo.get(self._scope_key("command-rejection:", frame), tx)
+        if cached is not None:
+            return cached, [], False
+        link = self.repo.get("link", tx)["view"]
+        prior = self.repo.inbox(frame["commandId"], tx)
+        digest = request_hash(frame)
+        if prior and prior["digest"] == digest:
+            receipt = json.loads(prior["receipt_json"]) if prior["receipt_json"] else None
+            return receipt, [], prior["status"] == "admitted"
+        if frame["targetWorkerId"] != link["workerId"]:
+            raise HubError("REMOTE_TARGET_MISMATCH", "命令目标设备不匹配")
+        binding = tx.connection.execute("SELECT worker_id,store_id FROM remote_conversations WHERE conversation_id=?", (frame["conversationId"],)).fetchone()
+        if binding and (binding[0] != frame["targetWorkerId"] or binding[1] != frame["expectedWorkerStoreId"]):
+            raise HubError("REMOTE_TARGET_MISMATCH", "对话不属于当前设备绑定")
+        if prior:
+            if prior["digest"] != "tombstone":
+                raise HubError("IDEMPOTENCY_MISMATCH", "命令标识已用于不同内容")
+            original = json.loads(prior["command_json"])
+            if frame["type"] != "run.submit" or any(frame.get(k) != original.get(k) for k in ("conversationId", "conversationSeq")):
+                raise HubError("REMOTE_TARGET_MISMATCH", "撤回记录与迟到命令不匹配")
+            tx.connection.execute("UPDATE remote_inbox SET digest=? WHERE worker_id=? AND command_id=?", (digest, link["workerId"], frame["commandId"]))
+            self.repo.seal(tx)
+            return json.loads(prior["receipt_json"]), [], False
+        tx.connection.execute("INSERT INTO remote_inbox(worker_id,command_id,digest,command_json,status) VALUES(?,?,?,?,?)",
+            (link["workerId"], frame["commandId"], digest, canonical(frame), "received"))
+        self._bind_conversation(tx, frame)
+        gaps, execute = [], False
+        if frame["type"] in {"run.submit", "conversation.skip"}:
+            self._slot(tx, frame["conversationId"], frame["conversationSeq"], frame["commandId"], frame["type"])
+            if frame["type"] == "run.submit" and frame["payload"]["workspaceId"] not in registered:
+                raise HubError("NOT_FOUND", "工作区未登记")
+            gaps = self._drain(tx, frame["conversationId"], registered)
+        elif frame["type"] == "command.withdraw":
+            self._withdraw(tx, frame)
+            gaps = self._drain(tx, frame["conversationId"], registered)
+            execute = self.repo.inbox(frame["commandId"], tx)["status"] == "admitted"
+        elif self._expired(frame):
+            raise HubError("REMOTE_COMMAND_EXPIRED", "命令已过期")
+        else:
+            record = self._bound_run(frame)
+            self._accept(tx, frame, record["run_id"], status="admitted")
+            execute = True
+        row = self.repo.inbox(frame["commandId"], tx)
+        receipt = json.loads(row["receipt_json"]) if row["receipt_json"] else None
+        tx.after_commit(self.chat.wake_remote_queue)
+        self.repo.seal(tx)
+        return receipt, gaps, execute
+
+    def _record_rejection(self, frame, code, registered):
+        with self.repo.database.transaction() as tx:
+            key = self._scope_key("command-rejection:", frame)
+            cached = self.repo.get(key, tx)
+            if cached is not None:
+                return cached, []
+            prior = self.repo.inbox(frame["commandId"], tx)
+            if prior is None:
+                worker = self.repo.get("link", tx)["view"]["workerId"]
+                tx.connection.execute("INSERT INTO remote_inbox(worker_id,command_id,digest,command_json,status) VALUES(?,?,?,?,?)",
+                    (worker, frame["commandId"], request_hash(frame), canonical(frame), "rejected"))
+            # Conflicting variants must not replace an accepted command or its
+            # receipt. Their rejection is independently cached by immutable hash.
+            receipt = self._reject(tx, frame, code, persist=prior is None)
+            self.repo.put(key, receipt, tx)
+            gaps = self._record_rejected_slot(tx, frame, registered) if prior is None else []
+            tx.after_commit(self.chat.wake_remote_queue)
+            self.repo.seal(tx)
+            return receipt, gaps
+
+    def _record_rejected_slot(self, tx, frame, registered):
+        if frame["type"] not in {"run.submit", "conversation.skip"}:
+            return []
+        worker = self.repo.get("link", tx)["view"]["workerId"]
+        conversation, seq = frame["conversationId"], frame["conversationSeq"]
+        occupied = tx.connection.execute("SELECT 1 FROM remote_slots WHERE worker_id=? AND conversation_id=? AND sequence=?", (worker, conversation, seq)).fetchone()
+        if not occupied:
+            self._slot(tx, conversation, seq, frame["commandId"], "rejected")
+        # Never overwrite a slot owned by another command. Its original submit
+        # or tombstone still controls whether the sequence can advance.
+        binding = tx.connection.execute("SELECT worker_id,store_id FROM remote_conversations WHERE conversation_id=?", (conversation,)).fetchone()
+        if binding and tuple(binding) == (worker, self.repo.get("identity", tx)["store"]):
+            return self._drain(tx, conversation, registered)
+        # A rejected target must not turn a local/foreign conversation into a
+        # remote one. Keep its ordering cursor without adopting any target data.
+        key = self._scope_key("rejected-order:", conversation)
+        cursor = (self.repo.get(key, tx) or {}).get("consumed", 0)
+        while True:
+            slot = tx.connection.execute("SELECT i.status FROM remote_slots s JOIN remote_inbox i "
+                "ON i.worker_id=s.worker_id AND i.command_id=s.command_id "
+                "WHERE s.worker_id=? AND s.conversation_id=? AND s.sequence=?", (worker, conversation, cursor + 1)).fetchone()
+            if not slot or slot[0] != "rejected":
+                break
+            cursor += 1
+        self.repo.put(key, {"consumed": cursor}, tx)
+        return []
 
     def _bind_conversation(self, tx, frame):
         conversation = frame["conversationId"]
@@ -138,7 +204,8 @@ class CommandBridge:
             existing = tx.connection.execute("SELECT 1 FROM local_conversations WHERE conversation_id=?", (conversation,)).fetchone()
             if existing:
                 raise HubError("CONVERSATION_AUTHORITY_MISMATCH", "已有本机对话不能转为远程对话")
-            tx.connection.execute("INSERT INTO remote_conversations VALUES(?,?,?,0,?)", (conversation, frame["targetWorkerId"], frame["expectedWorkerStoreId"], canonical(target) if target else None))
+            cursor = (self.repo.get(self._scope_key("rejected-order:", conversation), tx) or {}).get("consumed", 0)
+            tx.connection.execute("INSERT INTO remote_conversations VALUES(?,?,?,?,?)", (conversation, frame["targetWorkerId"], frame["expectedWorkerStoreId"], cursor, canonical(target) if target else None))
         elif target and not row["target_json"]:
             tx.connection.execute("UPDATE remote_conversations SET target_json=? WHERE conversation_id=?", (canonical(target), conversation))
 
@@ -195,10 +262,13 @@ class CommandBridge:
 
     @staticmethod
     def _expired(frame):
-        if expired(frame["expiresAt"]):
-            return True
-        created = datetime.fromisoformat(frame["createdAt"].replace("Z", "+00:00"))
-        end = datetime.fromisoformat(frame["expiresAt"].replace("Z", "+00:00"))
+        try:
+            if expired(frame["expiresAt"]):
+                return True
+            created = datetime.fromisoformat(frame["createdAt"].replace("Z", "+00:00"))
+            end = datetime.fromisoformat(frame["expiresAt"].replace("Z", "+00:00"))
+        except ValueError:
+            raise HubError("VALIDATION_FAILED", "命令时间字段无效") from None
         limit = 7 * 86400 if frame["type"] == "run.submit" else (900 if frame["type"].startswith("run.") else 300)
         return not 0 < (end - created).total_seconds() <= limit
 
