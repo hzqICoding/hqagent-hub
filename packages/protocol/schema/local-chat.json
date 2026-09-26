@@ -2,15 +2,25 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "local-chat.json",
   "title": "N0 本地场景与连续对话契约",
-  "description": "0.3.0 additive local API. Lifecycle uses legacy TaskStatus until explicit v2 migration.",
+  "description": "0.4.0 additive local API. Lifecycle uses legacy TaskStatus until explicit v2 migration.",
   "$defs": {
     "LocalConnectionCodeView": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["code", "expiresInSeconds"],
+      "required": [
+        "code",
+        "expiresInSeconds"
+      ],
       "properties": {
-        "code": { "type": "string", "minLength": 6, "maxLength": 128 },
-        "expiresInSeconds": { "type": "integer", "minimum": 1 }
+        "code": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128
+        },
+        "expiresInSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "PickLocalDirectoryInput": {
@@ -179,6 +189,18 @@
         },
         "lastRunId": {
           "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Metadata revision. Legacy records are revision 1; message/run updates do not increment this revision."
+        },
+        "archived": {
+          "type": "boolean",
+          "description": "Archived conversations remain readable. Legacy records default to false."
+        },
+        "lastRunStatus": {
+          "$ref": "common.json#/$defs/TaskStatus"
         }
       }
     },
@@ -484,6 +506,28 @@
         "original_planner"
       ],
       "description": "independent使用独立reviewer；original_planner以验收阶段恢复本轮planner原生会话。省略时兼容旧独立模式。"
+    },
+    "UpdateLocalConversationInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion"
+      ],
+      "description": "At least one non-null title or archived field is required. Workspace, scene and session associations are immutable.",
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "archived": {
+          "type": "boolean"
+        }
+      }
     }
   }
 }
