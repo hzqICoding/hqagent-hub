@@ -33,6 +33,7 @@ import type {
   LocalSceneId,
   ErrorCode,
 } from '@hqagent/protocol'
+import { PROTOCOL_VERSION } from '@hqagent/protocol'
 
 import type { LocalChatGateway } from './local-chat-gateway.interface'
 import { HubApiError } from './local-hub-gateway'
@@ -44,7 +45,7 @@ import agentsDiscoveryFixture from '@hqagent/fixtures/agents.discovery-partial.j
 export class MockLocalChatGateway implements LocalChatGateway {
   public isMock = true
   private authenticated = true
-  private protocolVersion = '0.5.0'
+  private protocolVersion = PROTOCOL_VERSION
 
   private workspaces: WorkspaceView[] = []
   private agents: AgentView[] = []
@@ -601,7 +602,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
           from: 'running',
           to: 'succeeded',
         },
-        protocolVersion: '0.5.0',
+        protocolVersion: PROTOCOL_VERSION,
       },
       {
         eventId: 'evt_2',
@@ -615,7 +616,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
           from: 'queued',
           to: 'running',
         },
-        protocolVersion: '0.5.0',
+        protocolVersion: PROTOCOL_VERSION,
       },
     ]
     this.eventSeq = 3
@@ -1221,7 +1222,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
         type: 'task.status_changed',
         occurredAt: new Date().toISOString(),
         payload: { taskId, from: 'queued', to: 'running' },
-        protocolVersion: '0.5.0',
+        protocolVersion: PROTOCOL_VERSION,
       },
       {
         eventId: `evt_${this.eventSeq}`,
@@ -1232,7 +1233,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
         type: 'agent.started',
         occurredAt: new Date().toISOString(),
         payload: { sessionId: `sess_${runId}`, purpose: 'adhoc' },
-        protocolVersion: '0.5.0',
+        protocolVersion: PROTOCOL_VERSION,
       },
       {
         eventId: `evt_${this.eventSeq}`,
@@ -1243,7 +1244,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
         type: 'agent.progress',
         occurredAt: new Date().toISOString(),
         payload: { message: 'Thought: 分析当前工程架构并定位相关代码模块' },
-        protocolVersion: '0.5.0',
+        protocolVersion: PROTOCOL_VERSION,
       },
       {
         eventId: `evt_${this.eventSeq}`,
@@ -1260,7 +1261,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
           failed: false,
           durationMs: 120,
         },
-        protocolVersion: '0.5.0',
+        protocolVersion: PROTOCOL_VERSION,
       },
       {
         eventId: `evt_${this.eventSeq}`,
@@ -1277,7 +1278,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
           failed: false,
           durationMs: 1250,
         },
-        protocolVersion: '0.5.0',
+        protocolVersion: PROTOCOL_VERSION,
       }
     )
 
@@ -1355,7 +1356,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
       type: 'task.status_changed',
       occurredAt: new Date().toISOString(),
       payload: { taskId: run.taskId, to: run.status },
-      protocolVersion: '0.5.0',
+      protocolVersion: PROTOCOL_VERSION,
     })
 
     return JSON.parse(JSON.stringify(run))
