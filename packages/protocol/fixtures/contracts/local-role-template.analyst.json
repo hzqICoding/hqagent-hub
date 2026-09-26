@@ -1,0 +1,9 @@
+{
+  "id": "role_template_rtk_analyst",
+  "name": "RTK代码分析员",
+  "baseRoleId": "analyst",
+  "instructions": "只读梳理RTK调用链，区分源码事实和待验证推断。",
+  "version": 1,
+  "createdAt": "2026-09-26T06:00:00Z",
+  "updatedAt": "2026-09-26T06:00:00Z"
+}

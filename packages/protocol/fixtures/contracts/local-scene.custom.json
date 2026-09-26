@@ -1,0 +1,21 @@
+{
+  "id": "custom_scene_rtk_review",
+  "name": "RTK只读分析",
+  "description": "用户自定义顺序场景",
+  "readOnly": true,
+  "isBuiltin": false,
+  "version": 1,
+  "updatedAt": "2026-09-26T06:00:00Z",
+  "reviewMode": "independent",
+  "roles": [
+    {
+      "roleId": "analyst",
+      "roleName": "RTK代码分析员",
+      "roleTemplateId": "role_template_rtk_analyst",
+      "roleTemplateVersion": 1,
+      "agentInstanceId": "local.claude.default",
+      "instructions": "只读梳理RTK调用链，区分源码事实和待验证推断。",
+      "enabled": true
+    }
+  ]
+}
