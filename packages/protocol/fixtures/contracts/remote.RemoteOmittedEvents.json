@@ -1,6 +1,5 @@
 {
   "type": "events.omitted",
-  "protocolVersion": "0.6.0",
   "eventId": "event_demo",
   "workerId": "worker_demo",
   "workerStoreId": "store_demo",
@@ -8,5 +7,6 @@
   "seq": 8,
   "occurredAt": "2026-09-26T12:00:00Z",
   "firstSeq": 1,
-  "reason": "not_remote_visible"
+  "reason": "not_remote_visible",
+  "wireRevision": 1
 }

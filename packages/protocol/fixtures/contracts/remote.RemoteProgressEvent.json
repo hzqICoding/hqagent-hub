@@ -1,6 +1,5 @@
 {
   "type": "run.progress",
-  "protocolVersion": "0.6.0",
   "eventId": "event_demo",
   "workerId": "worker_demo",
   "workerStoreId": "store_demo",
@@ -11,5 +10,6 @@
   "resultRef": {
     "runId": "run_demo"
   },
-  "message": "Observable progress"
+  "message": "Observable progress",
+  "wireRevision": 1
 }

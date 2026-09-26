@@ -386,6 +386,8 @@ def emit_py(index: dict, registries: dict, order: list[str], version: str) -> st
             '                    raise ValueError(f"{key} must be omitted rather than null")',
             '                if rules.get("wireType") == "boolean" and not isinstance(item, bool):',
             '                    raise ValueError(f"{key} must be a boolean")',
+            '                if rules.get("wireType") == "integer" and (not isinstance(item, int) or isinstance(item, bool)):',
+            '                    raise ValueError(f"{key} must be an integer")',
             "        return value", "",
             '    @model_serializer(mode="wrap")',
             "    def _serialize_wire(self, handler, info):",

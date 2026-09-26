@@ -1,6 +1,5 @@
 {
   "type": "command.withdraw",
-  "protocolVersion": "0.6.0",
   "commandId": "command_demo",
   "conversationId": "conversation_demo",
   "targetWorkerId": "worker_demo",
@@ -10,5 +9,6 @@
   "payload": {
     "targetCommandId": "command_original",
     "targetConversationSeq": 1
-  }
+  },
+  "wireRevision": 1
 }
