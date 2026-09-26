@@ -9,9 +9,9 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-from .common import canonical
+from .common import canonical, stamp
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MIGRATIONS = {1: """
 CREATE TABLE auth (key TEXT PRIMARY KEY, owner TEXT NOT NULL, body TEXT NOT NULL);
 CREATE TABLE records (
@@ -30,6 +30,14 @@ CREATE TABLE browser_outbox (
  ordinal INTEGER PRIMARY KEY AUTOINCREMENT,
  owner TEXT NOT NULL CHECK(length(owner)>0), body TEXT NOT NULL);
 CREATE INDEX browser_owner ON browser_outbox(owner,ordinal);
+""", 2: """
+ALTER TABLE records ADD COLUMN command_status TEXT;
+ALTER TABLE records ADD COLUMN due_at TEXT;
+ALTER TABLE records ADD COLUMN outbox_done INTEGER;
+UPDATE records SET command_status=json_extract(body,'$.status'), due_at=json_extract(body,'$.expiresAt') WHERE kind='command';
+UPDATE records SET outbox_done=json_extract(body,'$.done') WHERE kind='outbox';
+CREATE INDEX command_expiry ON records(owner,kind,worker,command_status,due_at);
+CREATE INDEX outbox_pending ON records(owner,kind,worker,store,outbox_done,ordinal);
 """}
 
 
@@ -59,14 +67,20 @@ class Repository:
 
     @contextmanager
     def transaction(self):
+        callbacks = ()
         with self.lock:
             self.connection.execute("BEGIN IMMEDIATE")
+            tx = UnitOfWork(self.connection)
             try:
-                yield UnitOfWork(self.connection)
+                yield tx
                 self.connection.execute("COMMIT")
+                callbacks = tuple(tx.commit_callbacks.values())
             except BaseException:
                 self.connection.execute("ROLLBACK")
                 raise
+        # Delivery notifications see committed state and never hold the DB lock.
+        for callback in callbacks:
+            callback()
 
     def backup(self, destination):
         path = Path(destination).resolve()
@@ -85,6 +99,10 @@ class Repository:
 class UnitOfWork:
     def __init__(self, connection):
         self.db = connection
+        self.commit_callbacks = {}
+
+    def after_commit(self, key, callback):
+        self.commit_callbacks[key] = callback
 
     def auth_get(self, key):
         row = self.db.execute("SELECT body FROM auth WHERE key=?", (key,)).fetchone()
@@ -101,9 +119,22 @@ class UnitOfWork:
         return json.loads(row[0]) if row else None
 
     def put(self, owner, kind, identifier, body, *, worker="", store="", parent=""):
-        self.db.execute("""INSERT INTO records(owner,kind,id,worker,store,parent,body) VALUES(?,?,?,?,?,?,?)
-            ON CONFLICT(owner,kind,id) DO UPDATE SET body=excluded.body,worker=excluded.worker,store=excluded.store,parent=excluded.parent""",
-                        (owner, kind, identifier, worker, store, parent, canonical(body)))
+        status = body.get("status") if kind == "command" else None
+        due_at = body.get("expiresAt") if kind == "command" else None
+        done = int(body["done"]) if kind == "outbox" else None
+        self.db.execute("""INSERT INTO records(owner,kind,id,worker,store,parent,body,command_status,due_at,outbox_done) VALUES(?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(owner,kind,id) DO UPDATE SET body=excluded.body,worker=excluded.worker,store=excluded.store,parent=excluded.parent,
+            command_status=excluded.command_status,due_at=excluded.due_at,outbox_done=excluded.outbox_done""",
+                        (owner, kind, identifier, worker, store, parent, canonical(body), status, due_at, done))
+
+    def due_workers(self, owner, now):
+        return [r[0] for r in self.db.execute("SELECT DISTINCT worker FROM records WHERE owner=? AND kind='command' AND command_status='queued' AND due_at<=?", (owner, stamp(now)))]
+
+    def queued_due(self, owner, worker, now):
+        return [json.loads(r[0]) for r in self.db.execute("SELECT body FROM records WHERE owner=? AND kind='command' AND worker=? AND command_status='queued' AND due_at<=? ORDER BY ordinal", (owner, worker, stamp(now)))]
+
+    def pending_outbox(self, owner, worker, store):
+        return [json.loads(r[0]) for r in self.db.execute("SELECT body FROM records WHERE owner=? AND kind='outbox' AND worker=? AND store=? AND outbox_done=0 ORDER BY ordinal", (owner, worker, store))]
 
     def list(self, owner, kind, *, worker=None, store=None, parent=None, limit=None, offset=0):
         query = "SELECT body FROM records WHERE owner=? AND kind=?"

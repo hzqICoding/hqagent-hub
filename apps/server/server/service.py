@@ -26,7 +26,17 @@ class Service:
 
     def online(self, owner, worker):
         connection = self.connections.get((owner, worker))
-        return bool(connection and not connection.closed and self.settings.monotonic() - connection.last_seen < 45)
+        online = bool(connection and not connection.closed and self.settings.monotonic() - connection.last_seen < 45)
+        if connection and not online:
+            connection.wake()
+        return online
+
+    def notify(self, tx, owner, worker):
+        def wake():
+            connection = self.connections.get((owner, worker))
+            if connection:
+                connection.wake()
+        tx.after_commit((owner, worker), wake)
 
     def save(self, tx, owner, kind, identifier, value):
         frame = value.get("_frame", value)
@@ -192,6 +202,7 @@ class Service:
         kind = "skip" if frame["type"] == "conversation.skip" else "command"
         self.save(tx, owner, "outbox", kind + ":" + identifier,
                   dict(id=kind + ":" + identifier, _frame=frame, done=False, dispatching=False, conversationId=frame["conversationId"]))
+        self.notify(tx, owner, frame["targetWorkerId"])
 
     def send_message(self, tx, owner, conv_id, body):
         conv = self.conversation(tx, owner, conv_id)
@@ -256,6 +267,7 @@ class Service:
                                     reason="expired_before_dispatch" if code == "REMOTE_COMMAND_EXPIRED" else "withdrawn_before_dispatch", recordedAt=self.now()))
             self.outbox(tx, owner, skip)
         self.command_event(tx, owner, value)
+        self.notify(tx, owner, value["targetWorkerId"])
 
     def withdraw(self, tx, owner, identifier, body):
         value = self.get(tx, owner, "command", identifier)
@@ -273,6 +285,7 @@ class Service:
         return self.view(owner, "command", value)
 
     def revoke(self, tx, owner, worker):
+        self.notify(tx, owner, worker)
         device = self.get(tx, owner, "device", worker)
         if device["status"] != "revoked":
             device.update(status="revoked", revokedAt=self.now())
@@ -290,8 +303,8 @@ class Service:
                         self.command_event(tx, owner, value)
         return dict(workerId=worker, revokedAt=device["revokedAt"], status="revoked", executionMayStillBeRunning=True)
 
-    def expire(self, tx, owner):
-        for value in tx.list(owner, "command"):
+    def expire(self, tx, owner, worker):
+        for value in tx.queued_due(owner, worker, self.settings.clock()):
             if value["status"] == "queued" and seconds(value["expiresAt"]) <= self.settings.clock():
                 if not value["_dispatch"]:
                     self.reject_undispatched(tx, owner, value, "REMOTE_COMMAND_EXPIRED")
@@ -301,6 +314,7 @@ class Service:
                     self.command_event(tx, owner, value)
 
     def freeze(self, tx, owner, device, code):
+        self.notify(tx, owner, device["workerId"])
         device.update(_frozen=True, _freezeCode=code, status="reconciliation_required")
         self.save(tx, owner, "device", device["workerId"], device)
         for value in tx.list(owner, "command", worker=device["workerId"]):

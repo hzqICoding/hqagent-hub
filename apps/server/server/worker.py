@@ -9,6 +9,13 @@ from .common import Fault, require, uid, validated
 from . import wire
 
 HELLO_TIMEOUT = 10
+FALLBACK_INTERVAL = 5
+
+
+def cancel_task(task):
+    """Cancel owned waiters without replacing an ASGI cancellation during teardown."""
+    task.cancel()
+    task.add_done_callback(lambda finished: None if finished.cancelled() else finished.exception())
 
 
 @dataclass
@@ -23,9 +30,19 @@ class Connection:
     revision: int = wire.CURRENT
     closed: bool = False
     replay: list = field(default_factory=list)
+    wakeup: asyncio.Event = field(default_factory=asyncio.Event)
+    loop: object = field(default_factory=asyncio.get_running_loop, repr=False)
+
+    def wake(self):
+        # HTTP/tests may commit from another thread; schedule on this connection's loop.
+        try:
+            self.loop.call_soon_threadsafe(self.wakeup.set)
+        except RuntimeError:
+            pass  # loop already closed; reconnect performs initial durable delivery
 
     async def close(self, code):
         self.closed = True
+        self.wake()
         try:
             await self.socket.close(code=code)
         except (RuntimeError, WebSocketDisconnect):
@@ -76,14 +93,14 @@ class WorkerTransport:
 
     def deliver(self, tx, connection, sent):
         device = self.fence_check(tx, connection)
-        self.s.expire(tx, connection.owner)
+        self.s.expire(tx, connection.owner, connection.worker)
         if device["_frozen"]:
             return []
-        boxes = tx.list(connection.owner, "outbox", worker=connection.worker, store=connection.store)
+        boxes = tx.pending_outbox(connection.owner, connection.worker, connection.store)
         # Stable per-conversation slot ordering even if a skip was created later.
         boxes.sort(key=lambda b: (b["conversationId"], b["_frame"].get("conversationSeq", 0), b["id"]))
-        frames = [("replay:" + f["commandId"], f) for f in connection.replay]
-        connection.replay.clear()
+        frames = [("replay:" + f["commandId"], f) for f in connection.replay[:16]]
+        del connection.replay[:16]
         for box in boxes:
             if len(frames) >= 16:
                 break  # consume incoming heartbeats between bounded delivery batches
@@ -107,6 +124,7 @@ class WorkerTransport:
     async def run(self, socket):
         connection = None
         accepted = False
+        receiving = None
         try:
             self.s.security.rate("device-auth:" + (socket.client.host if socket.client else "unknown"))
             require(socket.url.scheme == "wss", "REMOTE_DEVICE_AUTH_FAILED")
@@ -129,20 +147,33 @@ class WorkerTransport:
                 await old.close(4409)
             await socket.send_json(response)
             sent = set()
+            connection.wakeup.set()
+            receiving = asyncio.create_task(socket.receive_text())
             while not connection.closed:
                 require(self.s.settings.monotonic() - connection.last_seen < 45, "REMOTE_DEVICE_OFFLINE")
-                with self.s.repo.transaction() as tx:
-                    frames = self.deliver(tx, connection, sent)
-                for box_id, frame in frames:
-                    # No suspension between current-connection check and starting send.
-                    require(self.s.connections.get((owner, connection.worker)) is connection and not connection.closed, "REMOTE_EPOCH_STALE")
-                    remaining = max(0.01, 45 - (self.s.settings.monotonic() - connection.last_seen))
-                    await asyncio.wait_for(socket.send_json(wire.encode(frame, connection.revision)), timeout=remaining)
-                    sent.add(box_id)
+                if connection.wakeup.is_set():
+                    connection.wakeup.clear()
+                    with self.s.repo.transaction() as tx:
+                        frames = self.deliver(tx, connection, sent)
+                    for box_id, frame in frames:
+                        require(self.s.connections.get((owner, connection.worker)) is connection and not connection.closed, "REMOTE_EPOCH_STALE")
+                        remaining = max(0.01, 45 - (self.s.settings.monotonic() - connection.last_seen))
+                        await asyncio.wait_for(socket.send_json(wire.encode(frame, connection.revision)), timeout=remaining)
+                        sent.add(box_id)
+                    if len(frames) == 16:
+                        connection.wakeup.set()  # continue bounded batches without a timer delay
+                waking = asyncio.create_task(connection.wakeup.wait())
                 try:
-                    raw = await asyncio.wait_for(socket.receive_text(), timeout=0.1)
-                except asyncio.TimeoutError:
+                    remaining = max(0, 45 - (self.s.settings.monotonic() - connection.last_seen))
+                    done, _ = await asyncio.wait({receiving, waking}, timeout=min(FALLBACK_INTERVAL, remaining), return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    cancel_task(waking)
+                if not done:
+                    connection.wakeup.set()  # expiry/missed-notification fallback, at most once per 5s
+                if receiving not in done:
                     continue
+                raw = receiving.result()
+                receiving = asyncio.create_task(socket.receive_text())
                 frame = wire.decode(raw, connection.revision)
                 freeze_fault = None
                 with self.s.repo.transaction() as tx:
@@ -171,6 +202,7 @@ class WorkerTransport:
                                     connection.replay.append(box["_frame"])
                                 else:
                                     sent.discard(box["id"])
+                        self.s.notify(tx, owner, connection.worker)
                         answer = None
                     else:
                         require("eventId" in frame, "REMOTE_PROTOCOL_UNSUPPORTED")
@@ -214,6 +246,8 @@ class WorkerTransport:
             elif accepted:
                 await socket.close(code=1011)
         finally:
+            if receiving:
+                cancel_task(receiving)
             if connection:
                 connection.closed = True
                 if self.s.connections.get((connection.owner, connection.worker)) is connection:

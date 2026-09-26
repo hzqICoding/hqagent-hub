@@ -95,10 +95,11 @@ def create_app(settings=None):
 
     async def maintenance():
         while True:
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(5)
             with repo.transaction() as tx:
                 for account in tx.auth_list("account:"):
-                    service.expire(tx, account["owner"])
+                    for worker in tx.due_workers(account["owner"], settings.clock()):
+                        service.expire(tx, account["owner"], worker)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -185,7 +186,6 @@ def create_app(settings=None):
                     owner = session["owner"]
                     if write:
                         require(hmac.compare_digest(request.headers.get("x-csrf-token", ""), security.csrf(session["id"])), "REMOTE_CSRF_REJECTED")
-                    service.expire(tx, owner)
                     if operation == "logout":
                         session.update(revoked=True, logoutKey=security.mac("logout", key))
                         tx.auth_put("session:" + session["id"], session, owner)
@@ -217,12 +217,18 @@ def create_app(settings=None):
     def browser(tx, owner, operation, request, body, key):
         path = request.path_params
         resources = {"workerId": "device", "conversationId": "conversation", "runId": "run", "commandId": "command", "approvalId": "approval"}
+        workers = set()
         for name, kind in resources.items():
             if name in path:
                 if operation == "control" and kind == "run":
-                    require(tx.get(owner, "run", path[name]) is not None or tx.get(owner, "run-ref", path[name]) is not None, "NOT_FOUND")
+                    value = tx.get(owner, "run", path[name]) or tx.get(owner, "run-ref", path[name])
+                    require(value is not None, "NOT_FOUND")
                 else:
-                    service.get(tx, owner, kind, path[name])  # authorize before cache replay
+                    value = service.get(tx, owner, kind, path[name])  # authorize before cache replay
+                workers.add(value.get("targetWorkerId", value.get("workerId", value.get("_worker"))))
+        for worker in workers:
+            if worker:
+                service.expire(tx, owner, worker)
         if operation == "confirm":
             challenge = tx.auth_get("challenge:" + path["pairRequestId"])
             require(challenge is not None and challenge.get("owner", owner) == owner, "NOT_FOUND")
