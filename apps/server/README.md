@@ -31,6 +31,7 @@ $env:HQREMOTE_ORIGIN = 'https://hub.example.com'
 | `HQREMOTE_STATIC_DIR` | 未配置 | 可选 H5 构建目录；未配置时不挂静态站点 |
 | `HQREMOTE_SESSION_TTL` | `86400` | 浏览器会话有效期（秒） |
 | `HQREMOTE_CURSOR_TTL` | `86400` | 浏览器游标有效期（秒），失效后 410，重新取快照 |
+| `HQREMOTE_BROWSER_RETENTION_SECONDS` | `604800`（7 天） | browser_outbox 保留期（正整数秒）；低频清理后旧位置返回 410 |
 | `HQREMOTE_RATE_LIMIT` | `30` | 每个来源地址、操作类别每 60 秒配额；登录、设备认证、配对和浏览器写入受限 |
 
 Linux 数据目录应仅服务账号可读写（目录 0700，密钥 0600）；Windows 自定义数据目录需设置仅运行账号可访问的 ACL。备份数据库和 `server.key` 时同样保护；恢复同一实例需要原服务端密钥，否则原认证验证值和会话无法使用。密钥不可随镜像提交或生成在只读安装目录。
@@ -49,6 +50,7 @@ location / {
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_read_timeout 60s;
@@ -71,7 +73,36 @@ docker exec -it hqremote python -m server.cli create-account --login alice --dis
 
 镜像使用非 root UID/GID 10001。自备 bind mount 时先为该账号配置数据目录权限。使用 bridge 网络时需显式配置 `HQREMOTE_HOST=0.0.0.0`，端口仅发布到宿主机 `127.0.0.1:8080:8080`，并把 `HQREMOTE_PROXY_IPS` 精确设为容器实际看到的代理地址。
 
+**宿主机 Caddy + bridge 容器的可信来源配置**：容器看到的是转发/NAT 后的 TCP 来源，通常为 bridge 网关（例如 `172.17.0.1`），不是宿主机的 `127.0.0.1`。先查看选用网络的网关：
+
+```sh
+docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'
+```
+
+网关只是候选值，Docker Desktop、rootless 和自定义网络可能不同。可在同一 Docker 网络上用临时端口实测 TCP peer；以下诊断仅打印来源 IP，不发送任何认证信息：
+
+```sh
+# 终端 1：bridge 替换为服务实际使用的网络；收到一次连接即退出。
+docker run --rm --network bridge -p 127.0.0.1:18080:18080 \
+  --entrypoint python hqremote:0.1 -u -c \
+  'import socket; s=socket.socket(); s.bind(("0.0.0.0",18080)); s.listen(1); c,a=s.accept(); print(a[0]); c.close()'
+# 终端 2：从运行 Caddy 的宿主机连接此端口。
+python -c 'import socket; socket.create_connection(("127.0.0.1",18080)).close()'
+```
+
+若实测为 `172.17.0.1`，应用容器设置 `HQREMOTE_PROXY_IPS=172.17.0.1`，同时使用 `HQREMOTE_HOST=0.0.0.0` 与 `-p 127.0.0.1:8080:8080`。不要原样照抄示例 IP，不信任 `*` 或整个共享容器网段。上面的 Linux **host networking** 示例共享宿主机网络命名空间，Caddy 确实经 `127.0.0.1` 连接时才继续使用默认 `127.0.0.1`。
+
+配置过窄/错误会使 uvicorn 忽略 `X-Forwarded-Proto`，后端把代理后的请求视为 HTTP，出现认证拒绝或 WSS 连接失败；配置过宽则允许不可信来源伪造 `X-Forwarded-For` 绕过来源限速，甚至伪造 HTTPS 判断。代理必须根据真实连接重设 `X-Forwarded-Proto`/`X-Forwarded-For`，不能直接透传客户端自报值。上面的 Nginx 例子按单层代理重设这两个头。应用端口不向公网发布。
+
 只运行一个应用进程、一个副本，不使用 uvicorn `--workers`/`--reload`、多副本负载均衡或多个活跃写服务。连接栅栏在单进程内管理；SQLite 仓储串行提交事务。账号创建、迁移检查与 Backup CLI 可通过 SQLite 锁与服务共存；正式升级时先停止服务。未来多实例部署需要数据库和连接路由一同迁移。
+
+## 已知限制
+
+所有 SQLite 操作仍在事件循环线程中同步执行。R1 的单进程、低负载使用可以接受，但慢磁盘、大事务、迁移或首次大量保留期清理会阻塞同进程 HTTP/WSS；事件驱动投递消除了 100ms 空转，并不等于数据库已异步化。
+
+后续迁移方向：在仓储边界把**完整事务单元**交给专用数据库线程/执行器，保持连接线程归属、事务串行性和提交后通知，不能把同一事务的单条 SQL 分散到任意线程。更大负载再替换为 PostgreSQL 仓储及异步连接池，并配套持久投递通知、跨进程连接路由/栅栏。届时用真实负载验证事件循环延迟和锁等待；本版不宣称支持多进程写服务。
+
+每个 Worker 连接由提交后的唤醒信号驱动投递，接收帧与等待唤醒并发进行；每批最多 16 帧，保留固定节奏的 5 秒兜底，即使持续有心跳也不会推迟补投。过期检查只解码该 Worker 的 queued 且到期命令，投递只解码未完成 Outbox。协议的 15 秒心跳、45 秒离线及旧连接隔离语义不变。
 
 ## P2 Worker 联调
 
@@ -96,6 +127,7 @@ Q1 裁决：短码只允许在面向发起 Worker 的挑战响应及合法同请
 - `GET /devices` → `GET /devices/{workerId}/catalog` → `POST /conversations`。Conversation 固定 owner、设备、store、workspace、scene/version，authority=remote。
 - 消息正文只含 `clientMessageId/text/sessionMode` 与可选 `expiresAt`。HTTP 202 是持久排队，不是运行成功。只有 run.submit 分配 conversationSeq；控制、审批和撤回不占槽。
 - 首次读取选中对话 `/conversations/{conversationId}/snapshot`，保存同事务返回的 `serverCursor`；之后轮询 `/events?after=<cursor>&limit=100`。无 after 只返回当前尾游标与空 items。游标不透明，不能解析为 Worker seq；hasMore 时继续分页。410 重新取快照。
+- 游标为无状态签名值，绑定 owner、scope、position、expiresAt；事件游标另绑定签名中的清理世代。生成/验证不写 cursor 行，不随轮询次数增长。验签失败或 owner/作用域不符返回 REMOTE_CURSOR_INVALID；TTL 到期或其位置已裁剪返回 REMOTE_CURSOR_EXPIRED。升级前的旧随机 cursor 不迁移，客户端应重新取快照。
 - 快照最多各含 100 个 message/run/command，`hasMore` 提醒继续取对应历史页；列表用 `cursor/limit`，不能混用列表游标和 events 游标。
 - 分别展示 `deliveryState`、Worker 的 `controlResult`、Run `status`。断线不改 Run 状态，`command.completed` 不必然表示开发任务成功。
 - 撤销设备立即禁止重连、断开连接并停止投递，但 `executionMayStillBeRunning=true`。未派发命令拒绝并留 skip；可能派发的保持对账状态。
@@ -118,7 +150,11 @@ Q1 裁决：短码只允许在面向发起 Worker 的挑战响应及合法同请
 4. 启动一个进程，经 TLS 代理验证 session、配对状态、Worker hello 和浏览器 snapshot/events。勿把 smoke 测试数据导入正式库。
 5. 回滚先停止应用；在离线数据目录恢复一致性备份及匹配密钥，移除旧库的 WAL/SHM 文件后启动匹配旧程序。不能用运行中的数据库文件覆盖。服务端确认位置回退后 Worker 应拒绝裁剪并对账，不得为恢复而绕过冻结。
 
-R1 保留 Inbox、不可变 skip 和关键浏览器事件，暂不自动裁剪业务历史。游标会按 TTL 失效，运维应监测磁盘并按实例需求保留备份。不能为了清理磁盘删除尚未对账的关键结果或只恢复一部分业务表。
+schema 1→2 为 queued 命令及未完成 Outbox 增加过滤列和索引；2→3 为认证过期和浏览器保留期增加索引及 owner 清理水位。升级回填已有行，不改写命令或 Inbox 原内容。
+
+后台每 5 秒清理到期 session、rate、旧 cursor 行，以及超出 `HQREMOTE_BROWSER_RETENTION_SECONDS` 的 browser_outbox；不在 HTTP 请求路径执行清理。每个 owner 仅维护一行清理水位/世代，事件全部删空也不重置 tail，旧边界游标返回 410，清理后新快照的游标仍有效。不同 owner 的清理相互隔离。
+
+Inbox、命令、消息、Run/审批投影、不可变 skip 和幂等记录均不删除，保障去重及对账。浏览器错过保留期内的事件后通过快照恢复当前状态；保留期不等于删除执行事实。运维仍需监测磁盘、保留一致性备份，不能只恢复部分业务表或删除尚未对账的关键记录。
 
 ## 验证
 
