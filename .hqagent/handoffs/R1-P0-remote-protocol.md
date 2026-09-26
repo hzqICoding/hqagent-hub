@@ -5,11 +5,15 @@ scope_declared: [packages/protocol/**, scripts/protocol/**, .hqagent/**]
 scope_touched: [.hqagent/INTERFACES.md, .hqagent/handoffs/R1-P0-remote-protocol.md]
 build: pass
 tests: pass
-commit: none
+commit: 302ae4403c911d27e883aaa615738eba93542d27
 open_questions: 2
 ---
 
 # R1-P0 远程协议冻结前核对
+
+## 提交定位
+
+头部commit为首次完整阻断证据提交。随后仅补录该SHA；它不是协议冻结提交，0.6.0仍未生成。
 
 ## 结论
 
