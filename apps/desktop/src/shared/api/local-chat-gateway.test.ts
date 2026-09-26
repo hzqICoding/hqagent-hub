@@ -76,6 +76,37 @@ describe('RealLocalChatGateway', () => {
     )
   })
 
+  it('patches conversation metadata with expected version and a required idempotency key', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: {
+          id: 'conv_1', title: '新名称', workspaceId: 'ws_1', sceneId: 'analyze',
+          createdAt: '2026-09-24T00:00:00Z', updatedAt: '2026-09-26T00:00:00Z',
+          version: 2, archived: false,
+        },
+      }),
+    })
+    globalThis.fetch = mockFetch as any
+
+    await gateway.updateLocalConversation(
+      'conv_1',
+      { expectedVersion: 1, title: '新名称' },
+      'metadata-request-1'
+    )
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:49210/api/v2/conversations/conv_1',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ expectedVersion: 1, title: '新名称' }),
+        headers: expect.objectContaining({ 'Idempotency-Key': 'metadata-request-1' }),
+      })
+    )
+  })
+
   it('unwraps HubApiError from unsuccessful envelope', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: false,

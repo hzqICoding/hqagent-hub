@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useChatStore } from './chat.store'
-import { setLocalChatGatewayMode, mockLocalChatGateway } from '@/shared/api'
+import { HubApiError, setLocalChatGatewayMode, mockLocalChatGateway } from '@/shared/api'
 
 describe('ChatStore', () => {
   beforeEach(() => {
@@ -36,6 +36,58 @@ describe('ChatStore', () => {
     expect(newConv.title).toBe('分析架构设计与扩展性')
     expect(store.activeConversationId).toBe(newConv.id)
     expect(store.sessionMode).toBe('new') // first message is new
+  })
+
+  it('groups active and archived tasks by project and searches project names', async () => {
+    const store = useChatStore()
+    await store.init()
+    expect(store.groupedConversations.find((group) => group.workspace.id === 'ws_demo_project')).toBeDefined()
+    expect(store.filteredConversations.every((conversation) => !conversation.archived)).toBe(true)
+
+    store.searchQuery = 'Web-Ecommerce'
+    expect(store.groupedConversations.map((group) => group.workspace.id)).toEqual(['ws_demo_project'])
+    store.showArchived = true
+    expect(store.filteredConversations.map((conversation) => conversation.id)).toContain('conv_archived_checkout')
+  })
+
+  it('refreshes metadata after a version conflict', async () => {
+    const store = useChatStore()
+    await store.init()
+    const current = store.conversations.find((conversation) => conversation.id === 'conv_analyze_auth')!
+    vi.spyOn(mockLocalChatGateway, 'updateLocalConversation').mockRejectedValueOnce(
+      new HubApiError('版本冲突', 'CONFLICT', 409)
+    )
+    vi.spyOn(mockLocalChatGateway, 'listLocalConversations').mockResolvedValueOnce([
+      ...store.conversations.filter((conversation) => conversation.id !== current.id),
+      { ...current, title: '服务端新名称', version: 2 },
+    ])
+
+    await expect(store.renameConversation(current.id, '客户端名称')).rejects.toMatchObject({ code: 'CONFLICT' })
+    expect(store.metadataError).toContain('已刷新列表')
+    expect(store.conversations.find((conversation) => conversation.id === current.id)?.title).toBe('服务端新名称')
+  })
+
+  it('does not let an older metadata response overwrite a newer polled revision', async () => {
+    const store = useChatStore()
+    await store.init()
+    await store.selectConversation('conv_analyze_auth')
+    const current = store.activeConversation!
+    let release!: (value: typeof current) => void
+    const pendingResponse = new Promise<typeof current>((resolve) => { release = resolve })
+    vi.spyOn(mockLocalChatGateway, 'updateLocalConversation').mockReturnValueOnce(pendingResponse)
+
+    const archive = store.setConversationArchived(current.id, true)
+    vi.spyOn(mockLocalChatGateway, 'listLocalConversations').mockResolvedValueOnce([
+      ...store.conversations.filter((conversation) => conversation.id !== current.id),
+      { ...current, title: '轮询得到的新名称', version: 3, archived: false },
+    ])
+    await store.fetchConversations()
+    release({ ...current, title: '过时回包名称', version: 2, archived: true })
+    const applied = await archive
+
+    expect(applied).toMatchObject({ title: '轮询得到的新名称', version: 3, archived: false })
+    expect(store.activeConversation).toMatchObject({ title: '轮询得到的新名称', version: 3, archived: false })
+    expect(store.showArchived).toBe(false)
   })
 
   it('sends message, updates message stream, and triggers run update', async () => {
@@ -125,4 +177,3 @@ describe('ChatStore', () => {
     expect(list2[0].status).toBe('done')
   })
 })
-

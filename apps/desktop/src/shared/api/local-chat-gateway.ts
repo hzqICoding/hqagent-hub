@@ -12,6 +12,7 @@ import type {
   SaveLocalSceneInput,
   LocalConversationView,
   CreateLocalConversationInput,
+  UpdateLocalConversationInput,
   LocalMessageView,
   SendLocalMessageInput,
   LocalMessageReceipt,
@@ -230,6 +231,21 @@ export class RealLocalChatGateway implements LocalChatGateway {
       '/api/v2/conversations',
       {
         method: 'POST',
+        body: JSON.stringify(input),
+      },
+      idempotencyKey
+    )
+  }
+
+  async updateLocalConversation(
+    conversationId: string,
+    input: UpdateLocalConversationInput,
+    idempotencyKey: string
+  ): Promise<LocalConversationView> {
+    return this.fetchApi<LocalConversationView>(
+      `/api/v2/conversations/${encodeURIComponent(conversationId)}`,
+      {
+        method: 'PATCH',
         body: JSON.stringify(input),
       },
       idempotencyKey

@@ -25,6 +25,7 @@ import {
   MoreHorizontal,
   RotateCcw,
   Plus,
+  ArchiveRestore,
 } from 'lucide-vue-next'
 
 const chatStore = useChatStore()
@@ -37,7 +38,7 @@ const isScrolledUp = ref(false)
 const isContextResetDialogOpen = ref(false)
 let mounted = false
 
-const isContextResetDisabled = computed(() => !chatStore.canResetContext)
+const isContextResetDisabled = computed(() => !chatStore.canResetContext || chatStore.isActiveConversationArchived)
 
 const conversationMenuItems = computed(() => [
   {
@@ -166,7 +167,13 @@ function getStarterPrompts(sceneId?: string) {
 }
 
 function applyStarterPrompt(prompt: string) {
+  if (chatStore.isActiveConversationArchived) return
   chatStore.sendMessage(prompt)
+}
+
+async function restoreActiveConversation() {
+  if (!chatStore.activeConversation) return
+  await chatStore.setConversationArchived(chatStore.activeConversation.id, false)
 }
 </script>
 
@@ -219,6 +226,10 @@ function applyStarterPrompt(prompt: string) {
 
             <HqBadge size="sm" variant="info" class="text-[10px] shrink-0">
               {{ getSceneLabel(chatStore.activeConversation.sceneId) }}
+            </HqBadge>
+
+            <HqBadge v-if="chatStore.isActiveConversationArchived" size="sm" variant="neutral" class="text-[10px] shrink-0">
+              已归档
             </HqBadge>
 
             <div class="hidden md:flex items-center gap-1 text-xs text-text-muted shrink-0">
@@ -275,6 +286,16 @@ function applyStarterPrompt(prompt: string) {
         <!-- Message Stream View with scroll physics & Jump-to-bottom button -->
         <div class="flex-1 min-h-0 relative flex flex-col overflow-hidden">
           <div
+            v-if="chatStore.isActiveConversationArchived"
+            class="px-4 py-2 border-b border-border bg-muted/50 flex items-center justify-between gap-3 text-xs"
+          >
+            <span class="text-text-muted">此任务已归档，历史记录保持可读。恢复后才能发送消息、重试或继续执行。</span>
+            <HqButton size="sm" variant="secondary" :loading="chatStore.isMetadataUpdating" @click="restoreActiveConversation">
+              <ArchiveRestore class="w-3.5 h-3.5 mr-1" />
+              恢复任务
+            </HqButton>
+          </div>
+          <div
             v-if="chatStore.activeConversation"
             ref="messageContainerRef"
             class="flex-1 min-h-0 overflow-y-auto divide-y divide-border/20 py-2"
@@ -295,7 +316,7 @@ function applyStarterPrompt(prompt: string) {
                 场景「{{ getSceneLabel(chatStore.activeConversation.sceneId) }}」已锁定角色配置。您可以直接在下方输入目标，或选择以下常用方向：
               </p>
 
-              <div class="w-full space-y-2 text-left">
+              <div v-if="!chatStore.isActiveConversationArchived" class="w-full space-y-2 text-left">
                 <button
                   v-for="starter in getStarterPrompts(chatStore.activeConversation.sceneId)"
                   :key="starter"
@@ -368,7 +389,7 @@ function applyStarterPrompt(prompt: string) {
 
         <!-- Floating Centered Composer Footer -->
         <ChatComposer
-          v-if="chatStore.activeConversation"
+          v-if="chatStore.activeConversation && !chatStore.isActiveConversationArchived"
           @request-context-reset="openContextResetDialog"
         />
       </main>

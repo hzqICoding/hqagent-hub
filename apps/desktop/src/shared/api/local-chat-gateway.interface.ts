@@ -12,6 +12,7 @@ import type {
   SaveLocalSceneInput,
   LocalConversationView,
   CreateLocalConversationInput,
+  UpdateLocalConversationInput,
   LocalMessageView,
   SendLocalMessageInput,
   LocalMessageReceipt,
@@ -48,6 +49,11 @@ export interface LocalChatGateway {
   createLocalConversation(
     input: CreateLocalConversationInput,
     idempotencyKey?: string
+  ): Promise<LocalConversationView>
+  updateLocalConversation(
+    conversationId: string,
+    input: UpdateLocalConversationInput,
+    idempotencyKey: string
   ): Promise<LocalConversationView>
   listLocalMessages(
     conversationId: string,

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type {
   LocalConversationView,
   CreateLocalConversationInput,
+  UpdateLocalConversationInput,
   LocalMessageView,
   LocalRunView,
   TaskActionInput,
@@ -12,6 +13,7 @@ import type {
   ApprovalResponseInput,
   LocalSceneId,
   HubEvent,
+  TaskStatus,
 } from '@hqagent/protocol'
 import { getLocalChatGateway, HubApiError } from '@/shared/api'
 import { pendingOperation, completeOperation, definiteRejection } from '@/shared/api/local-pending-operation'
@@ -35,7 +37,13 @@ export const useChatStore = defineStore('chat', () => {
   const conversations = ref<LocalConversationView[]>([])
   const activeConversationId = ref<string | null>(null)
   const searchQuery = ref('')
+  const showArchived = ref(false)
+  const collapsedWorkspaceIds = ref<Record<string, boolean>>({})
   const isLoadingConversations = ref(false)
+  const isMetadataUpdating = ref(false)
+  const metadataError = ref<string | null>(null)
+  const conversationDrafts = ref<Record<string, string>>({})
+  const conversationDraftRevisions = ref<Record<string, number>>({})
 
   // Messages & Runs
   const messages = ref<LocalMessageView[]>([])
@@ -49,14 +57,23 @@ export const useChatStore = defineStore('chat', () => {
   const scenes = ref<LocalSceneView[]>([])
 
   // Sending state
-  const isSending = ref(false)
+  const sendingConversationIds = ref<string[]>([])
+  const isSending = computed(() => Boolean(
+    activeConversationId.value
+      && sendingConversationIds.value.includes(activeConversationId.value)
+  ))
   const sessionMode = ref<'new' | 'continue'>('new')
   // A reset is an explicit, one-message choice within this conversation.
   // Normal replies continue; a new conversation's first message starts fresh.
   const pendingContextReset = ref(false)
-  const queuedMessages = ref<{ id: string; text: string }[]>([])
+  const allQueuedMessages = ref<{ id: string; conversationId: string; text: string }[]>([])
+  const queuedMessages = computed(() => allQueuedMessages.value.filter(
+    (message) => message.conversationId === activeConversationId.value
+  ))
   const sendError = ref<string | null>(null)
   const resumptionError = ref<string | null>(null)
+  const sendErrorsByConversation = ref<Record<string, string>>({})
+  const resumptionErrorsByConversation = ref<Record<string, string>>({})
   const loadError = ref<string | null>(null)
   let viewGeneration = 0
   let pinnedRunId: string | null = null
@@ -86,16 +103,81 @@ export const useChatStore = defineStore('chat', () => {
 
   const filteredConversations = computed(() => {
     const q = searchQuery.value.trim().toLowerCase()
-    if (!q) return conversations.value
     return conversations.value.filter(
-      (c) =>
-        c.title.toLowerCase().includes(q) ||
-        c.sceneId.toLowerCase().includes(q) ||
-        (workspaces.value.find((w) => w.id === c.workspaceId)?.name || '')
-          .toLowerCase()
-          .includes(q)
+      (c) => {
+        if (Boolean(c.archived) !== showArchived.value) return false
+        if (!q) return true
+        const workspace = workspaces.value.find((w) => w.id === c.workspaceId)
+        return c.title.toLowerCase().includes(q)
+          || (workspace?.name || '').toLowerCase().includes(q)
+          || (workspace?.path || '').toLowerCase().includes(q)
+      }
     )
   })
+
+  const groupedConversations = computed(() => {
+    const q = searchQuery.value.trim().toLowerCase()
+    return workspaces.value
+      .map((workspace) => {
+        const workspaceMatches = !q
+          || workspace.name.toLowerCase().includes(q)
+          || workspace.path.toLowerCase().includes(q)
+        const items = conversations.value.filter((conversation) => {
+          if (conversation.workspaceId !== workspace.id) return false
+          if (Boolean(conversation.archived) !== showArchived.value) return false
+          return workspaceMatches || conversation.title.toLowerCase().includes(q)
+        })
+        return { workspace, conversations: items, workspaceMatches }
+      })
+      .filter((group) => !q || group.workspaceMatches || group.conversations.length > 0)
+  })
+
+  const isActiveConversationArchived = computed(() => Boolean(activeConversation.value?.archived))
+
+  const nonArchivableStatuses: TaskStatus[] = ['queued', 'running', 'waiting_approval', 'paused']
+
+  function canArchiveConversation(conversation: LocalConversationView): boolean {
+    const status = conversation.lastRunStatus
+    return !conversation.archived
+      && !(status && nonArchivableStatuses.includes(status))
+      && !conversation.activeRunId
+  }
+
+  function getConversationDraft(conversationId: string): string {
+    return conversationDrafts.value[conversationId] || ''
+  }
+
+  function setConversationDraft(conversationId: string, value: string): void {
+    conversationDrafts.value = { ...conversationDrafts.value, [conversationId]: value }
+    conversationDraftRevisions.value = {
+      ...conversationDraftRevisions.value,
+      [conversationId]: (conversationDraftRevisions.value[conversationId] || 0) + 1,
+    }
+  }
+
+  function getConversationDraftRevision(conversationId: string): number {
+    return conversationDraftRevisions.value[conversationId] || 0
+  }
+
+  function toggleWorkspaceCollapsed(workspaceId: string): void {
+    collapsedWorkspaceIds.value = {
+      ...collapsedWorkspaceIds.value,
+      [workspaceId]: !collapsedWorkspaceIds.value[workspaceId],
+    }
+  }
+
+  function removeQueuedMessage(messageId: string): void {
+    allQueuedMessages.value = allQueuedMessages.value.filter((message) => message.id !== messageId)
+  }
+
+  function clearSendError(): void {
+    if (activeConversationId.value) {
+      const remaining = { ...sendErrorsByConversation.value }
+      delete remaining[activeConversationId.value]
+      sendErrorsByConversation.value = remaining
+    }
+    sendError.value = null
+  }
 
   const pendingApproval = computed(() => {
     if (!activeRun.value?.taskId) return null
@@ -112,6 +194,7 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   const canResetContext = computed(() => Boolean(activeConversationId.value)
+    && !isActiveConversationArchived.value
     && !isSending.value && !isActionLoading.value
     && !isLoadingMessages.value && !isLoadingRun.value
     && !isCurrentRunActive.value && queuedMessages.value.length === 0
@@ -124,6 +207,11 @@ export const useChatStore = defineStore('chat', () => {
     pendingContextReset.value = true
     sessionMode.value = 'new'
     resumptionError.value = null
+    if (activeConversationId.value) {
+      const remaining = { ...resumptionErrorsByConversation.value }
+      delete remaining[activeConversationId.value]
+      resumptionErrorsByConversation.value = remaining
+    }
     return true
   }
 
@@ -133,6 +221,12 @@ export const useChatStore = defineStore('chat', () => {
     const detail = activeRun.value
     if (sessionMode.value === 'continue' && detail?.status === 'failed' && detail.error && /会话|上下文/.test(detail.error)) {
       resumptionError.value = detail.error
+      if (activeConversationId.value) {
+        resumptionErrorsByConversation.value = {
+          ...resumptionErrorsByConversation.value,
+          [activeConversationId.value]: detail.error,
+        }
+      }
     }
   }
 
@@ -162,14 +256,34 @@ export const useChatStore = defineStore('chat', () => {
       const gateway = getLocalChatGateway()
       const items = await gateway.listLocalConversations()
       if (generation !== viewGeneration) return
-      conversations.value = items
+      conversations.value = items.map((conversation) => {
+        const normalized = {
+          ...conversation,
+          version: conversation.version ?? 1,
+          archived: conversation.archived ?? false,
+        }
+        const current = conversations.value.find((item) => item.id === normalized.id)
+        if ((current?.version ?? 1) > normalized.version) {
+          return {
+            ...normalized,
+            title: current!.title,
+            archived: current!.archived ?? false,
+            version: current!.version ?? 1,
+            updatedAt: current!.updatedAt,
+          }
+        }
+        return normalized
+      })
       if (!activeConversationId.value && conversations.value.length > 0) {
-        await selectConversation(conversations.value[0].id)
+        const firstVisible = conversations.value.find((conversation) => !conversation.archived)
+          || conversations.value[0]
+        isLoadingConversations.value = false
+        await selectConversation(firstVisible.id)
       }
     } catch (error) {
       loadError.value = error instanceof Error ? error.message : '加载对话失败'
     } finally {
-      isLoadingConversations.value = false
+      if (generation === viewGeneration) isLoadingConversations.value = false
     }
   }
 
@@ -187,8 +301,8 @@ export const useChatStore = defineStore('chat', () => {
     pendingContextReset.value = false
     sessionMode.value = 'new'
     loadError.value = null
-    sendError.value = null
-    resumptionError.value = null
+    sendError.value = sendErrorsByConversation.value[conversationId] || null
+    resumptionError.value = resumptionErrorsByConversation.value[conversationId] || null
     actionError.value = null
 
     await Promise.all([
@@ -210,6 +324,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function fetchMessages(conversationId: string): Promise<void> {
+    if (activeConversationId.value !== conversationId) return
     const generation = viewGeneration
     isLoadingMessages.value = true
     try {
@@ -228,11 +343,14 @@ export const useChatStore = defineStore('chat', () => {
     } catch (error) {
       if (generation === viewGeneration) loadError.value = error instanceof Error ? error.message : '读取消息失败'
     } finally {
-      isLoadingMessages.value = false
+      if (generation === viewGeneration && activeConversationId.value === conversationId) {
+        isLoadingMessages.value = false
+      }
     }
   }
 
   async function fetchConversationRuns(conversationId: string): Promise<void> {
+    if (activeConversationId.value !== conversationId) return
     const generation = viewGeneration
     isLoadingRun.value = true
     try {
@@ -245,6 +363,7 @@ export const useChatStore = defineStore('chat', () => {
       if (conversation) {
         conversation.activeRunId = live?.id
         conversation.lastRunId = runs[0]?.id
+        conversation.lastRunStatus = runs[0]?.status
       }
       const targetRunId = pinnedRunId || live?.id || runs[0]?.id
       if (targetRunId) {
@@ -254,9 +373,11 @@ export const useChatStore = defineStore('chat', () => {
         // Current task progress must not wait behind unrelated historical pages.
         for (const event of detail.task?.events || []) ingestEvent(event)
         if (sessionMode.value === 'continue' && detail.status === 'failed' && detail.error && /会话|上下文/.test(detail.error)) {
+          resumptionErrorsByConversation.value = {
+            ...resumptionErrorsByConversation.value,
+            [conversationId]: detail.error,
+          }
           resumptionError.value = detail.error
-        } else if (detail.status !== 'failed' || sessionMode.value === 'new') {
-          resumptionError.value = null
         }
       } else {
         activeRun.value = null
@@ -264,7 +385,9 @@ export const useChatStore = defineStore('chat', () => {
     } catch (error) {
       if (generation === viewGeneration) loadError.value = error instanceof Error ? error.message : '读取执行状态失败'
     } finally {
-      isLoadingRun.value = false
+      if (generation === viewGeneration && activeConversationId.value === conversationId) {
+        isLoadingRun.value = false
+      }
     }
   }
 
@@ -295,13 +418,78 @@ export const useChatStore = defineStore('chat', () => {
     try {
       const created = await gateway.createLocalConversation(operation.payload, operation.id)
       completeOperation(identity)
-      conversations.value = [created, ...conversations.value.filter(c => c.id !== created.id)]
+      const normalized = { ...created, version: created.version ?? 1, archived: created.archived ?? false }
+      conversations.value = [normalized, ...conversations.value.filter(c => c.id !== created.id)]
+      showArchived.value = false
+      collapsedWorkspaceIds.value = { ...collapsedWorkspaceIds.value, [workspaceId]: false }
       await selectConversation(created.id)
-      return created
+      return normalized
     } catch (error) {
       if (definiteRejection(error)) completeOperation(identity)
       throw error
     }
+  }
+
+  async function updateConversationMetadata(
+    conversationId: string,
+    patch: Omit<UpdateLocalConversationInput, 'expectedVersion'>
+  ): Promise<LocalConversationView> {
+    const conversation = conversations.value.find((item) => item.id === conversationId)
+    if (!conversation) throw new HubApiError('任务不存在', 'NOT_FOUND', 404)
+    const input: UpdateLocalConversationInput = {
+      expectedVersion: conversation.version ?? 1,
+      ...patch,
+    }
+    const identity = `conversation-metadata:${conversationId}:${JSON.stringify(input)}`
+    const operation = pendingOperation(identity, input)
+    isMetadataUpdating.value = true
+    metadataError.value = null
+    try {
+      const updated = await getLocalChatGateway().updateLocalConversation(
+        conversationId,
+        operation.payload,
+        operation.id
+      )
+      completeOperation(identity)
+      const normalized = { ...updated, version: updated.version ?? 1, archived: updated.archived ?? false }
+      let applied: LocalConversationView = normalized
+      conversations.value = conversations.value.map((item) =>
+        item.id === conversationId
+          ? ((item.version ?? 1) > normalized.version ? (applied = item) : normalized)
+          : item
+      )
+      if (patch.archived !== undefined && activeConversationId.value === conversationId) {
+        showArchived.value = Boolean(applied.archived)
+      }
+      return applied
+    } catch (error) {
+      if (definiteRejection(error)) completeOperation(identity)
+      const isConflict = error instanceof HubApiError
+        && (error.code === 'CONFLICT' || error.status === 409)
+      metadataError.value = isConflict
+        ? '任务信息已发生变化，已刷新列表，请确认后重试'
+        : error instanceof Error ? error.message : '更新任务信息失败'
+      if (isConflict) await fetchConversations()
+      throw error
+    } finally {
+      isMetadataUpdating.value = false
+    }
+  }
+
+  async function renameConversation(conversationId: string, title: string): Promise<LocalConversationView> {
+    return updateConversationMetadata(conversationId, { title: title.trim() })
+  }
+
+  async function setConversationArchived(
+    conversationId: string,
+    archived: boolean
+  ): Promise<LocalConversationView> {
+    const conversation = conversations.value.find((item) => item.id === conversationId)
+    if (!conversation) throw new HubApiError('任务不存在', 'NOT_FOUND', 404)
+    if (archived && !canArchiveConversation(conversation)) {
+      throw new HubApiError('运行、排队、等待审批或暂停中的任务不能归档', 'CONFLICT', 409)
+    }
+    return updateConversationMetadata(conversationId, { archived })
   }
 
   async function registerWorkspace(path: string): Promise<WorkspaceView> {
@@ -322,7 +510,11 @@ export const useChatStore = defineStore('chat', () => {
     modeOverride?: 'new' | 'continue'
   ): Promise<void> {
     const convId = activeConversationId.value
-    if (!convId || !text.trim() || isSending.value) return
+    if (!convId || !text.trim() || sendingConversationIds.value.includes(convId)) return
+    const conversation = conversations.value.find((item) => item.id === convId)
+    if (conversation?.archived) {
+      throw new HubApiError('请先恢复已归档任务，再发送消息', 'CONFLICT', 409)
+    }
 
     const mode = modeOverride || sessionMode.value
     if (mode === 'continue' && resumptionError.value) {
@@ -336,12 +528,16 @@ export const useChatStore = defineStore('chat', () => {
 
     // If currently running, queue it
     if (isCurrentRunActive.value) {
-      queuedMessages.value.push({ id: clientMessageId, text: text.trim() })
+      allQueuedMessages.value.push({ id: clientMessageId, conversationId: convId, text: text.trim() })
     }
 
-    isSending.value = true
-    sendError.value = null
-    resumptionError.value = null
+    sendingConversationIds.value = [...sendingConversationIds.value, convId]
+    const remainingSendErrors = { ...sendErrorsByConversation.value }
+    delete remainingSendErrors[convId]
+    sendErrorsByConversation.value = remainingSendErrors
+    if (activeConversationId.value === convId) {
+      sendError.value = null
+    }
 
     try {
       const gateway = getLocalChatGateway()
@@ -359,32 +555,51 @@ export const useChatStore = defineStore('chat', () => {
         sessionMode.value = 'continue'
         pinnedRunId = wasRunActive ? null : receipt.runId
       }
+      const remainingResumptionErrors = { ...resumptionErrorsByConversation.value }
+      delete remainingResumptionErrors[convId]
+      resumptionErrorsByConversation.value = remainingResumptionErrors
+      if (activeConversationId.value === convId) resumptionError.value = null
 
       // Refresh messages and runs
       await Promise.all([fetchMessages(convId), fetchConversationRuns(convId)])
 
       // If was queued, remove it
-      queuedMessages.value = queuedMessages.value.filter((q) => q.id !== clientMessageId)
+      removeQueuedMessage(clientMessageId)
 
       // Start event polling
       if (isPolling.value) scheduleNextPoll(0)
       return
     } catch (err: unknown) {
       if (definiteRejection(err)) completeOperation(identity)
-      queuedMessages.value = queuedMessages.value.filter((q) => q.id !== clientMessageId)
-      if (err instanceof HubApiError) {
+      removeQueuedMessage(clientMessageId)
+      if (activeConversationId.value === convId && err instanceof HubApiError) {
         if (err.code === 'SESSION_NOT_RESUMABLE') {
-          resumptionError.value =
-            err.message || '该会话无法恢复；可新建任务，或明确重置当前任务的 Agent 上下文后发送'
+          const message = err.message || '该会话无法恢复；可新建任务，或明确重置当前任务的 Agent 上下文后发送'
+          resumptionErrorsByConversation.value = {
+            ...resumptionErrorsByConversation.value,
+            [convId]: message,
+          }
+          resumptionError.value = message
         } else {
+          sendErrorsByConversation.value = {
+            ...sendErrorsByConversation.value,
+            [convId]: err.message,
+          }
           sendError.value = err.message
         }
+      } else if (err instanceof HubApiError && err.code === 'SESSION_NOT_RESUMABLE') {
+        resumptionErrorsByConversation.value = {
+          ...resumptionErrorsByConversation.value,
+          [convId]: err.message,
+        }
       } else {
-        sendError.value = err instanceof Error ? err.message : '发送消息失败'
+        const message = err instanceof Error ? err.message : '发送消息失败'
+        sendErrorsByConversation.value = { ...sendErrorsByConversation.value, [convId]: message }
+        if (activeConversationId.value === convId) sendError.value = message
       }
       throw err
     } finally {
-      isSending.value = false
+      sendingConversationIds.value = sendingConversationIds.value.filter((id) => id !== convId)
     }
   }
 
@@ -393,6 +608,9 @@ export const useChatStore = defineStore('chat', () => {
     action: TaskActionInput['action'],
     instruction?: string
   ): Promise<void> {
+    if (isActiveConversationArchived.value && (action === 'resume' || action === 'retry')) {
+      throw new HubApiError('请先恢复已归档任务，再继续或重试', 'CONFLICT', 409)
+    }
     isActionLoading.value = true
     actionError.value = null
     const identity = `control:${runId}:${action}:${instruction || ''}`
@@ -867,7 +1085,7 @@ export const useChatStore = defineStore('chat', () => {
     // Snapshot reads proceed even when the event request is slow or fails.
     const conversationId = activeConversationId.value
     const snapshot = conversationId ? Promise.all([
-      fetchMessages(conversationId), fetchConversationRuns(conversationId), fetchApprovals(),
+      fetchConversations(), fetchMessages(conversationId), fetchConversationRuns(conversationId), fetchApprovals(),
     ]) : Promise.resolve()
     try {
       const gateway = getLocalChatGateway()
@@ -920,13 +1138,19 @@ export const useChatStore = defineStore('chat', () => {
     pinnedRunId = null
     conversations.value = []
     activeConversationId.value = null
+    searchQuery.value = ''
+    showArchived.value = false
+    collapsedWorkspaceIds.value = {}
+    conversationDrafts.value = {}
+    conversationDraftRevisions.value = {}
     messages.value = []
     conversationRuns.value = []
     activeRun.value = null
     workspaces.value = []
     scenes.value = []
     approvals.value = []
-    queuedMessages.value = []
+    allQueuedMessages.value = []
+    sendingConversationIds.value = []
     activitiesByTaskId.value = {}
     activitiesByRunId.value = {}
     lastEventSeq.value = 0
@@ -934,6 +1158,9 @@ export const useChatStore = defineStore('chat', () => {
     sendError.value = null
     actionError.value = null
     resumptionError.value = null
+    sendErrorsByConversation.value = {}
+    resumptionErrorsByConversation.value = {}
+    metadataError.value = null
     sessionMode.value = 'new'
     pendingContextReset.value = false
   }
@@ -943,7 +1170,19 @@ export const useChatStore = defineStore('chat', () => {
     activeConversationId,
     activeConversation,
     searchQuery,
+    showArchived,
+    collapsedWorkspaceIds,
     filteredConversations,
+    groupedConversations,
+    isActiveConversationArchived,
+    canArchiveConversation,
+    toggleWorkspaceCollapsed,
+    conversationDrafts,
+    getConversationDraft,
+    setConversationDraft,
+    getConversationDraftRevision,
+    isMetadataUpdating,
+    metadataError,
     messages,
     isLoadingMessages,
     activeRun,
@@ -959,6 +1198,8 @@ export const useChatStore = defineStore('chat', () => {
     requestContextReset,
     cancelContextReset,
     queuedMessages,
+    removeQueuedMessage,
+    clearSendError,
     sendError,
     resumptionError,
     loadError,
@@ -979,6 +1220,9 @@ export const useChatStore = defineStore('chat', () => {
     fetchConversationRuns,
     fetchApprovals,
     createConversation,
+    updateConversationMetadata,
+    renameConversation,
+    setConversationArchived,
     registerWorkspace,
     pickWorkspaceDirectory,
     sendMessage,
