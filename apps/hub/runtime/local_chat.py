@@ -10,6 +10,7 @@ from typing import Any
 from protocol.generated.python import (
     CreateLocalConversationInput, CreateTaskInput, LocalRunView, LocalSceneView,
     SaveTeamProfileInput, SendLocalMessageInput, TaskActionInput,
+    UpdateLocalConversationInput,
 )
 from core.errors import HubError
 from storage.local_chat import LocalChatRepository, TERMINAL, now, uid
@@ -26,6 +27,7 @@ class LocalChatService:
         self._wake = asyncio.Event()
         self._slots = asyncio.Semaphore(3)
         self._last_approval_check = 0.0
+        self._conversation_locks: dict[str, asyncio.Lock] = {}
 
     async def start(self) -> None:
         self._closed = False
@@ -50,6 +52,24 @@ class LocalChatService:
             raise HubError("NOT_FOUND", "请先登记并选择本机项目目录")
         return self.repository.create_conversation(value, key)
 
+    def _conversation_lock(self, conversation_id: str) -> asyncio.Lock:
+        return self._conversation_locks.setdefault(conversation_id, asyncio.Lock())
+
+    async def conversations(self):
+        return self.repository.conversations()
+
+    async def update_conversation(self, conversation_id: str,
+                                  value: UpdateLocalConversationInput, key: str):
+        async def update():
+            if value.archived is True:
+                await self._refresh_unfinished_runs(conversation_id)
+            return self.repository.update_conversation(conversation_id, value, key)
+
+        if "archived" in value.model_fields_set:
+            async with self._conversation_lock(conversation_id):
+                return await update()
+        return await update()
+
     def send(self, conversation_id: str, value: SendLocalMessageInput, key: str):
         receipt = self.repository.enqueue(conversation_id, value, key)
         self._wake.set()
@@ -69,6 +89,14 @@ class LocalChatService:
         if not key:
             raise HubError("VALIDATION_FAILED", "必须提供Idempotency-Key")
         record = self.repository.run_record(run_id)
+        if str(value.action) in {"append_instruction", "resume", "retry"}:
+            async with self._conversation_lock(record["conversation_id"]):
+                self.repository.assert_execution_allowed(record["conversation_id"])
+                return await self._control(record, value, key)
+        return await self._control(record, value, key)
+
+    async def _control(self, record: dict, value: TaskActionInput, key: str):
+        run_id = record["run_id"]
         if str(value.action) == "append_instruction":
             if not value.instruction:
                 raise HubError("VALIDATION_FAILED", "追加内容不能为空")
@@ -109,6 +137,28 @@ class LocalChatService:
             self.repository.update_run(run_id, str(task.status), error=getattr(task, "failure_reason", None))
         self._wake.set()
         return await self.run(run_id)
+
+    async def _refresh_unfinished_runs(self, conversation_id: str) -> None:
+        for record in self.repository.unfinished_runs(conversation_id):
+            if not record["task_id"]:
+                continue
+            try:
+                task = await self.ports.tasks.get_task(record["task_id"])
+            except Exception:
+                # The durable local status remains unfinished, so archive still fails safely.
+                continue
+            status = str(task.status)
+            if status != record["status"]:
+                if status in TERMINAL:
+                    self.repository.complete_run(
+                        record["run_id"], status, self._result_text(task),
+                        error=getattr(task, "failure_reason", None),
+                    )
+                else:
+                    self.repository.update_run(
+                        record["run_id"], status,
+                        error=getattr(task, "failure_reason", None),
+                    )
 
     async def _supervise(self) -> None:
         while not self._closed:

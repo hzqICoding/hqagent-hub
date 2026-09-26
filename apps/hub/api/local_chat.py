@@ -9,6 +9,7 @@ from protocol.generated.python import (
     LocalAgentModelsView, LocalAuthInput, LocalAuthView, LocalEventPage,
     PickLocalDirectoryInput,
     SaveLocalSceneInput, SendLocalMessageInput, TaskActionInput,
+    UpdateLocalConversationInput,
 )
 from api.envelopes import success_response
 from core.constants import PROTOCOL_VERSION
@@ -111,12 +112,19 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
 
     @router.get("/conversations")
     async def conversations():
-        return success_response(service.repository.conversations())
+        return success_response(await service.conversations())
 
     @router.post("/conversations")
     async def create_conversation(value: CreateLocalConversationInput,
                                   idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
         return success_response(await service.create_conversation(value, require_key(idempotency_key)), 201)
+
+    @router.patch("/conversations/{conversation_id}")
+    async def update_conversation(conversation_id: str, value: UpdateLocalConversationInput,
+                                  idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+        return success_response(
+            await service.update_conversation(conversation_id, value, require_key(idempotency_key))
+        )
 
     @router.get("/conversations/{conversation_id}/messages")
     async def messages(conversation_id: str, after: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=200)):

@@ -9,7 +9,7 @@ from typing import Any, Callable
 from protocol.generated.python import (
     CreateLocalConversationInput, LocalConversationView, LocalMessageReceipt,
     LocalMessageView, LocalRunView, LocalSceneView, SaveLocalSceneInput,
-    SendLocalMessageInput, ReviewMode,
+    SendLocalMessageInput, TaskStatus, UpdateLocalConversationInput, ReviewMode,
 )
 from core.errors import HubError
 from storage.database import Database, Transaction
@@ -117,38 +117,158 @@ class LocalChatRepository:
                                   (route, key, digest, json.dumps(result, ensure_ascii=False)))
             return result, False
 
+    @staticmethod
+    def _conversation_view(payload_json: str, run_id: str | None = None,
+                           run_status: str | None = None) -> LocalConversationView:
+        value = LocalConversationView.model_validate_json(payload_json)
+        try:
+            projected_status = TaskStatus(run_status) if run_status is not None else None
+        except ValueError as error:
+            raise HubError("INTERNAL", "对话执行状态不受协议支持",
+                           detail={"status": run_status}) from error
+        version = 1 if value.version is None else value.version
+        if version < 1:
+            raise HubError("INTERNAL", "对话元数据版本无效", detail={"version": version})
+        return value.model_copy(update={
+            "version": version,
+            "archived": bool(value.archived),
+            "last_run_id": run_id or value.last_run_id,
+            "last_run_status": projected_status,
+        })
+
+    @staticmethod
+    def _conversation_row(connection: Any, conversation_id: str) -> Any:
+        return connection.execute(
+            "SELECT c.payload_json,r.run_id,COALESCE(t.status,r.status) FROM local_conversations c "
+            "LEFT JOIN local_runs r ON r.run_id=("
+            "SELECT rr.run_id FROM local_runs rr JOIN local_messages m ON m.message_id=rr.message_id "
+            "WHERE rr.conversation_id=c.conversation_id ORDER BY m.sequence DESC LIMIT 1) "
+            "LEFT JOIN tasks t ON t.task_id=r.task_id "
+            "WHERE c.conversation_id=?",
+            (conversation_id,),
+        ).fetchone()
+
     def conversations(self) -> list[LocalConversationView]:
         with self.database.locked_connection() as db:
-            rows = db.execute("SELECT payload_json FROM local_conversations ORDER BY updated_at DESC LIMIT 200").fetchall()
-        return [LocalConversationView.model_validate_json(row[0]) for row in rows]
+            rows = db.execute(
+                "SELECT c.payload_json,r.run_id,COALESCE(t.status,r.status) FROM local_conversations c "
+                "LEFT JOIN local_runs r ON r.run_id=("
+                "SELECT rr.run_id FROM local_runs rr JOIN local_messages m ON m.message_id=rr.message_id "
+                "WHERE rr.conversation_id=c.conversation_id ORDER BY m.sequence DESC LIMIT 1) "
+                "LEFT JOIN tasks t ON t.task_id=r.task_id "
+                "ORDER BY c.updated_at DESC"
+            ).fetchall()
+        return [self._conversation_view(row[0], row[1], row[2]) for row in rows]
 
     def conversation(self, conversation_id: str) -> LocalConversationView:
         with self.database.locked_connection() as db:
-            row = db.execute("SELECT payload_json FROM local_conversations WHERE conversation_id=?", (conversation_id,)).fetchone()
+            row = self._conversation_row(db, conversation_id)
         if row is None:
             raise HubError("NOT_FOUND", "对话不存在")
-        return LocalConversationView.model_validate_json(row[0])
+        return self._conversation_view(row[0], row[1], row[2])
 
     def create_conversation(self, value: CreateLocalConversationInput, key: str) -> LocalConversationView:
         self.scene(str(value.scene_id))
-        if not value.title.strip() or len(value.title) > 200:
+        title = value.title.strip()
+        if not title or len(title) > 200:
             raise HubError("VALIDATION_FAILED", "标题必须为1到200字符")
         def create(tx: Transaction) -> dict:
             stamp = now()
-            view = LocalConversationView.model_validate({"id": uid("conversation"), "title": value.title.strip(),
-                "workspaceId": value.workspace_id, "sceneId": str(value.scene_id), "createdAt": stamp, "updatedAt": stamp})
-            tx.connection.execute("INSERT INTO local_conversations VALUES(?,?,?)", (view.id, view.model_dump_json(by_alias=True), stamp))
+            view = LocalConversationView.model_validate({"id": uid("conversation"), "title": title,
+                "workspaceId": value.workspace_id, "sceneId": str(value.scene_id), "createdAt": stamp,
+                "updatedAt": stamp, "version": 1, "archived": False})
+            tx.connection.execute("INSERT INTO local_conversations VALUES(?,?,?)",
+                                  (view.id, view.model_dump_json(by_alias=True, exclude_none=True), stamp))
             return view.model_dump(mode="json", by_alias=True)
         result, _ = self.command("conversation.create", key, value.model_dump(mode="json"), create)
         return LocalConversationView.model_validate(result)
 
+    def update_conversation(self, conversation_id: str, value: UpdateLocalConversationInput,
+                            key: str) -> LocalConversationView:
+        supplied = value.model_fields_set & {"title", "archived"}
+        title = value.title.strip() if value.title is not None else None
+
+        def update(tx: Transaction) -> dict:
+            if not supplied:
+                raise HubError("VALIDATION_FAILED", "至少提供title或archived")
+            if value.expected_version < 1:
+                raise HubError("VALIDATION_FAILED", "expectedVersion必须大于等于1")
+            if "title" in supplied and value.title is None:
+                raise HubError("VALIDATION_FAILED", "title不能为null")
+            if "archived" in supplied and value.archived is None:
+                raise HubError("VALIDATION_FAILED", "archived不能为null")
+            if "title" in supplied and (not title or len(title) > 200):
+                raise HubError("VALIDATION_FAILED", "标题必须为1到200字符")
+            row = self._conversation_row(tx.connection, conversation_id)
+            if row is None:
+                raise HubError("NOT_FOUND", "对话不存在")
+            current = self._conversation_view(row[0], row[1], row[2])
+            if current.version != value.expected_version:
+                raise HubError("CONFLICT", "对话已更新，请刷新后重试",
+                               detail={"currentVersion": current.version})
+            if value.archived is True:
+                active = tx.connection.execute(
+                    "SELECT COALESCE(t.status,r.status) FROM local_runs r "
+                    "LEFT JOIN tasks t ON t.task_id=r.task_id WHERE r.conversation_id=? "
+                    "AND COALESCE(t.status,r.status) "
+                    "IN ('queued','running','waiting_approval','paused') LIMIT 1",
+                    (conversation_id,),
+                ).fetchone()
+                if active is not None:
+                    raise HubError("CONFLICT", "对话仍有未完成任务，不能归档",
+                                   detail={"runStatus": active[0]})
+            stamp = now()
+            changed = current.model_copy(update={
+                "title": title if "title" in supplied else current.title,
+                "archived": value.archived if "archived" in supplied else current.archived,
+                "version": current.version + 1,
+                "updated_at": stamp,
+            })
+            persisted = changed.model_copy(update={"last_run_status": None})
+            tx.connection.execute(
+                "UPDATE local_conversations SET payload_json=?,updated_at=? WHERE conversation_id=?",
+                (persisted.model_dump_json(by_alias=True, exclude_none=True), stamp, conversation_id),
+            )
+            return changed.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+        request = value.model_dump(mode="json", by_alias=True, exclude_unset=True)
+        result, _ = self.command(f"conversation.update:{conversation_id}", key, request, update)
+        return LocalConversationView.model_validate(result)
+
+    def assert_execution_allowed(self, conversation_id: str) -> None:
+        if self.conversation(conversation_id).archived:
+            raise HubError("CONFLICT", "对话已归档，请先恢复后再执行")
+
+    def unfinished_runs(self, conversation_id: str) -> list[dict]:
+        with self.database.locked_connection() as db:
+            exists = db.execute(
+                "SELECT 1 FROM local_conversations WHERE conversation_id=?", (conversation_id,)
+            ).fetchone()
+            if exists is None:
+                raise HubError("NOT_FOUND", "对话不存在")
+            rows = db.execute(
+                "SELECT r.*,t.status AS task_status FROM local_runs r "
+                "LEFT JOIN tasks t ON t.task_id=r.task_id WHERE r.conversation_id=? "
+                "AND (r.status IN ('queued','running','waiting_approval','paused') "
+                "OR t.status IN ('queued','running','waiting_approval','paused'))",
+                (conversation_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def enqueue(self, conversation_id: str, value: SendLocalMessageInput, key: str) -> LocalMessageReceipt:
-        conversation = self.conversation(conversation_id)
         if not value.text.strip() or len(value.text) > 32000:
             raise HubError("VALIDATION_FAILED", "消息必须为1到32000字符")
         if not value.client_message_id or len(value.client_message_id) > 160:
             raise HubError("VALIDATION_FAILED", "clientMessageId必须为1到160字符")
         def create(tx: Transaction) -> dict:
+            conversation_row = self._conversation_row(tx.connection, conversation_id)
+            if conversation_row is None:
+                raise HubError("NOT_FOUND", "对话不存在")
+            conversation = self._conversation_view(
+                conversation_row[0], conversation_row[1], conversation_row[2]
+            )
+            if conversation.archived:
+                raise HubError("CONFLICT", "对话已归档，请先恢复后再发送消息")
             alias_route = f"client-message:{conversation_id}"
             digest = request_hash(value.model_dump(mode="json"))
             prior = tx.connection.execute("SELECT request_hash,response_json FROM local_commands WHERE route=? AND idempotency_key=?", (alias_route, value.client_message_id)).fetchone()
@@ -165,8 +285,9 @@ class LocalChatRepository:
             tx.connection.execute("INSERT INTO local_messages VALUES(?,?,?,?,?,?,?)", (message_id, conversation_id, seq, "user", value.text, run_id, stamp))
             tx.connection.execute("INSERT INTO local_runs VALUES(?,?,?,?,?,?,?,?,?,?)", (run_id, conversation_id, message_id, None, row[0], str(value.session_mode), "queued", None, stamp, stamp))
             updated = conversation.model_copy(update={"last_run_id": run_id, "updated_at": stamp})
+            persisted = updated.model_copy(update={"last_run_status": None})
             tx.connection.execute("UPDATE local_conversations SET payload_json=?,updated_at=? WHERE conversation_id=?",
-                                  (updated.model_dump_json(by_alias=True), stamp, conversation_id))
+                                  (persisted.model_dump_json(by_alias=True, exclude_none=True), stamp, conversation_id))
             receipt = {"commandId": uid("command"), "conversationId": conversation_id,
                     "messageId": message_id, "runId": run_id, "status": "queued", "duplicate": False}
             tx.connection.execute("INSERT INTO local_commands VALUES(?,?,?,?)", (alias_route, value.client_message_id, digest, json.dumps(receipt, ensure_ascii=False)))
