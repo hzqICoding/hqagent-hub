@@ -608,6 +608,8 @@ export const useChatStore = defineStore('chat', () => {
     action: TaskActionInput['action'],
     instruction?: string
   ): Promise<void> {
+    const conversationId = activeConversationId.value
+    const generation = viewGeneration
     if (isActiveConversationArchived.value && (action === 'resume' || action === 'retry')) {
       throw new HubApiError('请先恢复已归档任务，再继续或重试', 'CONFLICT', 409)
     }
@@ -624,17 +626,20 @@ export const useChatStore = defineStore('chat', () => {
         idempotencyKey
       )
       completeOperation(identity)
-      activeRun.value = updatedRun
-      pinnedRunId = updatedRun.id
-      if (activeConversationId.value) {
+      if (generation === viewGeneration && activeConversationId.value === conversationId
+        && updatedRun.conversationId === conversationId) {
+        activeRun.value = updatedRun
+        pinnedRunId = updatedRun.id
         await Promise.all([
-          fetchMessages(activeConversationId.value),
-          fetchConversationRuns(activeConversationId.value),
+          fetchMessages(conversationId),
+          fetchConversationRuns(conversationId),
         ])
       }
     } catch (err: unknown) {
       if (definiteRejection(err)) completeOperation(identity)
-      actionError.value = err instanceof Error ? err.message : '执行操作失败'
+      if (generation === viewGeneration && activeConversationId.value === conversationId) {
+        actionError.value = err instanceof Error ? err.message : '执行操作失败'
+      }
       throw err
     } finally {
       isActionLoading.value = false
