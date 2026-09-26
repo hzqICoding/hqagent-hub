@@ -17,7 +17,7 @@ describe('ChatPage', () => {
     // Wait for store init
     await new Promise((r) => setTimeout(r, 50))
 
-    expect(wrapper.text()).toContain('本地对话')
+    expect(wrapper.text()).toContain('项目任务')
     expect(wrapper.text()).toContain('新建任务')
     expect(wrapper.find('textarea').exists()).toBe(true)
     expect(wrapper.text()).toContain('当前任务连续对话')

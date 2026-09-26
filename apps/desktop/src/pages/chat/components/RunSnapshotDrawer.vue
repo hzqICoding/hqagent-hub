@@ -194,7 +194,8 @@ function getReviewVerdictMeta(verdict: string) {
           v-if="activeRun.status === 'running'"
           size="sm"
           variant="secondary"
-          :disabled="chatStore.isActionLoading"
+          :disabled="chatStore.isActionLoading || chatStore.isActiveConversationArchived"
+          :title="chatStore.isActiveConversationArchived ? '请先恢复任务' : undefined"
           @click="handlePauseClick"
         >
           <Pause class="w-3 h-3 mr-1 text-warning" />
@@ -205,7 +206,8 @@ function getReviewVerdictMeta(verdict: string) {
           v-else-if="activeRun.status === 'paused'"
           size="sm"
           variant="secondary"
-          :disabled="chatStore.isActionLoading"
+          :disabled="chatStore.isActionLoading || chatStore.isActiveConversationArchived"
+          :title="chatStore.isActiveConversationArchived ? '请先恢复任务' : undefined"
           @click="handleResumeClick"
         >
           <Play class="w-3 h-3 mr-1 text-success" />
@@ -216,7 +218,8 @@ function getReviewVerdictMeta(verdict: string) {
           v-if="activeRun.status === 'failed'"
           size="sm"
           variant="secondary"
-          :disabled="chatStore.isActionLoading"
+          :disabled="chatStore.isActionLoading || chatStore.isActiveConversationArchived"
+          :title="chatStore.isActiveConversationArchived ? '请先恢复任务' : undefined"
           @click="handleRetryClick"
         >
           <RotateCcw class="w-3 h-3 mr-1" />

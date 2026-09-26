@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { useChatStore } from '@/stores/chat.store'
 import {
   HqButton,
@@ -16,12 +16,22 @@ import {
 const chatStore = useChatStore()
 const emit = defineEmits<{ (e: 'request-context-reset'): void }>()
 
-const inputText = ref('')
+const inputText = computed({
+  get: () => chatStore.activeConversationId
+    ? chatStore.getConversationDraft(chatStore.activeConversationId)
+    : '',
+  set: (value: string) => {
+    if (chatStore.activeConversationId) {
+      chatStore.setConversationDraft(chatStore.activeConversationId, value)
+    }
+  },
+})
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const canSend = computed(() => {
   return (
     inputText.value.trim().length > 0 &&
+    !chatStore.isActiveConversationArchived &&
     !chatStore.isSending &&
     !chatStore.isLoadingMessages &&
     !chatStore.isLoadingRun
@@ -42,20 +52,34 @@ function handleInput() {
 
 async function handleSend() {
   if (!canSend.value) return
+  const conversationId = chatStore.activeConversationId
+  if (!conversationId) return
   const text = inputText.value.trim()
-  inputText.value = ''
+  chatStore.setConversationDraft(conversationId, '')
+  const clearedDraftRevision = chatStore.getConversationDraftRevision(conversationId)
+  const sendPromise = chatStore.sendMessage(text)
   await nextTick()
-  adjustHeight()
+  if (chatStore.activeConversationId === conversationId) adjustHeight()
 
   try {
-    await chatStore.sendMessage(text)
+    await sendPromise
   } catch {
-    // If failed, restore input so user doesn't lose prompt
-    inputText.value = text
+    // Restore only the original conversation's still-empty draft. A newer draft wins.
+    if (chatStore.getConversationDraftRevision(conversationId) === clearedDraftRevision) {
+      chatStore.setConversationDraft(conversationId, text)
+    }
+    await nextTick()
+    if (chatStore.activeConversationId === conversationId) adjustHeight()
+  }
+}
+
+watch(
+  () => chatStore.activeConversationId,
+  async () => {
     await nextTick()
     adjustHeight()
   }
-}
+)
 
 function handleKeyDown(e: KeyboardEvent) {
   if (e.isComposing) return
@@ -65,8 +89,8 @@ function handleKeyDown(e: KeyboardEvent) {
   }
 }
 
-function removeQueuedMessage(index: number) {
-  chatStore.queuedMessages.splice(index, 1)
+function removeQueuedMessage(messageId: string) {
+  chatStore.removeQueuedMessage(messageId)
 }
 
 function handleStopRun() {
@@ -98,7 +122,7 @@ function handleStopRun() {
             type="button"
             class="p-1 rounded-full hover:bg-panel-hover text-text-muted hover:text-text shrink-0 transition-colors"
             title="移除该排队指令"
-            @click="removeQueuedMessage(idx)"
+            @click="removeQueuedMessage(q.id)"
           >
             <X class="w-3.5 h-3.5" />
           </button>
@@ -156,7 +180,7 @@ function handleStopRun() {
         <button
           type="button"
           class="p-1 rounded text-danger/80 hover:text-danger"
-          @click="chatStore.sendError = null"
+          @click="chatStore.clearSendError()"
         >
           <X class="w-3.5 h-3.5" />
         </button>

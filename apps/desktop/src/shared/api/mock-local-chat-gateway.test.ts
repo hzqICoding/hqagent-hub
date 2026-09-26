@@ -182,6 +182,53 @@ describe('MockLocalChatGateway', () => {
     expect(cancelled.status).toBe('cancelled')
   })
 
+  it('renames, archives, restores, and replays metadata updates idempotently', async () => {
+    const renamed = await gateway.updateLocalConversation(
+      'conv_analyze_auth',
+      { expectedVersion: 1, title: '新的鉴权任务名称' },
+      'rename-conversation-1'
+    )
+    expect(renamed).toMatchObject({ title: '新的鉴权任务名称', version: 2, archived: false })
+
+    const replay = await gateway.updateLocalConversation(
+      'conv_analyze_auth',
+      { expectedVersion: 1, title: '新的鉴权任务名称' },
+      'rename-conversation-1'
+    )
+    expect(replay.version).toBe(2)
+
+    const archived = await gateway.updateLocalConversation(
+      'conv_analyze_auth',
+      { expectedVersion: 2, archived: true },
+      'archive-conversation-1'
+    )
+    expect(archived).toMatchObject({ archived: true, version: 3 })
+    await expect(gateway.sendLocalMessage('conv_analyze_auth', {
+      clientMessageId: 'archived-message', text: '不应发送', sessionMode: 'continue',
+    })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 })
+
+    const restored = await gateway.updateLocalConversation(
+      'conv_analyze_auth',
+      { expectedVersion: 3, archived: false },
+      'restore-conversation-1'
+    )
+    expect(restored).toMatchObject({ archived: false, version: 4 })
+  })
+
+  it('rejects stale metadata versions and unfinished-run archives', async () => {
+    await expect(gateway.updateLocalConversation(
+      'conv_analyze_auth',
+      { expectedVersion: 99, title: '过期更新' },
+      'stale-conversation-1'
+    )).rejects.toMatchObject({ code: 'CONFLICT', status: 409 })
+
+    await expect(gateway.updateLocalConversation(
+      'conv_develop_ui',
+      { expectedVersion: 1, archived: true },
+      'archive-running-conversation-1'
+    )).rejects.toMatchObject({ code: 'CONFLICT', status: 409 })
+  })
+
   it('handles cursor expiry error in listLocalEvents', async () => {
     gateway.simulateCursorExpired = true
     await expect(gateway.listLocalEvents(0)).rejects.toThrow(HubApiError)

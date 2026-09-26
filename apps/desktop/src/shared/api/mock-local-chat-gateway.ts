@@ -12,6 +12,7 @@ import type {
   SaveLocalSceneInput,
   LocalConversationView,
   CreateLocalConversationInput,
+  UpdateLocalConversationInput,
   LocalMessageView,
   SendLocalMessageInput,
   LocalMessageReceipt,
@@ -49,6 +50,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
   private sessions: SessionView[] = []
   private events: HubEvent[] = []
   private processedClientMessageIds: Set<string> = new Set()
+  private conversationUpdateReceipts = new Map<string, { signature: string; response: LocalConversationView }>()
   private eventSeq = 1
 
   // Simulation flags
@@ -62,6 +64,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
   reset(): void {
     this.authenticated = true
     this.processedClientMessageIds.clear()
+    this.conversationUpdateReceipts.clear()
 
     // Seed workspaces
     this.workspaces = [
@@ -189,6 +192,9 @@ export class MockLocalChatGateway implements LocalChatGateway {
       updatedAt: '2026-09-24T08:05:00Z',
       activeRunId: undefined,
       lastRunId: run1Id,
+      version: 1,
+      archived: false,
+      lastRunStatus: 'succeeded',
     }
 
     const conv1Messages: LocalMessageView[] = [
@@ -296,6 +302,9 @@ export class MockLocalChatGateway implements LocalChatGateway {
       updatedAt: '2026-09-24T09:32:00Z',
       activeRunId: run2Id,
       lastRunId: run2Id,
+      version: 1,
+      archived: false,
+      lastRunStatus: 'running',
     }
 
     const conv2Messages: LocalMessageView[] = [
@@ -417,6 +426,9 @@ export class MockLocalChatGateway implements LocalChatGateway {
       updatedAt: '2026-09-24T10:12:00Z',
       activeRunId: run3Id,
       lastRunId: run3Id,
+      version: 1,
+      archived: false,
+      lastRunStatus: 'waiting_approval',
     }
 
     const conv3Messages: LocalMessageView[] = [
@@ -478,7 +490,19 @@ export class MockLocalChatGateway implements LocalChatGateway {
       task: run3Task,
     }
 
-    this.conversations = [conv2, conv1, conv3]
+    const archivedConversation: LocalConversationView = {
+      id: 'conv_archived_checkout',
+      title: '已归档的结算页排查',
+      workspaceId: this.workspaces[1].id,
+      sceneId: 'analyze',
+      createdAt: '2026-09-20T08:00:00Z',
+      updatedAt: '2026-09-20T09:00:00Z',
+      version: 2,
+      archived: true,
+      lastRunStatus: 'succeeded',
+    }
+
+    this.conversations = [conv2, conv1, conv3, archivedConversation]
     this.messages.set(conv1Id, conv1Messages)
     this.messages.set(conv2Id, conv2Messages)
     this.messages.set(conv3Id, conv3Messages)
@@ -783,10 +807,65 @@ export class MockLocalChatGateway implements LocalChatGateway {
       sceneId: input.sceneId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      version: 1,
+      archived: false,
     }
     this.conversations.unshift(newConv)
     this.messages.set(newConv.id, [])
     return newConv
+  }
+
+  async updateLocalConversation(
+    conversationId: string,
+    input: UpdateLocalConversationInput,
+    idempotencyKey: string
+  ): Promise<LocalConversationView> {
+    if (!idempotencyKey) {
+      throw new HubApiError('缺少 Idempotency-Key', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    const signature = JSON.stringify({ conversationId, input })
+    const previous = this.conversationUpdateReceipts.get(idempotencyKey)
+    if (previous) {
+      if (previous.signature !== signature) {
+        throw new HubApiError('同一 Idempotency-Key 不能用于不同请求', 'IDEMPOTENCY_MISMATCH' as ErrorCode, 409)
+      }
+      return JSON.parse(JSON.stringify(previous.response))
+    }
+    const conversation = this.conversations.find((item) => item.id === conversationId)
+    if (!conversation) {
+      throw new HubApiError('对话不存在', 'NOT_FOUND' as ErrorCode, 404)
+    }
+    const currentVersion = conversation.version ?? 1
+    if (input.expectedVersion !== currentVersion) {
+      throw new HubApiError(
+        '任务信息已在其他窗口更新，请刷新后重试',
+        'CONFLICT' as ErrorCode,
+        409,
+        { currentVersion }
+      )
+    }
+    if (input.title === undefined && input.archived === undefined) {
+      throw new HubApiError('至少需要修改标题或归档状态', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    if (input.title !== undefined && !input.title.trim()) {
+      throw new HubApiError('任务标题不能为空', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    if (input.archived === true) {
+      const hasUnfinishedRun = Array.from(this.runs.values()).some(
+        (run) => run.conversationId === conversationId
+          && ['queued', 'running', 'waiting_approval', 'paused'].includes(run.status)
+      )
+      if (hasUnfinishedRun) {
+        throw new HubApiError('任务仍在运行、排队、等待审批或暂停，暂时不能归档', 'CONFLICT' as ErrorCode, 409)
+      }
+    }
+    if (input.title !== undefined) conversation.title = input.title.trim()
+    if (input.archived !== undefined) conversation.archived = input.archived
+    conversation.version = currentVersion + 1
+    conversation.updatedAt = new Date().toISOString()
+    const response = JSON.parse(JSON.stringify(conversation)) as LocalConversationView
+    this.conversationUpdateReceipts.set(idempotencyKey, { signature, response })
+    return JSON.parse(JSON.stringify(response))
   }
 
   async listLocalMessages(
@@ -806,6 +885,9 @@ export class MockLocalChatGateway implements LocalChatGateway {
     const conv = this.conversations.find((c) => c.id === conversationId)
     if (!conv) {
       throw new HubApiError('对话不存在', 'NOT_FOUND' as ErrorCode, 404)
+    }
+    if (conv.archived) {
+      throw new HubApiError('请先恢复已归档任务，再发送消息', 'CONFLICT' as ErrorCode, 409)
     }
 
     // Check duplicate
@@ -914,6 +996,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
     this.runs.set(runId, newRun)
     conv.activeRunId = runId
     conv.lastRunId = runId
+    conv.lastRunStatus = 'running'
     conv.updatedAt = new Date().toISOString()
 
     // Add progress system message
@@ -1035,6 +1118,10 @@ export class MockLocalChatGateway implements LocalChatGateway {
     if (!run) {
       throw new HubApiError('Run 未找到', 'NOT_FOUND' as ErrorCode, 404)
     }
+    const conversation = this.conversations.find((item) => item.id === run.conversationId)
+    if (conversation?.archived && (input.action === 'resume' || input.action === 'retry')) {
+      throw new HubApiError('请先恢复已归档任务，再继续或重试', 'CONFLICT' as ErrorCode, 409)
+    }
 
     if (input.action === 'pause') {
       run.status = 'paused'
@@ -1055,6 +1142,12 @@ export class MockLocalChatGateway implements LocalChatGateway {
     }
 
     run.updatedAt = new Date().toISOString()
+    if (conversation) {
+      conversation.lastRunStatus = run.status
+      conversation.activeRunId = ['queued', 'running', 'waiting_approval', 'paused'].includes(run.status)
+        ? run.id
+        : undefined
+    }
 
     // Add event
     this.events.push({

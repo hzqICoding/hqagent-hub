@@ -76,6 +76,25 @@ describe('automatic conversation context', () => {
     expect(store.effectiveSessionMode).toBe('new')
   })
 
+  it('keeps a late non-resumable error with its original conversation', async () => {
+    const store = useChatStore()
+    await store.init()
+    await store.selectConversation('conv_analyze_auth')
+    let rejectSend!: (reason: unknown) => void
+    const pending = new Promise<any>((_resolve, reject) => { rejectSend = reject })
+    vi.spyOn(mockLocalChatGateway, 'sendLocalMessage').mockReturnValueOnce(pending)
+
+    const send = store.sendMessage('继续任务 A', 'continue')
+    await store.selectConversation('conv_plan_security')
+    rejectSend(new HubApiError('任务 A 的原生会话无法恢复', 'SESSION_NOT_RESUMABLE', 409))
+    await expect(send).rejects.toMatchObject({ code: 'SESSION_NOT_RESUMABLE' })
+    expect(store.resumptionError).toBeNull()
+
+    await store.selectConversation('conv_analyze_auth')
+    expect(store.resumptionError).toContain('任务 A')
+    expect(store.canResetContext).toBe(true)
+  })
+
   it('refuses reset while a run is active, paused, or a send is in flight', async () => {
     const store = useChatStore()
     await store.init()
@@ -85,10 +104,19 @@ describe('automatic conversation context', () => {
     expect(store.requestContextReset()).toBe(false)
     store.activeRun = null
     store.conversationRuns = []
-    store.isSending = true
+    let release!: (value: any) => void
+    const pending = new Promise<any>((resolve) => { release = resolve })
+    vi.spyOn(mockLocalChatGateway, 'sendLocalMessage').mockReturnValueOnce(pending)
+    const send = store.sendMessage('正在发送的消息', 'new')
     expect(store.requestContextReset()).toBe(false)
-    store.isSending = false
-    store.queuedMessages = [{ id: 'pending', text: 'pending' }]
-    expect(store.requestContextReset()).toBe(false)
+    release({
+      commandId: 'command-in-flight',
+      conversationId: store.activeConversationId!,
+      messageId: 'message-in-flight',
+      runId: 'run_develop_2',
+      status: 'accepted',
+      duplicate: false,
+    })
+    await send
   })
 })

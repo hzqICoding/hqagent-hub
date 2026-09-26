@@ -44,4 +44,25 @@ describe('ChatSidebar', () => {
     expect(workspaceSelect.props('modelValue')).toBe('workspace-current')
     expect(document.body.textContent).toContain('创建独立任务对话')
   })
+
+  it('opens a new task for the explicitly selected empty project', async () => {
+    const store = useChatStore()
+    store.workspaces = [
+      { id: 'workspace-a', name: 'Project A', path: 'E:/a', vcs: 'git', lastOpenedAt: '2026-09-25T00:00:00Z' },
+      { id: 'workspace-empty', name: 'Empty Project', path: 'E:/empty', vcs: 'git', lastOpenedAt: '2026-09-25T00:00:00Z' },
+    ]
+    store.conversations = [{
+      id: 'conversation-a', title: 'Task A', workspaceId: 'workspace-a', sceneId: 'analyze',
+      createdAt: '2026-09-25T00:00:00Z', updatedAt: '2026-09-25T00:00:00Z',
+    }]
+    store.activeConversationId = 'conversation-a'
+    const wrapper = mount(ChatSidebar)
+
+    const emptyProjectButton = wrapper.findAll('button').find((button) =>
+      button.text().includes('该项目暂无任务，点击新建')
+    )
+    await emptyProjectButton!.trigger('click')
+
+    expect(wrapper.findAllComponents(HqSelect)[0].props('modelValue')).toBe('workspace-empty')
+  })
 })
