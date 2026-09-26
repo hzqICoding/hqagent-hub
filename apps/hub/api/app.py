@@ -230,7 +230,13 @@ def create_application(
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
-        detail = {"errors": exc.errors(include_url=False, include_context=False, include_input=False)}
+        # FastAPI's RequestValidationError is not Pydantic's ValidationError:
+        # errors() takes no keyword arguments. Explicitly project safe fields
+        # so rejected request values and validator context are never echoed.
+        detail = {"errors": [
+            {key: item[key] for key in ("type", "loc", "msg") if key in item}
+            for item in exc.errors()
+        ]}
         return error_response(HubError("VALIDATION_FAILED", "请求参数校验失败", detail=detail))
 
     @app.get("/healthz")
