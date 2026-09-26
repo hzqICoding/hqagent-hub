@@ -227,7 +227,7 @@ class CommandBridge:
             # receipt. Their rejection is independently cached by immutable hash.
             receipt = self._reject(tx, frame, code, persist=prior is None)
             self.repo.put(key, receipt, tx)
-            gaps = self._record_rejected_slot(tx, frame, registered) if prior is None else []
+            gaps = self._record_rejected_slot(tx, frame, registered)
             tx.after_commit(self.chat.wake_remote_queue)
             self.repo.seal(tx)
             return receipt, gaps
@@ -238,8 +238,18 @@ class CommandBridge:
         worker = self.repo.get("link", tx)["view"]["workerId"]
         conversation, seq = frame["conversationId"], frame["conversationSeq"]
         occupied = tx.connection.execute("SELECT 1 FROM remote_slots WHERE worker_id=? AND conversation_id=? AND sequence=?", (worker, conversation, seq)).fetchone()
-        if not occupied:
-            self._slot(tx, conversation, seq, frame["commandId"], "rejected")
+        rejected_key = self._rejected_slot_key(conversation, seq)
+        if not occupied and self.repo.get(rejected_key, tx) is None:
+            existing_id = tx.connection.execute("SELECT 1 FROM remote_slots WHERE worker_id=? AND command_id=?", (worker, frame["commandId"])).fetchone()
+            if existing_id:
+                # The same ID cannot own a second real slot. Its conflicting
+                # variant may still consume a different, otherwise empty seq.
+                # Keep separate rejection evidence, not a fabricated command ID
+                # or a mutation of the original Inbox / slot / receipt.
+                self.repo.put(rejected_key, {"sequence": seq, "commandId": frame["commandId"],
+                                            "digest": request_hash(frame)}, tx)
+            else:
+                self._slot(tx, conversation, seq, frame["commandId"], "rejected")
         # Never overwrite a slot owned by another command. Its original submit
         # or tombstone still controls whether the sequence can advance.
         binding = tx.connection.execute("SELECT worker_id,store_id FROM remote_conversations WHERE conversation_id=?", (conversation,)).fetchone()
@@ -250,6 +260,9 @@ class CommandBridge:
         key = self._scope_key("rejected-order:", conversation)
         cursor = (self.repo.get(key, tx) or {}).get("consumed", 0)
         while True:
+            if self.repo.get(self._rejected_slot_key(conversation, cursor + 1), tx) is not None:
+                cursor += 1
+                continue
             slot = tx.connection.execute("SELECT i.status FROM remote_slots s JOIN remote_inbox i "
                 "ON i.worker_id=s.worker_id AND i.command_id=s.command_id "
                 "WHERE s.worker_id=? AND s.conversation_id=? AND s.sequence=?", (worker, conversation, cursor + 1)).fetchone()
@@ -258,6 +271,9 @@ class CommandBridge:
             cursor += 1
         self.repo.put(key, {"consumed": cursor}, tx)
         return []
+
+    def _rejected_slot_key(self, conversation, sequence):
+        return self._scope_key("rejected-slot:", conversation) + ":" + str(sequence)
 
     def _bind_conversation(self, tx, frame):
         conversation = frame["conversationId"]
@@ -278,6 +294,8 @@ class CommandBridge:
 
     def _slot(self, tx, conversation, seq, command, kind):
         worker = self.repo.get("link", tx)["view"]["workerId"]
+        if self.repo.get(self._rejected_slot_key(conversation, seq), tx) is not None:
+            raise HubError("REMOTE_EVENT_CONFLICT", "顺序槽已被持久拒绝记录占用")
         row = tx.connection.execute("SELECT command_id,kind FROM remote_slots WHERE worker_id=? AND conversation_id=? AND sequence=?", (worker, conversation, seq)).fetchone()
         if row:
             if row[0] != command:
@@ -291,6 +309,9 @@ class CommandBridge:
         while True:
             slot = tx.connection.execute("SELECT command_id,kind FROM remote_slots WHERE worker_id=? AND conversation_id=? AND sequence=?", (worker, conversation, seq)).fetchone()
             if not slot:
+                if self.repo.get(self._rejected_slot_key(conversation, seq), tx) is not None:
+                    seq += 1
+                    continue
                 break
             item = self.repo.inbox(slot[0], tx)
             frame = json.loads(item["command_json"])
@@ -320,6 +341,11 @@ class CommandBridge:
             seq += 1
         tx.connection.execute("UPDATE remote_conversations SET consumed_seq=? WHERE conversation_id=?", (seq - 1, conversation))
         following = tx.connection.execute("SELECT MIN(sequence) FROM remote_slots WHERE worker_id=? AND conversation_id=? AND sequence>?", (worker, conversation, seq)).fetchone()[0]
+        rejected_following = tx.connection.execute("SELECT MIN(json_extract(value_json,'$.sequence')) FROM remote_state "
+            "WHERE key LIKE ? AND json_extract(value_json,'$.sequence')>?",
+            (self._scope_key("rejected-slot:", conversation) + ":%", seq)).fetchone()[0]
+        if rejected_following is not None:
+            following = min(following, rejected_following) if following is not None else rejected_following
         if following:
             identity = self.repo.get("identity", tx)
             return [{"type": "conversation.gap", "wireRevision": WIRE_REVISION, "workerId": worker,

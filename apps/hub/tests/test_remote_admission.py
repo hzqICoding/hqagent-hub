@@ -117,8 +117,33 @@ def test_conflicting_id_has_stable_rejection_without_replacing_original_slot(tmp
                 assert rejection["error"]["code"] == "IDEMPOTENCY_MISMATCH"
                 assert json.loads(system.repo.inbox("immutable")["receipt_json"]) == accepted
                 assert system.db.connection.execute("SELECT COUNT(*) FROM remote_slots").fetchone()[0] == 1
-                good, _ = await system.bridge.receive(system.command("next", seq=2))
+                assert system.repo.get(system.bridge._rejected_slot_key(original["conversationId"], 2))["commandId"] == "immutable"
+                occupied, _ = await system.bridge.receive(system.command("cannot-replace", seq=2))
+                assert occupied["error"]["code"] == "REMOTE_EVENT_CONFLICT"
+                good, _ = await system.bridge.receive(system.command("next", seq=3))
                 assert good["type"] == "command.accepted"
+        finally:
+            await system.close()
+    asyncio.run(scenario())
+
+
+def test_rejected_slot_unblocks_an_already_buffered_submit_without_adopting_bad_target(tmp_path):
+    async def scenario():
+        system = System(tmp_path)
+        try:
+            async with FakeRemoteServer() as server:
+                await system.pair(server, start=True)
+                await server.send(system.command("buffered", seq=2))
+                await until(lambda: any(f["type"] == "conversation.gap" for f in server.frames))
+                bad = system.command("bad-first")
+                bad["payload"]["sceneId"] = "different-target"
+                await server.send(bad)
+                await until(lambda: command_events(server, "bad-first", "command.rejected"))
+                await until(lambda: command_events(server, "buffered", "command.completed"))
+                assert [s.objective for s in system.adapter.started] == ["buffered"]
+                target = system.db.connection.execute("SELECT target_json,consumed_seq FROM remote_conversations WHERE conversation_id=?", (bad["conversationId"],)).fetchone()
+                assert json.loads(target[0])["sceneId"] == "analyze" and target[1] == 2
+                assert server.connections == 1 and not server.errors
         finally:
             await system.close()
     asyncio.run(scenario())
