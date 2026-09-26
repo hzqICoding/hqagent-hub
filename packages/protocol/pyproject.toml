@@ -26,6 +26,7 @@ build-backend = "hatchling.build"
 "schema" = "protocol/schema"
 "openapi" = "protocol/openapi"
 "events" = "protocol/events"
+"remote" = "protocol/remote"
 "fixtures" = "protocol/fixtures"
 
 [tool.hatch.build.targets.sdist]
@@ -37,6 +38,7 @@ include = [
   "schema/",
   "openapi/",
   "events/",
+  "remote/",
   "fixtures/",
   "adapters/",
 ]

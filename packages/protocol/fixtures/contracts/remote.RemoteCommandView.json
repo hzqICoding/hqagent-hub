@@ -1,0 +1,13 @@
+{
+  "commandId": "command_demo",
+  "conversationId": "conversation_demo",
+  "targetWorkerId": "worker_demo",
+  "type": "run.submit",
+  "status": "queued",
+  "deliveryState": "queued_offline",
+  "withdrawalState": "none",
+  "workerOnline": false,
+  "observedAt": "2026-09-26T12:00:00Z",
+  "createdAt": "2026-09-26T12:00:00Z",
+  "expiresAt": "2026-09-26T12:05:00Z"
+}

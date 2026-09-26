@@ -1,0 +1,9 @@
+{
+  "commandId": "command_demo",
+  "conversationId": "conversation_demo",
+  "status": "queued",
+  "deliveryState": "queued_offline",
+  "workerOnline": false,
+  "expiresAt": "2026-09-26T12:05:00Z",
+  "conversationSeq": 1
+}

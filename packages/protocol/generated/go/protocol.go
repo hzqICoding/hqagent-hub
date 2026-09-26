@@ -6,7 +6,7 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 type AdapterId = string
 
@@ -46,6 +46,32 @@ const (
 	ErrorCodeUpdateVerifyFailed ErrorCode = "UPDATE_VERIFY_FAILED"
 	ErrorCodeUpdateDrainTimeout ErrorCode = "UPDATE_DRAIN_TIMEOUT"
 	ErrorCodeInternal ErrorCode = "INTERNAL"
+	ErrorCodeRemoteAuthRequired ErrorCode = "REMOTE_AUTH_REQUIRED"
+	ErrorCodeRemoteCsrfRejected ErrorCode = "REMOTE_CSRF_REJECTED"
+	ErrorCodeRemoteDeviceOffline ErrorCode = "REMOTE_DEVICE_OFFLINE"
+	ErrorCodeRemoteDeviceRevoked ErrorCode = "REMOTE_DEVICE_REVOKED"
+	ErrorCodeRemoteDeviceAuthFailed ErrorCode = "REMOTE_DEVICE_AUTH_FAILED"
+	ErrorCodeRemotePairingExpired ErrorCode = "REMOTE_PAIRING_EXPIRED"
+	ErrorCodeRemotePairingConflict ErrorCode = "REMOTE_PAIRING_CONFLICT"
+	ErrorCodeRemotePairingInvalid ErrorCode = "REMOTE_PAIRING_INVALID"
+	ErrorCodeRemoteCommandExpired ErrorCode = "REMOTE_COMMAND_EXPIRED"
+	ErrorCodeRemoteCommandWithdrawn ErrorCode = "REMOTE_COMMAND_WITHDRAWN"
+	ErrorCodeRemoteWithdrawalUnconfirmed ErrorCode = "REMOTE_WITHDRAWAL_UNCONFIRMED"
+	ErrorCodeRemoteStoreChanged ErrorCode = "REMOTE_STORE_CHANGED"
+	ErrorCodeRemoteEpochStale ErrorCode = "REMOTE_EPOCH_STALE"
+	ErrorCodeRemoteProtocolUnsupported ErrorCode = "REMOTE_PROTOCOL_UNSUPPORTED"
+	ErrorCodeRemoteEventConflict ErrorCode = "REMOTE_EVENT_CONFLICT"
+	ErrorCodeRemoteAckConflict ErrorCode = "REMOTE_ACK_CONFLICT"
+	ErrorCodeRemoteSequenceGap ErrorCode = "REMOTE_SEQUENCE_GAP"
+	ErrorCodeRemoteApprovalForbidden ErrorCode = "REMOTE_APPROVAL_FORBIDDEN"
+	ErrorCodeConversationAuthorityMismatch ErrorCode = "CONVERSATION_AUTHORITY_MISMATCH"
+	ErrorCodeRemoteTargetMismatch ErrorCode = "REMOTE_TARGET_MISMATCH"
+	ErrorCodeRemoteSceneVersionMismatch ErrorCode = "REMOTE_SCENE_VERSION_MISMATCH"
+	ErrorCodeRemoteCursorExpired ErrorCode = "REMOTE_CURSOR_EXPIRED"
+	ErrorCodeRemoteCursorInvalid ErrorCode = "REMOTE_CURSOR_INVALID"
+	ErrorCodeRemoteRateLimited ErrorCode = "REMOTE_RATE_LIMITED"
+	ErrorCodeRemoteFrameTooLarge ErrorCode = "REMOTE_FRAME_TOO_LARGE"
+	ErrorCodeRemoteWithdrawalTooLate ErrorCode = "REMOTE_WITHDRAWAL_TOO_LATE"
 )
 
 type RoleId = string

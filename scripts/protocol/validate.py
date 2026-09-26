@@ -64,6 +64,15 @@ def load_index() -> tuple[dict, dict]:
 def check_structure(index: dict, registries: dict) -> None:
     def walk(node, where: str):
         if isinstance(node, dict):
+            if "oneOf" in node:
+                branches = node["oneOf"]
+                if not isinstance(branches, list) or len(branches) < 2:
+                    fail(where, "oneOf requires at least two branches")
+                elif any(not isinstance(branch, dict) or not (
+                    ("$ref" in branch and set(branch) <= {"$ref", "description"})
+                    or branch == {"type": "null"}
+                ) for branch in branches):
+                    fail(where, "oneOf supports named refs or explicit null only")
             if "$ref" in node:
                 m = REF_RE.match(node["$ref"])
                 if not m:
@@ -137,6 +146,20 @@ def validate_value(value, node: dict, index: dict, registries: dict, path: str) 
         return  # 泛型载荷由具体事件类型各自约束，见事件字典
     node = resolve(node, index) if "$ref" in node else node
 
+    if "oneOf" in node:
+        matches = 0
+        for branch in node["oneOf"]:
+            start = len(errors)
+            validate_value(value, branch, index, registries, path)
+            matches += len(errors) == start
+            del errors[start:]
+        if matches != 1:
+            fail(path, f"oneOf requires exactly one matching branch, got {matches}")
+        return
+    if node.get("type") == "null":
+        if value is not None:
+            fail(path, "must be null")
+        return
     if "x-registry" in node:
         if not isinstance(value, str):
             fail(path, f"应为字符串，实际 {type(value).__name__}")
@@ -180,6 +203,10 @@ def validate_value(value, node: dict, index: dict, registries: dict, path: str) 
         if not isinstance(value, list):
             fail(path, f"应为数组，实际 {type(value).__name__}")
             return
+        if "minItems" in node and len(value) < node["minItems"]:
+            fail(path, "fewer than minItems")
+        if "maxItems" in node and len(value) > node["maxItems"]:
+            fail(path, "more than maxItems")
         item_schema = node.get("items", {})
         for i, item in enumerate(value):
             validate_value(item, item_schema, index, registries, f"{path}[{i}]")
@@ -193,6 +220,8 @@ def validate_value(value, node: dict, index: dict, registries: dict, path: str) 
             fail(path, f"不是合法 RFC3339 时间戳：{value!r}")
         if "pattern" in node and not re.match(node["pattern"], value):
             fail(path, f"不匹配 pattern {node['pattern']}：{value!r}")
+        if "maxLength" in node and len(value) > node["maxLength"]:
+            fail(path, f"length exceeds maxLength {node['maxLength']}")
         if "minLength" in node and len(value) < node["minLength"]:
             fail(path, f"长度小于 minLength {node['minLength']}")
         return

@@ -1,0 +1,77 @@
+$ vitest run "--maxWorkers=2" "--minWorkers=1"
+
+ RUN  v2.1.9 E:/OtherPro/HQAgent-Hub-worktrees/remote-protocol/apps/desktop
+
+ ✓ src/shared/api/mock-local-chat-gateway.test.ts (16 tests) 13ms
+stderr | src/shared/api/local-hub-gateway.test.ts > LocalHubGateway > R3 & R7: handles WS ticket acquisition failure with reconnect backoff
+[LocalHubGateway] Failed to establish WS connection HubApiError: Hub is still starting up
+    at LocalHubGateway.fetchApi (E:\OtherPro\HQAgent-Hub-worktrees\remote-protocol\apps\desktop\src\shared\api\local-hub-gateway.ts:129:13)
+    at LocalHubGateway.acquireWsTicket (E:\OtherPro\HQAgent-Hub-worktrees\remote-protocol\apps\desktop\src\shared\api\local-hub-gateway.ts:165:17)
+    at async Promise.all (index 1)
+    at E:\OtherPro\HQAgent-Hub-worktrees\remote-protocol\apps\desktop\src\shared\api\local-hub-gateway.ts:312:39 {
+  code: 'HUB_NOT_READY',
+  status: 503,
+  detail: undefined,
+  retryable: true,
+  requestId: 'req_init'
+}
+
+stderr | src/shared/api/local-hub-gateway.test.ts > LocalHubGateway > R3 & R7: handles WS ticket acquisition failure with reconnect backoff
+[LocalHubGateway] Failed to establish WS connection HubApiError: Hub is still starting up
+    at LocalHubGateway.fetchApi (E:\OtherPro\HQAgent-Hub-worktrees\remote-protocol\apps\desktop\src\shared\api\local-hub-gateway.ts:129:13)
+    at LocalHubGateway.acquireWsTicket (E:\OtherPro\HQAgent-Hub-worktrees\remote-protocol\apps\desktop\src\shared\api\local-hub-gateway.ts:165:17)
+    at async Promise.all (index 1)
+    at E:\OtherPro\HQAgent-Hub-worktrees\remote-protocol\apps\desktop\src\shared\api\local-hub-gateway.ts:312:39 {
+  code: 'HUB_NOT_READY',
+  status: 503,
+  detail: undefined,
+  retryable: true,
+  requestId: 'req_init'
+}
+
+ ✓ src/shared/api/local-hub-gateway.test.ts (8 tests) 145ms
+ ✓ src/pages/scenes/ScenesPage.test.ts (9 tests) 720ms
+ ✓ src/pages/chat/components/ChatComposer.test.ts (7 tests) 91ms
+ ✓ src/stores/chat.store.test.ts (9 tests) 27ms
+ ✓ src/shared/api/local-chat-gateway.test.ts (8 tests) 9ms
+ ✓ src/stores/task.store.test.ts (7 tests) 573ms
+ ✓ src/pages/chat/ChatPage.test.ts (7 tests) 565ms
+ ✓ src/stores/chat.context.test.ts (7 tests) 26ms
+ ✓ src/stores/chat.polling.test.ts (6 tests) 17ms
+ ✓ src/pages/chat/components/ProcessActivityGroup.test.ts (5 tests) 44ms
+ ✓ src/stores/chat.reliability.test.ts (7 tests) 25ms
+ ✓ src/stores/scenes.store.test.ts (6 tests) 11ms
+ ✓ src/shared/api/mock-gateway.test.ts (10 tests) 46ms
+ ✓ src/pages/chat/components/ChatSidebar.test.ts (3 tests) 78ms
+ ✓ src/stores/app.store.test.ts (8 tests) 299ms
+ ✓ src/pages/tasks/TaskDetailPage.test.ts (5 tests) 167ms
+ ✓ src/pages/chat/components/RunSnapshotDrawer.test.ts (1 test) 32ms
+ ✓ src/shared/ui/HqMarkdown.test.ts (6 tests) 47ms
+ ✓ src/stores/approval.store.test.ts (4 tests) 227ms
+ ✓ src/pages/chat/components/ChatMessageItem.test.ts (3 tests) 55ms
+ ✓ src/shared/theme/theme.engine.test.ts (5 tests) 6ms
+ ✓ src/app/layouts/AppLayout.test.ts (3 tests) 142ms
+ ✓ src/stores/team.store.test.ts (5 tests) 1075ms
+   ✓ TeamStore > duplicates existing team profile 302ms
+ ✓ src/pages/approvals/ApprovalsPage.test.ts (3 tests) 88ms
+ ✓ src/stores/chat.action-scope.test.ts (2 tests) 9ms
+ ✓ src/pages/tasks/TasksPage.test.ts (3 tests) 67ms
+ ✓ src/pages/templates/TemplatesPage.test.ts (3 tests) 87ms
+ ✓ src/stores/workspace.store.test.ts (3 tests) 231ms
+ ✓ src/shared/api/local-chat-timeout.test.ts (3 tests) 8ms
+ ✓ src/pages/sessions/SessionsPage.test.ts (3 tests) 75ms
+ ✓ src/pages/agents/AgentsPage.test.ts (3 tests) 122ms
+ ✓ src/stores/agent.store.test.ts (3 tests) 367ms
+ ✓ src/pages/auth/ConnectPage.test.ts (2 tests) 66ms
+ ✓ src/pages/workspaces/WorkspacesPage.test.ts (3 tests) 67ms
+ ✓ src/pages/onboarding/OnboardingPage.test.ts (2 tests) 189ms
+ ✓ src/pages/teams/TeamsPage.test.ts (3 tests) 89ms
+ ✓ src/pages/overview/OverviewPage.test.ts (2 tests) 62ms
+ ✓ src/stores/local-auth.store.test.ts (2 tests) 7ms
+ ✓ src/shared/ui/HqButton.test.ts (4 tests) 23ms
+ ✓ src/stores/session.store.test.ts (2 tests) 262ms
+
+ Test Files  41 passed (41)
+      Tests  201 passed (201)
+   Start at  21:18:44
+   Duration  23.29s (transform 2.33s, setup 0ms, collect 9.68s, tests 6.26s, environment 20.20s, prepare 3.11s)
