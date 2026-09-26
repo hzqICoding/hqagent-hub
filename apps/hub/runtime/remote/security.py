@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import ctypes
 import ipaddress
-import json
 import os
 import re
 import secrets
@@ -19,7 +18,7 @@ def normalize_origin(value: str, *, development: bool = False) -> str:
             raise ValueError()
         url = urlsplit(value)
         host, port = url.hostname, url.port
-        if not host or url.username is not None or url.password is not None or url.path not in {"", "/"}:
+        if not host or "%" in host or url.netloc.endswith(":") or url.username is not None or url.password is not None or url.path not in {"", "/"}:
             raise ValueError()
         if port is not None and not 1 <= port <= 65535:
             raise ValueError()
@@ -29,6 +28,8 @@ def normalize_origin(value: str, *, development: bool = False) -> str:
             host = "[" + ipaddress.IPv6Address(host).compressed + "]"
         else:
             host = host.encode("idna").decode("ascii").lower()
+            if host.endswith("."):
+                host = host[:-1]
             if len(host) > 253 or any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", p) for p in host.split(".")):
                 raise ValueError()
             if re.fullmatch(r"[0-9.]+", host):
@@ -109,6 +110,9 @@ def safe_text(value: str, secrets_to_hide: tuple[str, ...] = ()) -> str:
     for secret in secrets_to_hide:
         if secret:
             value = value.replace(secret, "[redacted]")
-    value = re.sub(r"(?i)(authorization\s*[:=]\s*|bearer\s+)\S+", "[redacted]", value)
+    value = re.sub(r"(?is)-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----", "[redacted]", value)
+    value = re.sub(r"(?is)<(?:analysis|think|thinking)>.*?</(?:analysis|think|thinking)>", "[redacted]", value)
+    value = re.sub(r"(?i)(?:authorization[ \t]*[:=][ \t]*(?:bearer[ \t]+)?|bearer[ \t]+)\S+", "[redacted]", value)
+    value = re.sub(r"(?m)^[ \t]*(?:export[ \t]+)?[A-Z_][A-Z0-9_]*=.*$", "[redacted]", value)
     value = re.sub(r"(?im)^.*(?:api[_-]?key|password|secret|token|BEGIN .*PRIVATE KEY|os\.environ|process\.env).*$", "[redacted]", value)
     return value

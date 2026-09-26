@@ -298,7 +298,7 @@ class LocalChatRepository:
             stamp = now()
             view = LocalConversationView.model_validate({"id": uid("conversation"), "title": title,
                 "workspaceId": value.workspace_id, "sceneId": str(value.scene_id), "createdAt": stamp,
-                "updatedAt": stamp, "version": 1, "archived": False})
+                "updatedAt": stamp, "version": 1, "archived": False, "authority": "local"})
             tx.connection.execute("INSERT INTO local_conversations VALUES(?,?,?)",
                                   (view.id, view.model_dump_json(by_alias=True, exclude_none=True), stamp))
             return view.model_dump(mode="json", by_alias=True)
@@ -367,9 +367,28 @@ class LocalChatRepository:
             raise HubError("CONVERSATION_AUTHORITY_MISMATCH", "远程对话只能通过远程服务提交命令")
 
     def assert_local_task(self, task_id: str) -> None:
+        seen = set()
         with self.database.locked_connection() as db:
-            rows = db.execute("SELECT conversation_id FROM local_runs WHERE task_id=?", (task_id,)).fetchall()
-        for row in rows:
+            while task_id and task_id not in seen:
+                seen.add(task_id)
+                rows = db.execute("SELECT conversation_id FROM local_runs WHERE task_id=?", (task_id,)).fetchall()
+                for row in rows:
+                    self.assert_local_authority(row[0])
+                task = db.execute("SELECT profile_id,payload_json FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+                if task is None:
+                    return
+                # Child Task and initial dispatch can exist briefly before their
+                # LocalRun.task_id binding. Resolve their persisted lineage too.
+                self.assert_local_profile(task[0])
+                task_id = json.loads(task[1]).get("parentTaskId")
+
+    def assert_local_profile(self, profile_id: str | None) -> None:
+        if not profile_id or not profile_id.startswith("local-profile:"):
+            return
+        with self.database.locked_connection() as db:
+            row = db.execute("SELECT conversation_id FROM local_runs WHERE run_id=?",
+                             (profile_id[len("local-profile:"):],)).fetchone()
+        if row:
             self.assert_local_authority(row[0])
 
     def unfinished_runs(self, conversation_id: str) -> list[dict]:

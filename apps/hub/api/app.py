@@ -333,6 +333,9 @@ def create_application(
     ) -> JSONResponse:
         if maintenance.enabled:
             raise HubError("HUB_MAINTENANCE", "Local Hub 正在维护，暂不接受新任务")
+        if value.parent_task_id:
+            local_chat.repository.assert_local_task(value.parent_task_id)
+        local_chat.repository.assert_local_profile(value.profile_id)
         return success_response(await resolved_ports.tasks.create_task(value, idempotency_key))
 
     @app.get("/api/v1/tasks/{task_id}")

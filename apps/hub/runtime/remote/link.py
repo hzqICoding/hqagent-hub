@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 import httpx
-from protocol.generated.python import (RemoteLinkPairingInput, RemotePairingChallenge,
+from protocol.generated.python import (ApiEnvelope, RemoteLinkPairingInput, RemotePairingChallenge,
     RemotePairingRequestInput, RemotePairingStatusView)
 from core.errors import HubError
 from storage.idempotency import request_hash
@@ -45,7 +45,10 @@ class PairingHTTP:
             if not 200 <= response.status_code < 300:
                 raise ValueError()
             raw = response.json()
-            return raw["data"]
+            envelope = ApiEnvelope.model_validate(raw)
+            if not envelope.success:
+                raise ValueError()
+            return envelope.data
         except HubError:
             raise
         except Exception:
@@ -64,6 +67,10 @@ class LinkService:
     def sanitized(self, value):
         secret = self.vault.read() if self.vault.path.exists() else ""
         return safe_text(value, (self.hub_token, secret))
+
+    def contains_credentials(self, value):
+        secret = self.vault.read() if self.vault.path.exists() else ""
+        return any(item and item in value for item in (self.hub_token, secret))
 
     async def view(self):
         async with self.lock:
@@ -89,6 +96,8 @@ class LinkService:
 
     async def pair(self, value: RemoteLinkPairingInput, key):
         origin = normalize_origin(value.server_origin, development=self.development)
+        if self.contains_credentials(origin):
+            raise HubError("REMOTE_SERVER_ORIGIN_INVALID", "远程地址不允许包含凭据")
         device = self.sanitized(value.device_name)
         request = {"serverOrigin": origin, "deviceName": device}
         async with self.lock:
@@ -106,6 +115,7 @@ class LinkService:
                     if link.get("intent") or link["view"]["state"] == "pairing":
                         raise HubError("REMOTE_PAIRING_IN_PROGRESS", "已有进行中的配对")
                     self.vault.create()
+                    self.repo.new_binding_store(tx)
                     link.update(generation=generation, intent={**request, "requestKey": uid("pair")})
                     self.repo.put("link", link, tx)
                     self.repo.seal(tx)
@@ -120,12 +130,24 @@ class LinkService:
                 value=body.model_dump(mode="json", by_alias=True), key=intent["requestKey"])
             challenge = RemotePairingChallenge.model_validate(raw)
         except Exception as error:
+            code = error.code if isinstance(error, HubError) else "REMOTE_SERVER_UNREACHABLE"
+            async with self.lock:
+                current = self.repo.get("link")
+                if generation == current["generation"] and current["view"]["state"] == "unpaired":
+                    if code == "REMOTE_PAIRING_EXPIRED":
+                        self._clear(code)
+                    else:
+                        with self.repo.database.transaction() as tx:
+                            self.repo.set_view(tx, {"state": "unpaired", "serverOrigin": origin, "lastErrorCode": code})
+                            self.repo.seal(tx)
             if isinstance(error, HubError):
                 raise HubError(error.code, "配对请求未确认，请重试或取消") from None
             raise HubError("REMOTE_SERVER_UNREACHABLE", "配对响应无效") from None
         async with self.lock:
             link = self.repo.get("link")
             if generation != link["generation"]:
+                return self.repo.view()
+            if link["view"]["state"] != "unpaired":
                 return self.repo.view()
             if expired(challenge.expires_at):
                 self._clear("REMOTE_PAIRING_EXPIRED")
@@ -141,18 +163,21 @@ class LinkService:
                 self.repo.seal(tx)
             return self.repo.view()
 
+    def _clear_in_transaction(self, tx, code=None):
+        self.vault.delete()  # On failure both the intent and completion roll back.
+        link = self.repo.get("link", tx)
+        value = {"state": "unpaired"}
+        if link["view"].get("serverOrigin"):
+            value["serverOrigin"] = link["view"]["serverOrigin"]
+        if code:
+            value["lastErrorCode"] = code
+        self.repo.put("link", {"view": link["view"], "generation": link["generation"] + 1}, tx)
+        self.repo.set_view(tx, value)
+        self.repo.seal(tx)
+
     def _clear(self, code=None):
-        self.vault.delete()  # A failed deletion must not report unpaired.
         with self.repo.database.transaction() as tx:
-            link = self.repo.get("link", tx)
-            value = {"state": "unpaired"}
-            if link["view"].get("serverOrigin"):
-                value["serverOrigin"] = link["view"]["serverOrigin"]
-            if code:
-                value["lastErrorCode"] = code
-            self.repo.put("link", {"view": link["view"], "generation": link["generation"] + 1}, tx)
-            self.repo.set_view(tx, value)
-            self.repo.seal(tx)
+            self._clear_in_transaction(tx, code)
 
     async def clear(self, key, *, unlink=False):
         async with self.lock:
@@ -163,7 +188,7 @@ class LinkService:
                     return self.repo.view()
                 if not unlink and link["view"]["state"] in {"paired", "revoked", "frozen"}:
                     raise HubError("REMOTE_PAIRING_CONFLICT", "当前绑定须先显式解绑")
-            self._clear("REMOTE_AUTH_REQUIRED" if unlink and link["view"]["state"] != "unpaired" else None)
+                self._clear_in_transaction(tx, "REMOTE_AUTH_REQUIRED" if unlink and link["view"]["state"] != "unpaired" else None)
             if self.disconnect:
                 await self.disconnect()
             return self.repo.view()
@@ -175,7 +200,15 @@ class LinkService:
             if link["view"]["state"] != "pairing":
                 return
             view, generation = link["view"], link["generation"]
-        raw = await self.http.request(view["serverOrigin"], "GET", "/api/v2/worker/pairing-requests/" + quote(view["pairRequestId"], safe=""))
+        origin = normalize_origin(view["serverOrigin"], development=self.development)
+        try:
+            raw = await self.http.request(origin, "GET", "/api/v2/worker/pairing-requests/" + quote(view["pairRequestId"], safe=""))
+        except HubError as error:
+            if error.code in {"REMOTE_PAIRING_EXPIRED", "REMOTE_DEVICE_AUTH_FAILED"}:
+                async with self.lock:
+                    if generation == self.repo.get("link")["generation"]:
+                        self._clear(error.code)
+            raise
         try:
             status = RemotePairingStatusView.model_validate(raw)
         except Exception:

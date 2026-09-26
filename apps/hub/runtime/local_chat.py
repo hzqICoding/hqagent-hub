@@ -28,6 +28,7 @@ class LocalChatService:
         self._slots = asyncio.Semaphore(3)
         self._last_approval_check = 0.0
         self._conversation_locks: dict[str, asyncio.Lock] = {}
+        self.remote_dispatch_guard = None
 
     async def start(self) -> None:
         self._closed = False
@@ -60,6 +61,7 @@ class LocalChatService:
 
     async def update_conversation(self, conversation_id: str,
                                   value: UpdateLocalConversationInput, key: str):
+        self.repository.assert_local_authority(conversation_id)
         async def update():
             if value.archived is True:
                 await self._refresh_unfinished_runs(conversation_id)
@@ -206,6 +208,8 @@ class LocalChatService:
         try:
             task_id = record["task_id"]
             if task_id is None:
+                if self.remote_dispatch_guard is not None and not self.remote_dispatch_guard(record):
+                    return
                 # Claim synchronously before the first await, so queued cancellation
                 # cannot race with a side effect that has already started dispatch.
                 current = self.repository.run_record(run_id)

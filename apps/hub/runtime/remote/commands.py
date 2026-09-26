@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 
 from protocol.generated.python import (ApprovalResponseInput, LocalConversationView,
     RemoteServerOutboundFrame, SendLocalMessageInput, TaskActionInput)
@@ -23,7 +23,8 @@ def error_view(code):
 
 def control_result(before, after, *, fallback="supervisor_unconfirmed"):
     observations = [before or {}, after or {}]
-    results = [r for o in observations for r in (o.get("controlEvidence") or {}).get("cancellations", [])]
+    results = [r for o in observations for source in ("controlEvidence", "unresolvedCancellation")
+               for r in (o.get(source) or {}).get("cancellations", [])]
     pids = sorted({p for r in results for p in r.get("orphanProcessIds", [])})
     base = {"executionMayStillBeRunning": True, "orphanProcessIds": pids, "observedAt": now()}
     if any(o.get("recoveryRequired") for o in observations) or pids:
@@ -32,12 +33,14 @@ def control_result(before, after, *, fallback="supervisor_unconfirmed"):
         return {**base, "outcome": "rejected", "evidence": "adapter_refused", "reason": "Adapter 拒绝停止"}
     if any(r["outcome"] == "not_found" for r in results):
         return {**base, "outcome": "unconfirmed", "evidence": "missing_execution_handle", "reason": "无法确认原生执行停止"}
+    if any(o.get("evidenceAvailable") is False for o in observations):
+        return {**base, "outcome": "unconfirmed", "evidence": "supervisor_unconfirmed", "reason": "持久控制证据不可得"}
     evidence = (after or {}).get("controlEvidence") or {}
     kind = evidence.get("kind")
-    if kind == "cancellation" and evidence.get("cancellations") and all(r["outcome"] in {"stopped_gracefully", "force_killed", "already_finished"} for r in evidence["cancellations"]):
+    if kind == "cancellation" and len(evidence.get("cancellations", [])) >= evidence.get("expectedHandles", 1) and all(r["outcome"] in {"stopped_gracefully", "force_killed", "already_finished"} for r in evidence["cancellations"]):
         kind = "adapter_confirmed"
     if kind in {"adapter_confirmed", "already_terminal", "node_boundary_paused", "supervisor_resumed", "retry_enqueued", "inbox_tombstone"}:
-        return {**base, "outcome": "confirmed", "executionMayStillBeRunning": kind in {"node_boundary_paused", "supervisor_resumed"},
+        return {**base, "outcome": "confirmed", "executionMayStillBeRunning": kind in {"node_boundary_paused", "supervisor_resumed", "retry_enqueued"},
             "evidence": kind, "reason": "本机结构化执行证据已确认"}
     return {**base, "outcome": "unconfirmed", "evidence": "missing_execution_handle" if kind == "missing_execution_handle" else fallback,
         "reason": "尚无充分执行确认，需核对本机状态"}
@@ -54,6 +57,8 @@ class CommandBridge:
 
     async def receive(self, frame):
         frame = RemoteServerOutboundFrame.model_validate(frame).model_dump(mode="json", by_alias=True, exclude_none=True)
+        if self.link.contains_credentials(canonical(frame)):
+            raise HubError("REMOTE_TARGET_MISMATCH", "远程命令包含不允许传播的凭据")
         async with self.lock:
             if not self.repo.check_continuity():
                 raise HubError("REMOTE_STORE_CHANGED", "存储世代需要对账")
@@ -66,13 +71,25 @@ class CommandBridge:
             if frame["expectedWorkerStoreId"] != identity["store"]:
                 self.repo.freeze("REMOTE_STORE_CHANGED")
                 raise HubError("REMOTE_STORE_CHANGED", "命令目标存储世代不匹配")
-            workspaces = await self.chat.ports.workspaces.list_workspaces(None, None) if frame["type"] == "run.submit" else []
+            workspaces = await self.chat.ports.workspaces.list_workspaces(None, None) if frame["type"] in {"run.submit", "conversation.skip", "command.withdraw"} else []
             registered = {w.id for w in workspaces}
+            if self.repo.get("link")["view"] != link or self.repo.get("identity")["store"] != identity["store"]:
+                raise HubError("REMOTE_EPOCH_STALE", "接单前绑定状态已变化")
             gaps, execute = [], False
             with self.repo.database.transaction() as tx:
+                binding = tx.connection.execute("SELECT worker_id,store_id FROM remote_conversations WHERE conversation_id=?", (frame["conversationId"],)).fetchone()
+                if binding and (binding[0] != frame["targetWorkerId"] or binding[1] != frame["expectedWorkerStoreId"]):
+                    raise HubError("REMOTE_TARGET_MISMATCH", "对话不属于当前设备绑定")
                 prior = self.repo.inbox(frame["commandId"], tx)
                 digest = request_hash(frame)
                 if prior:
+                    if prior["digest"] == "tombstone":
+                        original = json.loads(prior["command_json"])
+                        if frame["type"] != "run.submit" or any(frame.get(k) != original.get(k) for k in ("conversationId", "conversationSeq")):
+                            raise HubError("REMOTE_TARGET_MISMATCH", "撤回记录与迟到命令不匹配")
+                        # Learn the first late immutable submit's hash, retaining
+                        # the refusal; later ID/content conflicts remain visible.
+                        tx.connection.execute("UPDATE remote_inbox SET digest=? WHERE worker_id=? AND command_id=?", (digest, link["workerId"], frame["commandId"]))
                     if prior["digest"] not in {digest, "tombstone"}:
                         receipt = self._reject(tx, frame, "IDEMPOTENCY_MISMATCH", persist=False)
                     else:
@@ -87,10 +104,10 @@ class CommandBridge:
                         self._slot(tx, frame["conversationId"], frame["conversationSeq"], frame["commandId"], frame["type"])
                         if frame["type"] == "run.submit" and frame["payload"]["workspaceId"] not in registered:
                             self._reject(tx, frame, "NOT_FOUND")
-                        gaps = self._drain(tx, frame["conversationId"])
+                        gaps = self._drain(tx, frame["conversationId"], registered)
                     elif frame["type"] == "command.withdraw":
                         self._withdraw(tx, frame)
-                        gaps = self._drain(tx, frame["conversationId"])
+                        gaps = self._drain(tx, frame["conversationId"], registered)
                         execute = self.repo.inbox(frame["commandId"], tx)["status"] == "admitted"
                     elif self._expired(frame):
                         self._reject(tx, frame, "REMOTE_COMMAND_EXPIRED")
@@ -134,7 +151,7 @@ class CommandBridge:
             return
         tx.connection.execute("INSERT INTO remote_slots VALUES(?,?,?,?,?)", (worker, conversation, seq, command, kind))
 
-    def _drain(self, tx, conversation):
+    def _drain(self, tx, conversation, registered):
         worker = self.repo.get("link", tx)["view"]["workerId"]
         seq = tx.connection.execute("SELECT consumed_seq FROM remote_conversations WHERE conversation_id=?", (conversation,)).fetchone()[0] + 1
         while True:
@@ -151,6 +168,8 @@ class CommandBridge:
                     if self._expired(frame):
                         raise HubError("REMOTE_COMMAND_EXPIRED", "命令已过期")
                     payload = frame["payload"]
+                    if payload["workspaceId"] not in registered:
+                        raise HubError("NOT_FOUND", "工作区已不再登记")
                     scene = self.chat.repository.scene(payload["sceneId"])
                     if scene.version != payload["sceneVersion"]:
                         raise HubError("REMOTE_SCENE_VERSION_MISMATCH", "场景版本已变化")
@@ -205,7 +224,14 @@ class CommandBridge:
         payload = frame["payload"]
         target = self.repo.inbox(payload["targetCommandId"], tx)
         if target and target["run_id"]:
-            self._reject(tx, frame, "REMOTE_WITHDRAWAL_TOO_LATE")
+            original = json.loads(target["command_json"])
+            if original.get("type") != "run.submit" or original["conversationId"] != frame["conversationId"] or original["conversationSeq"] != payload["targetConversationSeq"]:
+                raise HubError("REMOTE_TARGET_MISMATCH", "撤回目标不匹配")
+            record = self.chat.repository.run_record(target["run_id"])
+            if record["status"] in TERMINAL:
+                self._reject(tx, frame, "REMOTE_WITHDRAWAL_TOO_LATE")
+            else:
+                self._accept(tx, frame, target["run_id"], status="admitted")
             return
         if target:
             original = json.loads(target["command_json"])
@@ -216,14 +242,21 @@ class CommandBridge:
         if target is None:
             tx.connection.execute("INSERT INTO remote_inbox(worker_id,command_id,digest,command_json,status) VALUES(?,?,?,?,?)",
                 (frame["targetWorkerId"], payload["targetCommandId"], "tombstone", canonical(original), "rejected"))
-        self._reject(tx, original, "REMOTE_COMMAND_WITHDRAWN")
+        if target is None or target["status"] != "rejected":
+            self._reject(tx, original, "REMOTE_COMMAND_WITHDRAWN")
         self._accept(tx, frame)
         result = control_result({}, {"controlEvidence": {"kind": "inbox_tombstone"}})
         self.repo.emit(tx, "command.completed", commandId=frame["commandId"], conversationId=frame["conversationId"], resultStatus="withdrawn", controlResult=result)
         self.repo.patch_inbox(tx, frame["commandId"], status="completed")
 
     def _bound_run(self, frame):
-        record = self.chat.repository.run_record(frame["payload"]["runId"])
+        run_id = frame["payload"].get("runId")
+        if frame["type"] == "command.withdraw":
+            target = self.repo.inbox(frame["payload"]["targetCommandId"])
+            run_id = target["run_id"] if target else None
+        if not run_id:
+            raise HubError("REMOTE_TARGET_MISMATCH", "命令没有已接单的执行引用")
+        record = self.chat.repository.run_record(run_id)
         if record["conversation_id"] != frame["conversationId"] or str(self.chat.repository.conversation(record["conversation_id"]).authority) != "remote":
             raise HubError("REMOTE_TARGET_MISMATCH", "执行引用不属于该远程对话")
         if frame["payload"].get("nodeId") and frame["type"] != "run.retry":
@@ -235,7 +268,7 @@ class CommandBridge:
             return {}
         method = getattr(type(self.chat.ports.tasks), "control_observation", None)
         if method is None:
-            return {"recoveryRequired": True}
+            return {"evidenceAvailable": False}
         return self.chat.ports.tasks.control_observation(record["task_id"])
 
     async def _execute(self, frame):
@@ -250,16 +283,20 @@ class CommandBridge:
         try:
             if frame["type"] == "approval.decide":
                 result = await self._approval(frame, record)
-                if (result.details or {}).get("deliveryStatus") != "delivered":
+                if (result.details or {}).get("deliveryStatus") != "consumed":
                     self._finish(frame, ref, control_result({}, {}), record["status"])
                     return
                 self._completed(frame, ref, "approval_consumed")
                 return
-            action = frame["type"].split(".")[1]
+            action = "cancel" if frame["type"] == "command.withdraw" else frame["type"].split(".")[1]
             prior_result = control_result(before, before)
-            if action in {"resume", "retry"} and (before.get("recoveryRequired") or prior_result["evidence"] in {"adapter_refused", "recovery_flag", "missing_execution_handle"}):
+            if action in {"resume", "retry"} and (before.get("evidenceAvailable") is False or before.get("recoveryRequired") or before.get("unresolvedCancellation") or prior_result["evidence"] in {"adapter_refused", "recovery_flag", "missing_execution_handle"}):
                 self._finish(frame, ref, {**prior_result, "outcome": "unconfirmed", "evidence": "recovery_flag"}, record["status"])
                 return
+            if action in {"pause", "resume"} and record["status"] in TERMINAL:
+                raise HubError("TASK_ACTION_INVALID", "当前执行不接受该控制动作")
+            if action == "retry" and record["status"] not in TERMINAL:
+                raise HubError("TASK_ACTION_INVALID", "远程重试需要已终止的轮次；节点重置由本机核对后处理")
             if frame["payload"].get("nodeId") and record["task_id"]:
                 detail = await self.chat.ports.tasks.get_task(record["task_id"])
                 if frame["payload"]["nodeId"] not in {n.id for n in detail.nodes}:
@@ -272,15 +309,48 @@ class CommandBridge:
             if view.task and view.task.parent_task_id:
                 ref["parentExecutionTaskId"] = view.task.parent_task_id
             if action == "retry":
-                self._completed(frame, ref, "retry_enqueued")
+                if not view.task_id:
+                    self._finish(frame, ref, control_result({}, {}), str(view.status))
+                else:
+                    self._completed(frame, ref, "retry_enqueued")
             else:
                 if action == "cancel" and not record["task_id"] and record["status"] in {"queued", "cancelled"}:
                     after = {"controlEvidence": {"kind": "inbox_tombstone"}}
                 result = control_result(before, after)
                 self._finish(frame, ref, result, str(view.status))
         except Exception as error:
-            code = error.code if isinstance(error, HubError) else "TASK_ACTION_INVALID"
-            self._failed(frame, ref, code)
+            # A transport/executor exception does not prove rejection or stop.
+            # Approval delivery failures can occur after the decision was stored.
+            if frame["type"] == "approval.decide":
+                approval = await self.chat.ports.approvals.repository.get(frame["payload"]["approvalId"])
+                if approval and (approval.details or {}).get("deliveryStatus") in {"dispatching", "failed"}:
+                    self._finish(frame, ref, control_result({}, {}, fallback="delivery_unknown"), record["status"])
+                    return
+            if isinstance(error, HubError) and error.code in {"REMOTE_APPROVAL_FORBIDDEN", "REMOTE_TARGET_MISMATCH", "APPROVAL_EXPIRED", "TASK_ACTION_INVALID", "NOT_FOUND", "CONFLICT"}:
+                if frame["type"] == "approval.decide":
+                    self._failed(frame, ref, error.code)
+                else:
+                    result = {"outcome": "rejected", "executionMayStillBeRunning": True, "orphanProcessIds": [],
+                        "evidence": "worker_policy", "reason": "当前本机策略或执行条件不允许该动作", "observedAt": now()}
+                    self._finish(frame, ref, result, record["status"])
+            else:
+                self._finish(frame, ref, control_result(before, {}, fallback="delivery_unknown"), record["status"])
+
+    async def recover(self):
+        """Resume admission only; never re-issue a possibly delivered control."""
+        link = self.repo.get("link")["view"]
+        if link["state"] not in {"paired", "frozen"}:
+            return
+        with self.repo.database.locked_connection() as db:
+            rows = [dict(r) for r in db.execute("SELECT * FROM remote_inbox WHERE worker_id=? AND status IN ('executing','admitted')", (link["workerId"],))]
+        for item in rows:
+            frame = json.loads(item["command_json"])
+            if item["status"] == "admitted" and link["state"] == "paired":
+                await self._execute(frame)
+            elif item["status"] == "executing":
+                record = self._bound_run(frame)
+                ref = {"runId": record["run_id"], **({"executionTaskId": record["task_id"]} if record["task_id"] else {})}
+                self._finish(frame, ref, control_result({}, {}, fallback="delivery_unknown"), record["status"])
 
     async def _approval(self, frame, record):
         payload = frame["payload"]
@@ -307,18 +377,27 @@ class CommandBridge:
             "remote:" + frame["commandId"], current_guard=guard)
 
     def _completed(self, frame, ref, status):
+        if not self._same_binding(frame):
+            return
         with self.repo.database.transaction() as tx:
-            self.repo.emit(tx, "command.completed", commandId=frame["commandId"], conversationId=frame["conversationId"], resultStatus=status, resultRef=ref)
+            fields = {}
+            if status == "retry_enqueued":
+                fields["controlResult"] = control_result({}, {"controlEvidence": {"kind": "retry_enqueued"}})
+            self.repo.emit(tx, "command.completed", commandId=frame["commandId"], conversationId=frame["conversationId"], resultStatus=status, resultRef=ref, **fields)
             self.repo.patch_inbox(tx, frame["commandId"], status="completed", run_id=ref["runId"])
             self.repo.seal(tx)
 
     def _failed(self, frame, ref, code):
+        if not self._same_binding(frame):
+            return
         with self.repo.database.transaction() as tx:
             self.repo.emit(tx, "command.failed", commandId=frame["commandId"], conversationId=frame["conversationId"], resultStatus="rejected", resultRef=ref, error=error_view(code))
             self.repo.patch_inbox(tx, frame["commandId"], status="failed")
             self.repo.seal(tx)
 
     def _finish(self, frame, ref, result, status):
+        if not self._same_binding(frame):
+            return
         with self.repo.database.transaction() as tx:
             common = {"commandId": frame["commandId"], "conversationId": frame["conversationId"], "resultRef": ref, "controlResult": result}
             self.repo.emit(tx, "command.control_result", **common, executionStatus=status)
@@ -329,3 +408,8 @@ class CommandBridge:
                 self.repo.emit(tx, "command.failed", **common, resultStatus="rejected", error=error_view("TASK_NOT_CANCELLABLE"))
             self.repo.patch_inbox(tx, frame["commandId"], status={"confirmed": "completed", "rejected": "failed", "unconfirmed": "unconfirmed"}[outcome])
             self.repo.seal(tx)
+
+    def _same_binding(self, frame):
+        view = self.repo.get("link")["view"]
+        return (view.get("workerId") == frame["targetWorkerId"] and
+                self.repo.get("identity")["store"] == frame["expectedWorkerStoreId"])

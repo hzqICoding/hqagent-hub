@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import get_args
 
+from pydantic import ValidationError
+
 from protocol.generated.python import (PROTOCOL_VERSION, RemoteWorkerHello,
     RemoteServerOutboundFrame, RemoteWorkerOutboundFrame)
 from core.errors import HubError
@@ -17,7 +19,11 @@ def canonical(value: dict) -> str:
 
 
 def encode(value: dict) -> str:
-    value = RemoteWorkerOutboundFrame.model_validate(value).model_dump(mode="json", by_alias=True, exclude_none=True)
+    try:
+        value = RemoteWorkerOutboundFrame.model_validate(value).model_dump(mode="json", by_alias=True, exclude_none=True)
+    except ValidationError as error:
+        oversized = any(e["type"] in {"string_too_long", "too_long"} for e in error.errors(include_input=False))
+        raise HubError("REMOTE_FRAME_TOO_LARGE" if oversized else "REMOTE_PROTOCOL_UNSUPPORTED", "远程输出不符合线路边界") from None
     content = canonical(value)
     if len(content.encode("utf-8")) > MAX_FRAME_BYTES:
         raise HubError("REMOTE_FRAME_TOO_LARGE", "远程帧超过大小限制")
@@ -28,7 +34,14 @@ def decode(content: str | bytes) -> dict:
     if len(content.encode("utf-8") if isinstance(content, str) else content) > MAX_FRAME_BYTES:
         raise HubError("REMOTE_FRAME_TOO_LARGE", "远程帧超过大小限制")
     try:
-        value = json.loads(content)
+        def unique_pairs(pairs):
+            result = {}
+            for key, item in pairs:
+                if key in result:
+                    raise ValueError("duplicate field")
+                result[key] = item
+            return result
+        value = json.loads(content, object_pairs_hook=unique_pairs)
         # Negotiate before imposing revision 1's strict DTO. Unknown revisions
         # never get dispatched; their diagnostic text never reaches the UI.
         if isinstance(value, dict) and value.get("type") == "worker.hello_rejected":
@@ -36,7 +49,10 @@ def decode(content: str | bytes) -> dict:
             if isinstance(revisions, list) and 1 <= len(revisions) <= 16 and all(type(v) is int and 1 <= v <= 2147483647 for v in revisions):
                 if WIRE_REVISION not in revisions:
                     raise HubError("REMOTE_PROTOCOL_UNSUPPORTED", "服务端不支持当前线路修订")
-        return RemoteServerOutboundFrame.model_validate(value).model_dump(mode="json", by_alias=True, exclude_none=True)
+        mapped = RemoteServerOutboundFrame.model_validate(value).model_dump(mode="json", by_alias=True, exclude_none=True)
+        if mapped != value:
+            raise ValueError("wire field names must be camelCase")
+        return mapped
     except HubError:
         raise
     except Exception:
