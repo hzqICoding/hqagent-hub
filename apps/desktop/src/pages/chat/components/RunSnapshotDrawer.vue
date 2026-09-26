@@ -95,8 +95,15 @@ function getNodeStatusBadge(status: string) {
 }
 
 function getNodeTitle(node: NonNullable<typeof task.value>['nodes'][number]) {
-  if (node.phase === 'acceptance' && node.roleId === 'planner') return '原规划者验收'
-  return node.roleId
+  if (node.phase === 'acceptance' && node.roleId === 'planner') {
+    const reviewer = scene.value?.roles.find((role) => role.roleId === 'reviewer')
+    return reviewer?.roleName ? `${reviewer.roleName}（原规划者验收）` : '原规划者验收'
+  }
+  return scene.value?.roles.find((role) => role.roleId === node.roleId)?.roleName || node.roleId
+}
+
+function hasCustomNodeName(node: NonNullable<typeof task.value>['nodes'][number]) {
+  return getNodeTitle(node) !== node.roleId
 }
 
 function getReviewVerdictMeta(verdict: string) {
@@ -269,11 +276,11 @@ function getReviewVerdictMeta(verdict: string) {
               class="p-1.5 rounded bg-panel border border-border/80 text-[11px] space-y-0.5"
             >
               <div class="flex items-center justify-between gap-1 min-w-0">
-                <span class="font-medium text-text truncate">{{ role.roleId }}</span>
+                <span class="font-medium text-text truncate">{{ role.roleName || role.roleId }}</span>
                 <span class="text-[10px] text-text-muted font-mono truncate">{{ role.modelId || '默认模型' }}</span>
               </div>
               <div class="flex items-center justify-between gap-1 text-[10px] text-text-muted min-w-0">
-                <span class="truncate">Agent: {{ role.agentInstanceId }}</span>
+                <span class="truncate">{{ role.roleId }} · Agent: {{ role.agentInstanceId }}</span>
                 <span v-if="role.reasoningEffort" class="shrink-0">effort: {{ role.reasoningEffort }}</span>
               </div>
             </div>
@@ -291,7 +298,10 @@ function getReviewVerdictMeta(verdict: string) {
             class="p-2 rounded-[var(--radius-sm)] bg-bg-app border border-border space-y-1.5"
           >
             <div class="flex items-center justify-between gap-1">
-              <span class="font-medium text-text text-xs truncate">{{ getNodeTitle(node) }}</span>
+              <span class="font-medium text-text text-xs truncate">
+                {{ getNodeTitle(node) }}
+                <span v-if="hasCustomNodeName(node)" class="ml-1 text-[10px] font-mono text-text-muted">{{ node.roleId }}</span>
+              </span>
               <span
                 class="px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0"
                 :class="getNodeStatusBadge(node.status).class"

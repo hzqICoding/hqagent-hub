@@ -12,7 +12,7 @@ describe('MockLocalChatGateway', () => {
   it('provides default authenticated status and allows login/logout', async () => {
     let auth = await gateway.getLocalAuthStatus()
     expect(auth.authenticated).toBe(true)
-    expect(auth.protocolVersion).toBe('0.3.0')
+    expect(auth.protocolVersion).toBe('0.5.0')
 
     await gateway.logoutLocalSession()
     auth = await gateway.getLocalAuthStatus()
@@ -180,6 +180,85 @@ describe('MockLocalChatGateway', () => {
 
     const cancelled = await gateway.controlLocalRun(runId, { action: 'cancel' })
     expect(cancelled.status).toBe('cancelled')
+  })
+
+  it('creates custom ordered scenes from copied role-template provenance', async () => {
+    const templates = await gateway.listLocalRoleTemplates()
+    const reviewerTemplate = templates[0]
+    const input = {
+      name: '定制开发验收',
+      description: '顺序执行三个阶段',
+      reviewMode: 'original_planner' as const,
+      roles: [
+        { roleId: 'planner', roleName: 'RTK 规划', agentInstanceId: 'agent-1', instructions: 'plan', enabled: true },
+        { roleId: 'developer', roleName: 'RTK 实现', agentInstanceId: 'agent-2', instructions: 'develop', enabled: true },
+        {
+          roleId: 'reviewer', roleName: reviewerTemplate.name, agentInstanceId: 'agent-3',
+          instructions: reviewerTemplate.instructions, enabled: true,
+          roleTemplateId: reviewerTemplate.id, roleTemplateVersion: reviewerTemplate.version,
+        },
+      ],
+    }
+    const created = await gateway.createLocalScene(input, 'create-custom-scene-1')
+    const replay = await gateway.createLocalScene(input, 'create-custom-scene-1')
+
+    expect(created.id).toMatch(/^scene_custom_/)
+    expect(created).toMatchObject({ name: '定制开发验收', isBuiltin: false, readOnly: false, version: 1 })
+    expect(created.roles.map(role => role.roleId)).toEqual(['planner', 'developer', 'reviewer'])
+    expect(created.roles[2].agentInstanceId).toBe(created.roles[0].agentInstanceId)
+    expect(replay.id).toBe(created.id)
+  })
+
+  it('rejects duplicate stages and invalid custom original-planner order', async () => {
+    await expect(gateway.createLocalScene({
+      name: '重复阶段',
+      roles: [
+        { roleId: 'analyst', agentInstanceId: 'a', instructions: '', enabled: true },
+        { roleId: 'analyst', agentInstanceId: 'b', instructions: '', enabled: true },
+      ],
+    }, 'duplicate-stage')).rejects.toMatchObject({ code: 'VALIDATION_FAILED' })
+
+    await expect(gateway.createLocalScene({
+      name: '顺序错误', reviewMode: 'original_planner',
+      roles: [
+        { roleId: 'developer', agentInstanceId: 'a', instructions: '', enabled: true },
+        { roleId: 'planner', agentInstanceId: 'b', instructions: '', enabled: true },
+        { roleId: 'reviewer', agentInstanceId: 'c', instructions: '', enabled: true },
+      ],
+    }, 'invalid-planner-order')).rejects.toMatchObject({ code: 'VALIDATION_FAILED' })
+
+    await expect(gateway.createLocalScene({
+      name: '模板来源错误',
+      roles: [{
+        roleId: 'analyst', agentInstanceId: 'a', instructions: '', enabled: true,
+        roleTemplateId: '', roleTemplateVersion: -1,
+      }],
+    }, 'invalid-template-provenance')).rejects.toMatchObject({ code: 'VALIDATION_FAILED' })
+  })
+
+  it('creates and version-updates role templates without mutating scene copies', async () => {
+    const created = await gateway.createLocalRoleTemplate({
+      name: 'RTK 分析员', baseRoleId: 'analyst', instructions: '分析 RTK 数据链路',
+    }, 'create-template-1')
+    const scene = await gateway.createLocalScene({
+      name: 'RTK 分析',
+      roles: [{
+        roleId: 'analyst', roleName: created.name, agentInstanceId: 'agent-1', instructions: created.instructions,
+        enabled: true, roleTemplateId: created.id, roleTemplateVersion: created.version,
+      }],
+    }, 'scene-from-template-1')
+    const updated = await gateway.updateLocalRoleTemplate(created.id, {
+      expectedVersion: 1, name: 'RTK 高级分析员', instructions: '新的模板职责',
+    }, 'update-template-1')
+
+    expect(updated).toMatchObject({ baseRoleId: 'analyst', version: 2 })
+    const persistedScene = (await gateway.listLocalScenes()).find(item => item.id === scene.id)!
+    expect(persistedScene.roles[0]).toMatchObject({
+      roleName: 'RTK 分析员', instructions: '分析 RTK 数据链路', roleTemplateVersion: 1,
+    })
+    await expect(gateway.updateLocalRoleTemplate(created.id, {
+      expectedVersion: 1, name: '过期更新', instructions: '',
+    }, 'stale-template-update')).rejects.toMatchObject({ code: 'CONFLICT', status: 409 })
   })
 
   it('renames, archives, restores, and replays metadata updates idempotently', async () => {

@@ -9,7 +9,13 @@ import type {
   PickLocalDirectoryInput,
   PickLocalDirectoryView,
   LocalSceneView,
+  CreateLocalSceneInput,
   SaveLocalSceneInput,
+  LocalRoleConfig,
+  LocalBaseRoleId,
+  LocalRoleTemplateView,
+  CreateLocalRoleTemplateInput,
+  UpdateLocalRoleTemplateInput,
   LocalConversationView,
   CreateLocalConversationInput,
   UpdateLocalConversationInput,
@@ -38,11 +44,12 @@ import agentsDiscoveryFixture from '@hqagent/fixtures/agents.discovery-partial.j
 export class MockLocalChatGateway implements LocalChatGateway {
   public isMock = true
   private authenticated = true
-  private protocolVersion = '0.3.0'
+  private protocolVersion = '0.5.0'
 
   private workspaces: WorkspaceView[] = []
   private agents: AgentView[] = []
   private scenes: LocalSceneView[] = []
+  private roleTemplates: LocalRoleTemplateView[] = []
   private conversations: LocalConversationView[] = []
   private messages: Map<string, LocalMessageView[]> = new Map()
   private runs: Map<string, LocalRunView> = new Map()
@@ -51,6 +58,8 @@ export class MockLocalChatGateway implements LocalChatGateway {
   private events: HubEvent[] = []
   private processedClientMessageIds: Set<string> = new Set()
   private conversationUpdateReceipts = new Map<string, { signature: string; response: LocalConversationView }>()
+  private sceneCreateReceipts = new Map<string, { signature: string; response: LocalSceneView }>()
+  private roleTemplateWriteReceipts = new Map<string, { signature: string; response: LocalRoleTemplateView }>()
   private eventSeq = 1
 
   // Simulation flags
@@ -65,6 +74,8 @@ export class MockLocalChatGateway implements LocalChatGateway {
     this.authenticated = true
     this.processedClientMessageIds.clear()
     this.conversationUpdateReceipts.clear()
+    this.sceneCreateReceipts.clear()
+    this.roleTemplateWriteReceipts.clear()
 
     // Seed workspaces
     this.workspaces = [
@@ -99,6 +110,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
     // Seed scenes
     const analyzeScene: LocalSceneView = {
       ...(analyzeSceneFixture as unknown as LocalSceneView),
+      isBuiltin: true,
       roles: (analyzeSceneFixture.roles || []).map((r: any) => ({
         ...r,
         agentInstanceId: r.agentInstanceId || (this.agents[0]?.id ?? 'claude-code-local'),
@@ -132,6 +144,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
         },
       ],
       updatedAt: '2026-09-24T02:00:00Z',
+      isBuiltin: true,
     }
 
     const developScene: LocalSceneView = {
@@ -176,9 +189,21 @@ export class MockLocalChatGateway implements LocalChatGateway {
         },
       ],
       updatedAt: '2026-09-24T03:00:00Z',
+      isBuiltin: true,
     }
 
     this.scenes = [analyzeScene, planScene, developScene]
+    this.roleTemplates = [
+      {
+        id: 'role_template_security_review',
+        name: '安全边界审查',
+        baseRoleId: 'reviewer',
+        instructions: '检查越界修改、敏感信息泄漏、危险操作审批与回滚证据。',
+        version: 1,
+        createdAt: '2026-09-24T03:10:00Z',
+        updatedAt: '2026-09-24T03:10:00Z',
+      },
+    ]
 
     // Seed conversations & runs
     const conv1Id = 'conv_analyze_auth'
@@ -576,7 +601,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
           from: 'running',
           to: 'succeeded',
         },
-        protocolVersion: '0.3.0',
+        protocolVersion: '0.5.0',
       },
       {
         eventId: 'evt_2',
@@ -590,7 +615,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
           from: 'queued',
           to: 'running',
         },
-        protocolVersion: '0.3.0',
+        protocolVersion: '0.5.0',
       },
     ]
     this.eventSeq = 3
@@ -738,6 +763,110 @@ export class MockLocalChatGateway implements LocalChatGateway {
     return JSON.parse(JSON.stringify(this.scenes))
   }
 
+  private validateSceneRoles(roles: LocalRoleConfig[], reviewMode: string | undefined, strictPlannerOrder: boolean): void {
+    const baseRoles: LocalBaseRoleId[] = ['analyst', 'planner', 'developer', 'reviewer']
+    if (roles.length < 1 || roles.length > 4) {
+      throw new HubApiError('场景需要配置 1 到 4 个顺序阶段。', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    if (new Set(roles.map((role) => role.roleId)).size !== roles.length) {
+      throw new HubApiError('同一基础角色在场景中最多出现一次。', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    if (roles.some((role) => !baseRoles.includes(role.roleId as LocalBaseRoleId))) {
+      throw new HubApiError('场景阶段必须继承内置基础角色。', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    if (!roles.some((role) => role.enabled)) {
+      throw new HubApiError('场景至少需要一个启用阶段。', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    for (const role of roles) {
+      const hasTemplateId = role.roleTemplateId !== undefined
+      const hasTemplateVersion = role.roleTemplateVersion !== undefined
+      if (hasTemplateId !== hasTemplateVersion) {
+        throw new HubApiError('模板来源 ID 与版本必须同时提供。', 'VALIDATION_FAILED' as ErrorCode, 422)
+      }
+      if (hasTemplateId) {
+        if (!role.roleTemplateId?.trim()
+          || !Number.isInteger(role.roleTemplateVersion)
+          || (role.roleTemplateVersion || 0) < 1) {
+          throw new HubApiError('角色模板来源 ID 必须非空且版本必须为正整数。', 'VALIDATION_FAILED' as ErrorCode, 422)
+        }
+        const template = this.roleTemplates.find((item) => item.id === role.roleTemplateId)
+        if (!template || template.baseRoleId !== role.roleId || (role.roleTemplateVersion || 0) > template.version) {
+          throw new HubApiError('角色模板来源与基础类型或版本不匹配。', 'VALIDATION_FAILED' as ErrorCode, 422)
+        }
+      }
+    }
+    if (reviewMode === 'original_planner') {
+      const enabledIds = roles.filter((role) => role.enabled).map((role) => role.roleId)
+      if (strictPlannerOrder && enabledIds.join(',') !== 'planner,developer,reviewer') {
+        throw new HubApiError(
+          '自定义场景的原规划者验收要求启用阶段严格为 Planner → Developer → Reviewer。',
+          'VALIDATION_FAILED' as ErrorCode,
+          422
+        )
+      }
+      const planner = roles.find((role) => role.roleId === 'planner')
+      const developer = roles.find((role) => role.roleId === 'developer')
+      const reviewer = roles.find((role) => role.roleId === 'reviewer')
+      if (!planner?.enabled || !developer?.enabled || !reviewer?.enabled || !planner.agentInstanceId?.trim()) {
+        throw new HubApiError(
+          '原规划者验收需要启用 Planner、Developer、Reviewer 并配置 Planner Agent。',
+          'VALIDATION_FAILED' as ErrorCode,
+          422
+        )
+      }
+    }
+  }
+
+  private normalizeSceneRoles(roles: LocalRoleConfig[], reviewMode?: string): LocalRoleConfig[] {
+    const result = roles.map((role) => ({ ...role }))
+    if (reviewMode === 'original_planner') {
+      const planner = result.find((role) => role.roleId === 'planner')!
+      const reviewer = result.find((role) => role.roleId === 'reviewer')!
+      reviewer.agentInstanceId = planner.agentInstanceId
+      reviewer.modelId = planner.modelId
+      reviewer.reasoningEffort = planner.reasoningEffort
+    }
+    return result
+  }
+
+  async createLocalScene(
+    input: CreateLocalSceneInput,
+    idempotencyKey: string
+  ): Promise<LocalSceneView> {
+    if (!idempotencyKey) {
+      throw new HubApiError('缺少 Idempotency-Key', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    const signature = JSON.stringify(input)
+    const previous = this.sceneCreateReceipts.get(idempotencyKey)
+    if (previous) {
+      if (previous.signature !== signature) {
+        throw new HubApiError('同一 Idempotency-Key 不能用于不同请求', 'IDEMPOTENCY_MISMATCH' as ErrorCode, 409)
+      }
+      return JSON.parse(JSON.stringify(previous.response))
+    }
+    if (!input.name.trim()) {
+      throw new HubApiError('场景名称不能为空。', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    this.validateSceneRoles(input.roles, input.reviewMode, true)
+    const roles = this.normalizeSceneRoles(input.roles, input.reviewMode)
+    const now = new Date().toISOString()
+    const scene: LocalSceneView = {
+      id: `scene_custom_${Date.now()}_${this.scenes.length}`,
+      name: input.name.trim(),
+      description: input.description?.trim() || '',
+      readOnly: !roles.some((role) => role.enabled && role.roleId === 'developer'),
+      version: 1,
+      roles,
+      updatedAt: now,
+      reviewMode: input.reviewMode ?? 'independent',
+      isBuiltin: false,
+    }
+    this.scenes.push(scene)
+    const response = JSON.parse(JSON.stringify(scene)) as LocalSceneView
+    this.sceneCreateReceipts.set(idempotencyKey, { signature, response })
+    return JSON.parse(JSON.stringify(response))
+  }
+
   async saveLocalScene(
     sceneId: string,
     input: SaveLocalSceneInput
@@ -756,34 +885,102 @@ export class MockLocalChatGateway implements LocalChatGateway {
       )
     }
 
-    if (input.reviewMode === 'original_planner') {
-      const planner = input.roles.find((role) => role.roleId === 'planner')
-      const developer = input.roles.find((role) => role.roleId === 'developer')
-      const reviewer = input.roles.find((role) => role.roleId === 'reviewer')
-      if (!planner?.enabled || !developer?.enabled || !reviewer?.enabled) {
-        throw new HubApiError(
-          '原规划者验收要求 Planner、Developer 与 Reviewer 全部启用。',
-          'VALIDATION_FAILED' as ErrorCode,
-          422
-        )
-      }
-      if (!planner.agentInstanceId?.trim()) {
-        throw new HubApiError(
-          '原规划者验收需要配置 Planner Agent。',
-          'VALIDATION_FAILED' as ErrorCode,
-          422
-        )
-      }
-      reviewer.agentInstanceId = planner.agentInstanceId
-      reviewer.modelId = planner.modelId
-      reviewer.reasoningEffort = planner.reasoningEffort
+    const isBuiltin = scene.isBuiltin ?? ['analyze', 'plan', 'develop'].includes(scene.id)
+    if (isBuiltin && input.roles.map((role) => role.roleId).join(',') !== scene.roles.map((role) => role.roleId).join(',')) {
+      throw new HubApiError('内置场景的角色集合与顺序不可修改。', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    this.validateSceneRoles(input.roles, input.reviewMode, !isBuiltin)
+    if (!isBuiltin && input.name !== undefined && !input.name.trim()) {
+      throw new HubApiError('场景名称不能为空。', 'VALIDATION_FAILED' as ErrorCode, 422)
     }
 
-    scene.roles = input.roles.map((role) => ({ ...role }))
+    scene.roles = this.normalizeSceneRoles(input.roles, input.reviewMode)
     scene.reviewMode = input.reviewMode ?? 'independent'
+    if (!isBuiltin) {
+      if (input.name !== undefined) scene.name = input.name.trim()
+      if (input.description !== undefined) scene.description = input.description.trim()
+    }
+    scene.readOnly = !scene.roles.some((role) => role.enabled && role.roleId === 'developer')
     scene.version += 1
     scene.updatedAt = new Date().toISOString()
-    return { ...scene }
+    return JSON.parse(JSON.stringify(scene))
+  }
+
+  async listLocalRoleTemplates(): Promise<LocalRoleTemplateView[]> {
+    return JSON.parse(JSON.stringify(this.roleTemplates))
+  }
+
+  async createLocalRoleTemplate(
+    input: CreateLocalRoleTemplateInput,
+    idempotencyKey: string
+  ): Promise<LocalRoleTemplateView> {
+    if (!idempotencyKey) {
+      throw new HubApiError('缺少 Idempotency-Key', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    const signature = JSON.stringify(input)
+    const previous = this.roleTemplateWriteReceipts.get(idempotencyKey)
+    if (previous) {
+      if (previous.signature !== signature) {
+        throw new HubApiError('同一 Idempotency-Key 不能用于不同请求', 'IDEMPOTENCY_MISMATCH' as ErrorCode, 409)
+      }
+      return JSON.parse(JSON.stringify(previous.response))
+    }
+    if (!input.name.trim()) {
+      throw new HubApiError('模板名称不能为空。', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    if (!['analyst', 'planner', 'developer', 'reviewer'].includes(input.baseRoleId)) {
+      throw new HubApiError('角色模板必须继承有效基础角色。', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    const now = new Date().toISOString()
+    const template: LocalRoleTemplateView = {
+      id: `role_template_${Date.now()}_${this.roleTemplates.length}`,
+      name: input.name.trim(),
+      baseRoleId: input.baseRoleId,
+      instructions: input.instructions,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    }
+    this.roleTemplates.push(template)
+    const response = JSON.parse(JSON.stringify(template)) as LocalRoleTemplateView
+    this.roleTemplateWriteReceipts.set(idempotencyKey, { signature, response })
+    return JSON.parse(JSON.stringify(response))
+  }
+
+  async updateLocalRoleTemplate(
+    templateId: string,
+    input: UpdateLocalRoleTemplateInput,
+    idempotencyKey: string
+  ): Promise<LocalRoleTemplateView> {
+    if (!idempotencyKey) {
+      throw new HubApiError('缺少 Idempotency-Key', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    const signature = JSON.stringify({ templateId, input })
+    const previous = this.roleTemplateWriteReceipts.get(idempotencyKey)
+    if (previous) {
+      if (previous.signature !== signature) {
+        throw new HubApiError('同一 Idempotency-Key 不能用于不同请求', 'IDEMPOTENCY_MISMATCH' as ErrorCode, 409)
+      }
+      return JSON.parse(JSON.stringify(previous.response))
+    }
+    const template = this.roleTemplates.find((item) => item.id === templateId)
+    if (!template) throw new HubApiError('角色模板不存在', 'NOT_FOUND' as ErrorCode, 404)
+    if (input.expectedVersion !== template.version) {
+      throw new HubApiError('角色模板版本冲突，请刷新后重试。', 'CONFLICT' as ErrorCode, 409, {
+        currentVersion: template.version,
+        expectedVersion: input.expectedVersion,
+      })
+    }
+    if (!input.name.trim()) {
+      throw new HubApiError('模板名称不能为空。', 'VALIDATION_FAILED' as ErrorCode, 422)
+    }
+    template.name = input.name.trim()
+    template.instructions = input.instructions
+    template.version += 1
+    template.updatedAt = new Date().toISOString()
+    const response = JSON.parse(JSON.stringify(template)) as LocalRoleTemplateView
+    this.roleTemplateWriteReceipts.set(idempotencyKey, { signature, response })
+    return JSON.parse(JSON.stringify(response))
   }
 
   // Conversations & Messages
@@ -1024,7 +1221,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
         type: 'task.status_changed',
         occurredAt: new Date().toISOString(),
         payload: { taskId, from: 'queued', to: 'running' },
-        protocolVersion: '0.3.0',
+        protocolVersion: '0.5.0',
       },
       {
         eventId: `evt_${this.eventSeq}`,
@@ -1035,7 +1232,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
         type: 'agent.started',
         occurredAt: new Date().toISOString(),
         payload: { sessionId: `sess_${runId}`, purpose: 'adhoc' },
-        protocolVersion: '0.3.0',
+        protocolVersion: '0.5.0',
       },
       {
         eventId: `evt_${this.eventSeq}`,
@@ -1046,7 +1243,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
         type: 'agent.progress',
         occurredAt: new Date().toISOString(),
         payload: { message: 'Thought: 分析当前工程架构并定位相关代码模块' },
-        protocolVersion: '0.3.0',
+        protocolVersion: '0.5.0',
       },
       {
         eventId: `evt_${this.eventSeq}`,
@@ -1063,7 +1260,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
           failed: false,
           durationMs: 120,
         },
-        protocolVersion: '0.3.0',
+        protocolVersion: '0.5.0',
       },
       {
         eventId: `evt_${this.eventSeq}`,
@@ -1080,7 +1277,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
           failed: false,
           durationMs: 1250,
         },
-        protocolVersion: '0.3.0',
+        protocolVersion: '0.5.0',
       }
     )
 
@@ -1158,7 +1355,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
       type: 'task.status_changed',
       occurredAt: new Date().toISOString(),
       payload: { taskId: run.taskId, to: run.status },
-      protocolVersion: '0.3.0',
+      protocolVersion: '0.5.0',
     })
 
     return JSON.parse(JSON.stringify(run))

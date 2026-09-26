@@ -9,7 +9,11 @@ import type {
   PickLocalDirectoryInput,
   PickLocalDirectoryView,
   LocalSceneView,
+  CreateLocalSceneInput,
   SaveLocalSceneInput,
+  LocalRoleTemplateView,
+  CreateLocalRoleTemplateInput,
+  UpdateLocalRoleTemplateInput,
   LocalConversationView,
   CreateLocalConversationInput,
   UpdateLocalConversationInput,
@@ -203,6 +207,17 @@ export class RealLocalChatGateway implements LocalChatGateway {
     return this.fetchApi<LocalSceneView[]>('/api/v2/scenes', { method: 'GET' })
   }
 
+  async createLocalScene(
+    input: CreateLocalSceneInput,
+    idempotencyKey: string
+  ): Promise<LocalSceneView> {
+    return this.fetchApi<LocalSceneView>(
+      '/api/v2/scenes',
+      { method: 'POST', body: JSON.stringify(input) },
+      idempotencyKey
+    )
+  }
+
   async saveLocalScene(
     sceneId: string,
     input: SaveLocalSceneInput
@@ -213,6 +228,33 @@ export class RealLocalChatGateway implements LocalChatGateway {
         method: 'PUT',
         body: JSON.stringify(input),
       }
+    )
+  }
+
+  async listLocalRoleTemplates(): Promise<LocalRoleTemplateView[]> {
+    return this.fetchApi<LocalRoleTemplateView[]>('/api/v2/role-templates', { method: 'GET' })
+  }
+
+  async createLocalRoleTemplate(
+    input: CreateLocalRoleTemplateInput,
+    idempotencyKey: string
+  ): Promise<LocalRoleTemplateView> {
+    return this.fetchApi<LocalRoleTemplateView>(
+      '/api/v2/role-templates',
+      { method: 'POST', body: JSON.stringify(input) },
+      idempotencyKey
+    )
+  }
+
+  async updateLocalRoleTemplate(
+    templateId: string,
+    input: UpdateLocalRoleTemplateInput,
+    idempotencyKey: string
+  ): Promise<LocalRoleTemplateView> {
+    return this.fetchApi<LocalRoleTemplateView>(
+      `/api/v2/role-templates/${encodeURIComponent(templateId)}`,
+      { method: 'PUT', body: JSON.stringify(input) },
+      idempotencyKey
     )
   }
 

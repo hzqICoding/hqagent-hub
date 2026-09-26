@@ -126,6 +126,8 @@ watch(
 )
 
 function getSceneLabel(sceneId?: string) {
+  const scene = chatStore.scenes.find((item) => item.id === sceneId)
+  if (scene) return scene.name
   switch (sceneId) {
     case 'analyze':
       return '代码分析'
