@@ -118,4 +118,21 @@ describe('ChatPage', () => {
     )
     expect(resetMenuItem?.attributes('disabled')).toBeDefined()
   })
+
+  it('shows returned custom scene names and generic starter prompts', async () => {
+    const customScene = await mockLocalChatGateway.createLocalScene({
+      name: 'RTK 定制分析',
+      roles: [{ roleId: 'analyst', roleName: 'RTK 分析员', agentInstanceId: 'claude-code-local', instructions: '分析', enabled: true }],
+    }, 'chat-custom-scene')
+    const conversation = await mockLocalChatGateway.createLocalConversation({
+      title: 'RTK 对话', workspaceId: 'ws_local_hub', sceneId: customScene.id,
+    })
+    const wrapper = await mountInitializedPage()
+    const store = useChatStore()
+    await store.selectConversation(conversation.id)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('RTK 定制分析')
+    expect(wrapper.text()).toContain('分析当前工程代码结构并提出优化建议')
+  })
 })

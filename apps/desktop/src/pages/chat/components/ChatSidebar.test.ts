@@ -65,4 +65,25 @@ describe('ChatSidebar', () => {
 
     expect(wrapper.findAllComponents(HqSelect)[0].props('modelValue')).toBe('workspace-empty')
   })
+
+  it('uses returned custom scenes and defaults to the active task scene', async () => {
+    const store = useChatStore()
+    store.workspaces = [{ id: 'workspace-a', name: 'Project A', path: 'E:/a', vcs: 'git', lastOpenedAt: '2026-09-25T00:00:00Z' }]
+    store.scenes = [{
+      id: 'scene-custom-rtk', name: 'RTK 定制分析', description: '定制', readOnly: true,
+      version: 1, roles: [], updatedAt: '2026-09-25T00:00:00Z', isBuiltin: false,
+    }]
+    store.conversations = [{
+      id: 'conversation-custom', title: 'RTK Task', workspaceId: 'workspace-a', sceneId: 'scene-custom-rtk',
+      createdAt: '2026-09-25T00:00:00Z', updatedAt: '2026-09-25T00:00:00Z',
+    }]
+    store.activeConversationId = 'conversation-custom'
+    const wrapper = mount(ChatSidebar)
+
+    await wrapper.findAll('button').find(button => button.text().includes('新建任务'))!.trigger('click')
+    const customSceneButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(button =>
+      button.textContent?.includes('RTK 定制分析')
+    )!
+    expect(customSceneButton.className).toContain('border-primary')
+  })
 })

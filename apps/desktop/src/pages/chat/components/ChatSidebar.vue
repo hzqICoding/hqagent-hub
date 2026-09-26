@@ -43,7 +43,9 @@ function openCreateModal(workspaceId?: string) {
     || chatStore.activeConversation?.workspaceId
     || chatStore.workspaces[0]?.id
     || ''
-  selectedSceneId.value = 'analyze'
+  selectedSceneId.value = chatStore.activeConversation?.sceneId
+    || chatStore.scenes[0]?.id
+    || 'analyze'
   isNewConvModalOpen.value = true
   createError.value = null
 }

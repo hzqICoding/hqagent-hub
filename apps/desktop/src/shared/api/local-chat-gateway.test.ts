@@ -107,6 +107,33 @@ describe('RealLocalChatGateway', () => {
     )
   })
 
+  it('creates custom scenes and role templates through the v2 write endpoints', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ success: true, data: { id: 'created', version: 1 } }),
+    })
+    globalThis.fetch = mockFetch as any
+
+    await gateway.createLocalScene({
+      name: '自定义开发',
+      roles: [{ roleId: 'developer', roleName: '实现者', agentInstanceId: 'agent-1', instructions: '实现', enabled: true }],
+    }, 'scene-create-key')
+    await gateway.createLocalRoleTemplate({
+      name: '安全审查', baseRoleId: 'reviewer', instructions: '检查安全边界',
+    }, 'template-create-key')
+    await gateway.updateLocalRoleTemplate('template-1', {
+      expectedVersion: 1, name: '安全验收', instructions: '检查安全与证据',
+    }, 'template-update-key')
+
+    expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining('/api/v2/scenes'),
+      expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'Idempotency-Key': 'scene-create-key' }) }))
+    expect(mockFetch).toHaveBeenNthCalledWith(2, expect.stringContaining('/api/v2/role-templates'),
+      expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'Idempotency-Key': 'template-create-key' }) }))
+    expect(mockFetch).toHaveBeenNthCalledWith(3, expect.stringContaining('/api/v2/role-templates/template-1'),
+      expect.objectContaining({ method: 'PUT', headers: expect.objectContaining({ 'Idempotency-Key': 'template-update-key' }) }))
+  })
+
   it('unwraps HubApiError from unsuccessful envelope', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: false,

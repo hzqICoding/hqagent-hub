@@ -12,7 +12,7 @@ import {
 
 export const useLocalAuthStore = defineStore('localAuth', () => {
   const authenticated = ref(false)
-  const protocolVersion = ref('0.3.0')
+  const protocolVersion = ref('0.5.0')
   const isChecking = ref(false)
   const isConnecting = ref(false)
   const authError = ref<string | null>(null)

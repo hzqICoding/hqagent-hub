@@ -25,7 +25,10 @@ describe('RunSnapshotDrawer', () => {
         version: 4,
         reviewMode: 'original_planner',
         updatedAt: '2026-09-25T00:00:00Z',
-        roles: [],
+        roles: [
+          { roleId: 'planner', roleName: 'RTK 规划师', agentInstanceId: 'agent_planner', instructions: 'plan', enabled: true },
+          { roleId: 'reviewer', roleName: 'RTK 验收员', agentInstanceId: 'agent_planner', instructions: 'review', enabled: true },
+        ],
       },
       task: {
         id: 'task_review_result',
@@ -72,6 +75,7 @@ describe('RunSnapshotDrawer', () => {
 
     expect(wrapper.text()).toContain('验收不通过：需要修改')
     expect(wrapper.text()).toContain('验收执行出错，未产生有效审核结论：原生会话恢复失败')
+    expect(wrapper.text()).toContain('RTK 验收员（原规划者验收）')
     expect(wrapper.text()).not.toContain('验收通过')
   })
 })

@@ -9,7 +9,11 @@ import type {
   PickLocalDirectoryInput,
   PickLocalDirectoryView,
   LocalSceneView,
+  CreateLocalSceneInput,
   SaveLocalSceneInput,
+  LocalRoleTemplateView,
+  CreateLocalRoleTemplateInput,
+  UpdateLocalRoleTemplateInput,
   LocalConversationView,
   CreateLocalConversationInput,
   UpdateLocalConversationInput,
@@ -42,7 +46,21 @@ export interface LocalChatGateway {
 
   // Scenes
   listLocalScenes(): Promise<LocalSceneView[]>
+  createLocalScene(
+    input: CreateLocalSceneInput,
+    idempotencyKey: string
+  ): Promise<LocalSceneView>
   saveLocalScene(sceneId: string, input: SaveLocalSceneInput): Promise<LocalSceneView>
+  listLocalRoleTemplates(): Promise<LocalRoleTemplateView[]>
+  createLocalRoleTemplate(
+    input: CreateLocalRoleTemplateInput,
+    idempotencyKey: string
+  ): Promise<LocalRoleTemplateView>
+  updateLocalRoleTemplate(
+    templateId: string,
+    input: UpdateLocalRoleTemplateInput,
+    idempotencyKey: string
+  ): Promise<LocalRoleTemplateView>
 
   // Conversations & Messages
   listLocalConversations(): Promise<LocalConversationView[]>

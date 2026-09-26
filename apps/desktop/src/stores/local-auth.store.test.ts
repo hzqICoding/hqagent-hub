@@ -14,7 +14,7 @@ describe('LocalAuthStore', () => {
     const isAuthed = await store.checkAuthStatus()
     expect(isAuthed).toBe(true)
     expect(store.authenticated).toBe(true)
-    expect(store.protocolVersion).toBe('0.3.0')
+    expect(store.protocolVersion).toBe('0.5.0')
     expect(store.authError).toBeNull()
   })
 
