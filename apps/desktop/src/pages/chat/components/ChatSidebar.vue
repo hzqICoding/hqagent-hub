@@ -15,7 +15,13 @@ import {
   Pencil,
   Plus,
   Search,
+  X,
 } from 'lucide-vue-next'
+
+const emit = defineEmits<{
+  (e: 'select', id: string): void
+  (e: 'close'): void
+}>()
 
 const chatStore = useChatStore()
 
@@ -191,10 +197,16 @@ function formatTime(iso: string) {
     ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : `${date.getMonth() + 1}/${date.getDate()}`
 }
+
+function handleConversationSelect(conversationId: string) {
+  chatStore.selectConversation(conversationId)
+  emit('select', conversationId)
+  emit('close')
+}
 </script>
 
 <template>
-  <aside class="w-72 sm:w-80 h-full border-r border-border bg-panel flex flex-col shrink-0 select-none">
+  <aside class="w-[85vw] max-w-[320px] md:w-72 lg:w-80 h-full border-r border-border bg-panel flex flex-col shrink-0 select-none">
     <div class="p-3.5 border-b border-border flex items-center justify-between gap-2">
       <div class="flex items-center gap-2 min-w-0">
         <Bot class="w-5 h-5 text-primary shrink-0" />
@@ -203,10 +215,23 @@ function formatTime(iso: string) {
           {{ chatStore.filteredConversations.length }}
         </span>
       </div>
-      <HqButton size="sm" variant="primary" @click="openCreateModal()">
-        <Plus class="w-3.5 h-3.5 mr-1" />
-        新建任务
-      </HqButton>
+      <div class="flex items-center gap-1 shrink-0">
+        <HqButton size="sm" variant="primary" class="min-h-[44px] min-w-[44px]" @click="openCreateModal()">
+          <Plus class="w-3.5 h-3.5 mr-1" />
+          新建任务
+        </HqButton>
+
+        <!-- Mobile Drawer Close Button -->
+        <button
+          type="button"
+          class="md:hidden min-w-[44px] min-h-[44px] p-2 rounded-lg hover:bg-panel-hover text-text-muted hover:text-text flex items-center justify-center cursor-pointer transition-colors"
+          title="关闭任务列表"
+          aria-label="关闭任务列表"
+          @click="emit('close')"
+        >
+          <X class="w-4 h-4" />
+        </button>
+      </div>
     </div>
 
     <div class="p-3 pb-2 border-b border-border space-y-2">
@@ -297,11 +322,11 @@ function formatTime(iso: string) {
             :key="conversation.id"
             role="button"
             tabindex="0"
-            class="group mx-1.5 rounded-lg px-2.5 py-2 cursor-pointer transition-colors hover:bg-panel-hover"
+            class="group mx-1.5 rounded-lg px-2.5 py-2 cursor-pointer transition-colors hover:bg-panel-hover min-h-[44px] flex flex-col justify-center"
             :class="chatStore.activeConversationId === conversation.id ? 'bg-primary/10 text-text' : ''"
-            @click="chatStore.selectConversation(conversation.id)"
-            @keydown.enter.prevent="chatStore.selectConversation(conversation.id)"
-            @keydown.space.prevent="chatStore.selectConversation(conversation.id)"
+            @click="handleConversationSelect(conversation.id)"
+            @keydown.enter.prevent="handleConversationSelect(conversation.id)"
+            @keydown.space.prevent="handleConversationSelect(conversation.id)"
           >
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
@@ -318,10 +343,11 @@ function formatTime(iso: string) {
                 <HqDropdown :items="taskMenuItems(conversation)" placement="right">
                   <button
                     type="button"
-                    class="p-1 rounded text-text-muted opacity-60 group-hover:opacity-100 hover:bg-bg-app hover:text-text"
+                    class="min-w-[44px] min-h-[44px] -m-1.5 p-2 rounded-lg text-text-muted opacity-60 group-hover:opacity-100 hover:bg-bg-app hover:text-text flex items-center justify-center cursor-pointer transition-colors"
                     title="任务操作"
+                    aria-label="任务操作"
                   >
-                    <MoreHorizontal class="w-3.5 h-3.5" />
+                    <MoreHorizontal class="w-4 h-4" />
                   </button>
                 </HqDropdown>
               </div>

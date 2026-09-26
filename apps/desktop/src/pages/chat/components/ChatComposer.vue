@@ -101,7 +101,7 @@ function handleStopRun() {
 </script>
 
 <template>
-  <div class="w-full shrink-0 px-4 pb-4 pt-1 select-none">
+  <div class="w-full shrink-0 px-2.5 sm:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-1 select-none">
     <div class="max-w-3xl mx-auto w-full space-y-2">
       <!-- 1. Floating Queued Messages Deck -->
       <div v-if="chatStore.queuedMessages.length > 0" class="space-y-1.5">
@@ -120,8 +120,9 @@ function handleStopRun() {
 
           <button
             type="button"
-            class="p-1 rounded-full hover:bg-panel-hover text-text-muted hover:text-text shrink-0 transition-colors"
+            class="min-w-[32px] min-h-[32px] p-1.5 rounded-full hover:bg-panel-hover text-text-muted hover:text-text shrink-0 transition-colors flex items-center justify-center cursor-pointer"
             title="移除该排队指令"
+            aria-label="移除该排队指令"
             @click="removeQueuedMessage(q.id)"
           >
             <X class="w-3.5 h-3.5" />
@@ -216,18 +217,20 @@ function handleStopRun() {
             <!-- Active run status badge -->
             <div
               v-if="chatStore.isCurrentRunActive"
-              class="hidden sm:flex items-center gap-1.5 text-[11px] text-warning bg-warning/10 px-2.5 py-0.5 rounded-full border border-warning/20 shrink-0"
+              class="flex items-center gap-1.5 text-[11px] text-warning bg-warning/10 px-2 sm:px-2.5 py-0.5 rounded-full border border-warning/20 shrink-0"
             >
               <Clock class="w-3 h-3 animate-spin text-warning" />
-              <span>执行中 · 新指令自动排队</span>
+              <span class="hidden sm:inline">执行中 · 新指令自动排队</span>
+              <span class="sm:hidden text-[10px]">执行中</span>
             </div>
 
             <!-- Stop Button if running and input is empty -->
             <button
               v-if="chatStore.isCurrentRunActive && inputText.trim().length === 0"
               type="button"
-              class="w-7 h-7 rounded-full flex items-center justify-center transition-all bg-danger/15 text-danger hover:bg-danger/25 active:scale-95 cursor-pointer shadow-xs"
+              class="w-9 h-9 sm:w-8 sm:h-8 min-w-[36px] min-h-[36px] rounded-full flex items-center justify-center transition-all bg-danger/15 text-danger hover:bg-danger/25 active:scale-95 cursor-pointer shadow-xs"
               title="中止当前执行轮次"
+              aria-label="中止当前执行轮次"
               @click="handleStopRun"
             >
               <Square class="w-3.5 h-3.5 fill-current" />
@@ -237,7 +240,7 @@ function handleStopRun() {
             <button
               v-else
               type="button"
-              class="w-7 h-7 rounded-full flex items-center justify-center transition-all shadow-xs"
+              class="w-9 h-9 sm:w-8 sm:h-8 min-w-[36px] min-h-[36px] rounded-full flex items-center justify-center transition-all shadow-xs"
               :class="
                 canSend
                   ? 'bg-primary text-white hover:bg-primary-hover active:scale-95 cursor-pointer'
@@ -245,6 +248,7 @@ function handleStopRun() {
               "
               :disabled="!canSend || chatStore.isSending"
               title="发送目标指令 (Enter)"
+              aria-label="发送目标指令"
               @click="handleSend"
             >
               <ArrowUp class="w-4 h-4 stroke-[2.5]" />

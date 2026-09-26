@@ -26,11 +26,13 @@ import {
   RotateCcw,
   Plus,
   ArchiveRestore,
+  Menu,
 } from 'lucide-vue-next'
 
 const chatStore = useChatStore()
 const authStore = useLocalAuthStore()
 
+const isMobileSidebarOpen = ref(false)
 const isDrawerOpen = ref(true)
 const sidebarRef = ref<{ openCreateModal: () => void } | null>(null)
 const messageContainerRef = ref<HTMLElement | null>(null)
@@ -125,6 +127,14 @@ watch(
   }
 )
 
+// Auto-close mobile sidebar when conversation changes
+watch(
+  () => chatStore.activeConversationId,
+  () => {
+    isMobileSidebarOpen.value = false
+  }
+)
+
 function getSceneLabel(sceneId?: string) {
   const scene = chatStore.scenes.find((item) => item.id === sceneId)
   if (scene) return scene.name
@@ -213,49 +223,78 @@ async function restoreActiveConversation() {
     </div>
 
     <!-- 3-Column Workbench -->
-    <div class="flex-1 min-h-0 flex overflow-hidden">
+    <div class="flex-1 min-h-0 flex overflow-hidden relative">
+      <!-- Mobile backdrop for Left Sidebar Drawer -->
+      <div
+        v-if="isMobileSidebarOpen"
+        class="fixed inset-0 bg-black/50 backdrop-blur-xs z-40 md:hidden transition-opacity"
+        @click="isMobileSidebarOpen = false"
+      />
+
       <!-- Left Column: Conversations Sidebar -->
-      <ChatSidebar ref="sidebarRef" />
+      <ChatSidebar
+        ref="sidebarRef"
+        class="fixed inset-y-0 left-0 z-50 md:static md:z-auto transition-transform duration-200 ease-in-out"
+        :class="[
+          isMobileSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0',
+        ]"
+        @close="isMobileSidebarOpen = false"
+        @select="isMobileSidebarOpen = false"
+      />
 
       <!-- Center Column: Active Chat Stream & Composer -->
       <main class="flex-1 flex flex-col h-full bg-bg-app min-w-0 overflow-hidden">
         <!-- Center Header -->
-        <header class="p-3 border-b border-border bg-panel flex items-center justify-between gap-3 shrink-0 select-none">
-          <div v-if="chatStore.activeConversation" class="flex items-center gap-2.5 min-w-0">
-            <h1 class="text-sm font-semibold text-text truncate">
-              {{ chatStore.activeConversation.title }}
-            </h1>
+        <header class="p-2.5 sm:p-3 border-b border-border bg-panel flex items-center justify-between gap-2 sm:gap-3 shrink-0 select-none">
+          <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <!-- Mobile Sidebar Drawer Toggle Button -->
+            <button
+              type="button"
+              class="md:hidden min-w-[44px] min-h-[44px] -ml-1 p-2 rounded-lg hover:bg-panel-hover text-text-muted hover:text-text flex items-center justify-center cursor-pointer transition-colors shrink-0"
+              title="打开任务列表"
+              aria-label="打开任务列表"
+              @click="isMobileSidebarOpen = true"
+            >
+              <Menu class="w-5 h-5" />
+            </button>
 
-            <HqBadge size="sm" variant="info" class="text-[10px] shrink-0">
-              {{ getSceneLabel(chatStore.activeConversation.sceneId) }}
-            </HqBadge>
+            <div v-if="chatStore.activeConversation" class="flex items-center gap-2 min-w-0">
+              <h1 class="text-sm font-semibold text-text truncate">
+                {{ chatStore.activeConversation.title }}
+              </h1>
 
-            <HqBadge v-if="chatStore.isActiveConversationArchived" size="sm" variant="neutral" class="text-[10px] shrink-0">
-              已归档
-            </HqBadge>
+              <HqBadge size="sm" variant="info" class="text-[10px] shrink-0">
+                {{ getSceneLabel(chatStore.activeConversation.sceneId) }}
+              </HqBadge>
 
-            <div class="hidden md:flex items-center gap-1 text-xs text-text-muted shrink-0">
-              <FolderGit2 class="w-3.5 h-3.5" />
-              <span class="truncate">
-                {{ chatStore.workspaces.find((w) => w.id === chatStore.activeConversation?.workspaceId)?.name }}
-              </span>
+              <HqBadge v-if="chatStore.isActiveConversationArchived" size="sm" variant="neutral" class="text-[10px] shrink-0">
+                已归档
+              </HqBadge>
+
+              <div class="hidden md:flex items-center gap-1 text-xs text-text-muted shrink-0">
+                <FolderGit2 class="w-3.5 h-3.5" />
+                <span class="truncate">
+                  {{ chatStore.workspaces.find((w) => w.id === chatStore.activeConversation?.workspaceId)?.name }}
+                </span>
+              </div>
+            </div>
+
+            <div v-else class="text-xs text-text-muted font-medium truncate">
+              未选择对话
             </div>
           </div>
 
-          <div v-else class="text-xs text-text-muted font-medium">
-            未选择对话
-          </div>
-
-          <!-- Drawer Toggle -->
-          <div class="flex items-center gap-1.5 shrink-0">
+          <!-- Actions & Drawer Toggle -->
+          <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
             <HqButton
               size="sm"
               variant="primary"
               title="新建任务"
+              class="min-h-[44px] min-w-[44px] px-2.5 sm:px-3 flex items-center justify-center"
               @click="sidebarRef?.openCreateModal()"
             >
-              <Plus class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">新建任务</span>
+              <Plus class="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+              <span class="hidden sm:inline ml-1">新建任务</span>
             </HqButton>
 
             <HqDropdown
@@ -265,8 +304,9 @@ async function restoreActiveConversation() {
             >
               <button
                 type="button"
-                class="p-1.5 rounded-lg hover:bg-panel-hover text-text-muted hover:text-text transition-colors"
+                class="min-w-[44px] min-h-[44px] p-2 rounded-lg hover:bg-panel-hover text-text-muted hover:text-text transition-colors flex items-center justify-center cursor-pointer"
                 title="更多任务操作"
+                aria-label="更多任务操作"
               >
                 <MoreHorizontal class="w-4 h-4" />
               </button>
@@ -274,8 +314,9 @@ async function restoreActiveConversation() {
 
             <button
               type="button"
-              class="p-1.5 px-2 rounded-lg hover:bg-panel-hover text-text-muted hover:text-text transition-colors flex items-center gap-1.5 text-xs cursor-pointer"
+              class="min-w-[44px] min-h-[44px] p-2 px-2.5 rounded-lg hover:bg-panel-hover text-text-muted hover:text-text transition-colors flex items-center justify-center gap-1.5 text-xs cursor-pointer"
               :title="isDrawerOpen ? '收起详情抽屉' : '展开详情抽屉'"
+              aria-label="执行详情"
               @click="isDrawerOpen = !isDrawerOpen"
             >
               <PanelRightClose v-if="isDrawerOpen" class="w-4 h-4 text-primary" />
@@ -396,9 +437,17 @@ async function restoreActiveConversation() {
         />
       </main>
 
+      <!-- Mobile backdrop for RunSnapshotDrawer -->
+      <div
+        v-if="isDrawerOpen"
+        class="fixed inset-0 bg-black/50 backdrop-blur-xs z-40 md:hidden transition-opacity"
+        @click="isDrawerOpen = false"
+      />
+
       <!-- Right Column: Run Snapshot & Artifacts & Roles Drawer -->
       <RunSnapshotDrawer
         v-if="isDrawerOpen"
+        class="fixed inset-y-0 right-0 z-50 md:static md:z-auto shadow-2xl md:shadow-none"
         @close="isDrawerOpen = false"
       />
     </div>
