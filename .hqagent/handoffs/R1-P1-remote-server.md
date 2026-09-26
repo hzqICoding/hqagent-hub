@@ -5,13 +5,15 @@ scope_declared: [apps/server/**, .hqagent/handoffs/R1-P1-remote-server.md]
 scope_touched: [.hqagent/handoffs/R1-P1-remote-server.md]
 build: fail
 tests: fail
-commit: none
+commit: dcf7ee699a3914561ee6715ba41db7d5bf229d46
 open_questions: 1
 ---
 
 # R1-P1 开工前契约冲突回执
 
 本轮未实现服务端。任务明确要求“遇到契约与需求矛盾，停下写 needs-decision，不要按猜测实现”，因此在确认下面的冲突后停止实现，只提交本回执。`build: fail`、`tests: fail` 表示交付验收尚未通过，不表示构建或 pytest 已运行并报错；没有应用代码、构建结果或测试通过数可报告。
+
+头部 commit 指首次记录冲突及复现证据的提交；本次补录提交号不代表新增服务端实现。该提交后 `git log -1 --format=%B` 实际输出为 `docs(remote): record pairing response acceptance conflict`，已自查无署名；`git diff --check` 通过，工作区干净。
 
 ## 工作区与已确认约束
 
