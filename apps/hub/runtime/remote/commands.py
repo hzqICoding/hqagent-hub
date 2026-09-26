@@ -53,6 +53,9 @@ class CommandBridge:
     def __init__(self, repository, chat, link):
         self.repo, self.chat, self.link = repository, chat, link
         self.lock = asyncio.Lock()
+        self._executions = {}
+        self._run_locks = {}
+        self._run_pending = {}
 
     def policy(self):
         policy = self.repo.get("policy") or {"revision": 1, "blockedActions": []}
@@ -89,8 +92,72 @@ class CommandBridge:
                 receipt, gaps = self._record_rejection(frame, error.code, registered)
                 execute = False
             if execute:
+                # Task creation only: execution cannot start until admission has
+                # yielded, after this lock is released and the receipt returned.
+                self._schedule(frame, self.repo.inbox(frame["commandId"])["run_id"])
+        return receipt, gaps
+
+    @staticmethod
+    def _execution_key(frame):
+        return frame["expectedWorkerStoreId"], frame["targetWorkerId"], frame["commandId"]
+
+    def _schedule(self, frame, run_id):
+        key = self._execution_key(frame)
+        existing = self._executions.get(key)
+        if existing is not None and not existing.done():
+            return
+        lock = self._run_locks.setdefault(run_id, asyncio.Lock())
+        self._run_pending[run_id] = self._run_pending.get(run_id, 0) + 1
+        job = asyncio.create_task(self._execute_serialized(frame, run_id, lock))
+        self._executions[key] = job
+
+        def finished(task):
+            if self._executions.get(key) is task:
+                self._executions.pop(key, None)
+            self._run_pending[run_id] -= 1
+            if self._run_pending[run_id] == 0:
+                self._run_pending.pop(run_id)
+                self._run_locks.pop(run_id, None)
+            # Never let native exception text reach asyncio's unhandled-task log.
+            # The runner reports observable failures using durable result events.
+            if not task.cancelled():
+                task.exception()
+        job.add_done_callback(finished)
+
+    async def _execute_serialized(self, frame, run_id, lock):
+        async with lock:
+            if not self._same_binding(frame) or self.repo.get("link")["view"]["state"] != "paired":
+                return
+            row = self.repo.inbox(frame["commandId"])
+            if row is None or row["status"] != "admitted":
+                return
+            try:
                 await self._execute(frame)
-            return receipt, gaps
+            except asyncio.CancelledError:
+                # Executing remains executing; recover reports unknown delivery.
+                # A task cancelled while awaiting this run lock stays admitted.
+                raise
+            except Exception:
+                self._report_unknown(frame, run_id)
+
+    def _report_unknown(self, frame, run_id):
+        if not self._same_binding(frame):
+            return
+        try:
+            record = self.chat.repository.run_record(run_id)
+            ref = {"runId": run_id, **({"executionTaskId": record["task_id"]} if record["task_id"] else {})}
+            self._finish(frame, ref, control_result({}, {}, fallback="delivery_unknown"), record["status"])
+        except Exception:
+            # Lost execution references/persistence are store-level problems,
+            # not evidence that a native operation was rejected or stopped.
+            self.repo.freeze("REMOTE_STORE_CHANGED")
+
+    async def cancel_executions(self):
+        jobs = tuple(self._executions.values())
+        for job in jobs:
+            job.cancel()
+        if jobs:
+            await asyncio.gather(*jobs, return_exceptions=True)
 
     def _scope_key(self, prefix, value):
         return prefix + request_hash({"store": self.repo.get("identity")["store"],
@@ -360,6 +427,19 @@ class CommandBridge:
                 return
             action = "cancel" if frame["type"] == "command.withdraw" else frame["type"].split(".")[1]
             prior_result = control_result(before, before)
+            if action in {"resume", "retry"}:
+                with self.repo.database.locked_connection() as db:
+                    unknown = db.execute("SELECT 1 FROM remote_inbox WHERE worker_id=? AND run_id=? "
+                        "AND status='unconfirmed' AND command_id<>? LIMIT 1",
+                        (frame["targetWorkerId"], record["run_id"], frame["commandId"])).fetchone()
+                if unknown:
+                    # Serial execution must not turn an interrupted predecessor
+                    # into permission to resume/retry its unverified effects.
+                    result = {**prior_result, "outcome": "unconfirmed", "executionMayStillBeRunning": True,
+                        "evidence": "recovery_flag" if prior_result["orphanProcessIds"] else "delivery_unknown",
+                        "reason": "该轮此前的控制投递仍未确认，需要本机核对"}
+                    self._finish(frame, ref, result, record["status"])
+                    return
             if action in {"resume", "retry"} and (before.get("evidenceAvailable") is False or before.get("recoveryRequired") or before.get("unresolvedCancellation") or prior_result["evidence"] in {"adapter_refused", "recovery_flag", "missing_execution_handle"}):
                 self._finish(frame, ref, {**prior_result, "outcome": "unconfirmed", "evidence": "recovery_flag"}, record["status"])
                 return
@@ -408,19 +488,22 @@ class CommandBridge:
 
     async def recover(self):
         """Resume admission only; never re-issue a possibly delivered control."""
-        link = self.repo.get("link")["view"]
-        if link["state"] not in {"paired", "frozen"}:
-            return
-        with self.repo.database.locked_connection() as db:
-            rows = [dict(r) for r in db.execute("SELECT * FROM remote_inbox WHERE worker_id=? AND status IN ('executing','admitted')", (link["workerId"],))]
-        for item in rows:
-            frame = json.loads(item["command_json"])
-            if item["status"] == "admitted" and link["state"] == "paired":
-                await self._execute(frame)
-            elif item["status"] == "executing":
-                record = self._bound_run(frame)
-                ref = {"runId": record["run_id"], **({"executionTaskId": record["task_id"]} if record["task_id"] else {})}
-                self._finish(frame, ref, control_result({}, {}, fallback="delivery_unknown"), record["status"])
+        async with self.lock:
+            link = self.repo.get("link")["view"]
+            if link["state"] not in {"paired", "frozen"}:
+                return
+            with self.repo.database.locked_connection() as db:
+                rows = [dict(r) for r in db.execute("SELECT * FROM remote_inbox WHERE worker_id=? "
+                    "AND status IN ('executing','admitted') ORDER BY rowid", (link["workerId"],))]
+            for item in rows:
+                frame = json.loads(item["command_json"])
+                live = self._executions.get(self._execution_key(frame))
+                if live is not None and not live.done():
+                    continue
+                if item["status"] == "admitted" and link["state"] == "paired":
+                    self._schedule(frame, item["run_id"])
+                elif item["status"] == "executing":
+                    self._report_unknown(frame, item["run_id"])
 
     async def _approval(self, frame, record):
         payload = frame["payload"]

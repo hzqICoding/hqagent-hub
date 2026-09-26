@@ -86,6 +86,7 @@ def test_withdraw_admitted_queued_run_confirms_actual_local_cancellation(tmp_pat
                 row = system.repo.inbox("queued")
                 withdrawal = system.command("withdraw", kind="command.withdraw", payload={"targetCommandId": "queued", "targetConversationSeq": 1})
                 await system.bridge.receive(withdrawal)
+                await until(lambda: system.chat.repository.run_record(row["run_id"])["status"] == "cancelled")
                 assert system.chat.repository.run_record(row["run_id"])["status"] == "cancelled"
                 events = [json.loads(f) for f in system.repo.frames()]
                 result = next(e for e in events if e["type"] == "command.completed" and e.get("commandId") == "withdraw")

@@ -52,6 +52,7 @@ class RemoteWorker:
             self.job.cancel()
             await asyncio.gather(self.job, return_exceptions=True)
             self.job = None
+        await self.bridge.cancel_executions()
         self.state("offline")
 
     async def disconnect(self):
@@ -212,13 +213,18 @@ class RemoteWorker:
                             raise HubError("REMOTE_STORE_CHANGED", "冻结世代禁止命令投递")
                         if frame["type"] not in {"run.submit", "run.pause", "run.resume", "run.cancel", "run.retry", "approval.decide", "command.withdraw", "conversation.skip"}:
                             raise HubError("REMOTE_EPOCH_STALE", "连接中出现非命令握手帧")
-                        queue.put_nowait(frame)
+                        await queue.put(frame)
             jobs = [asyncio.create_task(fn()) for fn in (heartbeat, publish, consume, receive)]
             try:
                 done, _ = await asyncio.wait(jobs, return_when=asyncio.FIRST_COMPLETED)
                 for job in done:
                     job.result()
             finally:
-                for job in jobs:
-                    job.cancel()
-                await asyncio.gather(*jobs, return_exceptions=True)
+                try:
+                    for job in jobs:
+                        job.cancel()
+                    await asyncio.gather(*jobs, return_exceptions=True)
+                finally:
+                    # Keep the existing lost-delivery contract: cancel transport
+                    # control jobs before reconnect recovery, not LocalChat runs.
+                    await self.bridge.cancel_executions()

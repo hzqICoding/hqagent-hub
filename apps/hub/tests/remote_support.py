@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import httpx
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnected
 from protocol.generated.python import (
     AgentResult, ApiEnvelope, RemotePairingChallenge, RemotePairingRequestInput,
     RemotePairingStatusView, RemoteServerOutboundFrame, RemoteWorkerOutboundFrame,
@@ -146,7 +147,9 @@ class FakeRemoteServer:
                             await self.send({"type": "worker.events_ack", "wireRevision": 1,
                                 "connectionId": self.connection_id, "workerId": hello["workerId"],
                                 "position": {"workerStoreId": store, "seq": contiguous}}, ws)
-            except WebSocketDisconnect:
+            except (WebSocketDisconnect, WebSocketDisconnected):
+                # Tests deliberately close a live socket while receipts/acks may
+                # be in flight. Starlette distinguishes closed-send from EOF.
                 pass
             except Exception as error:
                 self.errors.append(error)
