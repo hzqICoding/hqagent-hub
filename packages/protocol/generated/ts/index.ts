@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.3.0' as const
+export const PROTOCOL_VERSION = '0.4.0' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -930,6 +930,18 @@ export interface LocalConnectionCodeView {
   expiresInSeconds: number
 }
 
+/** 任务状态。终态：succeeded / failed / cancelled */
+export type TaskStatus =
+  | 'draft'
+  | 'queued'
+  | 'running'
+  | 'waiting_approval'
+  | 'paused'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'unknown'
+
 export interface LocalConversationView {
   id: string
   title: string
@@ -939,6 +951,11 @@ export interface LocalConversationView {
   updatedAt: Timestamp
   activeRunId?: string
   lastRunId?: string
+  /** Metadata revision. Legacy records are revision 1; message/run updates do not increment this revision. */
+  version?: number
+  /** Archived conversations remain readable. Legacy records default to false. */
+  archived?: boolean
+  lastRunStatus?: TaskStatus
 }
 
 export interface LocalEventPage {
@@ -1045,18 +1062,6 @@ export interface TaskNodeView {
   reviewSourceNodeId?: string
   reviewEvidenceId?: string
 }
-
-/** 任务状态。终态：succeeded / failed / cancelled */
-export type TaskStatus =
-  | 'draft'
-  | 'queued'
-  | 'running'
-  | 'waiting_approval'
-  | 'paused'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
-  | 'unknown'
 
 export interface TaskSummaryView {
   id: string
@@ -1466,6 +1471,13 @@ export interface UpdateDownloadProgressPayload {
 export interface UpdateHealthCheckPayload {
   passed: boolean
   checks: HealthCheckOutcome[]
+}
+
+/** At least one non-null title or archived field is required. Workspace, scene and session associations are immutable. */
+export interface UpdateLocalConversationInput {
+  expectedVersion: number
+  title?: string
+  archived?: boolean
 }
 
 export interface UpdateRollbackPayload {

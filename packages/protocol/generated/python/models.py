@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PROTOCOL_VERSION = "0.3.0"
+PROTOCOL_VERSION = "0.4.0"
 
 
 class _Base(BaseModel):
@@ -859,6 +859,18 @@ class LocalConnectionCodeView(_Base):
     expires_in_seconds: int = Field(alias="expiresInSeconds")
 
 
+class TaskStatus(StrEnum):
+    DRAFT = "draft"
+    QUEUED = "queued"
+    RUNNING = "running"
+    WAITING_APPROVAL = "waiting_approval"
+    PAUSED = "paused"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
+
+
 class LocalConversationView(_Base):
     id: str = Field(alias="id")
     title: str = Field(alias="title")
@@ -868,6 +880,9 @@ class LocalConversationView(_Base):
     updated_at: Timestamp = Field(alias="updatedAt")
     active_run_id: str | None = Field(default=None, alias="activeRunId")
     last_run_id: str | None = Field(default=None, alias="lastRunId")
+    version: int | None = Field(default=None, alias="version")
+    archived: bool | None = Field(default=None, alias="archived")
+    last_run_status: TaskStatus | None = Field(default=None, alias="lastRunStatus")
 
 
 class LocalEventPage(_Base):
@@ -969,18 +984,6 @@ class TaskNodeView(_Base):
     review_verdict: Literal["passed", "changes_requested", "insufficient_evidence"] | None = Field(default=None, alias="reviewVerdict")
     review_source_node_id: str | None = Field(default=None, alias="reviewSourceNodeId")
     review_evidence_id: str | None = Field(default=None, alias="reviewEvidenceId")
-
-
-class TaskStatus(StrEnum):
-    DRAFT = "draft"
-    QUEUED = "queued"
-    RUNNING = "running"
-    WAITING_APPROVAL = "waiting_approval"
-    PAUSED = "paused"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    UNKNOWN = "unknown"
 
 
 class TaskSummaryView(_Base):
@@ -1351,6 +1354,14 @@ class UpdateDownloadProgressPayload(_Base):
 class UpdateHealthCheckPayload(_Base):
     passed: bool = Field(alias="passed")
     checks: list[HealthCheckOutcome] = Field(alias="checks")
+
+
+class UpdateLocalConversationInput(_Base):
+    """At least one non-null title or archived field is required. Workspace, scene and session associations are immutable."""
+
+    expected_version: int = Field(alias="expectedVersion")
+    title: str | None = Field(default=None, alias="title")
+    archived: bool | None = Field(default=None, alias="archived")
 
 
 class UpdateRollbackPayload(_Base):
