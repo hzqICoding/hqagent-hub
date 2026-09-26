@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HQAgent N0 Local Chat
-  version: 0.3.0
+  version: 0.4.0
   description: N0 additive contract. Responses use the existing ApiEnvelope; response
     schema below describes data, see x-envelope.
 x-envelope: ../schema/envelope.json#/$defs/ApiEnvelope
@@ -181,6 +181,42 @@ paths:
           type: string
       security:
       - localSession: []
+  /api/v2/conversations/{conversationId}:
+    patch:
+      operationId: updateLocalConversation
+      description: Rename or archive/restore a conversation with metadata version checking. At least one non-null title or archived field is required. Title is trimmed and must remain nonempty. Archiving is rejected while any run is queued, running, waiting_approval or paused; it never cancels work. Archived conversations remain readable but cannot accept messages or execution retry/resume until restored. Metadata edits preserve all task/session associations. List includes archived conversations; old clients may ignore optional fields. Matching Idempotency-Key replays the original response without incrementing revision again.
+      security:
+      - localSession: []
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-chat.json#/$defs/UpdateLocalConversationInput
+      responses:
+        '200':
+          description: Updated conversation; version increments for a successful metadata edit. lastRunStatus reflects latest actual run/task state and is absent if no runs exist.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalConversationView
+        '409':
+          description: Version mismatch or conversation has unfinished work; ApiEnvelope error CONFLICT. Same key with different input yields IDEMPOTENCY_MISMATCH.
+        '422':
+          description: Empty patch, null field or invalid/blank title; ApiEnvelope error VALIDATION_FAILED.
   /api/v2/conversations/{conversationId}/messages:
     get:
       operationId: listLocalMessages
