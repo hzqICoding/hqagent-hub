@@ -142,3 +142,18 @@ codex 有自己的默认署名行为。
 用户指定右上角详情左侧新建任务，输入框去除New/Continue，当前任务默认继续。主代理在chat-session-state负责store及行为回归，源3841a5e；复用/root/planner_acceptance_ui（gpt-5.6-sol/medium），独立chat-session-ui负责pages/chat组件与页面测试。协议和后端不改。可用浏览器枚举为空，采用DOM组件、类型及构建验证，不宣称可视浏览器验收。
 
 本轮完成：UI3170cfc→1937277，Store3841a5e→571710c；前端176 tests通过，静态热部署不重启Worker。/root/planner_acceptance_ui已完成可复用。验收见[连续任务对话交互](reviews/N0-continuous-chat-ui.md)。
+
+
+## 2026-09-26 项目与多任务工作台
+
+旧子代理不在当前list_agents清单，仅root在线，故按用户授权新建两条线。最多3个（含root）。
+
+|职责|canonical task|模型/等级|worktree|状态|
+|---|---|---|---|---|
+|协议、整合验收|/root|宿主管理|vnext-integration|进行中|
+|对话metadata与归档后端|/root/project_backend|gpt-5.6-sol/high|project-chat-backend|进行中|
+|项目分组与任务草稿前端|/root/project_frontend|gpt-5.6-sol/high|project-chat-frontend|进行中|
+
+新子代理工具仅返回canonical task，未提供独立UUID，不以父session身份冒充。基线d4379b0，协议前置362d3ba（0.4.0）。禁止访问业务项目或并行操作正式服务；各自在独立worktree，主代理负责部署。
+
+本轮完成：project_backend f781fe6→496420d；project_frontend 3c49829→0da7eb8、测试补丁0df440b→5072c07；主代理回包隔离da61373→47e0a75。两子代理均已完成，本线程内可followup复用，跨客户端恢复未验证。后端190、前端190 tests通过；协议0.4.0，160类型12Fixtures；真实HTTP/旧记录保留/静态hash验收完成。详见[项目工作台验收](reviews/N0-project-workbench.md)。
