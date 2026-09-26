@@ -251,6 +251,7 @@ class LocalChatRepository:
         if version < 1:
             raise HubError("INTERNAL", "对话元数据版本无效", detail={"version": version})
         return value.model_copy(update={
+            "authority": value.authority or "local",
             "version": version,
             "archived": bool(value.archived),
             "last_run_id": run_id or value.last_run_id,
@@ -306,6 +307,7 @@ class LocalChatRepository:
 
     def update_conversation(self, conversation_id: str, value: UpdateLocalConversationInput,
                             key: str) -> LocalConversationView:
+        self.assert_local_authority(conversation_id)
         supplied = value.model_fields_set & {"title", "archived"}
         title = value.title.strip() if value.title is not None else None
 
@@ -360,6 +362,16 @@ class LocalChatRepository:
         if self.conversation(conversation_id).archived:
             raise HubError("CONFLICT", "对话已归档，请先恢复后再执行")
 
+    def assert_local_authority(self, conversation_id: str) -> None:
+        if str(self.conversation(conversation_id).authority) == "remote":
+            raise HubError("CONVERSATION_AUTHORITY_MISMATCH", "远程对话只能通过远程服务提交命令")
+
+    def assert_local_task(self, task_id: str) -> None:
+        with self.database.locked_connection() as db:
+            rows = db.execute("SELECT conversation_id FROM local_runs WHERE task_id=?", (task_id,)).fetchall()
+        for row in rows:
+            self.assert_local_authority(row[0])
+
     def unfinished_runs(self, conversation_id: str) -> list[dict]:
         with self.database.locked_connection() as db:
             exists = db.execute(
@@ -376,7 +388,11 @@ class LocalChatRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def enqueue(self, conversation_id: str, value: SendLocalMessageInput, key: str) -> LocalMessageReceipt:
+    def enqueue(self, conversation_id: str, value: SendLocalMessageInput, key: str, *,
+                transaction: Transaction | None = None) -> LocalMessageReceipt:
+        # Only the internal remote admission path supplies a transaction.
+        if transaction is None:
+            self.assert_local_authority(conversation_id)
         if not value.text.strip() or len(value.text) > 32000:
             raise HubError("VALIDATION_FAILED", "消息必须为1到32000字符")
         if not value.client_message_id or len(value.client_message_id) > 160:
@@ -413,6 +429,8 @@ class LocalChatRepository:
                     "messageId": message_id, "runId": run_id, "status": "queued", "duplicate": False}
             tx.connection.execute("INSERT INTO local_commands VALUES(?,?,?,?)", (alias_route, value.client_message_id, digest, json.dumps(receipt, ensure_ascii=False)))
             return receipt
+        if transaction is not None:
+            return LocalMessageReceipt.model_validate(create(transaction))
         response, duplicate = self.command(f"messages:{conversation_id}", key, value.model_dump(mode="json"), create)
         response["duplicate"] = duplicate or response.get("duplicate", False)
         return LocalMessageReceipt.model_validate(response)
