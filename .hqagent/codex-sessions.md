@@ -157,3 +157,10 @@ codex 有自己的默认署名行为。
 新子代理工具仅返回canonical task，未提供独立UUID，不以父session身份冒充。基线d4379b0，协议前置362d3ba（0.4.0）。禁止访问业务项目或并行操作正式服务；各自在独立worktree，主代理负责部署。
 
 本轮完成：project_backend f781fe6→496420d；project_frontend 3c49829→0da7eb8、测试补丁0df440b→5072c07；主代理回包隔离da61373→47e0a75。两子代理均已完成，本线程内可followup复用，跨客户端恢复未验证。后端190、前端190 tests通过；协议0.4.0，160类型12Fixtures；真实HTTP/旧记录保留/静态hash验收完成。详见[项目工作台验收](reviews/N0-project-workbench.md)。
+
+
+## 2026-09-26 自定义场景与角色模板第一版
+
+用户已确认工作台能运行并继续下一步。复用/root/project_backend、/root/project_frontend（均gpt-5.6-sol/high，工具未提供独立UUID），最多3个含root。前后端分别在custom-scenes-backend/custom-scenes-frontend独立worktree，从80f845f起，协议前置94b75bc(0.5.0)。主代理负责协议、边界审查、实际接口/执行验收与部署。角色模板引用四个已验证基础权限类型，runtime不注册任意新权限；顺序工作流，每基础类型最多一次，不实现并行DAG或循环。进行中。
+
+本批次已完成：backend a3b6168→4e1157f；frontend 2956cdd/260c7f6→bfc39f8/55012b0；主API验证修复620c98b→3e0d99e。全量backend199/frontend201通过，真实Claude自定义场景V1副本及同native session继续通过，schema4→5旧记录完整保留。两子会话已完成，可followup复用；跨客户端恢复未验证。回执：[自定义场景验收](reviews/N0-custom-scenes.md)。
