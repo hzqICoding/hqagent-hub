@@ -2,10 +2,10 @@
 wp: R1-P1
 status: done
 scope_declared: [apps/server/**, .hqagent/handoffs/R1-P1-remote-server.md]
-scope_touched: ["apps/server/.gitignore", "apps/server/Caddyfile.example", "apps/server/Dockerfile", "apps/server/Dockerfile.dockerignore", "apps/server/README.md", "apps/server/pyproject.toml", "apps/server/requirements.txt", "apps/server/scripts/smoke.py", "apps/server/server/__init__.py", "apps/server/server/__main__.py", "apps/server/server/app.py", "apps/server/server/cli.py", "apps/server/server/common.py", "apps/server/server/config.py", "apps/server/server/events.py", "apps/server/server/repository.py", "apps/server/server/security.py", "apps/server/server/service.py", "apps/server/server/wire.py", "apps/server/server/worker.py", "apps/server/tests/conftest.py", "apps/server/tests/test_boundaries.py", "apps/server/tests/test_commands_events.py", "apps/server/tests/test_controls_storage.py", "apps/server/tests/test_core.py", "apps/server/tests/test_protocol.py", "apps/server/tests/test_security.py", ".hqagent/handoffs/R1-P1-remote-server.md"]
+scope_touched: [".hqagent/handoffs/R1-P1-remote-server.md", "apps/server/.gitignore", "apps/server/Caddyfile.example", "apps/server/Dockerfile", "apps/server/Dockerfile.dockerignore", "apps/server/README.md", "apps/server/pyproject.toml", "apps/server/requirements.txt", "apps/server/scripts/smoke.py", "apps/server/server/__init__.py", "apps/server/server/__main__.py", "apps/server/server/app.py", "apps/server/server/cli.py", "apps/server/server/common.py", "apps/server/server/config.py", "apps/server/server/events.py", "apps/server/server/repository.py", "apps/server/server/security.py", "apps/server/server/service.py", "apps/server/server/wire.py", "apps/server/server/worker.py", "apps/server/tests/conftest.py", "apps/server/tests/test_boundaries.py", "apps/server/tests/test_commands_events.py", "apps/server/tests/test_controls_storage.py", "apps/server/tests/test_core.py", "apps/server/tests/test_delivery_wakeup.py", "apps/server/tests/test_protocol.py", "apps/server/tests/test_retention.py", "apps/server/tests/test_security.py", "apps/server/tests/test_signed_cursors.py"]
 build: pass
 tests: pass
-commit: a1979b1d8dd2766734ac728b8c8d87e7b4558ed9
+commit: aed88bb88641d88bcecd5f1291b5c1cc39494116
 open_questions: 0
 ---
 
@@ -15,16 +15,41 @@ open_questions: 0
 
 实现位于 apps/server，覆盖 remote-hub.v2 的 26 个 HTTP 操作与 `/ws/v2/worker`。只认证、绑定、排队和转发；没有模型调用、模型凭据、模型配置下发、订阅或安装功能。执行、控制实际结果和审批实际消费仍属于 P2 Worker。
 
-头部 commit 是应用代码、测试和部署文件的实现提交。本回执与三个文件末尾空行整理在后续元数据提交完成，避免自引用哈希。实现提交后 `git log -1 --format=%B` 实际输出：
+头部 commit 是包含本轮 F1–F4 返修的最终应用/文档提交，本回执另作元数据提交，避免自引用哈希。初始实现为 a1979b1，本次保留原有安全边界与 68 项测试断言。最终主题提交后 `git log -1 --format=%B` 实际输出：
 
 ```text
-feat(server): implement authenticated remote relay and durable worker delivery
+docs(server): document retention and trusted proxy deployment limits
 ```
 
 - **Q1 已关闭**：主代理明确允许短码仅在面向发起 Worker 的 RemotePairingChallenge，以及原 Worker 轮询时契约要求的字段中返回。当前 0.6.1 轮询 DTO 不含短码，所以实现仅在创建挑战及合法幂等重放中返回。浏览器、其它 Worker/owner、日志和错误均不返回。数据库只保存短码 HMAC 校验值；重放用请求再次提供的同一 secret 和 challenge ID 重建短码，数据库没有明文短码或可逆设备凭据。
 - **D42 已适配**：主代理合入的协议基线是 `1e588b4`（冻结协议 0.6.1）。先读取有界握手中的 wireRevision，再选对应生成 DTO 校验。首次修订支持 `[1]`；hello 的 semver 仅诊断，不比较包版本是否相等。hello_rejected 带 supportedWireRevisions。旧 0.6.0 草稿不会自动当修订 1，不改写已确认事件原内容。
 - **D43 范围**：本机 v1 配对/解绑属于 P2，没有在服务端实现；没有添加设备 Bearer 自撤销授权。
-- 上轮 `0xC0000142` 是已确认的内存不足环境问题。本轮首条 Get-Location 成功后才继续，保留已有模块和主代理的协议合并；没有安装依赖、联网或部署。
+- 先前 `0xC0000142` 是已确认的内存不足环境问题。本轮首条 Get-Location 成功，未再出现该错误；串行验证，未安装依赖、联网或部署。
+
+## F1–F4 审核返修（2026-09-26）
+
+本轮仅在原分支 feat/remote-server 修改所需模块和新增测试；原有测试文件及断言未改。相对 0975c7f，返修涉及 10 个应用/测试/README 文件及本回执。头部 scope_touched 是整个 R1-P1 相对协议合入基线的累计范围。
+
+| 项目 | 实现和对应验证 |
+| --- | --- |
+| F1 无状态签名游标 | Service.cursor/position 使用 security.mac，签名绑定 owner、scope、position、expiresAt，事件游标另含签名保护的清理世代。owner 不以明文写入 token。签发与校验不再插入 records；scope/owner/验签失败为 REMOTE_CURSOR_INVALID，TTL 到期为 REMOTE_CURSOR_EXPIRED。test_signed_cursors.py 验证反复轮询及分页不累积行、篡改、跨 owner/scope、TTL 和不依赖仓储的签名验证。旧随机游标不迁移，由客户端重新取快照 |
+| F2 提交后唤醒与过滤 | UnitOfWork.after_commit 按 (owner, worker) 合并回调，提交且释放仓储锁后才唤醒；回滚丢弃。每个连接持有 asyncio.Event 和常驻接收任务，同时等待接收/唤醒/固定 5 秒兜底，移除 100ms 轮询。固定兜底截止时间不因持续心跳后移。入队、withdraw/skip、撤销、冻结和 gap 补传唤醒对应连接；保留 45 秒离线、单连接隔离、每批最多 16 帧。仓储新增 command_status/due_at/outbox_done 索引列，expire 只解码指定 Worker queued 且到期命令，投递不解码 done 历史。test_delivery_wakeup.py 验证空闲 0.65s/0.4s 期间最多一次初始化事务、入队到收帧 <1s、回滚不唤醒、每事务合并、历史过滤、丢通知兜底和持续心跳不推迟兜底 |
+| F3 保留期与恢复 | HQREMOTE_BROWSER_RETENTION_SECONDS 默认 604800（7 天），必须正整数。后台每 5 秒执行 Service.maintain，按索引清理到期 session/rate、旧 cursor 行及超期 browser_outbox；HTTP 路径不执行保留期清理。browser_retention 每 owner 一行 pruned_through/generation，清理和水位同事务；旧边界/被越过位置返回 410，事件全空仍保持 tail，新 snapshot 游标可用。Inbox、命令、消息、skip、投影、幂等记录不删除。test_retention.py 验证全空/部分清理、旧游标 410、新快照续拉、owner 隔离、定时运行、session/rate 清理、业务去重不丢、旧 schema 迁移与配置默认/覆盖；认证重放遇到已清理 session 仍返回泛化 401 |
+| F4 运维限制 | README「已知限制」明确 SQLite 在事件循环线程同步执行，R1 单进程低负载可接受，但慢磁盘/大事务/迁移/首轮清理会阻塞。迁移方向是完整仓储事务交专用 DB 线程/执行器，再按需要改 PostgreSQL/异步池和跨实例栅栏。Docker 说明区分 Linux host networking 与 bridge，给出 network inspect、无凭据 TCP peer 实测方法，HQREMOTE_PROXY_IPS 只填实际代理来源，不用 * 或整网段；解释 HTTPS 判定失败和伪造 X-Forwarded-For 风险。Nginx 示例显式重设两个转发头。文档步骤未实际部署执行 |
+
+迁移为 schema 1→2（候选记录过滤列/索引）→3（认证过期、browser_outbox 时间索引、owner 清理水位）。旧命令和 Inbox 正文不重写。清理水位是每 owner 的有界状态，不是每次签发游标新增一行。
+
+F2 首轮回归曾暴露 TestClient 关闭连接时的子任务取消竞态，已通过回收接收/唤醒任务修复，未修改既有断言。另补测试确保持续心跳也不延后兜底投递。最终全量结果见下节。
+
+按主题提交，每次均已执行 git log -1 --format=%B 自查；真实输出依次为：
+
+```text
+2df89a1  fix(server): replace stored browser cursors with scoped signatures
+9f79052  perf(server): wake worker delivery after committed changes
+468df9f  fix(server): preserve fallback cadence during worker traffic
+0bca390  feat(server): prune expired authentication and browser event records
+aed88bb  docs(server): document retention and trusted proxy deployment limits
+```
 
 ## 模块与表结构
 
@@ -42,14 +67,15 @@ feat(server): implement authenticated remote relay and durable worker delivery
 | scripts/smoke.py | 真实进程冒烟、stdin 账号口令、契约假 Worker、输出脱敏检查和进程退出 |
 | Dockerfile、Dockerfile.dockerignore、Caddyfile.example、README.md | 自部署、上下文白名单、TLS 代理、配置/初始化/备份/升级/联调说明 |
 
-schema=1，与包版本和 wireRevision 分离；SQLite 使用 WAL、FULL synchronous、busy timeout。业务只能通过 UnitOfWork 访问，不传 SQL。
+schema=3，与包版本和 wireRevision 分离；SQLite 使用 WAL、FULL synchronous、busy timeout。业务只能通过 UnitOfWork 访问，不传 SQL。
 
 | 表 | 分区与内容 |
 | --- | --- |
-| auth | 独立认证暂存：账号 scrypt 盐/校验值、会话失效信息、认证重放意图 HMAC、credential verifier→owner/worker、挑战/短码校验索引、限速桶。未认领挑战及认证前限速没有 owner，属于契约允许的认证暂存，不是业务设备 |
-| records | owner 非空检查，唯一 `(owner, kind, id)`，额外 worker/store/parent 关联列及索引。kind 包含 device/catalog/conversation/message/command/outbox/run/run-ref/approval/event-position/cursor/idempotency/message-intent/approval-intent；读取都传 owner，并在业务层核对 worker/store/conversation |
+| auth | 独立认证暂存：账号 scrypt 盐/校验值、会话失效信息及认证过期索引、认证重放意图 HMAC、credential verifier→owner/worker、挑战/短码校验索引、限速桶。未认领挑战及认证前限速没有 owner，属于契约允许的认证暂存，不是业务设备 |
+| records | owner 非空检查，唯一 `(owner, kind, id)`，额外 worker/store/parent 关联列，以及 command_status/due_at/outbox_done 过滤列及索引。kind 包含 device/catalog/conversation/message/command/outbox/run/run-ref/approval/event-position/idempotency/message-intent/approval-intent；读取都传 owner，并在业务层核对 worker/store/conversation |
 | inbox | owner/worker/store/event_id、不可变正文、first_seq/last_seq/applied；事件 ID、store 序号与覆盖区间冲突检查 |
-| browser_outbox | owner、服务端独立 ordinal 与浏览器事件；owner 索引分页。cursor 为 owner 范围内随机不透明 token，作用域、位置和 TTL 存 records，不向浏览器暴露数字位置 |
+| browser_retention | 每 owner 一行 pruned_through/generation，随裁剪事务更新；tail 不回退，旧位置要求快照恢复 |
+| browser_outbox | owner、服务端独立 ordinal 与浏览器事件；owner 索引分页。带 recorded_at 保留期索引；cursor 是 owner/scope/位置/TTL/清理世代签名的无状态不透明 token，不存 records |
 
 Command 保存不可变线路帧和原始 202 receipt，派发状态另存；用户消息、Command、conversationSeq、Outbox、幂等记录一起提交。run-ref 只存 Worker 给出的真实引用，不生成执行状态；只有 run.state_changed 创建 Run 投影。已有 Worker 引用即使尚无状态投影，仍可路由取消等控制。
 
@@ -75,7 +101,7 @@ Command 保存不可变线路帧和原始 202 receipt，派发状态另存；用
 - 事务内不等待网络。dispatching/sent 只表示可能发出，不表示接单；断线重传不改变 ID、序号、内容和 expiresAt。
 - 密钥使用与账号认证隔离：只有标准库 scrypt/secrets/HMAC，无清单外依赖；设备 secret 只留不可逆验证值。短码重放必须再次提供 Worker secret。
 - 浏览器仅 /events 轮询，无另加推送通道。所有 cursor owner/作用域/TTL 绑定；快照有界，更多历史走分页。
-- 不提供远程 force-unfreeze。不自动删除关键 Inbox/skip/浏览器业务历史；README 写明磁盘监测与备份保留，不能为清理空间删待核对事实。
+- 不提供远程 force-unfreeze。浏览器 Outbox 按可配置保留期清理，通过快照恢复；Inbox、命令、消息、skip、投影与去重事实仍不删除。SQLite 同步调用与后续迁移方向已写入 README「已知限制」。
 - 没有实际 P2/P3 服务参与联调，测试使用按生成 DTO 通信的假 Worker。Dockerfile/Caddyfile 已交付，但没有拉镜像、构建 Docker 镜像、申请证书或部署；这些未运行项没有声称通过。真实 uvicorn 已跑通。
 - 根 workspace/CI 未改；Integrator 如需接入，使用 README 的串行 pytest、协议回归命令。没有修改其它应用、协议、docs 或共享根文件。
 
@@ -86,7 +112,7 @@ Command 保存不可变线路帧和原始 202 receipt，派发状态另存；用
 ```powershell
 $env:TEMP=(Join-Path $PWD '.tmp')
 $env:TMP=$env:TEMP
-../../.venv/Scripts/python.exe -B -m pytest -q --basetemp=.tmp/final-verified -p no:cacheprovider
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp=.tmp/review-final
 ```
 
 退出码 0。以下为真实输出末尾（进度点由工具分两次返回，此处仅列 warning 与统计）：
@@ -98,12 +124,12 @@ $env:TMP=$env:TEMP
     from starlette.testclient import TestClient as TestClient  # noqa
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-68 passed, 1 warning in 30.75s
+85 passed, 1 warning in 33.64s
 ```
 
 没有放宽/删除既有测试断言。warning 原样保留，未为去掉提示安装 httpx2。未开 pytest 并行 worker，验证串行。TEMP/TMP/--basetemp 都在 worktree 内被忽略的 .tmp；本次没有再触发默认临时目录 WinError 5，那是既知环境权限问题，不作为代码失败。
 
-覆盖：双账号设备/对话/命令/事件/审批/Run 隔离、Worker 引用越权、配对过期/重放/撤销断连、Cookie/CSRF/认证泛化和限流、Q1 及落库脱敏、离线排序和 skip/gap、两类幂等、事件区间和连续 ack、store 冻结和旧 epoch、审批分级、D41 完成矩阵、事务故障回滚、游标分页/过期、Backup 恢复、26 路由 DTO 对照、线路协商/超帧/hello timeout、静态挂载、单调时钟和分批投递。测试文件逐项命名可独立复跑。
+覆盖：双账号设备/对话/命令/事件/审批/Run 隔离、Worker 引用越权、配对过期/重放/撤销断连、Cookie/CSRF/认证泛化和限流、Q1 及落库脱敏、离线排序和 skip/gap、两类幂等、事件区间和连续 ack、store 冻结和旧 epoch、审批分级、D41 完成矩阵、事务故障回滚、游标分页/过期、Backup 恢复、26 路由 DTO 对照、线路协商/超帧/hello timeout、静态挂载、单调时钟和分批投递。新增 F1–F3 覆盖签名游标不增长、无空转及时唤醒、保留期及迁移；测试文件逐项命名可独立复跑。
 
 编译检查：将下列 Python 通过标准输入交给 `../../.venv/Scripts/python.exe -B -X utf8 -`，退出码 0：
 
@@ -176,4 +202,4 @@ $env:HQREMOTE_ORIGIN='https://hub.example.com'
 - P3：Cookie + Origin + CSRF + Idempotency-Key；设备 catalog 创建 Conversation。202 只表示排队。先 snapshot 的 serverCursor 再轮询 /events；410 重新 snapshot，更多历史分页。传输、控制与执行分开展示，撤销不等于停止。
 - 冻结无客户端解除接口。需要重新开始时显式撤销、用新 secret 建新绑定/新对话；不能自动接管旧命令。
 
-open_questions：0。Q1 和 D42 已落实，未添加同名兼容字段或额外推送通道。
+open_questions：0。Q1、D42 及本轮 F1–F4 已落实，未添加协议字段或额外推送通道。
