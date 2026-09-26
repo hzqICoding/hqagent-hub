@@ -1,21 +1,42 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ChatPage from './ChatPage.vue'
 import { setLocalChatGatewayMode, mockLocalChatGateway } from '@/shared/api'
 import { useChatStore } from '@/stores/chat.store'
 
 describe('ChatPage', () => {
+  const wrappers: VueWrapper[] = []
+
   beforeEach(() => {
     setActivePinia(createPinia())
     setLocalChatGatewayMode('mock')
     mockLocalChatGateway.reset()
   })
 
-  it('renders chat workbench with conversations, messages, and composer', async () => {
+  afterEach(() => {
+    useChatStore().stopPolling()
+    for (const wrapper of wrappers.splice(0)) wrapper.unmount()
+    document.body.replaceChildren()
+    vi.restoreAllMocks()
+  })
+
+  async function mountInitializedPage(): Promise<VueWrapper> {
     const wrapper = mount(ChatPage)
-    // Wait for store init
-    await new Promise((r) => setTimeout(r, 50))
+    wrappers.push(wrapper)
+    const store = useChatStore()
+    await vi.waitFor(() => {
+      expect(store.activeConversationId).toBeTruthy()
+      expect(store.isLoadingMessages).toBe(false)
+      expect(store.isLoadingRun).toBe(false)
+      expect(store.workspaces.length).toBeGreaterThan(0)
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('renders chat workbench with conversations, messages, and composer', async () => {
+    const wrapper = await mountInitializedPage()
 
     expect(wrapper.text()).toContain('项目任务')
     expect(wrapper.text()).toContain('新建任务')
@@ -26,8 +47,7 @@ describe('ChatPage', () => {
   })
 
   it('displays active run snapshot drawer when conversation is active', async () => {
-    const wrapper = mount(ChatPage)
-    await new Promise((r) => setTimeout(r, 50))
+    const wrapper = await mountInitializedPage()
 
     expect(wrapper.text()).toContain('本轮场景与执行详情')
     expect(wrapper.text()).toContain('本轮场景快照')
@@ -40,8 +60,7 @@ describe('ChatPage', () => {
   })
 
   it('allows user to type while keeping context mode internal', async () => {
-    const wrapper = mount(ChatPage)
-    await new Promise((r) => setTimeout(r, 50))
+    const wrapper = await mountInitializedPage()
 
     const textarea = wrapper.find('textarea')
     await textarea.setValue('分析当前模块并输出方案')
@@ -51,8 +70,7 @@ describe('ChatPage', () => {
   })
 
   it('opens the shared new task dialog from the chat header', async () => {
-    const wrapper = mount(ChatPage)
-    await new Promise((r) => setTimeout(r, 50))
+    const wrapper = await mountInitializedPage()
 
     const headerButton = wrapper.findAll('button').filter(button =>
       button.text().includes('新建任务')
@@ -64,10 +82,16 @@ describe('ChatPage', () => {
   })
 
   it('confirms an explicit one-shot Agent context reset from the header menu', async () => {
-    const wrapper = mount(ChatPage)
-    await new Promise((r) => setTimeout(r, 50))
+    const wrapper = await mountInitializedPage()
     const store = useChatStore()
     await store.selectConversation('conv_analyze_auth')
+    await vi.waitFor(() => {
+      expect(store.activeConversationId).toBe('conv_analyze_auth')
+      expect(store.isLoadingMessages).toBe(false)
+      expect(store.isLoadingRun).toBe(false)
+      expect(store.canResetContext).toBe(true)
+    })
+    await wrapper.vm.$nextTick()
     const resetSpy = vi.spyOn(store, 'requestContextReset')
 
     await wrapper.find('button[title="更多任务操作"]').trigger('click')
@@ -86,8 +110,7 @@ describe('ChatPage', () => {
   })
 
   it('disables context reset while a run is active', async () => {
-    const wrapper = mount(ChatPage)
-    await new Promise((r) => setTimeout(r, 50))
+    const wrapper = await mountInitializedPage()
 
     await wrapper.find('button[title="更多任务操作"]').trigger('click')
     const resetMenuItem = wrapper.findAll('button').find(button =>
