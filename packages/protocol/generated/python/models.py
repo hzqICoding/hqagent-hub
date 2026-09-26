@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PROTOCOL_VERSION = "0.4.0"
+PROTOCOL_VERSION = "0.5.0"
 
 
 class _Base(BaseModel):
@@ -681,10 +681,7 @@ class ConnectionSettings(_Base):
     device_name: str = Field(alias="deviceName")
 
 
-class LocalSceneId(StrEnum):
-    ANALYZE = "analyze"
-    PLAN = "plan"
-    DEVELOP = "develop"
+LocalSceneId = str
 
 
 class CreateLocalConversationInput(_Base):
@@ -693,9 +690,41 @@ class CreateLocalConversationInput(_Base):
     scene_id: LocalSceneId = Field(alias="sceneId")
 
 
+class LocalBaseRoleId(StrEnum):
+    ANALYST = "analyst"
+    PLANNER = "planner"
+    DEVELOPER = "developer"
+    REVIEWER = "reviewer"
+
+
+class CreateLocalRoleTemplateInput(_Base):
+    name: str = Field(alias="name")
+    base_role_id: LocalBaseRoleId = Field(alias="baseRoleId")
+    instructions: str = Field(alias="instructions")
+
+
+class LocalRoleConfig(_Base):
+    role_id: str = Field(alias="roleId")
+    agent_instance_id: str = Field(alias="agentInstanceId")
+    instructions: str = Field(alias="instructions")
+    model_id_: str | None = Field(default=None, alias="modelId")
+    reasoning_effort: str | None = Field(default=None, alias="reasoningEffort")
+    enabled: bool = Field(alias="enabled")
+    role_name: str | None = Field(default=None, alias="roleName")
+    role_template_id: str | None = Field(default=None, alias="roleTemplateId")
+    role_template_version: int | None = Field(default=None, alias="roleTemplateVersion")
+
+
 class ReviewMode(StrEnum):
     INDEPENDENT = "independent"
     ORIGINAL_PLANNER = "original_planner"
+
+
+class CreateLocalSceneInput(_Base):
+    name: str = Field(alias="name")
+    description: str | None = Field(default=None, alias="description")
+    roles: list[LocalRoleConfig] = Field(alias="roles")
+    review_mode: ReviewMode | None = Field(default=None, alias="reviewMode")
 
 
 class RoleExecutionOptions(_Base):
@@ -910,13 +939,14 @@ class LocalMessageView(_Base):
     created_at: Timestamp = Field(alias="createdAt")
 
 
-class LocalRoleConfig(_Base):
-    role_id: str = Field(alias="roleId")
-    agent_instance_id: str = Field(alias="agentInstanceId")
+class LocalRoleTemplateView(_Base):
+    id: str = Field(alias="id")
+    name: str = Field(alias="name")
+    base_role_id: LocalBaseRoleId = Field(alias="baseRoleId")
     instructions: str = Field(alias="instructions")
-    model_id_: str | None = Field(default=None, alias="modelId")
-    reasoning_effort: str | None = Field(default=None, alias="reasoningEffort")
-    enabled: bool = Field(alias="enabled")
+    version: int = Field(alias="version")
+    created_at: Timestamp = Field(alias="createdAt")
+    updated_at: Timestamp = Field(alias="updatedAt")
 
 
 class LocalSceneView(_Base):
@@ -928,6 +958,7 @@ class LocalSceneView(_Base):
     roles: list[LocalRoleConfig] = Field(alias="roles")
     updated_at: Timestamp = Field(alias="updatedAt")
     review_mode: ReviewMode | None = Field(default=None, alias="reviewMode")
+    is_builtin: bool | None = Field(default=None, alias="isBuiltin")
 
 
 class TaskArtifactView(_Base):
@@ -1171,6 +1202,8 @@ class SaveLocalSceneInput(_Base):
     roles: list[LocalRoleConfig] = Field(alias="roles")
     expected_version: int = Field(alias="expectedVersion")
     review_mode: ReviewMode | None = Field(default=None, alias="reviewMode")
+    name: str | None = Field(default=None, alias="name")
+    description: str | None = Field(default=None, alias="description")
 
 
 class TeamProfilePolicies(_Base):
@@ -1362,6 +1395,12 @@ class UpdateLocalConversationInput(_Base):
     expected_version: int = Field(alias="expectedVersion")
     title: str | None = Field(default=None, alias="title")
     archived: bool | None = Field(default=None, alias="archived")
+
+
+class UpdateLocalRoleTemplateInput(_Base):
+    expected_version: int = Field(alias="expectedVersion")
+    name: str = Field(alias="name")
+    instructions: str = Field(alias="instructions")
 
 
 class UpdateRollbackPayload(_Base):
