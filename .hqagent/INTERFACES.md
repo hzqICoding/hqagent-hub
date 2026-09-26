@@ -120,11 +120,16 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 | 2026-09-05 | 0.1.0 | FZ-1 重新裁切：补齐 W1/W5 规格要求的 EVENT_CURSOR_EXPIRED、FEATURE_UNAVAILABLE、`instanceId`、`FeatureAvailability`、`waitPids`/`backupCompleted`、Session `status`。**在任何工作包开工之前完成**，因此不构成破坏性变更 | `a3e1047` |
 
 
-## R1-P0 远程协议预检：未冻结（2026-09-26）
+## R1 — 已冻结（2026-09-26，协议0.6.0）
 
-- 状态：needs-decision；协议仍为0.5.0；冻结SHA：无。
-- 设计基线855d871，代码基线6f38217；阻断证据提交`302ae4403c911d27e883aaa615738eba93542d27`（不是冻结SHA）。
-- 草案长期Task/独立Attempt与当前LocalRun→Task实现不同；取消recovery_required与FZ-2、现有TaskStatus及实际取消实现不同，需明确映射。
-- 按本轮“文档与代码不符即指出并停下”要求记录证据，未修改业务代码或生成未经裁决的0.6.0类型。
-- 证据、两项待决问题及基线真实输出：[R1-P0回执](handoffs/R1-P0-remote-protocol.md)。
-- **本记录不解锁P1服务端、P2 Worker连接、P3 Web B阶段的远程协议实施门。**
+**R1 远程协议已冻结，P1 服务端 / P2 Worker 连接 / P3 Web B 阶段可以开工。**
+
+- 契约冻结SHA：`c443e126496c5b5115fe23efed60f9e4a2b4043f`；生成器前置：`068140a`；本分支尚未合并integration/phase1，等待主代理审核。
+- 0.6.0远程契约映射到**现有执行内核**；vNext技术方案§4、§5.1是目标模型，不是本轮已迁移的状态机。
+- D40：conversationId → runId(LocalRun) → executionTaskId/nodeId/sessionId。旧LocalRunView.taskId不变；不引入Attempt或retryOfRunId。
+- D41：执行状态保持TaskStatus/FZ-2；confirmed/rejected/unconfirmed控制结果携带Worker结构化证据，不能解析报错文本猜测。command.completed不是任务成功的同义词。
+- 新增86个远程类型、26个错误码；每个新类型均有Fixture。总计251类型、100个Contract Fixture。
+- 结构：`packages/protocol/schema/remote.json`；HTTP/Worker WSS绑定：`packages/protocol/openapi/remote-hub.v2.yaml`；关系、授权、顺序及事务语义：[R1契约](../packages/protocol/remote/R1-contract.md)。
+- 基线未改业务代码和旧断言：Hub199 passed；前端typecheck通过、201 passed；协议专用120 passed；validate -CheckGenerated通过。
+- 完整类型/错误清单、取舍及P2业务接线项：[R1-P0回执](handoffs/R1-P0-remote-protocol.md)。这是协议门，不是远程功能已实现或已部署的声明。
+- 历史预检`302ae44`的Q1/Q2已由主代理D40/D41关闭；旧needs-decision状态不再有效。

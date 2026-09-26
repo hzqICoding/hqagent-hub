@@ -1,0 +1,17 @@
+Obtaining file:///E:/OtherPro/HQAgent-Hub-worktrees/remote-protocol/packages/protocol
+  Checking if build backend supports build_editable: started
+  Checking if build backend supports build_editable: finished with status 'done'
+  Preparing editable metadata (pyproject.toml): started
+  Preparing editable metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: hqagent-protocol
+  Building editable for hqagent-protocol (pyproject.toml): started
+  Building editable for hqagent-protocol (pyproject.toml): finished with status 'done'
+  Created wheel for hqagent-protocol: filename=hqagent_protocol-0.2.0-py3-none-any.whl size=153153 sha256=8b0ebfcd3f2e6ad356f11c504f61622f8cb37a3a952d90bbfc1add1ff080041a
+  Stored in directory: C:\Users\ua-hzq\AppData\Local\Temp\pip-ephem-wheel-cache-hea68h9c\wheels\3f\49\41\e6131015ad0c7d7d401df4af2217bc52b090d320a655a3b2ab
+Successfully built hqagent-protocol
+Installing collected packages: hqagent-protocol
+  Attempting uninstall: hqagent-protocol
+    Found existing installation: hqagent-protocol 0.2.0
+    Uninstalling hqagent-protocol-0.2.0:
+      Successfully uninstalled hqagent-protocol-0.2.0
+Successfully installed hqagent-protocol-0.2.0

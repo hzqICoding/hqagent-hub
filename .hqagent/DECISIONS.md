@@ -334,3 +334,33 @@ Phase 1.1 的三 Agent 目标后移**。另两个选项存档备查：
 
 **影响**：需要补工作区的增删与 `git init` 路由（当前 openapi 只有
 `GET /api/v1/workspaces`），属相容扩展，见 FZ-2.2。
+
+
+### D40 R1远程契约沿用现有执行身份，不引入Attempt（主代理裁决，2026-09-26）
+
+**背景**：vNext技术方案§4中的长期Task/独立Attempt是目标模型；当前每个LocalRun创建执行Task，非终态重试重置Node，终态重试创建子Task。远程定位是通信工具，本轮不迁移执行内核。
+
+**决定**：
+
+- 身份链为conversationId → runId（LocalRun，一轮用户要求）→ executionTaskId/nodeId/sessionId；远程控制和结果使用runId作为用户可见句柄。
+- 远程对内核Task的引用叫executionTaskId；现有LocalRunView.taskId不改名、不改变其语义。
+- 远程DTO不得包含attemptId，连可选空字段也不提供，不得用Node或Session ID伪造它。
+- 终态retry由Worker依现有_create_child逻辑产生子执行Task；command.completed.resultRef报告新引用，parentExecutionTaskId仅映射既有Task.parentTaskId。不发明retryOfRunId。
+- 长期Task/Attempt另立后续内核迁移工作包及兼容映射。
+
+**影响**：P1只保存执行引用/投影，P2负责与当前LocalRun/Task对接，P3以runId导航。0.6.0不改变旧DTO或本机执行逻辑。
+
+### D41 R1控制结果与执行状态分离（主代理裁决，2026-09-26）
+
+**背景**：草案cancel_requested/recovery_required不是当前TaskStatus；FZ-2的Adapter refused返回failed，无句柄等场景在内部task spec保存recoveryRequired并将Task置paused。
+
+**决定**：
+
+- 执行状态继续使用现有TaskStatus和FZ-2，不新增recovery_required/cancel_requested等执行状态。
+- 远程控制结果独立为confirmed/rejected/unconfirmed，携带executionMayStillBeRunning、orphanProcessIds、结构化evidence、reason与observedAt。
+- confirmed必须有实际生效证据；cancel需确认停止或本来已结束，pause需节点边界真正paused。收到请求/写入意图不等于生效。
+- Adapter refused报告rejected；无句柄、recoveryRequired、回执不明报告unconfirmed，不靠解析错误文本或failed/paused标签猜测。
+- P2从CancelResult/CancelOutcome、orphanProcessIds及TaskService.state的task_spec:<executionTaskId>中取得结构化标记。公开这些信息属于P2后续业务实现，本轮仅定义契约。
+- 浏览器分开展示传输状态、控制结果、执行状态。unconfirmed不能发送伪造command.completed；command.completed也不能一概显示成开发成功。
+
+**影响**：保留FZ-2；远程通信层提供显式映射，不替代执行内核。具体字段与命令终态矩阵见packages/protocol/remote/R1-contract.md。
