@@ -1,4 +1,8 @@
 """Owner-scoped business transactions; no database dialect or socket operations."""
+import base64
+import hmac
+import json
+
 from .common import MAX_SEQ, Fault, canonical, digest, require, seconds, stamp, uid, validated
 from . import wire
 
@@ -56,15 +60,30 @@ class Service:
         self.event(tx, owner, "command.updated", self.view(owner, "command", command))
 
     def cursor(self, tx, owner, scope, position):
-        token = uid()
-        tx.put(owner, "cursor", token, dict(scope=scope, position=position, expires=self.settings.clock() + self.settings.cursor_ttl))
-        return token
+        # owner participates in the signature without exposing its identifier.
+        claims = dict(scope=scope, position=position, expiresAt=int((self.settings.clock() + self.settings.cursor_ttl) * 1000))
+        payload = base64.urlsafe_b64encode(canonical(claims).encode()).decode().rstrip("=")
+        signature = self.security.mac("cursor-v1", canonical(dict(claims, owner=owner)))
+        return "c1." + payload + "." + signature
 
     def position(self, tx, owner, scope, token):
-        record = tx.get(owner, "cursor", token)
-        require(record is not None and record["scope"] == scope, "REMOTE_CURSOR_INVALID")
-        require(record["expires"] > self.settings.clock(), "REMOTE_CURSOR_EXPIRED")
-        return record["position"]
+        try:
+            require(isinstance(token, str) and 16 <= len(token) <= 2048, "REMOTE_CURSOR_INVALID")
+            version, payload, signature = token.split(".")
+            require(version == "c1", "REMOTE_CURSOR_INVALID")
+            raw = base64.b64decode(payload + "=" * (-len(payload) % 4), altchars=b"-_", validate=True)
+            claims = json.loads(raw)
+            require(isinstance(claims, dict) and set(claims) == {"scope", "position", "expiresAt"}, "REMOTE_CURSOR_INVALID")
+            require(claims["scope"] == scope and type(claims["position"]) is int and claims["position"] >= 0
+                    and type(claims["expiresAt"]) is int, "REMOTE_CURSOR_INVALID")
+            expected = self.security.mac("cursor-v1", canonical(dict(claims, owner=owner)))
+            require(hmac.compare_digest(signature, expected), "REMOTE_CURSOR_INVALID")
+            require(claims["expiresAt"] > self.settings.clock() * 1000, "REMOTE_CURSOR_EXPIRED")
+            return claims["position"]
+        except Fault:
+            raise
+        except (ValueError, TypeError, KeyError, RecursionError):
+            raise Fault("REMOTE_CURSOR_INVALID") from None
 
     def page(self, tx, owner, kind, token, limit, parent=None):
         scope = "page:" + kind + ":" + (parent or "")
