@@ -71,7 +71,8 @@ class Service:
 
     def cursor(self, tx, owner, scope, position):
         # owner participates in the signature without exposing its identifier.
-        claims = dict(scope=scope, position=position, expiresAt=int((self.settings.clock() + self.settings.cursor_ttl) * 1000))
+        generation = tx.browser_retention(owner)["generation"] if tx is not None and scope == "events" else 0
+        claims = dict(scope=scope, position=position, expiresAt=int((self.settings.clock() + self.settings.cursor_ttl) * 1000), generation=generation)
         payload = base64.urlsafe_b64encode(canonical(claims).encode()).decode().rstrip("=")
         signature = self.security.mac("cursor-v1", canonical(dict(claims, owner=owner)))
         return "c1." + payload + "." + signature
@@ -83,12 +84,16 @@ class Service:
             require(version == "c1", "REMOTE_CURSOR_INVALID")
             raw = base64.b64decode(payload + "=" * (-len(payload) % 4), altchars=b"-_", validate=True)
             claims = json.loads(raw)
-            require(isinstance(claims, dict) and set(claims) == {"scope", "position", "expiresAt"}, "REMOTE_CURSOR_INVALID")
+            require(isinstance(claims, dict) and set(claims) == {"scope", "position", "expiresAt", "generation"}, "REMOTE_CURSOR_INVALID")
             require(claims["scope"] == scope and type(claims["position"]) is int and claims["position"] >= 0
-                    and type(claims["expiresAt"]) is int, "REMOTE_CURSOR_INVALID")
+                    and type(claims["expiresAt"]) is int and type(claims["generation"]) is int and claims["generation"] >= 0, "REMOTE_CURSOR_INVALID")
             expected = self.security.mac("cursor-v1", canonical(dict(claims, owner=owner)))
             require(hmac.compare_digest(signature, expected), "REMOTE_CURSOR_INVALID")
             require(claims["expiresAt"] > self.settings.clock() * 1000, "REMOTE_CURSOR_EXPIRED")
+            if tx is not None and scope == "events":
+                retention = tx.browser_retention(owner)
+                position, floor = claims["position"], retention["prunedThrough"]
+                require(position > floor or (position == floor and claims["generation"] == retention["generation"]), "REMOTE_CURSOR_EXPIRED")
             return claims["position"]
         except Fault:
             raise
@@ -312,6 +317,17 @@ class Service:
                     value["deliveryState"] = "reconciliation_required"
                     self.save(tx, owner, "command", value["commandId"], value)
                     self.command_event(tx, owner, value)
+
+    def maintain(self):
+        """Low-frequency expiry/retention work; never invoked by HTTP handlers."""
+        now = self.settings.clock()
+        with self.repo.transaction() as tx:
+            tx.cleanup_auth(now)
+            for account in tx.auth_list("account:"):
+                owner = account["owner"]
+                tx.cleanup_owner(owner, now - self.settings.browser_retention_seconds)
+                for worker in tx.due_workers(owner, now):
+                    self.expire(tx, owner, worker)
 
     def freeze(self, tx, owner, device, code):
         self.notify(tx, owner, device["workerId"])

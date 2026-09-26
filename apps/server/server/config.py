@@ -21,6 +21,7 @@ class Settings:
     static_dir: Path | None = None
     session_ttl: int = 86400
     cursor_ttl: int = 86400
+    browser_retention_seconds: int = 7 * 86400
     rate_limit: int = 30
     rate_window: int = 60
     clock: Callable[[], float] = field(default=time.time, repr=False)
@@ -30,6 +31,8 @@ class Settings:
         parsed = urlsplit(self.origin)
         if len(self.key) < 32 or parsed.scheme != "https" or not parsed.netloc or parsed.path or parsed.query or parsed.fragment or parsed.username:
             raise ValueError("Invalid server security configuration")
+        if type(self.browser_retention_seconds) is not int or self.browser_retention_seconds <= 0:
+            raise ValueError("Browser event retention must be a positive integer")
 
     @classmethod
     def from_env(cls):
@@ -46,4 +49,5 @@ class Settings:
                    static_dir=Path(static) if static else None,
                    session_ttl=int(os.environ.get("HQREMOTE_SESSION_TTL", "86400")),
                    cursor_ttl=int(os.environ.get("HQREMOTE_CURSOR_TTL", "86400")),
+                   browser_retention_seconds=int(os.environ.get("HQREMOTE_BROWSER_RETENTION_SECONDS", "604800")),
                    rate_limit=int(os.environ.get("HQREMOTE_RATE_LIMIT", "30")))

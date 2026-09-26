@@ -21,6 +21,7 @@ from .service import KINDS, Service
 from .worker import WorkerTransport
 
 LOG = logging.getLogger("hqremote")
+MAINTENANCE_INTERVAL = 5
 
 
 class TransportLogFilter(logging.Filter):
@@ -95,11 +96,8 @@ def create_app(settings=None):
 
     async def maintenance():
         while True:
-            await asyncio.sleep(5)
-            with repo.transaction() as tx:
-                for account in tx.auth_list("account:"):
-                    for worker in tx.due_workers(account["owner"], settings.clock()):
-                        service.expire(tx, account["owner"], worker)
+            await asyncio.sleep(MAINTENANCE_INTERVAL)
+            service.maintain()
 
     @asynccontextmanager
     async def lifespan(app):

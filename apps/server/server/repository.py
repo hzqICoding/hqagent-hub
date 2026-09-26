@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .common import canonical, stamp
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 MIGRATIONS = {1: """
 CREATE TABLE auth (key TEXT PRIMARY KEY, owner TEXT NOT NULL, body TEXT NOT NULL);
 CREATE TABLE records (
@@ -38,6 +38,18 @@ UPDATE records SET command_status=json_extract(body,'$.status'), due_at=json_ext
 UPDATE records SET outbox_done=json_extract(body,'$.done') WHERE kind='outbox';
 CREATE INDEX command_expiry ON records(owner,kind,worker,command_status,due_at);
 CREATE INDEX outbox_pending ON records(owner,kind,worker,store,outbox_done,ordinal);
+""", 3: """
+ALTER TABLE auth ADD COLUMN category TEXT;
+ALTER TABLE auth ADD COLUMN expires_at REAL;
+UPDATE auth SET category='session', expires_at=json_extract(body,'$.expires') WHERE key LIKE 'session:%';
+UPDATE auth SET category='rate', expires_at=json_extract(body,'$.until') WHERE key LIKE 'rate:%';
+CREATE INDEX auth_expiry ON auth(category,expires_at);
+ALTER TABLE browser_outbox ADD COLUMN recorded_at TEXT;
+UPDATE browser_outbox SET recorded_at=json_extract(body,'$.recordedAt');
+CREATE INDEX browser_retention_time ON browser_outbox(owner,recorded_at,ordinal);
+CREATE TABLE browser_retention (
+ owner TEXT PRIMARY KEY CHECK(length(owner)>0),
+ pruned_through INTEGER NOT NULL, generation INTEGER NOT NULL);
 """}
 
 
@@ -100,6 +112,7 @@ class UnitOfWork:
     def __init__(self, connection):
         self.db = connection
         self.commit_callbacks = {}
+        self.retention_cache = {}
 
     def after_commit(self, key, callback):
         self.commit_callbacks[key] = callback
@@ -109,7 +122,11 @@ class UnitOfWork:
         return json.loads(row[0]) if row else None
 
     def auth_put(self, key, body, owner=""):
-        self.db.execute("INSERT INTO auth VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET owner=excluded.owner,body=excluded.body", (key, owner, canonical(body)))
+        category = key.split(":", 1)[0]
+        expires = body.get("expires") if category == "session" else body.get("until") if category == "rate" else None
+        self.db.execute("""INSERT INTO auth(key,owner,body,category,expires_at) VALUES(?,?,?,?,?)
+            ON CONFLICT(key) DO UPDATE SET owner=excluded.owner,body=excluded.body,category=excluded.category,expires_at=excluded.expires_at""",
+                        (key, owner, canonical(body), category, expires))
 
     def auth_list(self, prefix):
         return [json.loads(r[0]) for r in self.db.execute("SELECT body FROM auth WHERE substr(key,1,?)=?", (len(prefix), prefix))]
@@ -167,10 +184,32 @@ class UnitOfWork:
         self.db.execute("UPDATE inbox SET applied=1 WHERE owner=? AND event_id=?", (owner, event_id))
 
     def browser_add(self, owner, body):
-        return self.db.execute("INSERT INTO browser_outbox(owner,body) VALUES(?,?)", (owner, canonical(body))).lastrowid
+        return self.db.execute("INSERT INTO browser_outbox(owner,body,recorded_at) VALUES(?,?,?)", (owner, canonical(body), body["recordedAt"])).lastrowid
+
+    def browser_retention(self, owner):
+        if owner not in self.retention_cache:
+            row = self.db.execute("SELECT pruned_through,generation FROM browser_retention WHERE owner=?", (owner,)).fetchone()
+            self.retention_cache[owner] = dict(prunedThrough=row[0], generation=row[1]) if row else dict(prunedThrough=0, generation=0)
+        return self.retention_cache[owner]
 
     def browser_tail(self, owner):
-        return self.db.execute("SELECT COALESCE(MAX(ordinal),0) FROM browser_outbox WHERE owner=?", (owner,)).fetchone()[0]
+        tail = self.db.execute("SELECT COALESCE(MAX(ordinal),0) FROM browser_outbox WHERE owner=?", (owner,)).fetchone()[0]
+        return max(tail, self.browser_retention(owner)["prunedThrough"])
 
     def browser_after(self, owner, after, limit):
         return [(r[0], json.loads(r[1])) for r in self.db.execute("SELECT ordinal,body FROM browser_outbox WHERE owner=? AND ordinal>? ORDER BY ordinal LIMIT ?", (owner, after, limit))]
+
+    def cleanup_auth(self, now):
+        self.db.execute("DELETE FROM auth WHERE category IN ('session','rate') AND expires_at<=?", (now,))
+
+    def cleanup_owner(self, owner, cutoff):
+        self.db.execute("DELETE FROM records WHERE owner=? AND kind='cursor'", (owner,))
+        high = self.db.execute("SELECT MAX(ordinal) FROM browser_outbox WHERE owner=? AND recorded_at<?", (owner, stamp(cutoff))).fetchone()[0]
+        if high is None:
+            return
+        retention = self.browser_retention(owner)
+        self.db.execute("""INSERT INTO browser_retention(owner,pruned_through,generation) VALUES(?,?,?)
+            ON CONFLICT(owner) DO UPDATE SET pruned_through=excluded.pruned_through,generation=excluded.generation""",
+                        (owner, max(high, retention["prunedThrough"]), retention["generation"] + 1))
+        self.db.execute("DELETE FROM browser_outbox WHERE owner=? AND recorded_at<?", (owner, stamp(cutoff)))
+        self.retention_cache.pop(owner, None)

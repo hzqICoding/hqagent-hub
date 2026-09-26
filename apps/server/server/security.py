@@ -85,7 +85,7 @@ class Security:
         if record:
             require(record["intent"] == intent, "IDEMPOTENCY_MISMATCH")
             session = tx.auth_get("session:" + record["session"])
-            require(not session["revoked"] and session["expires"] > self.settings.clock(), "REMOTE_AUTH_REQUIRED")
+            require(session is not None and not session["revoked"] and session["expires"] > self.settings.clock(), "REMOTE_AUTH_REQUIRED")
         else:
             old = self.session(tx, old_cookie)
             if old:
