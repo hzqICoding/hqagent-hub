@@ -20,6 +20,7 @@ describe('RemoteChat Workbench and Three-Layer Status', () => {
   afterEach(() => {
     const store = useRemoteChatStore()
     store.stopPolling()
+    store.stopDevicePolling()
     setRemoteGatewayForTesting(null)
     vi.restoreAllMocks()
   })

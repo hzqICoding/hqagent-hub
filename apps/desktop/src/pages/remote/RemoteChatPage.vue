@@ -47,15 +47,33 @@ const commandToWithdraw = ref<RemoteCommandView | null>(null)
 const isWithdrawing = ref(false)
 const withdrawReason = ref('')
 
+function handleVisibilityChange() {
+  if (typeof document === 'undefined') return
+  if (document.visibilityState === 'visible') {
+    chatStore.refreshActiveDevice()
+    chatStore.startDevicePolling(15000)
+  } else {
+    chatStore.stopDevicePolling()
+  }
+}
+
 onMounted(async () => {
   await chatStore.fetchDevices()
   await chatStore.fetchConversations()
   chatStore.startPolling(3000)
+  chatStore.startDevicePolling(15000)
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+  }
   scrollToBottom()
 })
 
 onUnmounted(() => {
   chatStore.stopPolling()
+  chatStore.stopDevicePolling()
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }
 })
 
 function scrollToBottom() {

@@ -118,6 +118,39 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     }
   }
 
+  let devicePollingTimer: ReturnType<typeof setInterval> | null = null
+
+  async function refreshActiveDevice(): Promise<void> {
+    const targetWorkerId = activeConversation.value?.targetWorkerId || devices.value[0]?.workerId
+    if (!targetWorkerId) return
+    try {
+      const gateway = getRemoteGateway()
+      const updated = await gateway.getDevice(targetWorkerId)
+      const idx = devices.value.findIndex((d) => d.workerId === targetWorkerId)
+      if (idx >= 0) {
+        devices.value[idx] = updated
+      } else {
+        devices.value.push(updated)
+      }
+    } catch {
+      // ignore network errors during periodic refresh
+    }
+  }
+
+  function startDevicePolling(intervalMs = 15000): void {
+    stopDevicePolling()
+    devicePollingTimer = setInterval(async () => {
+      await refreshActiveDevice()
+    }, intervalMs)
+  }
+
+  function stopDevicePolling(): void {
+    if (devicePollingTimer) {
+      clearInterval(devicePollingTimer)
+      devicePollingTimer = null
+    }
+  }
+
   // --- Conversations ---
 
   async function fetchConversations(): Promise<void> {
@@ -356,6 +389,30 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
         commands.value[idx] = { ...commands.value[idx], ...cmd }
       } else {
         commands.value.push(cmd)
+      }
+      if (typeof cmd.workerOnline === 'boolean') {
+        const targetWorkerId = cmd.targetWorkerId || activeConversation.value?.targetWorkerId
+        if (targetWorkerId) {
+          const devIdx = devices.value.findIndex((d) => d.workerId === targetWorkerId)
+          if (devIdx >= 0) {
+            devices.value[devIdx] = {
+              ...devices.value[devIdx],
+              status: cmd.workerOnline ? 'online' : 'offline',
+            }
+          } else {
+            devices.value.push({
+              workerId: targetWorkerId,
+              deviceName: 'Computer',
+              platform: 'windows',
+              architecture: 'x86_64',
+              status: cmd.workerOnline ? 'online' : 'offline',
+              workerStoreId: 'store_demo',
+              capabilityRevision: 1,
+              observedAt: new Date().toISOString(),
+              pairedAt: new Date().toISOString(),
+            })
+          }
+        }
       }
       return
     }
@@ -668,6 +725,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   function reset(): void {
     stopPolling()
+    stopDevicePolling()
     devices.value = []
     catalog.value = null
     conversations.value = []
@@ -710,6 +768,9 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     isSnapshotRebuilding,
     lastRevocationInfo,
     fetchDevices,
+    refreshActiveDevice,
+    startDevicePolling,
+    stopDevicePolling,
     revokeDevice,
     fetchConversations,
     createConversation,

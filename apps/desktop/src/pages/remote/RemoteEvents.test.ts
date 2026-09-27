@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import RemoteChatPage from './RemoteChatPage.vue'
@@ -14,6 +14,7 @@ import type {
 } from '@hqagent/protocol'
 
 describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () => {
+  enableAutoUnmount(afterEach)
   let router: any
 
   beforeEach(async () => {
@@ -42,6 +43,7 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
   afterEach(() => {
     const store = useRemoteChatStore()
     store.stopPolling()
+    store.stopDevicePolling()
     setRemoteGatewayForTesting(null)
     vi.restoreAllMocks()
   })
@@ -641,4 +643,162 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     expect(wrapper.text()).toContain('上一轮已中断，继续上下文可能失败')
     expect(newTopicRadio.element.checked).toBe(true)
   })
+
+  it('B6: device transitions from online to offline, without reloading page, badge becomes 电脑离线 after next device poll', async () => {
+    vi.useFakeTimers()
+    mockRemoteGateway.workerOnline = true
+
+    const wrapper = mount(RemoteChatPage, {
+      global: { plugins: [router] },
+    })
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    expect(store.isWorkerOnline).toBe(true)
+    expect(wrapper.text()).toContain('电脑在线')
+
+    // Device goes offline on server side
+    mockRemoteGateway.workerOnline = false
+
+    // Before next poll, without reloading page, badge remains 电脑在线
+    expect(wrapper.text()).toContain('电脑在线')
+
+    // Advance 15 seconds to trigger next device poll
+    await vi.advanceTimersByTimeAsync(15000)
+    await flushPromises()
+
+    // After poll, badge automatically updates to 电脑离线
+    expect(store.isWorkerOnline).toBe(false)
+    expect(wrapper.text()).toContain('电脑离线')
+    expect(wrapper.text()).not.toContain('电脑在线')
+
+    vi.useRealTimers()
+  })
+
+  it('B6: updates device online status and badge immediately upon receiving command.updated event with workerOnline', async () => {
+    mockRemoteGateway.workerOnline = true
+
+    const wrapper = mount(RemoteChatPage, {
+      global: { plugins: [router] },
+    })
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    expect(store.isWorkerOnline).toBe(true)
+    expect(wrapper.text()).toContain('电脑在线')
+
+    // Event arrives: command.updated with workerOnline: false
+    const commandOfflineEvent: RemoteBrowserEvent = {
+      type: 'command.updated',
+      serverCursor: 'cur_cmd_offline',
+      recordedAt: new Date().toISOString(),
+      payload: {
+        commandId: 'cmd_demo_001',
+        conversationId: 'conversation_demo',
+        targetWorkerId: 'worker_demo',
+        type: 'run.submit',
+        conversationSeq: 1,
+        status: 'accepted',
+        deliveryState: 'sent',
+        withdrawalState: 'none',
+        workerOnline: false,
+        observedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      },
+    }
+
+    mockRemoteGateway.pendingEvents = [commandOfflineEvent]
+    await store.pollEvents()
+    await flushPromises()
+
+    expect(store.isWorkerOnline).toBe(false)
+    expect(wrapper.text()).toContain('电脑离线')
+
+    // Event arrives: command.updated with workerOnline: true
+    const commandOnlineEvent: RemoteBrowserEvent = {
+      type: 'command.updated',
+      serverCursor: 'cur_cmd_online',
+      recordedAt: new Date().toISOString(),
+      payload: {
+        commandId: 'cmd_demo_001',
+        conversationId: 'conversation_demo',
+        targetWorkerId: 'worker_demo',
+        type: 'run.submit',
+        conversationSeq: 1,
+        status: 'accepted',
+        deliveryState: 'sent',
+        withdrawalState: 'none',
+        workerOnline: true,
+        observedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      },
+    }
+
+    mockRemoteGateway.pendingEvents = [commandOnlineEvent]
+    await store.pollEvents()
+    await flushPromises()
+
+    expect(store.isWorkerOnline).toBe(true)
+    expect(wrapper.text()).toContain('电脑在线')
+  })
+
+  it('B6: pauses device polling when page visibility is hidden, and refreshes immediately when visibility returns to visible', async () => {
+    vi.useFakeTimers()
+    mockRemoteGateway.workerOnline = true
+
+    const wrapper = mount(RemoteChatPage, {
+      global: { plugins: [router] },
+    })
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    expect(store.isWorkerOnline).toBe(true)
+    expect(wrapper.text()).toContain('电脑在线')
+
+    const getDeviceSpy = vi.spyOn(mockRemoteGateway, 'getDevice')
+    getDeviceSpy.mockClear()
+
+    // 1. Page becomes hidden -> stops device polling
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      writable: true,
+      configurable: true,
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    // Advance 30 seconds while hidden; no device poll should occur
+    await vi.advanceTimersByTimeAsync(30000)
+    await flushPromises()
+    expect(getDeviceSpy).not.toHaveBeenCalled()
+
+    // Server state changes while user is away
+    mockRemoteGateway.workerOnline = false
+
+    // 2. User switches back to tab: page becomes visible -> immediate refresh
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      writable: true,
+      configurable: true,
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+
+    // Called immediately on returning to visible
+    expect(getDeviceSpy).toHaveBeenCalledTimes(1)
+    expect(store.isWorkerOnline).toBe(false)
+    expect(wrapper.text()).toContain('电脑离线')
+
+    // Polling also resumed (advancing 15s calls it again)
+    mockRemoteGateway.workerOnline = true
+    await vi.advanceTimersByTimeAsync(15000)
+    await flushPromises()
+    expect(getDeviceSpy).toHaveBeenCalledTimes(2)
+    expect(store.isWorkerOnline).toBe(true)
+    expect(wrapper.text()).toContain('电脑在线')
+
+    vi.useRealTimers()
+  })
 })
+

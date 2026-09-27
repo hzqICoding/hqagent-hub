@@ -560,3 +560,138 @@ dist/assets/remote-chat.store-DAMvR40V.js                                       
 dist/assets/index-CK96B6o3.js                                                   209.02 kB │ gzip: 67.43 kB
 ✓ built in 7.84s
 ```
+
+---
+
+## 11. 返修 3 交付说明 (B6)
+
+- 分支：`feat/remote-web-gateway`
+- 工作区：`E:\OtherPro\HQAgent-Hub-worktrees\remote-web-gateway`
+- 基线与测试：修复 B6 后，实测 **50 个测试文件、259 tests passed**，`typecheck` 0 错误，`lint` 0 错误 0 警告，`build` 生产构建成功。
+
+### 11.1 问题根因与修复措施
+
+1. **目标设备在线状态定时轮询（每 15 秒）与可见性监听联动**：
+   - 服务端判定设备离线阈值为 45 秒，但原前端仅在页面初次挂载时调用了一次 `fetchDevices()`，之后未再主动刷新设备状态，导致电脑上线/离线后手机端顶部徽章无法自动更新。
+   - 在 `remote-chat.store.ts` 中实现：
+     - `refreshActiveDevice()`：调用 `gateway.getDevice(targetWorkerId)`，并将获取到的最新设备信息更新到 `devices.value`，自动触发 `isWorkerOnline` 及各视图响应式更新；
+     - `startDevicePolling(intervalMs = 15000)` 与 `stopDevicePolling()`：维护独立定时器，在 `reset()` 中统一清理。
+   - 在 `RemoteChatPage.vue` 中接入页面可见性监听（`visibilitychange`）：
+     - 页面处于后台（`document.visibilityState !== 'visible'`）时，自动暂停设备状态定时轮询，降低功耗与无效请求；
+     - 页面切回前台（`document.visibilityState === 'visible'`）时，立即调用一次 `refreshActiveDevice()` 刷新目标设备状态，并重启 15 秒定时轮询。
+
+2. **增量事件 `command.updated` 联动设备在线状态**：
+   - 云端推送的 `command.updated` 携带了 `workerOnline` 字段；
+   - 在 `remote-chat.store.ts` 的 `applyEvent()` 中增加处理：当 `typeof cmd.workerOnline === 'boolean'` 时，同步更新 `devices.value` 中对应 `targetWorkerId` 设备的 `status`（`'online' | 'offline'`），使顶部徽章无需等待轮询即可立即感知上线/离线变更。
+
+---
+
+### 11.2 新增测试套件与覆盖（`RemoteEvents.test.ts`）
+
+新增 3 项针对 B6 的完备测试（累计 14 tests passed）：
+1. `B6: device transitions from online to offline, without reloading page, badge becomes 电脑离线 after next device poll`
+   - 设备从 online 变为 offline，不刷新页面，在下一次 15s 轮询触发后，顶部标签自动由「电脑在线」更新为「电脑离线」。
+2. `B6: updates device online status and badge immediately upon receiving command.updated event with workerOnline`
+   - 收到携带 `workerOnline: false` 的 `command.updated` 事件后，顶部标签立即更新为「电脑离线」；再收到 `workerOnline: true` 事件后，立即恢复为「电脑在线」。
+3. `B6: pauses device polling when page visibility is hidden, and refreshes immediately when visibility returns to visible`
+   - 页面不可见（`visibilityState = 'hidden'`）时暂停轮询，定时器推进 30 秒期间无任何接口调用；页面重新变为 `visible` 时立即触发一次设备刷新，并恢复后续每 15 秒轮询。
+
+---
+
+### 11.3 返修 3 真实验证命令输出
+
+#### 1. 类型检查（Typecheck 0 错误）
+```text
+$ pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+# 退出码 0，无任何类型错误
+```
+
+#### 2. 代码风格（Lint 0 错误 0 警告）
+```text
+$ pnpm --filter @hqagent/desktop lint
+$ eslint src
+# 退出码 0，无错误无警告
+```
+
+#### 3. 完整测试套件（50 test files / 259 passed）
+```text
+$ pnpm --filter @hqagent/desktop test
+
+ RUN  v2.1.9 E:/OtherPro/HQAgent-Hub-worktrees/remote-web-gateway/apps/desktop
+
+ ✓ src/shared/api/local-chat-gateway.test.ts (8 tests)
+ ✓ src/shared/api/local-hub-gateway.test.ts (8 tests)
+ ✓ src/shared/api/mock-local-chat-gateway.test.ts (16 tests)
+ ✓ src/stores/chat.polling.test.ts (6 tests)
+ ✓ src/stores/chat.store.test.ts (9 tests)
+ ✓ src/stores/chat.context.test.ts (7 tests)
+ ✓ src/stores/task.store.test.ts (7 tests)
+ ✓ src/pages/remote/RemoteGateway.test.ts (4 tests)
+ ✓ src/stores/chat.reliability.test.ts (7 tests)
+ ✓ src/pages/chat/components/ProcessActivityGroup.test.ts (5 tests)
+ ✓ src/shared/api/mock-gateway.test.ts (10 tests)
+ ✓ src/stores/scenes.store.test.ts (6 tests)
+ ✓ src/pages/chat/components/ChatComposer.test.ts (7 tests)
+ ✓ src/pages/remote/RemoteChat.test.ts (7 tests)
+ ✓ src/pages/chat/RemoteConversationReadOnly.test.ts (7 tests)
+ ✓ src/pages/remote-link/RemoteLink.test.ts (8 tests)
+ ✓ src/pages/remote/RemoteEvents.test.ts (14 tests)
+ ✓ src/pages/chat/components/ChatSidebar.test.ts (3 tests)
+ ✓ src/pages/scenes/ScenesPage.test.ts (9 tests)
+ ✓ src/pages/remote/RemoteModeIsolation.test.ts (4 tests)
+ ✓ src/stores/app.store.test.ts (8 tests)
+ ✓ src/pages/chat/ChatMobile.test.ts (6 tests)
+ ✓ src/pages/chat/ChatPage.test.ts (7 tests)
+ ✓ src/pages/remote/RemoteAuth.test.ts (4 tests)
+ ✓ src/pages/chat/components/RunSnapshotDrawer.test.ts (1 test)
+ ✓ src/pages/remote/RemotePairing.test.ts (4 tests)
+ ✓ src/shared/theme/theme.engine.test.ts (5 tests)
+ ✓ src/shared/ui/HqMarkdown.test.ts (6 tests)
+ ✓ src/stores/approval.store.test.ts (4 tests)
+ ✓ src/pages/chat/components/ChatMessageItem.test.ts (3 tests)
+ ✓ src/pages/tasks/TaskDetailPage.test.ts (5 tests)
+ ✓ src/app/layouts/AppLayout.test.ts (3 tests)
+ ✓ src/stores/chat.action-scope.test.ts (2 tests)
+ ✓ src/shared/api/local-chat-timeout.test.ts (3 tests)
+ ✓ src/pages/approvals/ApprovalsPage.test.ts (3 tests)
+ ✓ src/stores/workspace.store.test.ts (3 tests)
+ ✓ src/pages/tasks/TasksPage.test.ts (3 tests)
+ ✓ src/stores/team.store.test.ts (5 tests)
+ ✓ src/pages/templates/TemplatesPage.test.ts (3 tests)
+ ✓ src/pages/sessions/SessionsPage.test.ts (3 tests)
+ ✓ src/stores/agent.store.test.ts (3 tests)
+ ✓ src/pages/agents/AgentsPage.test.ts (3 tests)
+ ✓ src/stores/local-auth.store.test.ts (2 tests)
+ ✓ src/pages/auth/ConnectPage.test.ts (2 tests)
+ ✓ src/shared/ui/HqButton.test.ts (4 tests)
+ ✓ src/pages/workspaces/WorkspacesPage.test.ts (3 tests)
+ ✓ src/pages/teams/TeamsPage.test.ts (3 tests)
+ ✓ src/pages/onboarding/OnboardingPage.test.ts (2 tests)
+ ✓ src/pages/overview/OverviewPage.test.ts (2 tests)
+ ✓ src/stores/session.store.test.ts (2 tests)
+
+ Test Files  50 passed (50)
+      Tests  259 passed (259)
+   Duration  10.38s
+```
+
+#### 4. 生产构建（Build 成功）
+```text
+$ pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1736 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                                                   2.56 kB │ gzip:  1.04 kB
+dist/assets/ChatPage-DQ8nlvA7.css                                                 0.24 kB │ gzip:  0.17 kB
+dist/assets/index-B8ybjWec.css                                                   55.33 kB │ gzip: 10.25 kB
+dist/assets/RemoteChatPage-BVQ-r59x.js                                           18.26 kB │ gzip:  6.12 kB
+dist/assets/RemoteLinkPage-xZOh-ztz.js                                           18.69 kB │ gzip:  6.87 kB
+dist/assets/remote-chat.store-4b6H3N4-.js                                        10.51 kB │ gzip:  3.34 kB
+dist/assets/index-CK96B6o3.js                                                   209.02 kB │ gzip: 67.43 kB
+✓ built in 7.84s
+```
+
