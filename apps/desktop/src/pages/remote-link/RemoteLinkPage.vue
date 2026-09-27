@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, inject } from 'vue'
+import { ref, onMounted, onUnmounted, computed, inject, watch } from 'vue'
 import { routeLocationKey, type RouteLocationNormalizedLoaded } from 'vue-router'
+import QRCode from 'qrcode'
 import { useRemoteLinkStore } from '@/stores/remote-link.store'
 import {
   HqButton,
@@ -37,6 +38,39 @@ const isUnlinkModalOpen = ref(false)
 
 // Copy short code feedback
 const isCopied = ref(false)
+
+// QR Code State (B7)
+const qrDataUrl = ref<string>('')
+const qrCodeContent = computed(() => {
+  if (!remoteLinkStore.isPairing || !remoteLinkStore.pairCode || !remoteLinkStore.serverOrigin) {
+    return ''
+  }
+  const cleanOrigin = remoteLinkStore.serverOrigin.replace(/\/$/, '')
+  return `${cleanOrigin}/remote/pair#code=${remoteLinkStore.pairCode}`
+})
+
+watch(
+  qrCodeContent,
+  async (content) => {
+    if (content) {
+      try {
+        qrDataUrl.value = await QRCode.toDataURL(content, {
+          margin: 1,
+          width: 200,
+          color: {
+            dark: '#000000',
+            light: '#ffffff',
+          },
+        })
+      } catch {
+        qrDataUrl.value = ''
+      }
+    } else {
+      qrDataUrl.value = ''
+    }
+  },
+  { immediate: true }
+)
 
 const isValidOrigin = computed(() => {
   const origin = inputServerOrigin.value.trim()
@@ -327,26 +361,43 @@ async function copyPairCode() {
         </div>
 
         <div class="text-center py-4 space-y-4">
-          <p class="text-xs text-text-muted">请在手机端打开浏览器，进入远程工作台并输入下方 8 位配对短码：</p>
-          
-          <div class="inline-flex items-center gap-3 bg-panel-header px-6 py-4 rounded-2xl border border-primary/30 shadow-xs">
-            <span class="text-3xl sm:text-4xl font-mono tracking-widest text-primary font-bold select-all">
-              {{ remoteLinkStore.pairCode }}
-            </span>
-            <button
-              type="button"
-              class="p-2 rounded-lg hover:bg-panel text-text-muted hover:text-text transition-colors"
-              title="复制短码"
-              @click="copyPairCode"
+          <p class="text-xs text-text-muted">请使用手机扫描下方二维码，或手动输入 8 位配对短码：</p>
+
+          <!-- QR Code (B7) -->
+          <div>
+            <div
+              v-if="qrDataUrl"
+              class="inline-flex flex-col items-center justify-center p-2.5 sm:p-3 bg-white rounded-2xl border border-border shadow-xs"
             >
-              <Check v-if="isCopied" class="w-5 h-5 text-success" />
-              <Copy v-else class="w-5 h-5" />
-            </button>
+              <img
+                :src="qrDataUrl"
+                alt="配对二维码"
+                data-testid="pair-qrcode"
+                class="w-40 h-40 sm:w-48 sm:h-48 block rounded-lg"
+              />
+            </div>
+          </div>
+          
+          <div>
+            <div class="inline-flex items-center gap-2.5 sm:gap-3 bg-panel-header px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl border border-primary/30 shadow-xs max-w-full">
+              <span class="text-2xl sm:text-4xl font-mono tracking-widest text-primary font-bold select-all">
+                {{ remoteLinkStore.pairCode }}
+              </span>
+              <button
+                type="button"
+                class="p-1.5 sm:p-2 rounded-lg hover:bg-panel text-text-muted hover:text-text transition-colors shrink-0"
+                title="复制短码"
+                @click="copyPairCode"
+              >
+                <Check v-if="isCopied" class="w-5 h-5 text-success" />
+                <Copy v-else class="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           <p v-if="isCopied" class="text-xs text-success">已复制配对短码</p>
           <p class="text-[11px] text-text-muted max-w-md mx-auto">
-            短码仅用于建立连接，有效期 5 分钟。短码过期或被取消后，本地临时配对凭据将自动擦除。
+            短码与二维码仅用于建立连接，有效期 5 分钟。短码过期或被取消后，本地临时配对凭据将自动擦除。
           </p>
         </div>
 

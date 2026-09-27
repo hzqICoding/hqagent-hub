@@ -1,0 +1,33 @@
+export const REMOTE_ERROR_MESSAGES: Record<string, string> = {
+  REMOTE_AUTH_REQUIRED: '远程账号会话缺失或已过期，请重新登录',
+  REMOTE_CSRF_REJECTED: '安全校验失败（CSRF 拒绝），请刷新后重试',
+  REMOTE_DEVICE_OFFLINE: '电脑设备当前离线，指令已排队等待上线投递',
+  REMOTE_DEVICE_REVOKED: '设备配对已撤销，无法建立连接或派发新指令',
+  REMOTE_DEVICE_AUTH_FAILED: '设备凭据验证失败',
+  REMOTE_PAIRING_EXPIRED: '配对请求或配对短码已过期，请在电脑端重新发起',
+  REMOTE_PAIRING_CONFLICT: '该配对短码已绑定或已被其他用户认领',
+  REMOTE_PAIRING_INVALID: '配对短码无效，请核对电脑上显示的 8 位短码',
+  REMOTE_COMMAND_EXPIRED: '指令在接单前已过期，不再执行',
+  REMOTE_COMMAND_WITHDRAWN: '指令已成功撤回',
+  REMOTE_WITHDRAWAL_UNCONFIRMED: '指令可能已发送至电脑，撤回未能确认，请回到电脑核对',
+  REMOTE_WITHDRAWAL_TOO_LATE: '原任务已在执行或已结束，无法撤回；如需停止请使用取消运行',
+  REMOTE_STORE_CHANGED: '电脑端存储世代已重置，未决命令已冻结以待对账',
+  REMOTE_EPOCH_STALE: '电脑端会话已更新，旧连接已被替代',
+  REMOTE_PROTOCOL_UNSUPPORTED: '协议版本不兼容，请升级客户端或服务端',
+  REMOTE_EVENT_CONFLICT: '事件流存在冲突，请刷新获取最新数据',
+  REMOTE_ACK_CONFLICT: '确认冲突，请重连对账',
+  REMOTE_SEQUENCE_GAP: '对话消息序列存在缺口，等待补全',
+  REMOTE_APPROVAL_FORBIDDEN: '高风险或受限动作禁止在手机端远程批准，请回到电脑端处理',
+  CONVERSATION_AUTHORITY_MISMATCH: '对话归属不匹配（远程对话不能通过本地私有通道写入）',
+  REMOTE_TARGET_MISMATCH: '指令目标设备或对话不匹配',
+  REMOTE_SCENE_VERSION_MISMATCH: '场景配置版本不一致，已拒绝静默切换',
+  REMOTE_CURSOR_EXPIRED: '浏览器事件游标已失效，正在重建会话快照',
+  REMOTE_CURSOR_INVALID: '浏览器事件游标无效，正在重建会话快照',
+  REMOTE_RATE_LIMITED: '请求过于频繁被限流，请稍候再试',
+  REMOTE_FRAME_TOO_LARGE: '数据超出最大限制 (256KiB)',
+}
+
+export function getRemoteErrorMessage(code?: string | null, fallback = '远程服务请求失败'): string {
+  if (!code) return fallback
+  return REMOTE_ERROR_MESSAGES[code] || fallback
+}

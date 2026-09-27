@@ -122,7 +122,7 @@ function getReviewVerdictMeta(verdict: string) {
 </script>
 
 <template>
-  <aside class="w-[360px] lg:w-[400px] h-full border-l border-border bg-panel flex flex-col shrink-0 overflow-y-auto overflow-x-hidden select-none">
+  <aside class="w-full sm:w-[380px] md:w-[360px] lg:w-[400px] h-full border-l border-border bg-panel flex flex-col shrink-0 overflow-y-auto overflow-x-hidden select-none">
     <!-- Header -->
     <div class="p-3.5 border-b border-border flex items-center justify-between shrink-0">
       <div class="flex items-center gap-2 min-w-0">
@@ -151,8 +151,9 @@ function getReviewVerdictMeta(verdict: string) {
 
         <button
           type="button"
-          class="p-1 rounded hover:bg-panel-hover text-text-muted hover:text-text transition-colors"
+          class="min-w-[44px] min-h-[44px] p-2 rounded-lg hover:bg-panel-hover text-text-muted hover:text-text transition-colors flex items-center justify-center cursor-pointer"
           title="关闭执行详情"
+          aria-label="关闭执行详情"
           @click="emit('close')"
         >
           <X class="w-4 h-4" />

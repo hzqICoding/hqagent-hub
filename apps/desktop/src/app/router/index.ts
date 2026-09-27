@@ -2,6 +2,8 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AppLayout from '../layouts/AppLayout.vue'
 import LocalChatLayout from '../layouts/LocalChatLayout.vue'
 import { useLocalAuthStore } from '@/stores/local-auth.store'
+import { useRemoteAuthStore } from '@/stores/remote-auth.store'
+import { getRuntimeMode } from '@/shared/config/runtime-mode'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -25,6 +27,30 @@ const routes: RouteRecordRaw[] = [
     path: '/scenes',
     component: LocalChatLayout,
     children: [{ path: '', name: 'scenes', component: () => import('@/pages/scenes/ScenesPage.vue'), meta: { title: '场景与角色配置' } }],
+  },
+  {
+    path: '/remote/login',
+    name: 'remote-login',
+    component: () => import('@/pages/remote/RemoteLoginPage.vue'),
+    meta: { title: '远程登录' },
+  },
+  {
+    path: '/remote/pair',
+    name: 'remote-pair',
+    component: () => import('@/pages/remote/RemotePairingPage.vue'),
+    meta: { title: '设备配对' },
+  },
+  {
+    path: '/remote/devices',
+    name: 'remote-devices',
+    component: () => import('@/pages/remote/RemoteDevicesPage.vue'),
+    meta: { title: '已配对设备' },
+  },
+  {
+    path: '/remote/chat',
+    name: 'remote-chat',
+    component: () => import('@/pages/remote/RemoteChatPage.vue'),
+    meta: { title: '远程对话工作台' },
   },
   {
     path: '/remote-link',
@@ -126,6 +152,46 @@ export const router = createRouter({
 
 // Navigation Guard: In real mode, enforce local session check
 router.beforeEach(async (to, _from, next) => {
+  // 1. Remote routes guard
+  if (to.path === '/remote' || to.path.startsWith('/remote/')) {
+    const remoteAuthStore = useRemoteAuthStore()
+
+    // B7: Extract #code=... if arriving at /remote/pair with hash
+    if (to.path === '/remote/pair') {
+      const hashStr = (typeof window !== 'undefined' ? window.location.hash : to.hash) || ''
+      const match = hashStr.match(/code=([A-Za-z0-9]{8})(?:&|$)/)
+      if (match) {
+        remoteAuthStore.pendingPairCode = match[1].toUpperCase()
+        if (typeof window !== 'undefined' && window.history?.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search)
+        }
+      }
+    }
+
+    if (to.path === '/remote/login') {
+      next()
+      return
+    }
+
+    if (!remoteAuthStore.isAuthenticated) {
+      const ok = await remoteAuthStore.checkSession()
+      if (!ok) {
+        const redirectPath = to.path
+        next({ path: '/remote/login', query: { redirect: redirectPath } })
+        return
+      }
+    }
+    next()
+    return
+  }
+
+  // 2. If running in remote mode and user visits root / or /chat, redirect to /remote/chat
+  if (getRuntimeMode() === 'remote' && (to.path === '/' || to.path === '/chat')) {
+    next('/remote/chat')
+    return
+  }
+
+  // 3. Local desktop mode guards (unchanged)
   if (
     to.path === '/connect' ||
     to.path.startsWith('/onboarding') ||
