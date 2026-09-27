@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useRemoteAuthStore } from '@/stores/remote-auth.store'
 import { getRemoteGateway, RemoteApiError } from '@/shared/api'
 import type { RemotePairingPreview } from '@hqagent/protocol'
 import { HqButton, HqBadge } from '@/shared/ui'
@@ -8,6 +9,7 @@ import { Laptop, ArrowLeft, CheckCircle2, AlertCircle, ShieldCheck } from 'lucid
 
 const router = useRouter()
 const gateway = getRemoteGateway()
+const authStore = useRemoteAuthStore()
 
 const pairCode = ref('')
 const isLoadingPreview = ref(false)
@@ -44,6 +46,31 @@ async function handlePreview() {
     isLoadingPreview.value = false
   }
 }
+
+onMounted(async () => {
+  let code = authStore.pendingPairCode
+
+  // Check window.location.hash if pendingPairCode is empty
+  if (!code && typeof window !== 'undefined' && window.location.hash) {
+    const hashStr = window.location.hash
+    const match = hashStr.match(/code=([A-Za-z0-9]{8})(?:&|$)/)
+    if (match) {
+      code = match[1].toUpperCase()
+    }
+  }
+
+  // Clear hash from address bar immediately
+  if (typeof window !== 'undefined' && window.location.hash && window.history?.replaceState) {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  }
+
+  // If valid 8-char code, populate and trigger preview
+  if (code && /^[A-Z0-9]{8}$/.test(code)) {
+    pairCode.value = code
+    authStore.pendingPairCode = null
+    await handlePreview()
+  }
+})
 
 async function handleConfirm() {
   if (!previewData.value) return

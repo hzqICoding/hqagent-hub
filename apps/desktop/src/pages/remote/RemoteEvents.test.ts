@@ -644,6 +644,96 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     expect(newTopicRadio.element.checked).toBe(true)
   })
 
+  it('B5: sessionMode defaults: new when conversation has no runs, continue when latest run succeeded, and respects manual user selection', async () => {
+    // 1. Conversation has no runs -> defaults to "new"
+    mockRemoteGateway.runs = []
+    const wrapper = mount(RemoteChatPage, {
+      global: { plugins: [router] },
+    })
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    const newRadio = wrapper.find<HTMLInputElement>('input[type="radio"][value="new"]')
+    const continueRadio = wrapper.find<HTMLInputElement>('input[type="radio"][value="continue"]')
+    expect(newRadio.element.checked).toBe(true)
+    expect(continueRadio.element.checked).toBe(false)
+
+    // 2. Latest run succeeded arrives -> automatically switches default to "continue"
+    const successRunEvent: RemoteBrowserEvent = {
+      type: 'worker.event',
+      serverCursor: 'cur_run_succ',
+      recordedAt: new Date().toISOString(),
+      payload: {
+        type: 'run.state_changed',
+        wireRevision: 1,
+        eventId: 'ev_run_succ',
+        workerId: 'worker_demo',
+        workerStoreId: 'store_demo',
+        workerEpoch: 'epoch_1',
+        seq: 85,
+        occurredAt: new Date().toISOString(),
+        commandId: 'cmd_run_succ',
+        conversationId: 'conversation_demo',
+        payload: {
+          runId: 'run_success_1',
+          conversationId: 'conversation_demo',
+          status: 'succeeded',
+          observedAt: new Date().toISOString(),
+          summary: 'Task finished cleanly',
+        },
+      },
+    }
+
+    mockRemoteGateway.pendingEvents = [successRunEvent]
+    await store.pollEvents()
+    await flushPromises()
+
+    expect(store.activeRun?.status).toBe('succeeded')
+    expect(continueRadio.element.checked).toBe(true)
+    expect(newRadio.element.checked).toBe(false)
+
+    // 3. User manually selects "new" -> should respect user's manual choice
+    await newRadio.setValue()
+    await newRadio.trigger('change')
+    await flushPromises()
+
+    expect(newRadio.element.checked).toBe(true)
+
+    // Another succeeded run arrives via event, but user already chose "new" -> must remain "new"
+    const anotherRunEvent: RemoteBrowserEvent = {
+      type: 'worker.event',
+      serverCursor: 'cur_run_succ_2',
+      recordedAt: new Date().toISOString(),
+      payload: {
+        type: 'run.state_changed',
+        wireRevision: 1,
+        eventId: 'ev_run_succ_2',
+        workerId: 'worker_demo',
+        workerStoreId: 'store_demo',
+        workerEpoch: 'epoch_1',
+        seq: 86,
+        occurredAt: new Date().toISOString(),
+        commandId: 'cmd_run_succ_2',
+        conversationId: 'conversation_demo',
+        payload: {
+          runId: 'run_success_2',
+          conversationId: 'conversation_demo',
+          status: 'succeeded',
+          observedAt: new Date().toISOString(),
+          summary: 'Second task finished cleanly',
+        },
+      },
+    }
+
+    mockRemoteGateway.pendingEvents = [anotherRunEvent]
+    await store.pollEvents()
+    await flushPromises()
+
+    // Must remain "new" as chosen by user!
+    expect(newRadio.element.checked).toBe(true)
+    expect(continueRadio.element.checked).toBe(false)
+  })
+
   it('B6: device transitions from online to offline, without reloading page, badge becomes 电脑离线 after next device poll', async () => {
     vi.useFakeTimers()
     mockRemoteGateway.workerOnline = true

@@ -91,12 +91,32 @@ watch(
   }
 )
 
+const isSessionModeUserSelected = ref(false)
+
+function updateDefaultSessionMode() {
+  if (isSessionModeUserSelected.value) return
+  const currentRun = chatStore.activeRun
+  if (!currentRun) {
+    sessionMode.value = 'new'
+  } else if (currentRun.status === 'cancelled' || currentRun.status === 'failed') {
+    sessionMode.value = 'new'
+  } else if (currentRun.status === 'succeeded') {
+    sessionMode.value = 'continue'
+  }
+}
+
+watch(
+  () => chatStore.activeConversationId,
+  () => {
+    isSessionModeUserSelected.value = false
+    updateDefaultSessionMode()
+  }
+)
+
 watch(
   [() => chatStore.activeRun?.runId, () => chatStore.activeRun?.status],
-  ([_runId, status]) => {
-    if (status === 'cancelled' || status === 'failed') {
-      sessionMode.value = 'new'
-    }
+  () => {
+    updateDefaultSessionMode()
   },
   { immediate: true }
 )
@@ -661,6 +681,7 @@ function getExecutionStatusLabel(status?: string): string {
                   type="radio"
                   value="continue"
                   class="accent-primary"
+                  @change="isSessionModeUserSelected = true"
                 />
                 <span>继续上下文</span>
               </label>
@@ -671,6 +692,7 @@ function getExecutionStatusLabel(status?: string): string {
                   type="radio"
                   value="new"
                   class="accent-primary"
+                  @change="isSessionModeUserSelected = true"
                 />
                 <span>新话题</span>
               </label>

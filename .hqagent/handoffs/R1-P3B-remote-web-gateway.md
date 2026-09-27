@@ -695,3 +695,173 @@ dist/assets/index-CK96B6o3.js                                                   
 ✓ built in 7.84s
 ```
 
+---
+
+## 12. 返修 2 + 扫码配对交付说明 (B4, B5, B6, B7)
+
+- 分支：`feat/remote-web-gateway`
+- 工作区：`E:\OtherPro\HQAgent-Hub-worktrees\remote-web-gateway`
+- 基线与测试：实测 **50 个测试文件、264 tests passed**，`typecheck` 0 错误，`lint` 0 错误 0 警告，`build` 生产构建成功。
+- 新增依赖（特许）：
+  - 运行时依赖：`qrcode`（版本 `^1.5.4`）
+  - 开发依赖：`@types/qrcode`（版本 `1.5.5`）
+  - 仅引入上述库及传递依赖，已更新 `apps/desktop/package.json` 与 `pnpm-lock.yaml`。
+
+### 12.1 任务项修复详情
+
+#### 1. B4：`activeRun` 指向最新 run 并响应事件切换
+- `remote-chat.store.ts` 中 `activeRun` 计算属性调整为逆序检索，确保取到当前会话创建时间最晚的 run。
+- 增量事件 `run.state_changed` 推送新 run 时，状态栏和控制按钮（取消、暂停、恢复、重试）自动切换作用于新 run。
+
+#### 2. B5：输入框会话模式默认值与用户选择保持
+- `RemoteChatPage.vue` 中对 `sessionMode` 默认值联动：
+  - 当前会话没有历史 run（`!chatStore.activeRun`）或最新 run 为 `cancelled` / `failed` 时：默认选中「新话题」(`new`)，且当中断时显示警示条；
+  - 最新 run 为 `succeeded` 时：默认选中「继续上下文」(`continue`)；
+  - 用户手动切换单选框后（`@change="isSessionModeUserSelected = true"`）：以用户选择为准，后续事件到达不再覆盖用户的手动选择；
+  - 切换会话时自动重置用户手动标记，重新计算新会话的默认值。
+
+#### 3. B6：设备在线/离线标签自动更新
+- 目标设备状态每 15 秒轮询刷新一次（`GET /api/v2/devices/{workerId}`）；
+- 页面处于后台（`visibilityState !== 'visible'`）时暂停轮询，切回前台（`visible`）时立即刷新一次并恢复定时器；
+- 收到 `command.updated` 事件时，同步以其 `workerOnline` 字段更新设备状态和顶部徽章。
+
+#### 4. B7：扫码配对
+- **电脑端**（`RemoteLinkPage.vue`）：
+  - 在 `pairing` 状态下，在短码上方渲染二维码，内容格式严格为 `<serverOrigin>/remote/pair#code=<短码>`（短码放在 `#` 片段中，不进入 HTTP 服务端访问日志）；
+  - 短码文本和倒计时保留在二维码下方，作为无法扫码时的备用；
+  - 配对过期或取消后二维码随即消失；
+  - 二维码使用 `QRCode.toDataURL` 在内存中生成 base64 Data URL 渲染，不写入任何本地持久化存储，不提供导出/下载。
+- **手机端**（`RemotePairingPage.vue` 与路由守卫）：
+  - 路由守卫与组件挂载时从 `location.hash` 解析 `code` 参数，严格校验 8 位字母数字 `/^[A-Z0-9]{8}$/`；
+  - 读取后立即调用 `history.replaceState` 清空浏览器地址栏中的 hash 片段；
+  - 若未登录，路由守卫重定向至 `/remote/login?redirect=/remote/pair`（短码仅存在于 `remoteAuthStore.pendingPairCode` 内存 ref 中，绝不写入 `localStorage`、`sessionStorage` 或 URL 查询参数）；登录成功后跳回 `/remote/pair` 自动取回短码；
+  - 自动填入 8 位短码并调用 `gateway.previewPairing` 获取设备名、平台、架构预览卡片；
+  - 必须由用户核对无误后点击「确认绑定并建立连接」才提交绑定，杜绝扫码后静默自动绑定；
+  - 非法短码格式自动忽略，不触发预览。
+
+---
+
+### 12.2 新增与补充测试套件
+
+1. **`src/pages/remote-link/RemoteLink.test.ts`（9 tests passed）**：
+   - 验证 pairing 状态下正确渲染二维码图片（`data:image/png;base64,...`），短码文字和倒计时保留作为备用；
+   - 验证取消配对后二维码立即消失；
+   - 验证无任何配对码或凭据泄漏到本地存储。
+2. **`src/pages/remote/RemotePairing.test.ts`（7 tests passed）**：
+   - 验证从 `location.hash` 读取短码后地址栏 hash 被 `history.replaceState` 清除；
+   - 验证自动填入短码并触发预览卡片展示设备名、平台；
+   - 验证不会自动静默绑定，必须由用户点击确认后才发起 `confirmPairing`；
+   - 验证非法 code（长度不符或字符非法）被忽略，不触发预览；
+   - 验证未登录状态通过内存 ref 带入短码，零本地存储泄漏。
+3. **`src/pages/remote/RemoteEvents.test.ts`（15 tests passed）**：
+   - 验证 B4 最新 run 选择及取消按钮目标；
+   - 验证 B5 无 run 或失败时默认「新话题」，成功时默认「继续上下文」，用户手动修改后保持用户选择；
+   - 验证 B6 设备轮询、可见性暂停/切回刷新、以及 `command.updated` 携带的 `workerOnline` 实时同步。
+
+---
+
+### 12.3 附交付截图清单
+
+截图存放于 `.hqagent/handoffs/screenshots/r1-p3b/`：
+1. **电脑端二维码页（宽屏）**：[`pc-pairing-qrcode-wide.png`](file:///E:/OtherPro/HQAgent-Hub-worktrees/remote-web-gateway/.hqagent/handoffs/screenshots/r1-p3b/pc-pairing-qrcode-wide.png)（1280×800，展示居中二维码及下方备用短码）
+2. **电脑端二维码页（移动尺寸）**：[`pc-pairing-qrcode-375x812.png`](file:///E:/OtherPro/HQAgent-Hub-worktrees/remote-web-gateway/.hqagent/handoffs/screenshots/r1-p3b/pc-pairing-qrcode-375x812.png)（375×812，验证窄屏下二维码与短码垂直居中无横向溢出）
+3. **手机扫码后的预览页（宽屏）**：[`mobile-pair-preview-wide.png`](file:///E:/OtherPro/HQAgent-Hub-worktrees/remote-web-gateway/.hqagent/handoffs/screenshots/r1-p3b/mobile-pair-preview-wide.png)（1280×800，展示自动带入短码及设备预览卡片）
+4. **手机扫码后的预览页（移动尺寸）**：[`mobile-pair-preview-375x812.png`](file:///E:/OtherPro/HQAgent-Hub-worktrees/remote-web-gateway/.hqagent/handoffs/screenshots/r1-p3b/mobile-pair-preview-375x812.png)（375×812，展示真机比例下的预览与确认绑定按钮）
+
+---
+
+### 12.4 返修 2 真实验证命令输出
+
+#### 1. 类型检查（Typecheck 0 错误）
+```text
+$ pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+# 退出码 0，无任何类型错误
+```
+
+#### 2. 代码风格（Lint 0 错误 0 警告）
+```text
+$ pnpm --filter @hqagent/desktop lint
+$ eslint src
+# 退出码 0，无错误无警告
+```
+
+#### 3. 完整测试套件（50 test files / 264 passed）
+```text
+$ pnpm --filter @hqagent/desktop test
+
+ RUN  v2.1.9 E:/OtherPro/HQAgent-Hub-worktrees/remote-web-gateway/apps/desktop
+
+ ✓ src/shared/api/local-hub-gateway.test.ts (8 tests)
+ ✓ src/shared/api/local-chat-gateway.test.ts (8 tests)
+ ✓ src/shared/api/mock-local-chat-gateway.test.ts (16 tests)
+ ✓ src/stores/chat.store.test.ts (9 tests)
+ ✓ src/stores/chat.context.test.ts (7 tests)
+ ✓ src/stores/task.store.test.ts (7 tests)
+ ✓ src/stores/chat.polling.test.ts (6 tests)
+ ✓ src/pages/remote/RemoteGateway.test.ts (4 tests)
+ ✓ src/pages/chat/components/ProcessActivityGroup.test.ts (5 tests)
+ ✓ src/stores/chat.reliability.test.ts (7 tests)
+ ✓ src/stores/scenes.store.test.ts (6 tests)
+ ✓ src/pages/chat/components/ChatComposer.test.ts (7 tests)
+ ✓ src/pages/remote/RemotePairing.test.ts (7 tests)
+ ✓ src/pages/chat/RemoteConversationReadOnly.test.ts (7 tests)
+ ✓ src/pages/remote/RemoteChat.test.ts (7 tests)
+ ✓ src/pages/remote-link/RemoteLink.test.ts (9 tests)
+ ✓ src/pages/remote/RemoteEvents.test.ts (15 tests)
+ ✓ src/shared/api/mock-gateway.test.ts (10 tests)
+ ✓ src/pages/scenes/ScenesPage.test.ts (9 tests)
+ ✓ src/pages/chat/ChatMobile.test.ts (6 tests)
+ ✓ src/pages/chat/ChatPage.test.ts (7 tests)
+ ✓ src/pages/remote/RemoteAuth.test.ts (4 tests)
+ ✓ src/pages/chat/components/ChatSidebar.test.ts (3 tests)
+ ✓ src/stores/app.store.test.ts (8 tests)
+ ✓ src/shared/ui/HqMarkdown.test.ts (6 tests)
+ ✓ src/shared/theme/theme.engine.test.ts (5 tests)
+ ✓ src/pages/chat/components/RunSnapshotDrawer.test.ts (1 test)
+ ✓ src/stores/approval.store.test.ts (4 tests)
+ ✓ src/pages/tasks/TaskDetailPage.test.ts (5 tests)
+ ✓ src/pages/remote/RemoteModeIsolation.test.ts (4 tests)
+ ✓ src/pages/chat/components/ChatMessageItem.test.ts (3 tests)
+ ✓ src/stores/chat.action-scope.test.ts (2 tests)
+ ✓ src/app/layouts/AppLayout.test.ts (3 tests)
+ ✓ src/shared/api/local-chat-timeout.test.ts (3 tests)
+ ✓ src/pages/approvals/ApprovalsPage.test.ts (3 tests)
+ ✓ src/stores/workspace.store.test.ts (3 tests)
+ ✓ src/pages/tasks/TasksPage.test.ts (3 tests)
+ ✓ src/stores/team.store.test.ts (5 tests)
+ ✓ src/pages/templates/TemplatesPage.test.ts (3 tests)
+ ✓ src/pages/sessions/SessionsPage.test.ts (3 tests)
+ ✓ src/stores/agent.store.test.ts (3 tests)
+ ✓ src/pages/agents/AgentsPage.test.ts (3 tests)
+ ✓ src/pages/auth/ConnectPage.test.ts (2 tests)
+ ✓ src/pages/workspaces/WorkspacesPage.test.ts (3 tests)
+ ✓ src/pages/teams/TeamsPage.test.ts (3 tests)
+ ✓ src/pages/onboarding/OnboardingPage.test.ts (2 tests)
+ ✓ src/stores/local-auth.store.test.ts (2 tests)
+ ✓ src/shared/ui/HqButton.test.ts (4 tests)
+ ✓ src/pages/overview/OverviewPage.test.ts (2 tests)
+ ✓ src/stores/session.store.test.ts (2 tests)
+
+ Test Files  50 passed (50)
+      Tests  264 passed (264)
+   Duration  8.93s
+```
+
+#### 4. 生产构建（Build 成功）
+```text
+$ pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1812 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                                   2.56 kB │ gzip:  1.04 kB
+dist/assets/RemotePairingPage-CK2m4yrH.js                          5.23 kB │ gzip:  2.43 kB
+dist/assets/RemoteChatPage-BrK67MgQ.js                           18.52 kB │ gzip:  6.20 kB
+dist/assets/RemoteLinkPage-4yl3ftQh.js                           43.48 kB │ gzip: 16.75 kB
+dist/assets/index-DZvHNdZq.js                                   209.37 kB │ gzip: 67.57 kB
+✓ built in 6.79s
+```
+

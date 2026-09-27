@@ -154,15 +154,30 @@ export const router = createRouter({
 router.beforeEach(async (to, _from, next) => {
   // 1. Remote routes guard
   if (to.path === '/remote' || to.path.startsWith('/remote/')) {
+    const remoteAuthStore = useRemoteAuthStore()
+
+    // B7: Extract #code=... if arriving at /remote/pair with hash
+    if (to.path === '/remote/pair') {
+      const hashStr = (typeof window !== 'undefined' ? window.location.hash : to.hash) || ''
+      const match = hashStr.match(/code=([A-Za-z0-9]{8})(?:&|$)/)
+      if (match) {
+        remoteAuthStore.pendingPairCode = match[1].toUpperCase()
+        if (typeof window !== 'undefined' && window.history?.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search)
+        }
+      }
+    }
+
     if (to.path === '/remote/login') {
       next()
       return
     }
-    const remoteAuthStore = useRemoteAuthStore()
+
     if (!remoteAuthStore.isAuthenticated) {
       const ok = await remoteAuthStore.checkSession()
       if (!ok) {
-        next({ path: '/remote/login', query: { redirect: to.fullPath } })
+        const redirectPath = to.path
+        next({ path: '/remote/login', query: { redirect: redirectPath } })
         return
       }
     }

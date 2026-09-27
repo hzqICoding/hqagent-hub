@@ -10,6 +10,7 @@ export const useRemoteAuthStore = defineStore('remoteAuth', () => {
   const isLoading = ref(false)
   const authError = ref<string | null>(null)
   const retryAfter = ref<number | null>(null)
+  const pendingPairCode = ref<string | null>(null)
 
   let countdownInterval: ReturnType<typeof setInterval> | null = null
 
@@ -120,6 +121,7 @@ export const useRemoteAuthStore = defineStore('remoteAuth', () => {
     isLoading.value = false
     authError.value = null
     retryAfter.value = null
+    pendingPairCode.value = null
     if (countdownInterval) {
       clearInterval(countdownInterval)
       countdownInterval = null
@@ -132,6 +134,7 @@ export const useRemoteAuthStore = defineStore('remoteAuth', () => {
     isLoading,
     authError,
     retryAfter,
+    pendingPairCode,
     checkSession,
     login,
     logout,
