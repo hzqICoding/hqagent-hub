@@ -8,12 +8,25 @@ import json
 from .common import Fault, require, validated
 
 MAX_FRAME_BYTES = 262144
-CURRENT = 1
-CODECS = {1: ("RemoteWorkerOutboundFrame", "RemoteServerOutboundFrame", "RemoteCommandEnvelope")}
+CURRENT = 2
+CODECS = {1: ("RemoteWorkerOutboundFrame", "RemoteServerOutboundFrame", "RemoteCommandEnvelope"),
+          2: ("RemoteV2WorkerOutboundFrame", "RemoteV2ServerOutboundFrame", "RemoteV2CommandEnvelope")}
 
 
 def revision(frame):
     return frame["wireRevision"]
+
+
+def offered(raw):
+    """Select a rejection codec without trusting or coercing a discriminator."""
+    try:
+        if len(raw.encode()) <= MAX_FRAME_BYTES:
+            value = json.loads(raw).get('wireRevision')
+            if type(value) is int and value in CODECS:
+                return value
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return 1
 
 
 def decode(raw, revision=None):
@@ -36,13 +49,20 @@ def decode(raw, revision=None):
 
 def encode(value, revision=CURRENT):
     require(revision in CODECS, "REMOTE_PROTOCOL_UNSUPPORTED")
+    require("wireRevision" not in value or value["wireRevision"] == revision, "REMOTE_PROTOCOL_UNSUPPORTED")
     value = dict(value, wireRevision=revision)
     if value["type"] == "worker.hello_rejected":
         value["supportedWireRevisions"] = sorted(CODECS)
+        if revision == 1:
+            try:
+                validated('RemoteWire1Error', value['error'])
+            except ValueError:
+                value['error'] = Fault('INTERNAL').view()
     result = validated(CODECS[revision][1], value)
     require(len(json.dumps(result, ensure_ascii=False).encode()) <= MAX_FRAME_BYTES, "REMOTE_FRAME_TOO_LARGE")
     return result
 
 
 def command(value, revision=CURRENT):
+    require("wireRevision" not in value or value["wireRevision"] == revision, "REMOTE_PROTOCOL_UNSUPPORTED")
     return validated(CODECS[revision][2], dict(value, wireRevision=revision))
