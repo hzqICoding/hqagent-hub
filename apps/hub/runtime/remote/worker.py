@@ -327,6 +327,14 @@ class RemoteWorker:
                     frame = decode(content, revision=revision)
                     if generation != self.repo.get("link")["generation"]:
                         return
+                    if frame["type"] == "worker.hello_rejected":
+                        # P1 also uses this generated error envelope when an
+                        # established connection fails event validation. It is
+                        # not evidence of an epoch/connectionId mismatch.
+                        code = frame["error"]["code"]
+                        if not frame["error"]["retryable"] and code != "REMOTE_DEVICE_REVOKED":
+                            self.state("offline", code=code, frozen=True, generation=generation)
+                        raise HubError(code, "服务端拒绝当前 Worker 连接")
                     if frame["type"] in {"worker.events_ack", "server.heartbeat"}:
                         if frame["connectionId"] != connection_id:
                             raise HubError("REMOTE_EPOCH_STALE", "连接栅栏不匹配")
