@@ -94,6 +94,7 @@ class Service:
                 retention = tx.browser_retention(owner)
                 position, floor = claims["position"], retention["prunedThrough"]
                 require(position > floor or (position == floor and claims["generation"] == retention["generation"]), "REMOTE_CURSOR_EXPIRED")
+                require(position <= tx.browser_tail(owner), 'REMOTE_CURSOR_EXPIRED')
             return claims["position"]
         except Fault:
             raise
@@ -184,7 +185,7 @@ class Service:
                      createdAt=self.now(), expiresAt=expires, payload=payload)
         if sequence is not None:
             frame["conversationSeq"] = sequence
-        frame = wire.command(frame)
+        frame = wire.command(frame, revision=1)
         previous = tx.get(owner, "command", identifier)
         if previous:
             # The caller must preserve all immutable fields, including time, on retransmit.
@@ -269,7 +270,7 @@ class Service:
             skip = wire.encode(dict(type="conversation.skip", commandId=value["commandId"], conversationId=value["conversationId"],
                                     conversationSeq=value["conversationSeq"], targetWorkerId=value["targetWorkerId"],
                                     expectedWorkerStoreId=value["_frame"]["expectedWorkerStoreId"],
-                                    reason="expired_before_dispatch" if code == "REMOTE_COMMAND_EXPIRED" else "withdrawn_before_dispatch", recordedAt=self.now()))
+                                    reason="expired_before_dispatch" if code == "REMOTE_COMMAND_EXPIRED" else "withdrawn_before_dispatch", recordedAt=self.now()), revision=1)
             self.outbox(tx, owner, skip)
         self.command_event(tx, owner, value)
         self.notify(tx, owner, value["targetWorkerId"])

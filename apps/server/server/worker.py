@@ -29,6 +29,7 @@ class Connection:
     last_seen: float
     revision: int = wire.CURRENT
     closed: bool = False
+    busy_fresh: bool = False
     replay: list = field(default_factory=list)
     wakeup: asyncio.Event = field(default_factory=asyncio.Event)
     loop: object = field(default_factory=asyncio.get_running_loop, repr=False)
@@ -74,6 +75,8 @@ class WorkerTransport:
         device.update(_everConnected=True, _epoch=frame["workerEpoch"], capabilityRevision=frame["capabilityRevision"], lastSeenAt=self.s.now())
         if ack and not bad_ack:
             device["_lastReportedAck"] = ack["seq"]
+        if hasattr(self.s, 'on_hello'):
+            self.s.on_hello(tx, owner, device, frame, connection_id)
         self.s.save(tx, owner, "device", device["workerId"], device)
         result = dict(type="worker.hello_ack", connectionId=connection_id, workerId=device["workerId"], workerStoreId=store,
                       workerEpoch=frame["workerEpoch"], commandDelivery="frozen" if device["_frozen"] else "ready",
@@ -107,15 +110,19 @@ class WorkerTransport:
             if box["done"] or box["id"] in sent:
                 continue
             frame = box["_frame"]
+            if frame['wireRevision'] != connection.revision:
+                continue
             box["dispatching"] = True
             self.s.save(tx, connection.owner, "outbox", box["id"], box)
-            if frame["type"] != "conversation.skip":
+            if frame["type"] not in {"conversation.skip", "command.delivery_granted"}:
                 command = self.s.get(tx, connection.owner, "command", frame["commandId"])
                 if command["status"] != "queued":
                     continue
                 command.update(_dispatch=True, observedAt=self.s.now())
-                if command["deliveryState"] != "reconciliation_required":
-                    command["deliveryState"] = "sent"
+                if command.get('_granted'):
+                    command['deliveryState'] = 'granted'
+                elif command["deliveryState"] != "reconciliation_required":
+                    command["deliveryState"] = "awaiting_receipt" if connection.revision == 2 else "sent"
                 self.s.save(tx, connection.owner, "command", command["commandId"], command)
                 self.s.command_event(tx, connection.owner, command)
             frames.append((box["id"], frame))
@@ -125,6 +132,7 @@ class WorkerTransport:
         connection = None
         accepted = False
         receiving = None
+        negotiated = 1
         try:
             self.s.security.rate("device-auth:" + (socket.client.host if socket.client else "unknown"))
             require(socket.url.scheme == "wss", "REMOTE_DEVICE_AUTH_FAILED")
@@ -135,6 +143,7 @@ class WorkerTransport:
             await socket.accept()
             accepted = True
             raw = await asyncio.wait_for(socket.receive_text(), timeout=HELLO_TIMEOUT)
+            negotiated = wire.offered(raw)
             hello = wire.decode(raw)
             identifier = uid()
             with self.s.repo.transaction() as tx:
@@ -211,8 +220,11 @@ class WorkerTransport:
                         self.s.notify(tx, owner, connection.worker)
                         answer = None
                     else:
-                        require("eventId" in frame, "REMOTE_PROTOCOL_UNSUPPORTED")
-                        position = self.events.accept(tx, owner, frame)
+                        require("eventId" in frame or frame['type'] == 'sync.content.redaction', "REMOTE_PROTOCOL_UNSUPPORTED")
+                        if connection.revision == 2:
+                            position = self.events.accept(tx, owner, frame, connection, encoded_bytes=len(raw.encode()))
+                        else:
+                            position = self.events.accept(tx, owner, frame)
                         device = self.s.get(tx, owner, "device", connection.worker)
                         answer = dict(type="worker.events_ack", connectionId=identifier, workerId=connection.worker, position=position)
                     connection.last_seen = self.s.settings.monotonic()
@@ -232,7 +244,7 @@ class WorkerTransport:
                 return
             if accepted and (connection is None or not connection.closed):
                 try:
-                    await socket.send_json(wire.encode(dict(type="worker.hello_rejected", error=exc.view()), connection.revision if connection else wire.CURRENT))
+                    await socket.send_json(wire.encode(dict(type="worker.hello_rejected", error=exc.view()), connection.revision if connection else negotiated))
                 except (RuntimeError, WebSocketDisconnect):
                     pass
             code = 1009 if exc.code == "REMOTE_FRAME_TOO_LARGE" else (4401 if exc.status == 401 else 4403 if exc.status == 403 else 4409)
