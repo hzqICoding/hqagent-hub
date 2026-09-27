@@ -133,10 +133,12 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   const isActiveConversationArchived = computed(() => Boolean(activeConversation.value?.archived))
+  const isRemoteConversation = computed(() => activeConversation.value?.authority === 'remote')
 
   const nonArchivableStatuses: TaskStatus[] = ['queued', 'running', 'waiting_approval', 'paused']
 
   function canArchiveConversation(conversation: LocalConversationView): boolean {
+    if (conversation.authority === 'remote') return false
     const status = conversation.lastRunStatus
     return !conversation.archived
       && !(status && nonArchivableStatuses.includes(status))
@@ -436,6 +438,10 @@ export const useChatStore = defineStore('chat', () => {
   ): Promise<LocalConversationView> {
     const conversation = conversations.value.find((item) => item.id === conversationId)
     if (!conversation) throw new HubApiError('任务不存在', 'NOT_FOUND', 404)
+    if (conversation.authority === 'remote') {
+      metadataError.value = '这是手机远程对话，无法在电脑上修改或归档'
+      throw new HubApiError('这是手机远程对话，无法在电脑上修改或归档', 'CONVERSATION_AUTHORITY_MISMATCH', 409)
+    }
     const input: UpdateLocalConversationInput = {
       expectedVersion: conversation.version ?? 1,
       ...patch,
@@ -512,6 +518,10 @@ export const useChatStore = defineStore('chat', () => {
     const convId = activeConversationId.value
     if (!convId || !text.trim() || sendingConversationIds.value.includes(convId)) return
     const conversation = conversations.value.find((item) => item.id === convId)
+    if (conversation?.authority === 'remote') {
+      sendError.value = '这是手机远程对话，请在手机上继续'
+      throw new HubApiError('这是手机远程对话，无法在电脑上发送消息，请在手机上继续', 'CONVERSATION_AUTHORITY_MISMATCH', 409)
+    }
     if (conversation?.archived) {
       throw new HubApiError('请先恢复已归档任务，再发送消息', 'CONFLICT', 409)
     }
@@ -610,6 +620,10 @@ export const useChatStore = defineStore('chat', () => {
   ): Promise<void> {
     const conversationId = activeConversationId.value
     const generation = viewGeneration
+    if (activeConversation.value?.authority === 'remote') {
+      actionError.value = '这是手机远程对话，请在手机上继续'
+      throw new HubApiError('这是手机远程对话，无法在电脑上控制运行，请在手机上继续', 'CONVERSATION_AUTHORITY_MISMATCH', 409)
+    }
     if (isActiveConversationArchived.value && (action === 'resume' || action === 'retry')) {
       throw new HubApiError('请先恢复已归档任务，再继续或重试', 'CONFLICT', 409)
     }
@@ -1180,6 +1194,7 @@ export const useChatStore = defineStore('chat', () => {
     filteredConversations,
     groupedConversations,
     isActiveConversationArchived,
+    isRemoteConversation,
     canArchiveConversation,
     toggleWorkspaceCollapsed,
     conversationDrafts,

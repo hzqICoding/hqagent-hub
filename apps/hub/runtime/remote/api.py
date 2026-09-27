@@ -1,4 +1,4 @@
-"""v1 routes inherit the existing Hub boundary middleware."""
+"""Shared local remote-link handlers; mounting determines v1/v2 authentication."""
 from fastapi import APIRouter, Header, Request
 from protocol.generated.python import RemoteLinkPairingInput
 from api.envelopes import success_response
@@ -6,7 +6,7 @@ from core.errors import HubError
 
 
 def install_remote_routes(app, link):
-    router = APIRouter(prefix="/api/v1/remote")
+    router = APIRouter(prefix="/remote")
 
     def response(view):
         result = success_response(view)
@@ -42,4 +42,5 @@ def install_remote_routes(app, link):
     async def unlink(idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
         return response(await link.clear(idempotency_key, unlink=True))
 
-    app.include_router(router)
+    app.include_router(router, prefix="/api/v1")
+    return router

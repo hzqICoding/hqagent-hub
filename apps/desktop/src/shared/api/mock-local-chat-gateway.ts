@@ -32,6 +32,8 @@ import type {
   TaskDetailView,
   LocalSceneId,
   ErrorCode,
+  RemoteLinkView,
+  RemoteLinkPairingInput,
 } from '@hqagent/protocol'
 import { PROTOCOL_VERSION } from '@hqagent/protocol'
 
@@ -62,6 +64,12 @@ export class MockLocalChatGateway implements LocalChatGateway {
   private sceneCreateReceipts = new Map<string, { signature: string; response: LocalSceneView }>()
   private roleTemplateWriteReceipts = new Map<string, { signature: string; response: LocalRoleTemplateView }>()
   private eventSeq = 1
+
+  // Remote Link (D44)
+  private remoteLink: RemoteLinkView = {
+    state: 'unpaired',
+    serverOrigin: 'https://hub.example.com',
+  }
 
   // Simulation flags
   public simulateCursorExpired = false
@@ -528,13 +536,64 @@ export class MockLocalChatGateway implements LocalChatGateway {
       lastRunStatus: 'succeeded',
     }
 
-    this.conversations = [conv2, conv1, conv3, archivedConversation]
+    const remoteConvId = 'conv_remote_mobile'
+    const remoteRunId = 'run_remote_1'
+    const remoteConversation: LocalConversationView = {
+      id: remoteConvId,
+      title: '手机远程：排查订单超时',
+      workspaceId: this.workspaces[0].id,
+      sceneId: 'analyze',
+      createdAt: '2026-09-26T14:00:00Z',
+      updatedAt: '2026-09-26T14:10:00Z',
+      version: 1,
+      archived: false,
+      authority: 'remote',
+      lastRunStatus: 'running',
+      activeRunId: remoteRunId,
+    }
+    const remoteMessages: LocalMessageView[] = [
+      {
+        id: 'msg_remote_1',
+        conversationId: remoteConvId,
+        sequence: 1,
+        role: 'user',
+        text: '来自手机端指令：排查订单超时告警并定位日志',
+        createdAt: '2026-09-26T14:00:00Z',
+      },
+      {
+        id: 'msg_remote_2',
+        conversationId: remoteConvId,
+        sequence: 2,
+        role: 'assistant',
+        text: '已在本地电脑执行分析：识别到订单超时主要由于数据库连接池等待。',
+        runId: remoteRunId,
+        createdAt: '2026-09-26T14:00:10Z',
+      },
+    ]
+    const remoteRun: LocalRunView = {
+      id: remoteRunId,
+      conversationId: remoteConvId,
+      messageId: 'msg_remote_1',
+      taskId: 'task_run_remote_1',
+      sceneSnapshot: JSON.parse(JSON.stringify(analyzeSceneFixture)),
+      status: 'running',
+      createdAt: '2026-09-26T14:00:05Z',
+      updatedAt: '2026-09-26T14:00:10Z',
+    }
+
+    this.conversations = [conv2, conv1, remoteConversation, conv3, archivedConversation]
     this.messages.set(conv1Id, conv1Messages)
     this.messages.set(conv2Id, conv2Messages)
     this.messages.set(conv3Id, conv3Messages)
+    this.messages.set(remoteConvId, remoteMessages)
     this.runs.set(run1Id, run1)
     this.runs.set(run2Id, run2)
     this.runs.set(run3Id, run3)
+    this.runs.set(remoteRunId, remoteRun)
+    this.remoteLink = {
+      state: 'unpaired',
+      serverOrigin: 'https://hub.example.com',
+    }
 
     // Seed approvals
     this.approvals = [
@@ -1033,6 +1092,13 @@ export class MockLocalChatGateway implements LocalChatGateway {
     if (!conversation) {
       throw new HubApiError('对话不存在', 'NOT_FOUND' as ErrorCode, 404)
     }
+    if (conversation.authority === 'remote') {
+      throw new HubApiError(
+        '这是手机远程对话，无法在电脑上修改或归档',
+        'CONVERSATION_AUTHORITY_MISMATCH' as ErrorCode,
+        409
+      )
+    }
     const currentVersion = conversation.version ?? 1
     if (input.expectedVersion !== currentVersion) {
       throw new HubApiError(
@@ -1083,6 +1149,13 @@ export class MockLocalChatGateway implements LocalChatGateway {
     const conv = this.conversations.find((c) => c.id === conversationId)
     if (!conv) {
       throw new HubApiError('对话不存在', 'NOT_FOUND' as ErrorCode, 404)
+    }
+    if (conv.authority === 'remote') {
+      throw new HubApiError(
+        '这是手机远程对话，无法在电脑上发送消息，请在手机上继续',
+        'CONVERSATION_AUTHORITY_MISMATCH' as ErrorCode,
+        409
+      )
     }
     if (conv.archived) {
       throw new HubApiError('请先恢复已归档任务，再发送消息', 'CONFLICT' as ErrorCode, 409)
@@ -1317,6 +1390,13 @@ export class MockLocalChatGateway implements LocalChatGateway {
       throw new HubApiError('Run 未找到', 'NOT_FOUND' as ErrorCode, 404)
     }
     const conversation = this.conversations.find((item) => item.id === run.conversationId)
+    if (conversation?.authority === 'remote') {
+      throw new HubApiError(
+        '这是手机远程对话，无法在电脑上控制运行，请在手机上继续',
+        'CONVERSATION_AUTHORITY_MISMATCH' as ErrorCode,
+        409
+      )
+    }
     if (conversation?.archived && (input.action === 'resume' || input.action === 'retry')) {
       throw new HubApiError('请先恢复已归档任务，再继续或重试', 'CONFLICT' as ErrorCode, 409)
     }
@@ -1407,6 +1487,142 @@ export class MockLocalChatGateway implements LocalChatGateway {
 
   async listLocalSessions(): Promise<SessionView[]> {
     return [...this.sessions]
+  }
+
+  // Remote Link (D44)
+  setRemoteLinkState(view: RemoteLinkView): void {
+    this.remoteLink = JSON.parse(JSON.stringify(view))
+  }
+
+  async getRemoteLink(): Promise<RemoteLinkView> {
+    if (this.remoteLink.state === 'pairing') {
+      const now = Date.now()
+      const expiry = new Date(this.remoteLink.expiresAt).getTime()
+      if (now >= expiry) {
+        this.remoteLink = {
+          state: 'unpaired',
+          serverOrigin: this.remoteLink.serverOrigin,
+          lastErrorCode: 'REMOTE_PAIRING_EXPIRED' as ErrorCode,
+        }
+      }
+    }
+    return JSON.parse(JSON.stringify(this.remoteLink))
+  }
+
+  async startRemotePairing(
+    input: RemoteLinkPairingInput,
+    _idempotencyKey?: string
+  ): Promise<RemoteLinkView> {
+    const origin = (input.serverOrigin || '').trim()
+    const isValidOrigin =
+      /^(?:https:\/\/(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|\[[0-9A-Fa-f:]+\])|http:\/\/(?:127\.0\.0\.1|localhost))(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?\/?$/.test(
+        origin
+      )
+
+    if (!isValidOrigin) {
+      throw new HubApiError(
+        '服务器地址格式不正确，必须为 HTTPS 地址（本地测试可用 localhost 或 127.0.0.1）',
+        'REMOTE_SERVER_ORIGIN_INVALID' as ErrorCode,
+        400
+      )
+    }
+
+    if (this.remoteLink.state === 'pairing') {
+      throw new HubApiError(
+        '已有配对请求正在进行中，请先取消或等待过期',
+        'REMOTE_PAIRING_IN_PROGRESS' as ErrorCode,
+        409
+      )
+    }
+
+    const deviceName = (input.deviceName || '').trim() || '我的电脑'
+    this.remoteLink = {
+      state: 'pairing',
+      serverOrigin: origin,
+      deviceName,
+      pairRequestId: `pair_req_${Date.now()}`,
+      pairCode: 'ABCD2345',
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    }
+    return JSON.parse(JSON.stringify(this.remoteLink))
+  }
+
+  async cancelRemotePairing(_idempotencyKey?: string): Promise<RemoteLinkView> {
+    const prevOrigin = (this.remoteLink as any).serverOrigin || 'https://hub.example.com'
+    this.remoteLink = {
+      state: 'unpaired',
+      serverOrigin: prevOrigin,
+    }
+    return JSON.parse(JSON.stringify(this.remoteLink))
+  }
+
+  async unlinkRemote(_idempotencyKey?: string): Promise<RemoteLinkView> {
+    const prevOrigin = (this.remoteLink as any).serverOrigin || 'https://hub.example.com'
+    this.remoteLink = {
+      state: 'unpaired',
+      serverOrigin: prevOrigin,
+    }
+    return JSON.parse(JSON.stringify(this.remoteLink))
+  }
+
+  // Simulation helpers for testing / dev
+  mockSimulatePairingSuccess(workerId = 'worker_local_pc'): RemoteLinkView {
+    const origin = (this.remoteLink as any).serverOrigin || 'https://hub.example.com'
+    const deviceName = (this.remoteLink as any).deviceName || '我的电脑'
+    this.remoteLink = {
+      state: 'paired',
+      serverOrigin: origin,
+      workerId,
+      deviceName,
+      connectionStatus: 'online',
+      lastConnectedAt: new Date().toISOString(),
+    }
+    return JSON.parse(JSON.stringify(this.remoteLink))
+  }
+
+  mockSimulateConnectionStatus(
+    connectionStatus: 'online' | 'connecting' | 'offline',
+    lastErrorCode?: ErrorCode
+  ): RemoteLinkView {
+    if (this.remoteLink.state === 'paired' || this.remoteLink.state === 'frozen') {
+      this.remoteLink.connectionStatus = connectionStatus
+      if (lastErrorCode) this.remoteLink.lastErrorCode = lastErrorCode
+    }
+    return JSON.parse(JSON.stringify(this.remoteLink))
+  }
+
+  mockSimulateRevoked(lastErrorCode: ErrorCode = 'REMOTE_DEVICE_REVOKED'): RemoteLinkView {
+    const origin = (this.remoteLink as any).serverOrigin || 'https://hub.example.com'
+    const workerId = (this.remoteLink as any).workerId || 'worker_local_pc'
+    const deviceName = (this.remoteLink as any).deviceName || '我的电脑'
+    const lastConnectedAt = (this.remoteLink as any).lastConnectedAt || null
+    this.remoteLink = {
+      state: 'revoked',
+      serverOrigin: origin,
+      workerId,
+      deviceName,
+      connectionStatus: 'offline',
+      lastConnectedAt,
+      lastErrorCode,
+    }
+    return JSON.parse(JSON.stringify(this.remoteLink))
+  }
+
+  mockSimulateFrozen(lastErrorCode: ErrorCode = 'REMOTE_EPOCH_STALE'): RemoteLinkView {
+    const origin = (this.remoteLink as any).serverOrigin || 'https://hub.example.com'
+    const workerId = (this.remoteLink as any).workerId || 'worker_local_pc'
+    const deviceName = (this.remoteLink as any).deviceName || '我的电脑'
+    const lastConnectedAt = (this.remoteLink as any).lastConnectedAt || new Date().toISOString()
+    this.remoteLink = {
+      state: 'frozen',
+      serverOrigin: origin,
+      workerId,
+      deviceName,
+      connectionStatus: 'online',
+      lastConnectedAt,
+      lastErrorCode,
+    }
+    return JSON.parse(JSON.stringify(this.remoteLink))
   }
 }
 

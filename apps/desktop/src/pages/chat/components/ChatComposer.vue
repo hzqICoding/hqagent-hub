@@ -11,6 +11,7 @@ import {
   X,
   Square,
   RotateCcw,
+  Smartphone,
 } from 'lucide-vue-next'
 
 const chatStore = useChatStore()
@@ -30,6 +31,7 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const canSend = computed(() => {
   return (
+    !chatStore.isRemoteConversation &&
     inputText.value.trim().length > 0 &&
     !chatStore.isActiveConversationArchived &&
     !chatStore.isSending &&
@@ -186,6 +188,15 @@ function handleStopRun() {
         </button>
       </div>
 
+      <!-- Remote Conversation Read-only Alert -->
+      <div
+        v-if="chatStore.isRemoteConversation"
+        class="p-2.5 rounded-xl bg-primary/10 border border-primary/25 text-xs text-text flex items-center gap-2 shadow-xs"
+      >
+        <Smartphone class="w-4 h-4 text-primary shrink-0" />
+        <span class="text-xs font-medium">这是手机远程对话，电脑端仅供只读查看，请在手机上继续操作。</span>
+      </div>
+
       <!-- 5. Floating Modern Composer Card (PI-Desktop / Codex style) -->
       <div
         class="bg-panel border border-border/80 focus-within:border-primary/60 rounded-2xl shadow-sm focus-within:shadow-md transition-all duration-200 overflow-hidden"
@@ -197,8 +208,9 @@ function handleStopRun() {
             v-model="inputText"
             :maxlength="32000"
             rows="1"
-            placeholder="向角色团队输入任务目标或补充要求... (Enter 发送，Shift + Enter 换行)"
-            class="w-full bg-transparent text-xs text-text placeholder-text-muted/50 resize-none outline-none focus:ring-0 leading-relaxed max-h-44 min-h-[44px]"
+            :disabled="chatStore.isRemoteConversation || chatStore.isActiveConversationArchived"
+            :placeholder="chatStore.isRemoteConversation ? '这是手机远程对话，请在手机上继续' : '向角色团队输入任务目标或补充要求... (Enter 发送，Shift + Enter 换行)'"
+            class="w-full bg-transparent text-xs text-text placeholder-text-muted/50 resize-none outline-none focus:ring-0 leading-relaxed max-h-44 min-h-[44px] disabled:opacity-60 disabled:cursor-not-allowed"
             @input="handleInput"
             @keydown="handleKeyDown"
           />
@@ -224,7 +236,7 @@ function handleStopRun() {
 
             <!-- Stop Button if running and input is empty -->
             <button
-              v-if="chatStore.isCurrentRunActive && inputText.trim().length === 0"
+              v-if="chatStore.isCurrentRunActive && inputText.trim().length === 0 && !chatStore.isRemoteConversation"
               type="button"
               class="w-7 h-7 rounded-full flex items-center justify-center transition-all bg-danger/15 text-danger hover:bg-danger/25 active:scale-95 cursor-pointer shadow-xs"
               title="中止当前执行轮次"

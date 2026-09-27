@@ -26,6 +26,8 @@ import type {
   ApprovalView,
   ApprovalResponseInput,
   SessionView,
+  RemoteLinkView,
+  RemoteLinkPairingInput,
   ApiEnvelope,
   ErrorCode,
 } from '@hqagent/protocol'
@@ -387,6 +389,45 @@ export class RealLocalChatGateway implements LocalChatGateway {
 
   async listLocalSessions(): Promise<SessionView[]> {
     return this.fetchApi<SessionView[]>('/api/v2/sessions', { method: 'GET' })
+  }
+
+  // Remote Link (D44)
+  async getRemoteLink(): Promise<RemoteLinkView> {
+    return this.fetchApi<RemoteLinkView>('/api/v2/remote/link', { method: 'GET' })
+  }
+
+  async startRemotePairing(
+    input: RemoteLinkPairingInput,
+    idempotencyKey?: string
+  ): Promise<RemoteLinkView> {
+    return this.fetchApi<RemoteLinkView>(
+      '/api/v2/remote/pairing',
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      },
+      idempotencyKey || `pairing_${Date.now()}`
+    )
+  }
+
+  async cancelRemotePairing(idempotencyKey?: string): Promise<RemoteLinkView> {
+    return this.fetchApi<RemoteLinkView>(
+      '/api/v2/remote/pairing',
+      {
+        method: 'DELETE',
+      },
+      idempotencyKey || `cancel_pairing_${Date.now()}`
+    )
+  }
+
+  async unlinkRemote(idempotencyKey?: string): Promise<RemoteLinkView> {
+    return this.fetchApi<RemoteLinkView>(
+      '/api/v2/remote/unlink',
+      {
+        method: 'POST',
+      },
+      idempotencyKey || `unlink_${Date.now()}`
+    )
   }
 }
 
