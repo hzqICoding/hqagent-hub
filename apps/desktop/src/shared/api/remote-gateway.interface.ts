@@ -16,7 +16,8 @@ import type {
   RemoteConversationView,
   RemoteQueuedReceipt,
   RemoteSendMessageInput,
-  RemoteMessagePage,
+  RemoteSyncConversationInput,
+  RemoteSyncMessagePage,
   RemoteRunPage,
   RemoteRunView,
   RemoteRunControlInput,
@@ -46,14 +47,24 @@ export interface IRemoteGateway {
   getWorkerCatalog(workerId: string): Promise<RemoteCatalogView>
 
   // Conversations
-  listConversations(cursor?: string, limit?: number): Promise<RemoteConversationPage>
-  createConversation(input: RemoteCreateConversationInput, idempotencyKey?: string): Promise<RemoteConversationView>
+  listConversations(params?: {
+    workerId?: string
+    workspaceId?: string
+    cursor?: string
+    limit?: number
+  }): Promise<RemoteConversationPage>
+  createConversation(input: RemoteCreateConversationInput, idempotencyKey?: string): Promise<RemoteQueuedReceipt>
+  updateConversation(
+    conversationId: string,
+    input: RemoteSyncConversationInput,
+    idempotencyKey?: string
+  ): Promise<RemoteQueuedReceipt>
   getConversation(conversationId: string): Promise<RemoteConversationView>
   getConversationSnapshot(conversationId: string): Promise<RemoteConversationSnapshot>
 
   // Messages
   sendMessage(conversationId: string, input: RemoteSendMessageInput, idempotencyKey?: string): Promise<RemoteQueuedReceipt>
-  listMessages(conversationId: string, cursor?: string, limit?: number): Promise<RemoteMessagePage>
+  listMessages(conversationId: string, before?: string, limit?: number): Promise<RemoteSyncMessagePage>
 
   // Runs & Controls
   listRuns(conversationId: string, cursor?: string, limit?: number): Promise<RemoteRunPage>

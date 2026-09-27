@@ -25,7 +25,7 @@ describe('RemoteChat Workbench and Three-Layer Status', () => {
     vi.restoreAllMocks()
   })
 
-  it('displays "电脑离线，指令已排队" and NEVER "执行中" when computer is offline', async () => {
+  it('displays "电脑离线" and NEVER "执行中" when computer is offline, and rejects message immediately', async () => {
     mockRemoteGateway.workerOnline = false
     const wrapper = mount(RemoteChatPage)
     const store = useRemoteChatStore()
@@ -33,21 +33,21 @@ describe('RemoteChat Workbench and Three-Layer Status', () => {
     await flushPromises()
     expect(store.isWorkerOnline).toBe(false)
 
-    // Layer 1 Transport status must display "电脑离线，指令已排队"
-    expect(wrapper.text()).toContain('电脑离线，指令已排队')
+    // Layer 1 Transport status must display "电脑离线"
+    expect(wrapper.text()).toContain('电脑离线')
     expect(wrapper.text()).not.toContain('电脑在线')
 
-    // Send a message while computer is offline
-    await store.sendMessage('离线测试指令')
+    // Sending a message while computer is offline fails immediately (no offline queueing in R1.5)
+    await expect(store.sendMessage('离线测试指令')).rejects.toThrow('设备离线，发送失败')
     await flushPromises()
 
-    const pendingBadges = wrapper.findAllComponents({ name: 'HqBadge' })
-    const badgeTexts = pendingBadges.map((b) => b.text())
-    expect(badgeTexts).toContain('电脑离线，指令已排队')
+    expect(store.sendError).toBe('设备离线，发送失败')
+    expect(wrapper.text()).toContain('设备离线，发送失败')
 
     // Absolutely NEVER claim running/executing on transport layer when offline
     const transportSection = wrapper.find('section')
-    expect(transportSection.text()).toContain('电脑离线，指令已排队')
+    expect(transportSection.text()).toContain('电脑离线')
+    expect(transportSection.text()).not.toContain('电脑在线')
   })
 
   it('renders all three distinct layers: Transport State, Control Result, and Execution State', async () => {

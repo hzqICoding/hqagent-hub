@@ -23,6 +23,7 @@ export interface RemoteControlState {
 export const useRemoteChatStore = defineStore('remoteChat', () => {
   // Devices
   const devices = ref<RemoteDeviceView[]>([])
+  const selectedWorkerId = ref<string | null>(null)
   const isLoadingDevices = ref(false)
   const deviceError = ref<string | null>(null)
   const catalog = ref<RemoteCatalogView | null>(null)
@@ -32,8 +33,13 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   const activeConversationId = ref<string | null>(null)
   const isLoadingConversations = ref(false)
 
-  // Messages & Runs & Commands & Approvals
+  // Messages & Pagination
   const messages = ref<RemoteMessageView[]>([])
+  const beforeCursor = ref<string | null>(null)
+  const hasMoreMessages = ref(false)
+  const isLoadingEarlierMessages = ref(false)
+
+  // Runs & Commands & Approvals
   const runs = ref<RemoteRunView[]>([])
   const commands = ref<RemoteCommandView[]>([])
   const approvals = ref<RemoteApprovalView[]>([])
@@ -56,14 +62,69 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     conversations.value.find((c) => c.conversationId === activeConversationId.value) || null
   )
 
-  const activeDevice = computed(() => {
-    if (!activeConversation.value) {
-      return devices.value[0] || null
+  const selectedDevice = computed(() => {
+    if (selectedWorkerId.value) {
+      return devices.value.find((d) => d.workerId === selectedWorkerId.value) || null
     }
-    return devices.value.find((d) => d.workerId === activeConversation.value?.targetWorkerId) || null
+    return devices.value[0] || null
   })
 
-  const isWorkerOnline = computed(() => activeDevice.value?.status === 'online')
+  const activeDevice = computed(() => {
+    if (activeConversation.value?.targetWorkerId) {
+      return devices.value.find((d) => d.workerId === activeConversation.value?.targetWorkerId) || null
+    }
+    return selectedDevice.value
+  })
+
+  const isWorkerOnline = computed(() => {
+    const d = activeDevice.value
+    if (!d) return false
+    if (typeof d.online === 'boolean') return d.online
+    return d.status === 'online'
+  })
+
+  const isDeviceSendReady = computed(() => {
+    const d = activeDevice.value
+    if (!d) return false
+    if (d.online !== true && d.status !== 'online') return false
+    if (d.status === 'reconciliation_required' || d.status === 'revoked') return false
+    if (d.supportedWireRevisions && !d.supportedWireRevisions.includes(2)) return false
+    if (d.busySnapshotFresh === false) return false
+    return true
+  })
+
+  const isConversationBusy = computed(() => {
+    if (!activeConversation.value) return false
+    if (activeConversation.value.busy) return true
+    const run = activeRun.value
+    if (run && ['queued', 'running', 'waiting_approval'].includes(run.status)) return true
+    return false
+  })
+
+  const conversationsByWorkspace = computed(() => {
+    const map = new Map<string, { workspaceId: string; workspaceName: string; conversations: RemoteConversationView[] }>()
+    if (catalog.value?.workspaces) {
+      for (const ws of catalog.value.workspaces) {
+        map.set(ws.workspaceId, {
+          workspaceId: ws.workspaceId,
+          workspaceName: ws.name,
+          conversations: [],
+        })
+      }
+    }
+    for (const conv of conversations.value) {
+      const wsId = conv.workspaceId || 'default'
+      if (!map.has(wsId)) {
+        map.set(wsId, {
+          workspaceId: wsId,
+          workspaceName: wsId === 'default' ? '默认项目' : wsId,
+          conversations: [],
+        })
+      }
+      map.get(wsId)!.conversations.push(conv)
+    }
+    return Array.from(map.values())
+  })
 
   const activeRun = computed(() => {
     if (!activeConversationId.value) return null
@@ -153,11 +214,35 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   // --- Conversations ---
 
-  async function fetchConversations(): Promise<void> {
+  async function selectDevice(workerId: string): Promise<void> {
+    selectedWorkerId.value = workerId
+    activeConversationId.value = null
+    conversations.value = []
+    messages.value = []
+    runs.value = []
+    commands.value = []
+    approvals.value = []
+    serverCursor.value = null
+    beforeCursor.value = null
+    hasMoreMessages.value = false
+    await fetchConversations(workerId)
+    try {
+      const gateway = getRemoteGateway()
+      catalog.value = await gateway.getWorkerCatalog(workerId)
+    } catch {
+      // ignore
+    }
+  }
+
+  async function fetchConversations(workerId?: string, workspaceId?: string): Promise<void> {
     isLoadingConversations.value = true
     try {
       const gateway = getRemoteGateway()
-      const page = await gateway.listConversations()
+      const targetWId = workerId || selectedWorkerId.value || undefined
+      const page = await gateway.listConversations({
+        workerId: targetWId,
+        workspaceId,
+      })
       conversations.value = page.items
       if (!activeConversationId.value && page.items.length > 0) {
         await selectConversation(page.items[0].conversationId)
@@ -172,13 +257,76 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   async function createConversation(input: RemoteCreateConversationInput): Promise<RemoteConversationView | null> {
     try {
       const gateway = getRemoteGateway()
-      const newConv = await gateway.createConversation(input)
-      conversations.value.unshift(newConv)
-      await selectConversation(newConv.conversationId)
-      return newConv
+      const receipt = await gateway.createConversation(input)
+      await fetchConversations(input.targetWorkerId)
+      const found = conversations.value.find((c) => c.conversationId === receipt.conversationId)
+      if (found) {
+        await selectConversation(found.conversationId)
+        return found
+      }
+      // Optimistic view until Worker sync arrives
+      const optimistic: RemoteConversationView = {
+        conversationId: receipt.conversationId,
+        targetWorkerId: input.targetWorkerId,
+        workerId: input.targetWorkerId,
+        authority: 'remote',
+        title: input.title,
+        workspaceId: input.workspaceId,
+        sceneId: input.sceneId,
+        sceneVersion: input.sceneVersion,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        workerStoreId: input.workerStoreId,
+        visibility: 'both',
+        busy: false,
+        busyFresh: true,
+        metadataVersion: 1,
+        archived: false,
+      }
+      conversations.value.unshift(optimistic)
+      await selectConversation(optimistic.conversationId)
+      return optimistic
     } catch (err: unknown) {
       actionError.value = err instanceof Error ? err.message : '创建对话失败'
       return null
+    }
+  }
+
+  async function updateConversationSettings(
+    conversationId: string,
+    patch: { title?: string; archived?: boolean; visibility?: 'both' | 'pc_only' | 'mobile_only' }
+  ): Promise<boolean> {
+    const conv = conversations.value.find((c) => c.conversationId === conversationId)
+    if (!conv) return false
+
+    // Offline check: immediate failure
+    if (!isWorkerOnline.value) {
+      actionError.value = '设备离线，发送失败'
+      throw new RemoteApiError({
+        message: '设备离线，发送失败',
+        code: 'REMOTE_DEVICE_OFFLINE',
+        status: 409,
+      })
+    }
+
+    isActionLoading.value = true
+    actionError.value = null
+    try {
+      const gateway = getRemoteGateway()
+      await gateway.updateConversation(conversationId, {
+        expectedVersion: conv.metadataVersion ?? 1,
+        ...patch,
+      })
+      if (patch.title !== undefined) conv.title = patch.title
+      if (patch.archived !== undefined) conv.archived = patch.archived
+      if (patch.visibility !== undefined) conv.visibility = patch.visibility
+      conv.metadataVersion = (conv.metadataVersion ?? 1) + 1
+      return true
+    } catch (err: unknown) {
+      actionError.value = err instanceof Error ? err.message : '更新对话设置失败'
+      throw err
+    } finally {
+      isActionLoading.value = false
     }
   }
 
@@ -187,6 +335,51 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     sendError.value = null
     actionError.value = null
     await rebuildFromSnapshot(conversationId)
+    await loadInitialMessages(conversationId)
+  }
+
+  // --- Messages & Pagination ---
+
+  async function loadInitialMessages(conversationId: string): Promise<void> {
+    try {
+      const gateway = getRemoteGateway()
+      const page = await gateway.listMessages(conversationId)
+      if (page && Array.isArray(page.items)) {
+        // Reverse descending page items to display chronologically
+        messages.value = [...page.items].reverse()
+        hasMoreMessages.value = Boolean(page.hasMore)
+        beforeCursor.value = page.before || null
+      }
+    } catch {
+      // fallback to snapshot messages
+    }
+  }
+
+  async function loadEarlierMessages(conversationId?: string): Promise<boolean> {
+    const targetId = conversationId || activeConversationId.value
+    if (!targetId || !hasMoreMessages.value || !beforeCursor.value || isLoadingEarlierMessages.value) {
+      return false
+    }
+    isLoadingEarlierMessages.value = true
+    try {
+      const gateway = getRemoteGateway()
+      const page = await gateway.listMessages(targetId, beforeCursor.value)
+      if (page && Array.isArray(page.items) && page.items.length > 0) {
+        const existingIds = new Set(messages.value.map((m) => m.messageId))
+        const earlierItems = [...page.items].reverse().filter((m) => !existingIds.has(m.messageId))
+        messages.value = [...earlierItems, ...messages.value]
+        hasMoreMessages.value = Boolean(page.hasMore)
+        beforeCursor.value = page.before || null
+        return true
+      }
+      hasMoreMessages.value = false
+      return false
+    } catch (err: unknown) {
+      actionError.value = err instanceof Error ? err.message : '加载更早消息失败'
+      return false
+    } finally {
+      isLoadingEarlierMessages.value = false
+    }
   }
 
   // --- Snapshot & Rebuild ---
@@ -201,6 +394,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       runs.value = snapshot.runs || []
       commands.value = snapshot.commands || []
       approvals.value = snapshot.approvals ?? []
+      hasMoreMessages.value = Boolean(snapshot.hasMore)
     } catch (err: unknown) {
       actionError.value = err instanceof Error ? err.message : '加载会话快照失败'
     } finally {
@@ -212,6 +406,35 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   async function sendMessage(text: string, sessionMode: 'new' | 'continue' = 'continue'): Promise<RemoteQueuedReceipt | null> {
     if (!activeConversationId.value) return null
+
+    // R1.5 Offline check: immediate failure, no queuing
+    if (!isWorkerOnline.value) {
+      sendError.value = '设备离线，发送失败'
+      throw new RemoteApiError({
+        message: '设备离线，发送失败',
+        code: 'REMOTE_DEVICE_OFFLINE',
+        status: 409,
+      })
+    }
+
+    if (!isDeviceSendReady.value) {
+      sendError.value = '正在同步电脑状态，请稍后再试'
+      throw new RemoteApiError({
+        message: '正在同步电脑状态，请稍后再试',
+        code: 'REMOTE_STATE_NOT_READY',
+        status: 409,
+      })
+    }
+
+    if (isConversationBusy.value) {
+      sendError.value = '电脑上正在进行，结束后再继续'
+      throw new RemoteApiError({
+        message: '电脑上正在进行，结束后再继续',
+        code: 'REMOTE_CONVERSATION_BUSY',
+        status: 409,
+      })
+    }
+
     isSending.value = true
     sendError.value = null
 
@@ -254,12 +477,17 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
       return receipt
     } catch (err: unknown) {
+      // Remove optimistic message on failure
+      const tempIdx = messages.value.findIndex((m) => m.messageId === optimisticMsg.messageId)
+      if (tempIdx >= 0) {
+        messages.value.splice(tempIdx, 1)
+      }
       if (err instanceof RemoteApiError) {
         sendError.value = err.message
       } else {
         sendError.value = '发送消息失败，请重试'
       }
-      return null
+      throw err
     } finally {
       isSending.value = false
     }
@@ -271,6 +499,15 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     runId: string,
     action: 'pause' | 'resume' | 'cancel' | 'retry'
   ): Promise<RemoteQueuedReceipt | null> {
+    if (!isWorkerOnline.value) {
+      actionError.value = '设备离线，发送失败'
+      throw new RemoteApiError({
+        message: '设备离线，发送失败',
+        code: 'REMOTE_DEVICE_OFFLINE',
+        status: 409,
+      })
+    }
+
     isActionLoading.value = true
     actionError.value = null
     try {
@@ -294,7 +531,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       } else {
         actionError.value = `执行 ${action} 操作失败`
       }
-      return null
+      throw err
     } finally {
       isActionLoading.value = false
     }
@@ -339,6 +576,15 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     const approval = approvals.value.find((a) => a.approvalId === approvalId)
     if (!approval) return false
 
+    if (!isWorkerOnline.value) {
+      actionError.value = '设备离线，发送失败'
+      throw new RemoteApiError({
+        message: '设备离线，发送失败',
+        code: 'REMOTE_DEVICE_OFFLINE',
+        status: 409,
+      })
+    }
+
     // Security check on client
     if (decision === 'approve' && isHighRiskApproval(approval)) {
       actionError.value = '高风险操作禁止在手机端远程批准，请回到电脑端处理'
@@ -358,7 +604,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       } else {
         actionError.value = '处理审批失败'
       }
-      return false
+      throw err
     } finally {
       isActionLoading.value = false
     }
@@ -368,6 +614,36 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   async function applyEvent(event: RemoteBrowserEvent): Promise<void> {
     const activeId = activeConversationId.value
+
+    // Handle conversation.deleted
+    if (event.type === 'conversation.deleted') {
+      const deletedId = (event as any).conversationId
+      conversations.value = conversations.value.filter((c) => c.conversationId !== deletedId)
+      if (activeConversationId.value === deletedId) {
+        activeConversationId.value = null
+        messages.value = []
+        runs.value = []
+        commands.value = []
+        approvals.value = []
+      }
+      return
+    }
+
+    // Handle store.reset
+    if (event.type === 'store.reset') {
+      const ev = event as any
+      if (activeDevice.value?.workerId === ev.workerId || activeDevice.value?.workerStoreId === ev.workerStoreId) {
+        conversations.value = []
+        activeConversationId.value = null
+        messages.value = []
+        runs.value = []
+        commands.value = []
+        approvals.value = []
+        serverCursor.value = null
+      }
+      return
+    }
+
     if (!activeId) return
 
     // 1. Top-level conversation.updated
@@ -397,6 +673,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
           if (devIdx >= 0) {
             devices.value[devIdx] = {
               ...devices.value[devIdx],
+              online: cmd.workerOnline,
               status: cmd.workerOnline ? 'online' : 'offline',
             }
           } else {
@@ -405,6 +682,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
               deviceName: 'Computer',
               platform: 'windows',
               architecture: 'x86_64',
+              online: cmd.workerOnline,
               status: cmd.workerOnline ? 'online' : 'offline',
               workerStoreId: 'store_demo',
               capabilityRevision: 1,
@@ -727,10 +1005,14 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     stopPolling()
     stopDevicePolling()
     devices.value = []
+    selectedWorkerId.value = null
     catalog.value = null
     conversations.value = []
     activeConversationId.value = null
     messages.value = []
+    beforeCursor.value = null
+    hasMoreMessages.value = false
+    isLoadingEarlierMessages.value = false
     runs.value = []
     commands.value = []
     approvals.value = []
@@ -744,16 +1026,24 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   return {
     devices,
+    selectedWorkerId,
+    selectedDevice,
     isLoadingDevices,
     deviceError,
     catalog,
     conversations,
+    conversationsByWorkspace,
     activeConversationId,
     activeConversation,
     activeDevice,
     isWorkerOnline,
+    isDeviceSendReady,
+    isConversationBusy,
     isLoadingConversations,
     messages,
+    beforeCursor,
+    hasMoreMessages,
+    isLoadingEarlierMessages,
     runs,
     activeRun,
     commands,
@@ -772,10 +1062,14 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     startDevicePolling,
     stopDevicePolling,
     revokeDevice,
+    selectDevice,
     fetchConversations,
     createConversation,
+    updateConversationSettings,
     selectConversation,
     rebuildFromSnapshot,
+    loadInitialMessages,
+    loadEarlierMessages,
     sendMessage,
     controlRun,
     withdrawCommand,

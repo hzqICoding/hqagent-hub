@@ -29,6 +29,31 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     mockRemoteGateway.eventPages = []
     mockRemoteGateway.pendingEvents = []
     mockRemoteGateway.hasMoreEvents = false
+    mockRemoteGateway.runs = [
+      {
+        runId: 'run_demo',
+        conversationId: 'conversation_demo',
+        status: 'running',
+        observedAt: '2026-09-26T12:00:00Z',
+        workerOnline: true,
+      },
+    ]
+    mockRemoteGateway.commands = [
+      {
+        commandId: 'cmd_demo_001',
+        conversationId: 'conversation_demo',
+        targetWorkerId: 'worker_demo',
+        type: 'run.submit',
+        conversationSeq: 1,
+        status: 'accepted',
+        deliveryState: 'sent',
+        withdrawalState: 'none',
+        workerOnline: true,
+        observedAt: '2026-09-26T12:00:10Z',
+        createdAt: '2026-09-26T12:00:10Z',
+        expiresAt: '2026-09-27T12:00:10Z',
+      },
+    ]
 
     router = createRouter({
       history: createMemoryHistory(),
@@ -51,6 +76,7 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
 
   it('B1: incrementally processes command delivery -> accepted -> message appended -> run succeeded', async () => {
     mockRemoteGateway.commands = []
+    mockRemoteGateway.runs = []
     const wrapper = mount(RemoteChatPage, {
       global: { plugins: [router] },
     })

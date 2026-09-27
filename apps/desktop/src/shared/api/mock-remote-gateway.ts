@@ -16,8 +16,9 @@ import type {
   RemoteConversationView,
   RemoteQueuedReceipt,
   RemoteSendMessageInput,
-  RemoteMessagePage,
   RemoteMessageView,
+  RemoteSyncConversationInput,
+  RemoteSyncMessagePage,
   RemoteRunPage,
   RemoteRunView,
   RemoteRunControlInput,
@@ -65,15 +66,32 @@ export class MockRemoteGateway implements IRemoteGateway {
       architecture: 'x86_64',
       status: 'online',
       workerStoreId: 'store_demo',
-      capabilityRevision: 1,
+      capabilityRevision: 2,
       observedAt: '2026-09-26T12:00:00Z',
       pairedAt: '2026-09-26T12:00:00Z',
+      online: true,
+      busySnapshotFresh: true,
+      supportedWireRevisions: [1, 2],
+    },
+    {
+      workerId: 'worker_home_pc',
+      deviceName: 'Home PC (Alex)',
+      platform: 'windows',
+      architecture: 'x86_64',
+      status: 'offline',
+      workerStoreId: 'store_home',
+      capabilityRevision: 2,
+      observedAt: '2026-09-26T12:00:00Z',
+      pairedAt: '2026-09-26T12:00:00Z',
+      online: false,
+      busySnapshotFresh: false,
+      supportedWireRevisions: [2],
     },
   ]
 
   public catalog: RemoteCatalogView = {
     workerId: 'worker_demo',
-    capabilityRevision: 1,
+    capabilityRevision: 2,
     observedAt: '2026-09-26T12:00:00Z',
     workerStoreId: 'store_demo',
     remotelyBlockedActions: ['git_push', 'deploy', 'delete', 'db_migrate'],
@@ -82,6 +100,13 @@ export class MockRemoteGateway implements IRemoteGateway {
         workspaceId: 'workspace_demo',
         name: 'HQAgent-Hub',
         displayPath: 'E:\\OtherPro\\HQAgent-Hub',
+        vcs: 'git',
+        canWrite: true,
+      },
+      {
+        workspaceId: 'workspace_web',
+        name: 'Web-Ecommerce',
+        displayPath: 'D:\\Projects\\Web-Ecommerce',
         vcs: 'git',
         canWrite: true,
       },
@@ -112,6 +137,7 @@ export class MockRemoteGateway implements IRemoteGateway {
     {
       conversationId: 'conversation_demo',
       targetWorkerId: 'worker_demo',
+      workerId: 'worker_demo',
       authority: 'remote',
       title: '远程分析系统架构',
       workspaceId: 'workspace_demo',
@@ -120,6 +146,80 @@ export class MockRemoteGateway implements IRemoteGateway {
       createdAt: '2026-09-26T12:00:00Z',
       updatedAt: '2026-09-26T12:00:00Z',
       workerStoreId: 'store_demo',
+      visibility: 'both',
+      busy: false,
+      busyFresh: true,
+      metadataVersion: 1,
+      archived: false,
+    },
+    {
+      conversationId: 'conv_pc_created_1',
+      targetWorkerId: 'worker_demo',
+      workerId: 'worker_demo',
+      authority: 'local',
+      title: '电脑端创建：自动化测试修复',
+      workspaceId: 'workspace_demo',
+      sceneId: 'develop',
+      sceneVersion: 1,
+      createdAt: '2026-09-26T13:00:00Z',
+      updatedAt: '2026-09-26T13:10:00Z',
+      workerStoreId: 'store_demo',
+      visibility: 'both',
+      busy: false,
+      busyFresh: true,
+      metadataVersion: 1,
+      archived: false,
+    },
+    {
+      conversationId: 'conv_busy_demo_1',
+      targetWorkerId: 'worker_demo',
+      workerId: 'worker_demo',
+      authority: 'remote',
+      title: '正在执行：全量编译构建',
+      workspaceId: 'workspace_demo',
+      sceneId: 'develop',
+      sceneVersion: 1,
+      createdAt: '2026-09-26T13:30:00Z',
+      updatedAt: '2026-09-26T13:35:00Z',
+      workerStoreId: 'store_demo',
+      visibility: 'both',
+      busy: true,
+      busyFresh: true,
+      busyObservedAt: '2026-09-26T13:35:00Z',
+      metadataVersion: 1,
+      archived: false,
+    },
+    {
+      conversationId: 'conv_pc_only_1',
+      targetWorkerId: 'worker_demo',
+      workerId: 'worker_demo',
+      authority: 'local',
+      title: '电脑私有会话',
+      workspaceId: 'workspace_demo',
+      sceneId: 'analyze',
+      sceneVersion: 1,
+      createdAt: '2026-09-26T14:00:00Z',
+      updatedAt: '2026-09-26T14:00:00Z',
+      workerStoreId: 'store_demo',
+      visibility: 'pc_only',
+      metadataVersion: 1,
+      archived: false,
+    },
+    {
+      conversationId: 'conv_home_1',
+      targetWorkerId: 'worker_home_pc',
+      workerId: 'worker_home_pc',
+      authority: 'remote',
+      title: '家庭电脑任务',
+      workspaceId: 'workspace_web',
+      sceneId: 'analyze',
+      sceneVersion: 1,
+      createdAt: '2026-09-26T14:30:00Z',
+      updatedAt: '2026-09-26T14:30:00Z',
+      workerStoreId: 'store_home',
+      visibility: 'both',
+      metadataVersion: 1,
+      archived: false,
     },
   ]
 
@@ -138,6 +238,35 @@ export class MockRemoteGateway implements IRemoteGateway {
       text: '正在分析 HQAgent-Hub 架构，已建立本地上下文索引。',
       createdAt: '2026-09-26T12:00:15Z',
       runId: 'run_demo',
+    },
+    {
+      messageId: 'msg_003',
+      conversationId: 'conversation_demo',
+      role: 'user',
+      text: '请生成组件关系图',
+      createdAt: '2026-09-26T12:01:00Z',
+    },
+    {
+      messageId: 'msg_004',
+      conversationId: 'conversation_demo',
+      role: 'assistant',
+      text: '已生成组件依赖拓扑图，已保存至本地 artifacts 目录。',
+      createdAt: '2026-09-26T12:01:20Z',
+      runId: 'run_demo',
+    },
+    {
+      messageId: 'msg_pc_1',
+      conversationId: 'conv_pc_created_1',
+      role: 'user',
+      text: '电脑端提交任务：检查测试覆盖率',
+      createdAt: '2026-09-26T13:00:00Z',
+    },
+    {
+      messageId: 'msg_pc_2',
+      conversationId: 'conv_pc_created_1',
+      role: 'assistant',
+      text: '测试套件共 50 个文件，全部通过。',
+      createdAt: '2026-09-26T13:00:20Z',
     },
   ]
 
@@ -309,10 +438,17 @@ export class MockRemoteGateway implements IRemoteGateway {
   // --- Devices ---
 
   async listDevices(): Promise<RemoteDevicePage> {
-    const items = this.devices.map((d) => ({
-      ...d,
-      status: this.workerOnline ? ('online' as const) : ('offline' as const),
-    }))
+    const items = this.devices.map((d) => {
+      if (d.workerId === 'worker_demo') {
+        return {
+          ...d,
+          status: this.workerOnline ? ('online' as const) : ('offline' as const),
+          online: this.workerOnline,
+          busySnapshotFresh: this.workerOnline,
+        }
+      }
+      return { ...d }
+    })
     return {
       items,
       hasMore: false,
@@ -328,10 +464,15 @@ export class MockRemoteGateway implements IRemoteGateway {
         status: 404,
       })
     }
-    return {
-      ...d,
-      status: this.workerOnline ? 'online' : 'offline',
+    if (d.workerId === 'worker_demo') {
+      return {
+        ...d,
+        status: this.workerOnline ? 'online' : 'offline',
+        online: this.workerOnline,
+        busySnapshotFresh: this.workerOnline,
+      }
     }
+    return { ...d }
   }
 
   async revokeDevice(workerId: string, _input?: RemoteDeviceRevokeInput): Promise<RemoteDeviceRevocationView> {
@@ -353,17 +494,32 @@ export class MockRemoteGateway implements IRemoteGateway {
 
   // --- Conversations ---
 
-  async listConversations(): Promise<RemoteConversationPage> {
+  async listConversations(params?: {
+    workerId?: string
+    workspaceId?: string
+    cursor?: string
+    limit?: number
+  }): Promise<RemoteConversationPage> {
+    // Hide pc_only from mobile
+    let items = this.conversations.filter((c) => c.visibility !== 'pc_only')
+    if (params?.workerId) {
+      items = items.filter((c) => c.targetWorkerId === params.workerId || c.workerId === params.workerId)
+    }
+    if (params?.workspaceId) {
+      items = items.filter((c) => c.workspaceId === params.workspaceId)
+    }
     return {
-      items: this.conversations,
+      items: JSON.parse(JSON.stringify(items)),
       hasMore: false,
     }
   }
 
-  async createConversation(input: RemoteCreateConversationInput): Promise<RemoteConversationView> {
+  async createConversation(input: RemoteCreateConversationInput): Promise<RemoteQueuedReceipt> {
+    const convId = `conv_${Date.now()}`
     const newConv: RemoteConversationView = {
-      conversationId: `conv_${Date.now()}`,
+      conversationId: convId,
       targetWorkerId: input.targetWorkerId,
+      workerId: input.targetWorkerId,
       authority: 'remote',
       title: input.title,
       workspaceId: input.workspaceId,
@@ -372,9 +528,56 @@ export class MockRemoteGateway implements IRemoteGateway {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       workerStoreId: 'store_demo',
+      visibility: 'both',
+      busy: false,
+      busyFresh: true,
+      metadataVersion: 1,
+      archived: false,
     }
     this.conversations.unshift(newConv)
-    return newConv
+    return {
+      commandId: `cmd_conv_create_${Date.now()}`,
+      conversationId: convId,
+      status: 'queued',
+      deliveryState: 'queued_online',
+      workerOnline: this.workerOnline,
+      expiresAt: new Date(Date.now() + 30000).toISOString(),
+    }
+  }
+
+  async updateConversation(
+    conversationId: string,
+    input: RemoteSyncConversationInput
+  ): Promise<RemoteQueuedReceipt> {
+    const conv = this.conversations.find((item) => item.conversationId === conversationId)
+    if (!conv) {
+      throw new RemoteApiError({
+        message: '对话未找到',
+        code: 'NOT_FOUND',
+        status: 404,
+      })
+    }
+    const currentVersion = conv.metadataVersion ?? 1
+    if (input.expectedVersion !== currentVersion) {
+      throw new RemoteApiError({
+        message: getRemoteErrorMessage('REMOTE_SYNC_CONFLICT'),
+        code: 'REMOTE_SYNC_CONFLICT',
+        status: 409,
+      })
+    }
+    if (input.title !== undefined) conv.title = input.title.trim()
+    if (input.archived !== undefined) conv.archived = input.archived
+    if (input.visibility !== undefined) conv.visibility = input.visibility
+    conv.metadataVersion = currentVersion + 1
+    conv.updatedAt = new Date().toISOString()
+    return {
+      commandId: `cmd_update_${Date.now()}`,
+      conversationId,
+      status: 'queued',
+      deliveryState: 'queued_online',
+      workerOnline: this.workerOnline,
+      expiresAt: new Date(Date.now() + 30000).toISOString(),
+    }
   }
 
   async getConversation(conversationId: string): Promise<RemoteConversationView> {
@@ -424,6 +627,42 @@ export class MockRemoteGateway implements IRemoteGateway {
   // --- Messages ---
 
   async sendMessage(conversationId: string, input: RemoteSendMessageInput): Promise<RemoteQueuedReceipt> {
+    const conv = this.conversations.find((c) => c.conversationId === conversationId)
+    const targetWorker = this.devices.find((d) => d.workerId === conv?.targetWorkerId) || this.devices[0]
+
+    // R1.5 Rule: Offline immediately fails, never queued
+    if (!this.workerOnline || targetWorker?.online === false || targetWorker?.status === 'offline') {
+      throw new RemoteApiError({
+        message: getRemoteErrorMessage('REMOTE_DEVICE_OFFLINE'),
+        code: 'REMOTE_DEVICE_OFFLINE',
+        status: 409,
+      })
+    }
+
+    if (targetWorker?.supportedWireRevisions && !targetWorker.supportedWireRevisions.includes(2)) {
+      throw new RemoteApiError({
+        message: getRemoteErrorMessage('REMOTE_REVISION_REQUIRED'),
+        code: 'REMOTE_REVISION_REQUIRED',
+        status: 409,
+      })
+    }
+
+    if (targetWorker?.busySnapshotFresh === false) {
+      throw new RemoteApiError({
+        message: getRemoteErrorMessage('REMOTE_STATE_NOT_READY'),
+        code: 'REMOTE_STATE_NOT_READY',
+        status: 409,
+      })
+    }
+
+    if (conv?.busy) {
+      throw new RemoteApiError({
+        message: getRemoteErrorMessage('REMOTE_CONVERSATION_BUSY'),
+        code: 'REMOTE_CONVERSATION_BUSY',
+        status: 409,
+      })
+    }
+
     const msgId = `msg_${Date.now()}`
     const cmdId = `cmd_${Date.now()}`
     const seq = this.messages.filter((m) => m.conversationId === conversationId).length + 1
@@ -440,20 +679,20 @@ export class MockRemoteGateway implements IRemoteGateway {
       commandId: cmdId,
       conversationId,
       status: 'queued',
-      deliveryState: this.workerOnline ? 'queued_online' : 'queued_offline',
+      deliveryState: 'queued_online',
       workerOnline: this.workerOnline,
-      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      expiresAt: new Date(Date.now() + 30000).toISOString(),
       conversationSeq: seq,
     }
 
     this.commands.push({
       commandId: cmdId,
       conversationId,
-      targetWorkerId: 'worker_demo',
+      targetWorkerId: conv?.targetWorkerId || 'worker_demo',
       type: 'run.submit',
       conversationSeq: seq,
       status: 'queued',
-      deliveryState: this.workerOnline ? 'sent' : 'queued_offline',
+      deliveryState: 'queued_online',
       withdrawalState: 'none',
       workerOnline: this.workerOnline,
       observedAt: new Date().toISOString(),
@@ -464,11 +703,31 @@ export class MockRemoteGateway implements IRemoteGateway {
     return receipt
   }
 
-  async listMessages(conversationId: string): Promise<RemoteMessagePage> {
-    const items = this.messages.filter((m) => m.conversationId === conversationId)
+  async listMessages(
+    conversationId: string,
+    before?: string,
+    limit = 20
+  ): Promise<RemoteSyncMessagePage> {
+    const convMsgs = this.messages.filter((m) => m.conversationId === conversationId)
+    // Newest first (descending by createdAt)
+    let sorted = [...convMsgs].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+    if (before) {
+      const beforeIdx = sorted.findIndex((m) => m.messageId === before)
+      if (beforeIdx !== -1) {
+        sorted = sorted.slice(beforeIdx + 1)
+      }
+    }
+    const pageItems = sorted.slice(0, limit)
+    const hasMore = sorted.length > limit
+    const nextBefore = hasMore ? pageItems[pageItems.length - 1]?.messageId : undefined
+
     return {
-      items,
-      hasMore: false,
+      items: JSON.parse(JSON.stringify(pageItems)),
+      hasMore,
+      before: nextBefore,
+      snapshotCursor: `snap_${Date.now()}`,
     }
   }
 
@@ -702,11 +961,213 @@ export class MockRemoteGateway implements IRemoteGateway {
 
     this.streamCursor = `opaque_server_cursor_${Date.now()}`
     const items = [...this.pendingEvents]
+    this.pendingEvents = []
     return {
       items,
       nextServerCursor: this.streamCursor,
       hasMore: this.hasMoreEvents,
     }
+  }
+
+  mockEmitConversationDeleted(conversationId: string): void {
+    this.pendingEvents.push({
+      type: 'conversation.deleted',
+      serverCursor: `del_${Date.now()}`,
+      recordedAt: new Date().toISOString(),
+      conversationId,
+    } as any)
+  }
+
+  mockEmitStoreReset(workerId = 'worker_demo', workerStoreId = 'store_demo'): void {
+    this.pendingEvents.push({
+      type: 'store.reset',
+      serverCursor: `reset_${Date.now()}`,
+      recordedAt: new Date().toISOString(),
+      workerId,
+      workerStoreId,
+    } as any)
+  }
+
+  reset(): void {
+    this.authenticated = true
+    this.workerOnline = true
+    this.rateLimited = false
+    this.pairingErrorCode = null
+    this.cursorExpired = false
+    this.highRiskApprovalAllowed = false
+    this.withdrawalOutcome = 'success'
+    this.controlOutcome = 'confirmed'
+    this.eventPages = []
+    this.pendingEvents = []
+    this.hasMoreEvents = false
+
+    this.devices = [
+      {
+        workerId: 'worker_demo',
+        deviceName: 'Office PC (Alex)',
+        platform: 'windows',
+        architecture: 'x86_64',
+        status: 'online',
+        workerStoreId: 'store_demo',
+        capabilityRevision: 2,
+        observedAt: '2026-09-26T12:00:00Z',
+        pairedAt: '2026-09-26T12:00:00Z',
+        online: true,
+        busySnapshotFresh: true,
+        supportedWireRevisions: [1, 2],
+      },
+      {
+        workerId: 'worker_home_pc',
+        deviceName: 'Home PC (Alex)',
+        platform: 'windows',
+        architecture: 'x86_64',
+        status: 'offline',
+        workerStoreId: 'store_home',
+        capabilityRevision: 2,
+        observedAt: '2026-09-26T12:00:00Z',
+        pairedAt: '2026-09-26T12:00:00Z',
+        online: false,
+        busySnapshotFresh: false,
+        supportedWireRevisions: [2],
+      },
+    ]
+
+    this.conversations = [
+      {
+        conversationId: 'conversation_demo',
+        targetWorkerId: 'worker_demo',
+        workerId: 'worker_demo',
+        authority: 'remote',
+        title: '远程分析系统架构',
+        workspaceId: 'workspace_demo',
+        sceneId: 'analyze',
+        sceneVersion: 1,
+        createdAt: '2026-09-26T12:00:00Z',
+        updatedAt: '2026-09-26T12:00:00Z',
+        workerStoreId: 'store_demo',
+        visibility: 'both',
+        busy: false,
+        busyFresh: true,
+        metadataVersion: 1,
+        archived: false,
+      },
+      {
+        conversationId: 'conv_pc_created_1',
+        targetWorkerId: 'worker_demo',
+        workerId: 'worker_demo',
+        authority: 'local',
+        title: '电脑端创建：自动化测试修复',
+        workspaceId: 'workspace_demo',
+        sceneId: 'develop',
+        sceneVersion: 1,
+        createdAt: '2026-09-26T13:00:00Z',
+        updatedAt: '2026-09-26T13:10:00Z',
+        workerStoreId: 'store_demo',
+        visibility: 'both',
+        busy: false,
+        busyFresh: true,
+        metadataVersion: 1,
+        archived: false,
+      },
+      {
+        conversationId: 'conv_busy_demo_1',
+        targetWorkerId: 'worker_demo',
+        workerId: 'worker_demo',
+        authority: 'remote',
+        title: '正在执行：全量编译构建',
+        workspaceId: 'workspace_demo',
+        sceneId: 'develop',
+        sceneVersion: 1,
+        createdAt: '2026-09-26T13:30:00Z',
+        updatedAt: '2026-09-26T13:35:00Z',
+        workerStoreId: 'store_demo',
+        visibility: 'both',
+        busy: true,
+        busyFresh: true,
+        busyObservedAt: '2026-09-26T13:35:00Z',
+        metadataVersion: 1,
+        archived: false,
+      },
+      {
+        conversationId: 'conv_pc_only_1',
+        targetWorkerId: 'worker_demo',
+        workerId: 'worker_demo',
+        authority: 'local',
+        title: '电脑私有会话',
+        workspaceId: 'workspace_demo',
+        sceneId: 'analyze',
+        sceneVersion: 1,
+        createdAt: '2026-09-26T14:00:00Z',
+        updatedAt: '2026-09-26T14:00:00Z',
+        workerStoreId: 'store_demo',
+        visibility: 'pc_only',
+        metadataVersion: 1,
+        archived: false,
+      },
+      {
+        conversationId: 'conv_home_1',
+        targetWorkerId: 'worker_home_pc',
+        workerId: 'worker_home_pc',
+        authority: 'remote',
+        title: '家庭电脑任务',
+        workspaceId: 'workspace_web',
+        sceneId: 'analyze',
+        sceneVersion: 1,
+        createdAt: '2026-09-26T14:30:00Z',
+        updatedAt: '2026-09-26T14:30:00Z',
+        workerStoreId: 'store_home',
+        visibility: 'both',
+        metadataVersion: 1,
+        archived: false,
+      },
+    ]
+
+    this.messages = [
+      {
+        messageId: 'msg_001',
+        conversationId: 'conversation_demo',
+        role: 'user',
+        text: '请梳理当前工程的核心类职责与接口关系',
+        createdAt: '2026-09-26T12:00:10Z',
+      },
+      {
+        messageId: 'msg_002',
+        conversationId: 'conversation_demo',
+        role: 'assistant',
+        text: '正在分析 HQAgent-Hub 架构，已建立本地上下文索引。',
+        createdAt: '2026-09-26T12:00:15Z',
+        runId: 'run_demo',
+      },
+      {
+        messageId: 'msg_003',
+        conversationId: 'conversation_demo',
+        role: 'user',
+        text: '请生成组件关系图',
+        createdAt: '2026-09-26T12:01:00Z',
+      },
+      {
+        messageId: 'msg_004',
+        conversationId: 'conversation_demo',
+        role: 'assistant',
+        text: '已生成组件依赖拓扑图，已保存至本地 artifacts 目录。',
+        createdAt: '2026-09-26T12:01:20Z',
+        runId: 'run_demo',
+      },
+      {
+        messageId: 'msg_pc_1',
+        conversationId: 'conv_pc_created_1',
+        role: 'user',
+        text: '电脑端提交任务：检查测试覆盖率',
+        createdAt: '2026-09-26T13:00:00Z',
+      },
+      {
+        messageId: 'msg_pc_2',
+        conversationId: 'conv_pc_created_1',
+        role: 'assistant',
+        text: '测试套件共 50 个文件，全部通过。',
+        createdAt: '2026-09-26T13:00:20Z',
+      },
+    ]
   }
 }
 

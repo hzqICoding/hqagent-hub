@@ -10,6 +10,7 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  Eye,
   FolderGit2,
   MessageSquare,
   MoreHorizontal,
@@ -51,6 +52,29 @@ const renameError = ref<string | null>(null)
 
 const isArchiveDialogOpen = ref(false)
 const archiveTarget = ref<LocalConversationView | null>(null)
+
+const isVisibilityDialogOpen = ref(false)
+const visibilityTarget = ref<LocalConversationView | null>(null)
+const selectedVisibility = ref<'both' | 'pc_only' | 'mobile_only'>('both')
+const visibilityError = ref<string | null>(null)
+
+function openVisibilityDialog(conversation: LocalConversationView) {
+  visibilityTarget.value = conversation
+  selectedVisibility.value = conversation.visibility || 'both'
+  visibilityError.value = null
+  isVisibilityDialogOpen.value = true
+}
+
+async function confirmVisibility() {
+  if (!visibilityTarget.value || chatStore.isMetadataUpdating) return
+  visibilityError.value = null
+  try {
+    await chatStore.setConversationVisibility(visibilityTarget.value.id, selectedVisibility.value)
+    isVisibilityDialogOpen.value = false
+  } catch (error) {
+    visibilityError.value = error instanceof Error ? error.message : '修改可见性失败'
+  }
+}
 
 function openCreateModal(workspaceId?: string) {
   newTitle.value = ''
@@ -153,14 +177,6 @@ async function restoreConversation(conversation: LocalConversationView) {
 }
 
 function taskMenuItems(conversation: LocalConversationView) {
-  if (conversation.authority === 'remote') {
-    return [{
-      id: 'remote-readonly',
-      label: '手机远程对话（只读）',
-      icon: Smartphone,
-      disabled: true,
-    }]
-  }
   if (conversation.archived) {
     return [{
       id: 'restore',
@@ -176,6 +192,12 @@ function taskMenuItems(conversation: LocalConversationView) {
       label: '重命名',
       icon: Pencil,
       action: () => openRenameDialog(conversation),
+    },
+    {
+      id: 'visibility',
+      label: '可见性设置',
+      icon: Eye,
+      action: () => openVisibilityDialog(conversation),
     },
     {
       id: 'archive',
@@ -279,6 +301,17 @@ function handleConversationSelect(conversationId: string) {
           已归档
         </button>
       </div>
+      <div class="flex items-center justify-between pt-0.5 px-0.5 text-[11px] text-text-muted">
+        <label class="flex items-center gap-1.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            :checked="chatStore.includeHiddenConversations"
+            class="rounded border-border text-primary focus:ring-0"
+            @change="chatStore.setIncludeHiddenConversations(($event.target as HTMLInputElement).checked)"
+          />
+          <span>显示已隐藏的对话</span>
+        </label>
+      </div>
       <p v-if="chatStore.metadataError" role="alert" class="text-[11px] text-danger leading-relaxed">
         {{ chatStore.metadataError }}
       </p>
@@ -347,13 +380,25 @@ function handleConversationSelect(conversationId: string) {
           >
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-1.5 min-w-0">
+                <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
                   <p class="text-xs font-medium text-text truncate leading-tight flex-1">{{ conversation.title }}</p>
                   <span
                     v-if="conversation.authority === 'remote'"
                     class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-primary/15 text-primary border border-primary/25"
                   >
-                    远程
+                    来自手机
+                  </span>
+                  <span
+                    v-if="conversation.visibility === 'mobile_only'"
+                    class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-warning/15 text-warning border border-warning/25"
+                  >
+                    已隐藏（仅手机）
+                  </span>
+                  <span
+                    v-else-if="conversation.visibility === 'pc_only'"
+                    class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-muted text-text-muted border border-border"
+                  >
+                    仅电脑
                   </span>
                 </div>
                 <div class="mt-1.5 flex items-center gap-2 text-[10px] text-text-muted">
@@ -464,6 +509,79 @@ function handleConversationSelect(conversationId: string) {
       <template #footer>
         <HqButton size="sm" variant="secondary" @click="isArchiveDialogOpen = false">取消</HqButton>
         <HqButton size="sm" variant="danger" :disabled="chatStore.isMetadataUpdating" :loading="chatStore.isMetadataUpdating" @click="confirmArchive">确认归档</HqButton>
+      </template>
+    </HqDialog>
+
+    <HqDialog
+      :open="isVisibilityDialogOpen"
+      title="可见性设置"
+      description="选择该对话在电脑与手机端的可见范围"
+      @close="isVisibilityDialogOpen = false"
+    >
+      <div class="space-y-3 py-2 text-xs">
+        <p v-if="visibilityError" role="alert" class="text-danger bg-danger/10 p-2 rounded">{{ visibilityError }}</p>
+        <div class="space-y-2">
+          <label
+            class="flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors"
+            :class="selectedVisibility === 'both' ? 'border-primary bg-primary/5' : 'border-border hover:bg-bg-app'"
+          >
+            <input
+              type="radio"
+              v-model="selectedVisibility"
+              value="both"
+              name="visibility"
+              class="mt-0.5"
+            />
+            <div>
+              <p class="font-medium text-text">两端均可见 (默认)</p>
+              <p class="text-[11px] text-text-muted">电脑端与手机端均可查看并参与对话</p>
+            </div>
+          </label>
+          <label
+            class="flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors"
+            :class="selectedVisibility === 'pc_only' ? 'border-primary bg-primary/5' : 'border-border hover:bg-bg-app'"
+          >
+            <input
+              type="radio"
+              v-model="selectedVisibility"
+              value="pc_only"
+              name="visibility"
+              class="mt-0.5"
+            />
+            <div>
+              <p class="font-medium text-text">仅电脑可见</p>
+              <p class="text-[11px] text-text-muted">手机端列表中不显示此对话</p>
+            </div>
+          </label>
+          <label
+            class="flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors"
+            :class="selectedVisibility === 'mobile_only' ? 'border-primary bg-primary/5' : 'border-border hover:bg-bg-app'"
+          >
+            <input
+              type="radio"
+              v-model="selectedVisibility"
+              value="mobile_only"
+              name="visibility"
+              class="mt-0.5"
+            />
+            <div>
+              <p class="font-medium text-text">仅手机可见</p>
+              <p class="text-[11px] text-text-muted">电脑端默认隐藏（勾选“显示已隐藏的对话”时可见）</p>
+            </div>
+          </label>
+        </div>
+      </div>
+      <template #footer>
+        <HqButton size="sm" variant="secondary" @click="isVisibilityDialogOpen = false">取消</HqButton>
+        <HqButton
+          size="sm"
+          variant="primary"
+          :disabled="chatStore.isMetadataUpdating"
+          :loading="chatStore.isMetadataUpdating"
+          @click="confirmVisibility"
+        >
+          保存设置
+        </HqButton>
       </template>
     </HqDialog>
 
