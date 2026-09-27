@@ -13,10 +13,11 @@ from protocol.generated.python import ApiEnvelope, PROTOCOL_VERSION
 
 from .common import Fault, require, stamp, uid, validated
 from .config import Settings
-from .events import Events
+from .events_sync import SyncEvents
 from .repository import Repository
 from .security import COOKIE, Security
-from .service import KINDS, Service
+from .service import KINDS
+from .service_sync import SyncService
 from .worker import WorkerTransport
 from .static import SPAStaticFiles
 
@@ -69,10 +70,11 @@ ROUTES = [
     ("POST", "/devices/{workerId}/revocations", "revoke", "RemoteDeviceRevokeInput", "RemoteDeviceRevocationView", 200),
     ("GET", "/devices/{workerId}/catalog", "catalog", None, "RemoteCatalogView", 200),
     ("GET", "/conversations", "conversations", None, "RemoteConversationPage", 200),
-    ("POST", "/conversations", "create_conversation", "RemoteCreateConversationInput", "RemoteConversationView", 201),
+    ("POST", "/conversations", "create_conversation", "RemoteCreateConversationInput", "RemoteQueuedReceipt", 202),
     ("GET", "/conversations/{conversationId}", "conversation", None, "RemoteConversationView", 200),
+    ("PATCH", "/conversations/{conversationId}", "update_conversation", "RemoteSyncConversationInput", "RemoteQueuedReceipt", 202),
     ("POST", "/conversations/{conversationId}/messages", "send", "RemoteSendMessageInput", "RemoteQueuedReceipt", 202),
-    ("GET", "/conversations/{conversationId}/messages", "messages", None, "RemoteMessagePage", 200),
+    ("GET", "/conversations/{conversationId}/messages", "messages", None, "RemoteSyncMessagePage", 200),
     ("GET", "/conversations/{conversationId}/runs", "runs", None, "RemoteRunPage", 200),
     ("GET", "/conversations/{conversationId}/commands", "commands", None, "RemoteCommandPage", 200),
     ("GET", "/runs/{runId}", "run", None, "RemoteRunView", 200),
@@ -91,8 +93,8 @@ def create_app(settings=None):
     settings = settings or Settings.from_env()
     repo = Repository(settings.database)
     security = Security(repo, settings)
-    service = Service(repo, settings, security)
-    transport = WorkerTransport(service, Events(service))
+    service = SyncService(repo, settings, security)
+    transport = WorkerTransport(service, SyncEvents(service))
 
     async def maintenance():
         while True:
@@ -131,7 +133,7 @@ def create_app(settings=None):
         try:
             body = {}
             key = request.headers.get("idempotency-key", "")
-            write = request.method == "POST"
+            write = request.method in {"POST", "PATCH"}
             peer = request.client.host if request.client else "unknown"
             require(request.url.scheme == "https", "REMOTE_AUTH_REQUIRED")
             if write:
@@ -221,8 +223,9 @@ def create_app(settings=None):
                 if operation == "control" and kind == "run":
                     value = tx.get(owner, "run", path[name]) or tx.get(owner, "run-ref", path[name])
                     require(value is not None, "NOT_FOUND")
+                    service.browser_get(tx, owner, 'conversation', value['conversationId'])
                 else:
-                    value = service.get(tx, owner, kind, path[name])  # authorize before cache replay
+                    value = service.browser_get(tx, owner, kind, path[name])  # authorize before cache replay
                 workers.add(value.get("targetWorkerId", value.get("workerId", value.get("_worker"))))
         for worker in workers:
             if worker:
@@ -234,7 +237,7 @@ def create_app(settings=None):
             lookup = tx.auth_get("code:" + security.mac("pair-code", body["pairCode"]))
             challenge = tx.auth_get("challenge:" + lookup["id"]) if lookup else None
             require(challenge is None or challenge.get("owner", owner) == owner, "NOT_FOUND")
-        if request.method == "POST":
+        if request.method in {"POST", "PATCH"}:
             def action():
                 if operation == "preview":
                     lookup = tx.auth_get("code:" + security.mac("pair-code", body["pairCode"]))
@@ -248,6 +251,8 @@ def create_app(settings=None):
                     return service.revoke(tx, owner, path["workerId"])
                 if operation == "create_conversation":
                     return service.create_conversation(tx, owner, body)
+                if operation == "update_conversation":
+                    return service.update_conversation(tx, owner, path['conversationId'], body)
                 if operation == "send":
                     return service.send_message(tx, owner, path["conversationId"], body)
                 if operation == "control":
@@ -259,16 +264,26 @@ def create_app(settings=None):
                 raise Fault("NOT_FOUND")
             return service.replay(tx, owner, operation + ":" + json.dumps(path, sort_keys=True), key, body, action)
         if operation == "catalog":
-            return service.get(tx, owner, "catalog", path["workerId"])
+            catalog = tx.get(owner, 'catalog', path['workerId'])
+            require(catalog is not None, 'FEATURE_UNAVAILABLE' if service.online(owner, path['workerId']) else 'REMOTE_DEVICE_OFFLINE')
+            return catalog
         if operation == "snapshot":
             return service.snapshot(tx, owner, path["conversationId"])
         query = request.query_params
         allowed = {"after", "limit"} if operation == "events" else {"cursor", "limit"} if operation in KINDS else set()
+        if operation == 'messages':
+            allowed = {'before', 'limit'}
+        if operation == 'conversations':
+            allowed |= {'workerId', 'workspaceId'}
         require(set(query.keys()) <= allowed)
         limit = int(query.get("limit", "100" if operation == "events" else "50"))
         require(1 <= limit <= (200 if operation == "events" else 100))
         if operation == "events":
             return service.events(tx, owner, query.get("after"), limit)
+        if operation == 'messages':
+            return service.messages(tx, owner, path['conversationId'], query.get('before'), limit)
+        if operation == 'conversations':
+            return service.conversations(tx, owner, query.get('cursor'), limit, query.get('workerId'), query.get('workspaceId'))
         if operation in KINDS:
             return service.page(tx, owner, KINDS[operation][0], query.get("cursor"), limit, path.get("conversationId"))
         identifiers = {"device": "workerId", "conversation": "conversationId", "run": "runId", "command": "commandId", "approval": "approvalId"}
@@ -277,7 +292,7 @@ def create_app(settings=None):
     for method, path, operation, input_model, output_model, status in ROUTES:
         def endpoint_factory(op, im, om, sc):
             async def endpoint(request: Request):
-                if request.method == "POST" and op not in {"login", "pair_request"}:
+                if request.method in {"POST", "PATCH"} and op not in {"login", "pair_request"}:
                     try:
                         security.rate("write:" + (request.client.host if request.client else "unknown"))
                     except Fault as exc:

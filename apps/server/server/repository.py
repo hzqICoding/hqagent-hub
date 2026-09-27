@@ -9,9 +9,10 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-from .common import canonical, seconds, stamp
+from .common import Fault, canonical, seconds, stamp
+from .repository_sync import SYNC_MIGRATION, SyncRepository
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 MIGRATIONS = {1: """
 CREATE TABLE auth (key TEXT PRIMARY KEY, owner TEXT NOT NULL, body TEXT NOT NULL);
 CREATE TABLE records (
@@ -50,7 +51,7 @@ CREATE INDEX browser_retention_time ON browser_outbox(owner,recorded_at,ordinal)
 CREATE TABLE browser_retention (
  owner TEXT PRIMARY KEY CHECK(length(owner)>0),
  pruned_through INTEGER NOT NULL, generation INTEGER NOT NULL);
-"""}
+""", 4: SYNC_MIGRATION}
 
 
 class Repository:
@@ -87,8 +88,11 @@ class Repository:
                 yield tx
                 self.connection.execute("COMMIT")
                 callbacks = tuple(tx.commit_callbacks.values())
-            except BaseException:
-                self.connection.execute("ROLLBACK")
+            except BaseException as exc:
+                if self.connection.in_transaction:
+                    self.connection.execute("ROLLBACK")
+                if isinstance(exc, sqlite3.OperationalError) and (getattr(exc, 'sqlite_errorcode', 0) & 255) in {sqlite3.SQLITE_FULL, sqlite3.SQLITE_NOMEM}:
+                    raise Fault('REMOTE_SYNC_RESOURCE_LIMIT') from None
                 raise
         # Delivery notifications see committed state and never hold the DB lock.
         for callback in callbacks:
@@ -108,7 +112,7 @@ class Repository:
             self.connection.close()
 
 
-class UnitOfWork:
+class UnitOfWork(SyncRepository):
     def __init__(self, connection):
         self.db = connection
         self.commit_callbacks = {}
@@ -139,10 +143,12 @@ class UnitOfWork:
         status = body.get("status") if kind == "command" else None
         due_at = body.get("expiresAt") if kind == "command" else None
         done = int(body["done"]) if kind == "outbox" else None
-        self.db.execute("""INSERT INTO records(owner,kind,id,worker,store,parent,body,command_status,due_at,outbox_done) VALUES(?,?,?,?,?,?,?,?,?,?)
+        self.db.execute("""INSERT INTO records(owner,kind,id,worker,store,parent,body,command_status,due_at,outbox_done,message_sequence) VALUES(?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(owner,kind,id) DO UPDATE SET body=excluded.body,worker=excluded.worker,store=excluded.store,parent=excluded.parent,
-            command_status=excluded.command_status,due_at=excluded.due_at,outbox_done=excluded.outbox_done""",
-                        (owner, kind, identifier, worker, store, parent, canonical(body), status, due_at, done))
+            command_status=excluded.command_status,due_at=excluded.due_at,outbox_done=excluded.outbox_done,message_sequence=COALESCE(excluded.message_sequence,records.message_sequence)""",
+                        (owner, kind, identifier, worker, store, parent, canonical(body), status, due_at, done, body.get('messageSequence') if kind == 'message' else None))
+        if kind == 'message' and 'messageSequence' not in body:
+            self.db.execute("UPDATE records SET message_sequence=ordinal WHERE owner=? AND kind='message' AND id=? AND message_sequence IS NULL", (owner, identifier))
 
     def due_workers(self, owner, now):
         return [r[0] for r in self.db.execute("SELECT DISTINCT worker FROM records WHERE owner=? AND kind='command' AND command_status='queued' AND due_at<=?", (owner, stamp(now)))]
@@ -164,7 +170,7 @@ class UnitOfWork:
                   AND c.worker=a.worker AND c.store=a.store AND c.parent=a.parent
                   AND c.command_status='completed' AND json_extract(c.body,'$.type')='approval.decide'
                   AND json_extract(c.body,'$.resultStatus')='approval_consumed'
-                  AND json_extract(c.body,'$._frame.payload.approvalId')=a.id)
+                  AND json_extract(c.body,'$._frame.payload.approvalId')=COALESCE(json_extract(a.body,'$._localId'),a.id))
             ORDER BY a.ordinal""", (owner, worker, store, conversation))
         cutoff = seconds(observed_at)
         result = []
@@ -220,7 +226,13 @@ class UnitOfWork:
         return max(tail, self.browser_retention(owner)["prunedThrough"])
 
     def browser_after(self, owner, after, limit):
-        return [(r[0], json.loads(r[1])) for r in self.db.execute("SELECT ordinal,body FROM browser_outbox WHERE owner=? AND ordinal>? ORDER BY ordinal LIMIT ?", (owner, after, limit))]
+        result = []; size = 0
+        for row in self.db.execute("SELECT ordinal,body FROM browser_outbox WHERE owner=? AND ordinal>? ORDER BY ordinal LIMIT ?", (owner, after, limit)):
+            added = len(row[1].encode())
+            if result and size + added > 33554432:
+                break
+            result.append((row[0], json.loads(row[1]))); size += added
+        return result
 
     def cleanup_auth(self, now):
         self.db.execute("DELETE FROM auth WHERE category IN ('session','rate') AND expires_at<=?", (now,))
