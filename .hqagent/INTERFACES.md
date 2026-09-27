@@ -166,3 +166,11 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 - 不新增列审批路由、类型或错误码；保留 RemoteApprovalView 的通用状态语义。高风险不可远程 approve 的 pending 项仍可见并可依现有规则 reject。wireRevision 仍为 1，所有 Worker 帧不变。
 - 实测：validate -CheckGenerated 通过（258 类型 / 110 Fixture）；协议 212 passed；Hub 285 passed / 4 warnings；server 85 passed / 1 warning。未启动 Vitest，前端验证交主代理。
 - [FZ-R1.3 回执](handoffs/R1-FZ13-remote-protocol.md) 附真实输出、测试调整说明及下游验收项。P1 尚未填充该字段；本次服务端回归通过证明可选字段兼容，不代表审批补全业务已实现。
+
+## R1.5 / 目标0.7.0 — 未冻结，needs-decision（2026-09-27）
+
+- 已合入 integration/phase1@`ab889b3a04ebf50ee4246dc8e3f27a10751b096c`，merge `d495c051f836ddf4ca25a992d1cceef4fbe0a097`；本分支尚未合回集成。
+- **没有0.7.0冻结SHA，P1/P2/P3不可据此记录按新协议开工。** VERSION仍为0.6.3，线路仍只有修订1，Schema、注册表与生成物均未改动。
+- Q1：新增接力/镜像专用错误码会经公共ErrorCode扩大rev1 DTO可接受值域，和“rev1 DTO一字不改且不放宽严格性”冲突。需主代理选择注册表值域例外，或授权独立rev1冻结错误类型及保持线路行为的引用调整。
+- 只读证据提交：`9bb608dcca8be3cb89110934dd6f9f83ce8f27ea`，不是协议冻结提交。D46已登记；D47登记产品方向及协议待裁决状态。
+- [R15-P0回执](handoffs/R15-P0-remote-protocol.md) 含复现、选项和接续事项。未运行发布门禁全套，未启动Vitest；等待Q1裁决后继续，不用0.6.3结果冒充0.7.0验证。
