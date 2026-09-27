@@ -1,4 +1,4 @@
-# R1 远程通信契约（协议包0.6.1，线路修订1）
+# R1 远程通信契约（协议包0.6.2，线路修订1）
 
 ## 1. 定位、事实源与范围
 
@@ -166,4 +166,25 @@ POST unlink先完成本机凭据删除与断开，结束为unpaired；若本机�
 
 已有remote对话在解绑后仍为remote，本机只读。LocalConversationView.authority是可选字段，旧记录缺省视为local；这种兼容默认绝不能用于把已持久标记remote的对话降级。P2必须在本地写入口执行权威检查；未来如何接续已解绑remote对话另行设计，本版不自动迁移/重放。
 
-P3-B须使用现有v1 Gateway/桌面壳提供的本机鉴权能力；不能假定v2的浏览器Cookie自动获得v1权限，更不能为了配对把Hub Token塞进JSON或前端持久化存储。本轮只冻结本机配对界面的接口，不修改既有认证方式。
+0.6.1中的本机配对接口要求现有v1 Gateway/桌面壳鉴权；本机浏览器Cookie不能自动获得v1权限，Hub Token不得塞进JSON或前端持久化存储。0.6.2按D44补充浏览器等价入口，见下节，未改变v1认证方式。
+
+## 13. FZ-R1.2 本机浏览器等价入口（D44）
+
+包版本0.6.2，线路修订仍为1。四个等价操作定义在已有本机Cookie会话契约 `openapi/local-chat.v2.yaml`，不在云端 `remote-hub.v2.yaml`：
+
+| 本机浏览器操作 | 保留的本机Bearer操作 | DTO |
+| --- | --- | --- |
+| GET /api/v2/remote/link | GET /api/v1/remote/link | RemoteLinkView |
+| POST /api/v2/remote/pairing | POST /api/v1/remote/pairing | RemoteLinkPairingInput → RemoteLinkView |
+| DELETE /api/v2/remote/pairing | DELETE /api/v1/remote/pairing | RemoteLinkView |
+| POST /api/v2/remote/unlink | POST /api/v1/remote/unlink | RemoteLinkView |
+
+这里的本机 `/api/v2` 是用户电脑上 Local Hub 的工作台 API；云端 Hub Server 的 `remote-hub.v2` 虽然也使用 `/api/v2` 前缀，属于另一个服务。两者Cookie不可互换，不能代理传递Cookie来补权限。本机浏览器使用连接码建立的 `hqagent_local_session`（OpenAPI localSession），无需取得或持久化Hub Token。v1 Bearer路由保留给桌面壳与诊断，不迁移、不降级其权限要求。
+
+浏览器写请求沿用现有本机v2的Origin校验及Idempotency-Key；缺少/不可信Origin使用ORIGIN_NOT_ALLOWED，无有效本机会话使用UNAUTHORIZED，缺少/不合法幂等键使用VALIDATION_FAILED，重放冲突按既有幂等规则处理。业务错误码与D43完全复用。新路由全部响应（成功、业务错误及认证/边界拒绝）均须 `Cache-Control: no-store`。P2需覆盖中间件提前拒绝的返回，不只在成功handler加头。
+
+两个本机路由版本必须操作同一份绑定状态和同一凭据生命周期，复用D43的配对、取消、解绑、authority和幂等语义，不另建第二份绑定管理器。既有remote对话在解绑后仍为remote、本机只读，解除绑定不等同停止已运行任务。
+
+`remote.link.changed` 的事件形状和语义不变。允许本机工作台轮询GET link获得最新完整快照；GET只读，不发起新配对、不延长短码期限。浏览器可仅使用轮询，不要求接入v1 WebSocket或取得其Ticket。页面应避免并发轮询的旧响应覆盖新状态，并在会话失效后停止认证失败重试。
+
+本次不新增类型或错误码，不修改Worker帧与线路修订、云端HTTP契约、v1路由或执行内核。本机业务实现由P2完成，协议测试不代表新路由已经部署。
