@@ -334,7 +334,7 @@ class CommandBridge:
                             "createdAt": now(), "updatedAt": now(), "version": 1, "archived": False})
                         tx.connection.execute("INSERT INTO local_conversations VALUES(?,?,?)", (conversation, view.model_dump_json(by_alias=True, exclude_none=True), now()))
                     message = SendLocalMessageInput.model_validate({k: payload[k] for k in ("clientMessageId", "text", "sessionMode")})
-                    receipt = self.chat.repository.enqueue(conversation, message, frame["commandId"], transaction=tx)
+                    receipt = self.chat.repository.enqueue(conversation, message, frame["commandId"], transaction=tx, legacy=True)
                     self._accept(tx, frame, receipt.run_id)
                 except HubError as error:
                     self._reject(tx, frame, error.code)
