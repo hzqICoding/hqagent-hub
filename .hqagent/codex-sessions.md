@@ -1,5 +1,16 @@
 # Codex 会话登记
 
+## 2026-09-27 R15-P0 协议只读复核
+
+先检查现有登记与存活会话：原生工具只返回 `/root`，没有适合复用的存活子代理。本轮新建一个窄范围只读复核，主代理同时核对DTO与本机API；共2个代理，没有并行测试。主代理独占所有写入，复核代理未写文件。
+
+| 职责 | canonical task | 独立thread ID | session ID | 模型/等级 | 范围与状态 |
+| --- | --- | --- | --- | --- | --- |
+| 修订兼容、持久化与冲突独立复核 | `/root/r15_protocol_review` | `01a0e272-7f9c-77c3-9c81-85b473c2497e` | `01a0ceda-3bd5-7092-a443-c9e36b1eff9c`（环境值，可能继承父会话，不冒充独立ID） | `gpt-6-astra/high`（委派配置） | remote-protocol只读；已完成，可在本线程树接续；结论Q1需裁决 |
+
+回执：`.hqagent/handoffs/R15-P0-remote-protocol.md`。原生followup_task可按canonical task接续；跨客户端恢复未验证。独立复核未运行测试，主代理仅运行共享枚举冲突的内存复现，未改协议或业务代码。
+
+
 派给 codex 的每条线都记在这里，方便后续 `codex exec resume <id>` 复用上下文，
 而不是重开一个冷会话把任务书再喂一遍。
 
