@@ -67,7 +67,12 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   const activeRun = computed(() => {
     if (!activeConversationId.value) return null
-    return runs.value.find((r) => r.conversationId === activeConversationId.value) || null
+    for (let i = runs.value.length - 1; i >= 0; i--) {
+      if (runs.value[i].conversationId === activeConversationId.value) {
+        return runs.value[i]
+      }
+    }
+    return null
   })
 
   const activeApprovals = computed(() =>

@@ -402,3 +402,161 @@ dist/assets/remote-chat.store-iZdWj0zP.js                                       
 dist/assets/index-Ff_rc5KI.js                                                   209.02 kB │ gzip: 67.45 kB
 ✓ built in 7.52s
 ```
+
+---
+
+## 10. 返修 2 交付说明 (B4)
+
+- 分支：`feat/remote-web-gateway`
+- 工作区：`E:\OtherPro\HQAgent-Hub-worktrees\remote-web-gateway`
+- 基线与测试：修复 B4 后，实测 **50 个测试文件、256 tests passed**，`typecheck` 0 错误，`lint` 0 错误 0 警告，`build` 生产构建成功。
+
+### 10.1 问题根因与修复措施
+
+1. **`activeRun` 调整为当前会话最新 run**：
+   - 服务端返回的 runs 数组按创建时间先后升序排列，后续新 run 也依次 push 到末尾。原 `runs.value.find(...)` 取到了首个匹配项（即最早的历史 run）。
+   - 修改 `remote-chat.store.ts` 中 `activeRun` 计算属性为从后向前检索：
+     ```ts
+     const activeRun = computed(() => {
+       if (!activeConversationId.value) return null
+       for (let i = runs.value.length - 1; i >= 0; i--) {
+         if (runs.value[i].conversationId === activeConversationId.value) {
+           return runs.value[i]
+         }
+       }
+       return null
+     })
+     ```
+   - 保证无论是初始快照加载还是增量事件推送，`activeRun` 始终指向当前会话的最新一轮 run。
+
+2. **新 run 事件到达自动切换控制目标**：
+   - 增量事件 `run.state_changed` 到达时，新 run 追加至 `runs.value` 末尾，`activeRun` 立即响应切换为新 run。
+   - 顶部三层状态栏的第 3 层「执行状态 (Worker)」、Run ID 标识，以及暂停、恢复、取消、重试等控制按钮自动切为作用于新 run 的 `runId`。
+
+3. **异常中断提示与新话题模式联动**：
+   - 在 `RemoteChatPage.vue` 中对 `activeRun` 的状态变化建立监听：当最新一轮 run 状态为 `cancelled` 或 `failed` 时，底部 `sessionMode` 默认自动选中「新话题」(`new`)。
+   - 输入框上方渲染警示提示横幅：
+     ```vue
+     <div
+       v-if="chatStore.activeRun && (chatStore.activeRun.status === 'cancelled' || chatStore.activeRun.status === 'failed')"
+       class="p-1.5 px-2 rounded bg-warning/15 border border-warning/30 text-[11px] text-warning flex items-center gap-1.5"
+     >
+       <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
+       <span>上一轮已中断，继续上下文可能失败</span>
+     </div>
+     ```
+
+---
+
+### 10.2 新增测试套件与覆盖（`RemoteEvents.test.ts`）
+
+新增 3 项针对 B4 的完备测试（累计 11 tests passed）：
+1. `B4: activeRun selects the latest run (last in ascending sequence); status bar and cancel button target the latest running run`
+   - 对话按升序初始化 3 个 run（`succeeded`、`cancelled`、`running`）；
+   - 验证 `store.activeRun` 为第 3 个 `running` 的 run，状态栏展示 `Run: run_seq_3` 与 `Worker 执行中`；
+   - 触发取消按钮，断言 `controlRun` 严格调用 `('run_seq_3', { action: 'cancel' })`，而非首个 run。
+2. `B4: status bar and control buttons automatically switch to new run when arriving via run.state_changed event`
+   - 初始为 `running` 的 run；
+   - 增量事件推送新的 `paused` 状态 run；
+   - 验证状态栏与控制按钮实时切换至新 run，恢复按钮触发对新 run 的 `resume`。
+3. `B4: defaults sessionMode to new and displays warning tip when latest run is cancelled or failed`
+   - 验证最新一轮为 `cancelled` 或 `failed` 时，页面展示「上一轮已中断，继续上下文可能失败」，且 `sessionMode` 单选框自动选中「新话题」。
+
+---
+
+### 10.3 返修 2 真实验证命令输出
+
+#### 1. 类型检查（Typecheck 0 错误）
+```text
+$ pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+# 退出码 0，无任何类型错误
+```
+
+#### 2. 代码风格（Lint 0 错误 0 警告）
+```text
+$ pnpm --filter @hqagent/desktop lint
+$ eslint src
+# 退出码 0，无错误无警告
+```
+
+#### 3. 完整测试套件（50 test files / 256 passed）
+```text
+$ pnpm --filter @hqagent/desktop test
+
+ RUN  v2.1.9 E:/OtherPro/HQAgent-Hub-worktrees/remote-web-gateway/apps/desktop
+
+ ✓ src/shared/api/local-chat-gateway.test.ts (8 tests)
+ ✓ src/shared/api/local-hub-gateway.test.ts (8 tests)
+ ✓ src/shared/api/mock-local-chat-gateway.test.ts (16 tests)
+ ✓ src/stores/chat.polling.test.ts (6 tests)
+ ✓ src/stores/chat.context.test.ts (7 tests)
+ ✓ src/stores/chat.store.test.ts (9 tests)
+ ✓ src/stores/task.store.test.ts (7 tests)
+ ✓ src/pages/remote/RemoteGateway.test.ts (4 tests)
+ ✓ src/stores/chat.reliability.test.ts (7 tests)
+ ✓ src/pages/chat/components/ProcessActivityGroup.test.ts (5 tests)
+ ✓ src/shared/api/mock-gateway.test.ts (10 tests)
+ ✓ src/stores/scenes.store.test.ts (6 tests)
+ ✓ src/pages/chat/components/ChatComposer.test.ts (7 tests)
+ ✓ src/pages/remote/RemoteChat.test.ts (7 tests)
+ ✓ src/pages/chat/RemoteConversationReadOnly.test.ts (7 tests)
+ ✓ src/pages/remote-link/RemoteLink.test.ts (8 tests)
+ ✓ src/pages/remote/RemoteEvents.test.ts (11 tests)
+ ✓ src/pages/scenes/ScenesPage.test.ts (9 tests)
+ ✓ src/pages/chat/components/ChatSidebar.test.ts (3 tests)
+ ✓ src/pages/remote/RemoteAuth.test.ts (4 tests)
+ ✓ src/pages/remote/RemoteModeIsolation.test.ts (4 tests)
+ ✓ src/stores/app.store.test.ts (8 tests)
+ ✓ src/pages/chat/ChatMobile.test.ts (6 tests)
+ ✓ src/pages/chat/ChatPage.test.ts (7 tests)
+ ✓ src/pages/remote/RemotePairing.test.ts (4 tests)
+ ✓ src/pages/chat/components/RunSnapshotDrawer.test.ts (1 test)
+ ✓ src/shared/theme/theme.engine.test.ts (5 tests)
+ ✓ src/pages/tasks/TaskDetailPage.test.ts (5 tests)
+ ✓ src/shared/ui/HqMarkdown.test.ts (6 tests)
+ ✓ src/stores/approval.store.test.ts (4 tests)
+ ✓ src/pages/chat/components/ChatMessageItem.test.ts (3 tests)
+ ✓ src/stores/chat.action-scope.test.ts (2 tests)
+ ✓ src/app/layouts/AppLayout.test.ts (3 tests)
+ ✓ src/shared/api/local-chat-timeout.test.ts (3 tests)
+ ✓ src/stores/workspace.store.test.ts (3 tests)
+ ✓ src/pages/tasks/TasksPage.test.ts (3 tests)
+ ✓ src/pages/approvals/ApprovalsPage.test.ts (3 tests)
+ ✓ src/pages/templates/TemplatesPage.test.ts (3 tests)
+ ✓ src/stores/team.store.test.ts (5 tests)
+ ✓ src/pages/sessions/SessionsPage.test.ts (3 tests)
+ ✓ src/stores/agent.store.test.ts (3 tests)
+ ✓ src/pages/auth/ConnectPage.test.ts (2 tests)
+ ✓ src/pages/agents/AgentsPage.test.ts (3 tests)
+ ✓ src/pages/onboarding/OnboardingPage.test.ts (2 tests)
+ ✓ src/pages/workspaces/WorkspacesPage.test.ts (3 tests)
+ ✓ src/stores/local-auth.store.test.ts (2 tests)
+ ✓ src/shared/ui/HqButton.test.ts (4 tests)
+ ✓ src/pages/overview/OverviewPage.test.ts (2 tests)
+ ✓ src/pages/teams/TeamsPage.test.ts (3 tests)
+ ✓ src/stores/session.store.test.ts (2 tests)
+
+ Test Files  50 passed (50)
+      Tests  256 passed (256)
+   Duration  9.97s
+```
+
+#### 4. 生产构建（Build 成功）
+```text
+$ pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1736 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                                                   2.56 kB │ gzip:  1.04 kB
+dist/assets/ChatPage-DQ8nlvA7.css                                                 0.24 kB │ gzip:  0.17 kB
+dist/assets/index-B8ybjWec.css                                                   55.33 kB │ gzip: 10.25 kB
+dist/assets/RemoteChatPage-D32oUhhi.js                                           17.92 kB │ gzip:  6.01 kB
+dist/assets/RemoteLinkPage-CdzmfHEU.js                                           18.69 kB │ gzip:  6.87 kB
+dist/assets/remote-chat.store-DAMvR40V.js                                         9.96 kB │ gzip:  3.21 kB
+dist/assets/index-CK96B6o3.js                                                   209.02 kB │ gzip: 67.43 kB
+✓ built in 7.84s
+```

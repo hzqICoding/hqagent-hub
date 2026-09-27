@@ -73,6 +73,16 @@ watch(
   }
 )
 
+watch(
+  [() => chatStore.activeRun?.runId, () => chatStore.activeRun?.status],
+  ([_runId, status]) => {
+    if (status === 'cancelled' || status === 'failed') {
+      sessionMode.value = 'new'
+    }
+  },
+  { immediate: true }
+)
+
 const pendingCommands = computed(() =>
   chatStore.commands.filter(
     (c) => c.status === 'queued' || c.status === 'accepted' || c.deliveryState === 'queued_offline'
@@ -615,6 +625,15 @@ function getExecutionStatusLabel(status?: string): string {
 
         <!-- Composer -->
         <footer class="p-2.5 sm:p-3 bg-panel border-t border-border shrink-0 space-y-2">
+          <!-- Interrupted previous run alert -->
+          <div
+            v-if="chatStore.activeRun && (chatStore.activeRun.status === 'cancelled' || chatStore.activeRun.status === 'failed')"
+            class="p-1.5 px-2 rounded bg-warning/15 border border-warning/30 text-[11px] text-warning flex items-center gap-1.5"
+          >
+            <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
+            <span>上一轮已中断，继续上下文可能失败</span>
+          </div>
+
           <!-- SessionMode switch -->
           <div class="flex items-center justify-between text-xs text-text-muted px-1">
             <div class="flex items-center gap-3">

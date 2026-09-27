@@ -458,4 +458,187 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     expect(remoteChatStoreRaw).not.toContain('approval_demo')
     expect(remoteChatStoreRaw).not.toContain('getApproval(')
   })
+
+  it('B4: activeRun selects the latest run (last in ascending sequence); status bar and cancel button target the latest running run', async () => {
+    mockRemoteGateway.runs = [
+      {
+        runId: 'run_seq_1',
+        conversationId: 'conversation_demo',
+        status: 'succeeded',
+        observedAt: '2026-09-27T10:00:00Z',
+        workerOnline: true,
+      },
+      {
+        runId: 'run_seq_2',
+        conversationId: 'conversation_demo',
+        status: 'cancelled',
+        observedAt: '2026-09-27T10:05:00Z',
+        workerOnline: true,
+      },
+      {
+        runId: 'run_seq_3',
+        conversationId: 'conversation_demo',
+        status: 'running',
+        observedAt: '2026-09-27T10:10:00Z',
+        workerOnline: true,
+      },
+    ]
+
+    const controlSpy = vi.spyOn(mockRemoteGateway, 'controlRun')
+
+    const wrapper = mount(RemoteChatPage, {
+      global: { plugins: [router] },
+    })
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    // 1. activeRun must be run_seq_3 (latest, running)
+    expect(store.activeRun).toBeTruthy()
+    expect(store.activeRun?.runId).toBe('run_seq_3')
+    expect(store.activeRun?.status).toBe('running')
+
+    // 2. Status bar displays run_seq_3 info
+    expect(wrapper.text()).toContain('Run: run_seq_3')
+    expect(wrapper.text()).toContain('Worker 执行中')
+    expect(wrapper.text()).not.toContain('Run: run_seq_1')
+
+    // 3. Cancel button targets run_seq_3
+    const allButtons = wrapper.findAll('button')
+    const cancelBtn = allButtons.find((btn) => btn.text().includes('取消'))
+    expect(cancelBtn).toBeDefined()
+    expect(cancelBtn?.exists()).toBe(true)
+
+    await cancelBtn?.trigger('click')
+    await flushPromises()
+
+    expect(controlSpy).toHaveBeenCalledWith('run_seq_3', { action: 'cancel' })
+  })
+
+  it('B4: status bar and control buttons automatically switch to new run when arriving via run.state_changed event', async () => {
+    mockRemoteGateway.runs = [
+      {
+        runId: 'run_seq_3',
+        conversationId: 'conversation_demo',
+        status: 'running',
+        observedAt: '2026-09-27T10:10:00Z',
+        workerOnline: true,
+      },
+    ]
+
+    const controlSpy = vi.spyOn(mockRemoteGateway, 'controlRun')
+
+    const wrapper = mount(RemoteChatPage, {
+      global: { plugins: [router] },
+    })
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    expect(store.activeRun?.runId).toBe('run_seq_3')
+
+    // A new run run_seq_4 arrives via event in paused state
+    const newRunEvent: RemoteBrowserEvent = {
+      type: 'worker.event',
+      serverCursor: 'cur_run_4',
+      recordedAt: new Date().toISOString(),
+      payload: {
+        type: 'run.state_changed',
+        wireRevision: 1,
+        eventId: 'ev_run_4',
+        workerId: 'worker_demo',
+        workerStoreId: 'store_demo',
+        workerEpoch: 'epoch_1',
+        seq: 60,
+        occurredAt: new Date().toISOString(),
+        commandId: 'cmd_run_4',
+        conversationId: 'conversation_demo',
+        payload: {
+          runId: 'run_seq_4',
+          conversationId: 'conversation_demo',
+          status: 'paused',
+          observedAt: new Date().toISOString(),
+          summary: 'Paused at breakpoint',
+        },
+      },
+    }
+
+    mockRemoteGateway.pendingEvents = [newRunEvent]
+    await store.pollEvents()
+    await flushPromises()
+
+    // Status bar and activeRun automatically switch to run_seq_4
+    expect(store.activeRun?.runId).toBe('run_seq_4')
+    expect(store.activeRun?.status).toBe('paused')
+    expect(wrapper.text()).toContain('Run: run_seq_4')
+    expect(wrapper.text()).toContain('Worker 已暂停')
+
+    // Control button now shows resume for run_seq_4
+    const allButtons = wrapper.findAll('button')
+    const resumeBtn = allButtons.find((btn) => btn.text().includes('恢复'))
+    expect(resumeBtn).toBeDefined()
+    await resumeBtn?.trigger('click')
+    await flushPromises()
+
+    expect(controlSpy).toHaveBeenCalledWith('run_seq_4', { action: 'resume' })
+  })
+
+  it('B4: defaults sessionMode to new and displays warning tip when latest run is cancelled or failed', async () => {
+    // 1. Cancelled run
+    mockRemoteGateway.runs = [
+      {
+        runId: 'run_prev',
+        conversationId: 'conversation_demo',
+        status: 'cancelled',
+        observedAt: '2026-09-27T10:10:00Z',
+        workerOnline: true,
+      },
+    ]
+
+    const wrapper = mount(RemoteChatPage, {
+      global: { plugins: [router] },
+    })
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    // Warning tip displayed
+    expect(wrapper.text()).toContain('上一轮已中断，继续上下文可能失败')
+
+    // Radio input for "new" is checked
+    const newTopicRadio = wrapper.find<HTMLInputElement>('input[type="radio"][value="new"]')
+    expect(newTopicRadio.element.checked).toBe(true)
+
+    // 2. Failed run via event
+    const failedRunEvent: RemoteBrowserEvent = {
+      type: 'worker.event',
+      serverCursor: 'cur_run_failed',
+      recordedAt: new Date().toISOString(),
+      payload: {
+        type: 'run.state_changed',
+        wireRevision: 1,
+        eventId: 'ev_run_fail',
+        workerId: 'worker_demo',
+        workerStoreId: 'store_demo',
+        workerEpoch: 'epoch_1',
+        seq: 70,
+        occurredAt: new Date().toISOString(),
+        commandId: 'cmd_run_fail',
+        conversationId: 'conversation_demo',
+        payload: {
+          runId: 'run_failed_new',
+          conversationId: 'conversation_demo',
+          status: 'failed',
+          observedAt: new Date().toISOString(),
+          summary: 'Task crashed',
+        },
+      },
+    }
+
+    mockRemoteGateway.pendingEvents = [failedRunEvent]
+    await store.pollEvents()
+    await flushPromises()
+
+    expect(store.activeRun?.runId).toBe('run_failed_new')
+    expect(store.activeRun?.status).toBe('failed')
+    expect(wrapper.text()).toContain('上一轮已中断，继续上下文可能失败')
+    expect(newTopicRadio.element.checked).toBe(true)
+  })
 })
