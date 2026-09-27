@@ -1,4 +1,4 @@
-# R1 远程通信契约（协议包0.6.2，线路修订1）
+# R1 远程通信契约（协议包0.6.3，线路修订1）
 
 ## 1. 定位、事实源与范围
 
@@ -113,6 +113,10 @@ Worker事件seq绑定workerStoreId，沿同一本地持久序号空间单调分�
 8. R1浏览器可以HTTPS轮询/events；本轮只冻结Worker WSS，不要求浏览器WS。已观察在线时间来自服务端连接，不由Worker上行Run payload伪造；RemoteRunView.workerOnline由P1附加。
 9. 终态、审批、关键错误不可当进度噪声丢弃；本版omitted仅用于非远程可见事件，不允许掩盖远程缺失结果。日志与文本必须Worker侧脱敏，不能包含环境变量、认证文件或私有思考过程。
 
+**D45（0.6.3，浏览器快照对账）**：首次打开对话或serverCursor过期后，浏览器必须以该对话快照重建状态。RemoteConversationSnapshot新增可选 `approvals: RemoteApprovalView[]`，仅包含该对话在快照observedAt仍为pending且expiresAt严格晚于observedAt的审批，与对话投影及serverCursor在同一事务视图取得。字段缺省时按空数组处理，兼容旧服务端；它不是null，也不注入序列化默认值。浏览器用快照approvals替换初始待处理集合，再从快照serverCursor之后按顺序应用增量approval.state_changed事件，按approvalId更新或移除，不能把重建前的旧待处理项无条件合并回来。
+
+approvals与其它快照数组一样最多100条；P1先按owner、对话归属、pending及期限筛选，再截取100条，存在额外符合条件记录时将hasMore置true（与其它数组截断条件取或）。hasMore表示快照有界且可能不完整，不能将截断后的100条宣称为全部审批。本版不新增列审批或分页审批路由，快照就是浏览器对账入口；已知ID仍可使用既有GET /approvals/{approvalId}。本次仅浏览器HTTP DTO增量，Worker帧结构和wireRevision=1不变。
+
 ## 9. 对话权威与审批分级
 
 配对后新建对话为remote；未配对纯本地对话保持现状。既有local对话不自动改权威、不双写、不重放历史。remote对话的消息排序和用户命令入口只有服务端，电脑界面也走RemoteGateway。
@@ -122,6 +126,8 @@ P2须持久记录authority，并在本地HTTP发送/追加/重试/恢复等写�
 审批授权来自Worker实际pending请求和**当前本机策略**，不是服务端声明。git_push/deploy/delete/db_migrate及Worker声明动作的远程approve必须REMOTE_APPROVAL_FORBIDDEN；前端禁止按钮不能替代P1/P2双重校验。无法确定安全分类的通用shell包装不能成为绕过高风险的别名，应按Worker策略拒绝远程批准。可远程reject高风险请求，但不能因此授权执行。R1没有小程序签名或替代强认证入口。
 
 审批ID绑定实际run/node/执行器请求、有效期及消费状态；任务终止、策略变更或已有决定都需重新校验。重复请求只返回同一结果，不重复发送给原生工具；消费不明保持不明，不自动重批。ApprovalView中的remoteApprovalAllowed是Worker可见投影，收到命令时仍要重新读取当前真实请求，服务器即使篡改风险级别也不能改变本地判断。
+
+**D45待处理集合**：审批已被消费、失效或过期后，服务端不得再将其放入会话快照approvals；不能只按数据库里尚未更新的pending标签忽略expiresAt。高风险且remoteApprovalAllowed=false的pending审批仍须出现在快照中，用户仍可按既有规则远程reject；禁止approve不等于隐藏审批。浏览器快照重建后以approvals为初始集合，随后通过增量审批事件维护，终态/失效事件移除对应项；时间到期即停止将其作为可操作项，即使没有新的事件也不能延长权限。请求提交时P1/P2继续重新校验当前状态与期限，快照不是批准凭证。归属、实时期限及消费状态的筛选由P1实现，通用RemoteApprovalView仍可用于历史/终态事件，本次不收窄其status枚举。
 
 ## 10. 大小、生成器与消费者校验
 

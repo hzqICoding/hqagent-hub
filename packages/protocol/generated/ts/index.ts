@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.6.2' as const
+export const PROTOCOL_VERSION = '0.6.3' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -1857,6 +1857,8 @@ export interface RemoteConversationSnapshot {
   commands: RemoteCommandView[]
   messages: RemoteMessageView[]
   hasMore: boolean
+  /** Pending, unexpired approvals for this conversation; omitted means []. Truncation sets hasMore. */
+  approvals?: RemoteApprovalView[]
 }
 
 /** IDs must belong to current owner/target device exported catalog. New remote conversations may be created while device is offline; no model starts on creation. */

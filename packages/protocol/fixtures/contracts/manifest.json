@@ -1,6 +1,6 @@
 {
   "$comment": "原子 Contract Fixture 清单。每个文件是单个协议类型的 Golden 样本，不是完整 UI 场景（裁决 D10）。前端的组合场景放在 apps/desktop/src/shared/api/scenarios/ 下，引用这里的文件，不在这里堆 UI 状态。",
-  "protocolVersion": "0.6.2",
+  "protocolVersion": "0.6.3",
   "fixtures": {
     "bootstrap.happy.json": "BootstrapView",
     "agents.discovery-partial.json": "AgentDiscoveryResult",
@@ -110,6 +110,7 @@
     "remote-link.RemoteLinkView.json": "RemoteLinkView",
     "remote-link.RemoteLinkPairingInput.json": "RemoteLinkPairingInput",
     "remote-link.changed-event.json": "HubEvent",
-    "local-conversation.remote-authority.json": "LocalConversationView"
+    "local-conversation.remote-authority.json": "LocalConversationView",
+    "remote.RemoteConversationSnapshot.with-approvals.json": "RemoteConversationSnapshot"
   }
 }
