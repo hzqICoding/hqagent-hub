@@ -99,7 +99,19 @@ def test_d44_does_not_change_schema_error_registry_events_v1_or_cloud():
         PROTOCOL / 'openapi/remote-hub.v2.yaml',
     ]
     for path in files:
-        assert path.read_text(encoding='utf-8') == original(path.relative_to(ROOT).as_posix())
+        current = path.read_text(encoding='utf-8')
+        old = original(path.relative_to(ROOT).as_posix())
+        if path == PROTOCOL / 'schema/remote.json':
+            # D45 explicitly adds one optional browser snapshot property.
+            expected = json.loads(old)
+            expected['$defs']['RemoteConversationSnapshot']['properties']['approvals'] = {
+                'type': 'array', 'items': {'$ref': 'remote.json#/$defs/RemoteApprovalView'},
+                'maxItems': 100,
+                'description': 'Pending, unexpired approvals for this conversation; omitted means []. Truncation sets hasMore.',
+            }
+            assert json.loads(current) == expected
+        else:
+            assert current == old
     remote = json.loads((PROTOCOL / 'schema/remote.json').read_text(encoding='utf-8'))['$defs']
     frames = [d for d in remote.values() if 'wireRevision' in d.get('properties', {})]
     assert len(frames) == 27
@@ -107,12 +119,15 @@ def test_d44_does_not_change_schema_error_registry_events_v1_or_cloud():
 
 
 def test_version_bump_preserves_all_existing_contract_fixtures():
-    assert (PROTOCOL / 'VERSION').read_text().strip() == '0.6.2'
+    assert (PROTOCOL / 'VERSION').read_text().strip() == '0.6.3'
     assert LOCAL['info']['version'] == '0.6.2'
     manifest = json.loads((PROTOCOL / 'fixtures/contracts/manifest.json').read_text(encoding='utf-8'))
     old = json.loads(original('packages/protocol/fixtures/contracts/manifest.json'))
-    assert manifest['protocolVersion'] == '0.6.2'
-    assert manifest['fixtures'] == old['fixtures']
-    for filename in manifest['fixtures']:
+    assert manifest['protocolVersion'] == '0.6.3'
+    assert manifest['fixtures'] == {
+        **old['fixtures'],
+        'remote.RemoteConversationSnapshot.with-approvals.json': 'RemoteConversationSnapshot',
+    }
+    for filename in old['fixtures']:
         path = PROTOCOL / 'fixtures/contracts' / filename
         assert path.read_text(encoding='utf-8') == original(path.relative_to(ROOT).as_posix())

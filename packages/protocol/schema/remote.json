@@ -3765,6 +3765,14 @@
         },
         "hasMore": {
           "type": "boolean"
+        },
+        "approvals": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteApprovalView"
+          },
+          "maxItems": 100,
+          "description": "Pending, unexpired approvals for this conversation; omitted means []. Truncation sets hasMore."
         }
       },
       "description": "Consistent selected-conversation projection and cursor transaction. For larger history, fetch bounded resource pages while replaying events after this cursor. No whole-history batch or credential content."

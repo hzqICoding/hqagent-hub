@@ -1,6 +1,7 @@
 """FZ-R1.1: only D42 wire versioning and D43 local-link additions."""
 import importlib.util
 import json
+from copy import deepcopy
 from pathlib import Path
 import subprocess
 
@@ -44,7 +45,15 @@ def test_only_authorized_worker_frame_shapes_changed():
     for name, original in old.items():
         props = original.get('properties', {})
         if 'protocolVersion' not in props:
-            assert REMOTE[name] == original
+            current = deepcopy(REMOTE[name])
+            if name == 'RemoteConversationSnapshot':
+                # D45 permits exactly this browser-only addition, never a wire change.
+                assert current['properties'].pop('approvals') == {
+                    'type': 'array', 'items': {'$ref': 'remote.json#/$defs/RemoteApprovalView'},
+                    'maxItems': 100,
+                    'description': 'Pending, unexpired approvals for this conversation; omitted means []. Truncation sets hasMore.',
+                }
+            assert current == original
             continue
         count += 1
         current = REMOTE[name]
