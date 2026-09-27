@@ -28,6 +28,7 @@ class LocalChatService:
         self._slots = asyncio.Semaphore(3)
         self._last_approval_check = 0.0
         self._conversation_locks: dict[str, asyncio.Lock] = {}
+        self.remote_dispatch_guard = None
 
     async def start(self) -> None:
         self._closed = False
@@ -60,6 +61,7 @@ class LocalChatService:
 
     async def update_conversation(self, conversation_id: str,
                                   value: UpdateLocalConversationInput, key: str):
+        self.repository.assert_local_authority(conversation_id)
         async def update():
             if value.archived is True:
                 await self._refresh_unfinished_runs(conversation_id)
@@ -86,6 +88,11 @@ class LocalChatService:
         return self.repository.view(record, task)
 
     async def control(self, run_id: str, value: TaskActionInput, key: str):
+        self.repository.assert_local_authority(self.repository.run_record(run_id)["conversation_id"])
+        return await self.consume_remote_control(run_id, value, key)
+
+    async def consume_remote_control(self, run_id: str, value: TaskActionInput, key: str):
+        """Internal control bridge. Remote inbox admission precedes this call."""
         if not key:
             raise HubError("VALIDATION_FAILED", "必须提供Idempotency-Key")
         record = self.repository.run_record(run_id)
@@ -94,6 +101,10 @@ class LocalChatService:
                 self.repository.assert_execution_allowed(record["conversation_id"])
                 return await self._control(record, value, key)
         return await self._control(record, value, key)
+
+    def wake_remote_queue(self) -> None:
+        """Wake only after the inbox / run / receipt transaction commits."""
+        self._wake.set()
 
     async def _control(self, record: dict, value: TaskActionInput, key: str):
         run_id = record["run_id"]
@@ -197,6 +208,8 @@ class LocalChatService:
         try:
             task_id = record["task_id"]
             if task_id is None:
+                if self.remote_dispatch_guard is not None and not self.remote_dispatch_guard(record):
+                    return
                 # Claim synchronously before the first await, so queued cancellation
                 # cannot race with a side effect that has already started dispatch.
                 current = self.repository.run_record(run_id)

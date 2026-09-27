@@ -125,7 +125,7 @@ def test_migration_v5_preserves_v4_chat_data(tmp_path: Path) -> None:
     database.close()
 
     upgraded = Database(path)
-    upgraded.initialize()
+    upgraded.initialize(target_version=5)
     upgraded_repository = LocalChatRepository(upgraded)
     assert upgraded.schema_version == 5
     assert upgraded_repository.conversation(conversation.id).title == "legacy"
