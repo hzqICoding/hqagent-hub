@@ -2,20 +2,81 @@
 wp: R1-P2
 status: done
 scope_declared: [apps/hub/runtime/remote/**, apps/hub/storage/remote*.py, apps/hub/storage/migrations.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/tasks.py, apps/hub/storage/local_chat.py, apps/hub/api/local_chat.py, apps/hub/api/app.py, apps/hub/runtime/composition.py, apps/hub/tests/**, .hqagent/handoffs/R1-P2-remote-worker.md]
-scope_touched: [apps/hub/runtime/remote/__init__.py, apps/hub/runtime/remote/api.py, apps/hub/runtime/remote/commands.py, apps/hub/runtime/remote/link.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/security.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/storage/remote.py, apps/hub/storage/migrations.py, apps/hub/storage/local_chat.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/tasks.py, apps/hub/runtime/composition.py, apps/hub/api/app.py, apps/hub/tests/test_custom_scenes.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_remote_worker.py, apps/hub/tests/test_remote_controls.py, apps/hub/tests/test_remote_faults.py, apps/hub/tests/test_remote_guards.py, apps/hub/tests/test_remote_admission.py, apps/hub/tests/test_remote_dispatch.py, apps/hub/tests/fixtures/remote/test-cert.pem, apps/hub/tests/fixtures/remote/test-key.pem, .hqagent/handoffs/R1-P2-remote-worker.md]
+scope_touched: [apps/hub/runtime/remote/__init__.py, apps/hub/runtime/remote/api.py, apps/hub/runtime/remote/commands.py, apps/hub/runtime/remote/link.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/security.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/storage/remote.py, apps/hub/storage/migrations.py, apps/hub/storage/local_chat.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/tasks.py, apps/hub/runtime/composition.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/tests/test_custom_scenes.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_remote_worker.py, apps/hub/tests/test_remote_controls.py, apps/hub/tests/test_remote_faults.py, apps/hub/tests/test_remote_guards.py, apps/hub/tests/test_remote_admission.py, apps/hub/tests/test_remote_dispatch.py, apps/hub/tests/test_remote_cookie_routes.py, apps/hub/tests/fixtures/remote/test-cert.pem, apps/hub/tests/fixtures/remote/test-key.pem, .hqagent/handoffs/R1-P2-remote-worker.md]
 build: pass
 tests: pass
-commit: 4df001826073e83b1459316213bab5798add9eed
+commit: 6838a4e903fc73d1ce5cfb2f0c27927f53288ddf
 open_questions: 0
 ---
 
 # R1-P2 Worker 交付回执
 
-工作目录 `E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`，分支 `feat/remote-worker`，协议基线 `8268c5c8be7ed5411f82a9fa6c126facb05e2978`。头部 commit 是最终实现与测试提交；本回执单独提交以避免自引用。未合并、推送或部署。**未与真实服务端联调**。
+工作目录 `E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`，分支 `feat/remote-worker`，最初协议基线 `8268c5c8be7ed5411f82a9fa6c126facb05e2978`。头部 commit 是最新 D44 实现与测试提交，本回执单独提交以避免自引用。R1-P2 已由主代理审核、完成真实服务端联调并合入 integration/phase1；D44 开工按授权合并集成分支一次，未合并其它分支、未推送或部署。
 
 远程层负责设备连接、持久接单和事实投影，所有执行仍进入原 LocalChatService、TaskService、WorkflowRuntime 与 Adapter。没有云端模型调用、模型凭据上传、执行内核迁移、Attempt 或长期 Task。
 
-## 第 0 步与审核修复
+## D44：本机 Cookie 会话配对入口（本轮）
+
+### 开工合并与变更
+
+按要求先执行 `git merge --no-ff integration/phase1`，合并提交为 `0fb0e5a038527d08c9da9088640484e5cc8b84b9`，无冲突；随后才修改代码。没有再合并其它分支。授权合并带入的 P1 文件是集成内容，scope_touched 记录的是 Worker 职责累计编辑，不把它们算作本包新增实现。
+
+新增四个本机 Cookie 入口：
+
+| 方法 | 路径 |
+| --- | --- |
+| GET | /api/v2/remote/link |
+| POST | /api/v2/remote/pairing |
+| DELETE | /api/v2/remote/pairing |
+| POST | /api/v2/remote/unlink |
+
+- `runtime/remote/api.py` 只创建一组 `/remote/*` 处理函数，挂载到 v1 后返回该 APIRouter；DTO、URL 校验、错误码、LinkService 调用均无复制。
+- `api/local_chat.py` 将同一个 router 纳入现有 `prefix=/api/v2`、`Depends(require_auth)` 的 Cookie 会话路由组，没有新增鉴权方式或把 Cookie 扩权到 v1。
+- `api/app.py` 把同一个 router 传入 v2，并只对 v1/v2 remote 响应统一补 `Cache-Control: no-store`，包括 401/403/409/422 等错误响应。原 Bearer、Cookie、Host、Origin 决策未改。
+- v2 写请求沿用现有 Origin 规则，幂等键继续由同一 LinkService 校验。跨 v1/v2 使用同键同内容会返回同一配对状态，不新建 secret 或重复发事件。
+- v1 Bearer 路由保留；有效本机 Cookie 本身仍不能访问 v1。所有凭据继续留在 Worker 内部。
+
+相对开工合并提交，D44 仅修改上述 3 个生产文件，新增 `tests/test_remote_cookie_routes.py`，并更新本回执。未修改执行内核、数据库迁移、packages/protocol、apps/server、apps/desktop 或 docs。
+
+### 测试与真实输出
+
+新增 15 项测试：按现有 local-session 方式建立 Cookie（浏览器客户端不带 Hub Bearer），完成 v2 配对发起、查询、取消、重新配对、确认后解绑；覆盖全部入口无会话 401，3 个写入口缺 Origin/错误 Origin/缺幂等键，响应禁止缓存，响应与事件无 secret/Authorization/Hub Token，v1 行为及跨版本状态/幂等性一致，两个版本复用校验错误且不回显被拒字段。
+
+定向结果：
+
+```text
+15 passed, 1 warning in 1.90s
+```
+
+Hub 全量，cwd 为 `apps/hub`：
+
+```powershell
+$env:TEMP=(Resolve-Path ../../.tmp).Path
+$env:TMP=$env:TEMP
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/pytest-d44-full --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/d44-hub-tests.log; exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 25%]
+........................................................................ [ 50%]
+........................................................................ [ 75%]
+.....................................................................    [100%]
+285 passed, 4 warnings in 92.04s (0:01:32)
+```
+
+包含此前 270 项和新增 15 项，没有修改既有测试。4 个 warning 仍为依赖弃用提示。TEMP/TMP/--basetemp 位于 worktree 内被忽略的 `.tmp`，串行运行，无并行测试、安装依赖或外网调用；本轮未遇到 0xC0000142。完整日志：[d44-hub-tests.log](../../.tmp/d44-hub-tests.log)。
+
+本轮未启动 Vitest 或其它前端测试，由主代理负责。下文 201 passed 是此前 R1-P2 主代理复跑的历史结果，不冒充 D44 的新前端验证。
+
+### 协议线与真实联调来源
+
+当前检出的协议仍为 `0.6.1`，本轮未修改 packages/protocol。没有遇到 OpenAPI 路径逐条比对导致的失败；四个 v2 路径按用户明确的 D44 契约实施。协议线冻结并合入 `0.6.2` 后，由主代理执行集成复跑；本轮没有再次合并协议或集成分支。
+
+主代理已经使用真实服务端、TLS 和真实 Agent 验证 R1-P2 的配对、远程消息回复、本机写远程对话 409、离线排队重连顺序、运行中取消 confirmed；来源为用户本轮审核反馈及 [真实联调记录](../reviews/R1-remote-joint-local.md)。本代理未冒称亲自执行这些场景。D44 本轮使用测试内 TLS 假服务端与真实本机 Cookie/LinkService 验证 API 接线，未重复真实 Agent 联调。
+
+实现提交：`6838a4e903fc73d1ce5cfb2f0c27927f53288ddf`。开工合并与实现提交后均已运行 `git log -1 --format=%B` 自查。
+
+## R1-P2 首次交付：第 0 步与审核修复（历史）
 
 先按主题提交主代理已验证的现状，没有回滚：`199382e`、`577647b`。这两笔提交正文均注明“验证结果见主代理复跑”；来源是本轮用户提供的 Hub 257 passed、前端 typecheck/201 passed、协议 258 类型/109 Fixture 通过。
 
@@ -48,9 +109,9 @@ open_questions: 0
 
 未实施 seal 提交后唤醒 publish 的优化。仍每 0.2 秒扫描、每 5 秒检查 catalog、每 15 秒重传未确认帧。此项留作后续性能工作，本轮不扩大事件唤醒范围。
 
-## 真实验证与来源
+## R1-P2 首次交付验证与来源（历史，D44 结果见上文）
 
-### 本轮最终 Hub 全量
+### 首次交付 Hub 全量
 
 cwd：`apps/hub`；串行，无 pytest 并行 worker。
 
@@ -72,7 +133,7 @@ $env:TMP=$env:TEMP
 
 完整输出：[r1p2-complete-hub-tests.log](../../.tmp/r1p2-complete-hub-tests.log)。日志为本机忽略文件，未越权提交其它路径。
 
-### 本轮最终协议校验
+### 首次交付协议校验
 
 cwd：worktree 根。
 
@@ -118,7 +179,7 @@ Q1 已按裁决落实：test_custom_scenes.py 仅把 `upgraded.initialize()` 改
 
 本轮只按新语义调整本包自新增测试：逐条目标错误断言相同错误码的 rejected 回执而非异常，后台撤回等待实际持久结果后保留原断言。相对协议基线，原测试文件的修改仍只有获准的一行。
 
-`git diff --check` 通过。相对 `8268c5c`，packages/protocol、apps/desktop、apps/server、docs、scripts/protocol 无 diff。迁移 1–5 原文前缀比较输出：
+首次交付时 `git diff --check` 通过，相对 `8268c5c`，packages/protocol、apps/desktop、apps/server、docs、scripts/protocol 无 diff。D44 的授权集成合并带入 P1 文件；D44 自身相对合并提交对这些路径无 diff。迁移 1–5 原文前缀比较输出：
 
 ```text
 Migrations 1-5 unchanged
@@ -144,7 +205,7 @@ authority 保存在既有 LocalConversation.payload_json；旧记录缺省 local
 
 | 规则 | 文件/入口 |
 | --- | --- |
-| 四个 v1 remote 操作、统一生成 DTO Mapper | runtime/remote/api.py、link.py、storage/remote.py 的 view/set_view |
+| v1 与 D44 v2 的四个等价 remote 操作、统一 DTO Mapper | runtime/remote/api.py、api/local_chat.py、link.py、storage/remote.py 的 view/set_view |
 | Bearer/Host/Origin、提交后 remote.link.changed | api/app.py 原中间件；storage/remote.py 复用 EventStore.after_commit |
 | origin/host/port 校验、规范化、开发例外 | runtime/remote/security.py，例外仅 Worker 配置可开启 |
 | 256-bit secret、DPAPI/文件权限、解绑删除 | security.py 的 CredentialVault，link.py 的操作事务与世代 |
@@ -163,7 +224,7 @@ authority 保存在既有 LocalConversation.payload_json；旧记录缺省 local
 - storage/local_chat.py 复用原 enqueue SQL/约束，增加调用方事务参数与 authority/引用链检查，没有新增执行身份。
 - runtime/local_chat.py 增加本机写检查、内部控制入口、提交后唤醒、恢复派发检查，仍由原 supervisor/_execute 每轮创建 Task。
 - runtime/tasks.py 观察式保存真实 CancellationOutcome/CancelResult、orphan PID、节点边界暂停与恢复证据；无 state 不影响原动作。增加审批锁内回调及派发前更新见证的可选提交观察器，没有修改 _create_child/_reset_node 语义。
-- api/app.py、runtime/composition.py 装配生命周期与既有 ports，并检查 Task/Session/父 Task/内部 Profile 归属。api/local_chat.py 未改。
+- api/app.py、runtime/composition.py 装配生命周期与既有 ports，并检查 Task/Session/父 Task/内部 Profile 归属。D44 在 api/local_chat.py 额外纳入共享 remote router，复用原 require_auth。
 - 新远程类型不进入旧 Adapter 固定事件映射；Adapter、orchestrator、security 内核目录未改。
 
 ## 设计取舍、限制与未做事项
@@ -177,18 +238,18 @@ authority 保存在既有 LocalConversation.payload_json；旧记录缺省 local
 7. 不直接上传原生日志、环境变量、认证内容或私有思考，只投影白名单事实及脱敏消息。私有事件（包括短码）用 omitted，远程关键状态/审批不被 omitted 掩盖。未完成的执行引用绑定先等待。
 8. 超长答案完整留本机，远程发布明确 system 上限提示，真实终态仍发布，不静默截断或伪造失败。超界 catalog 报错，不上传部分索引。
 9. G3 的发布唤醒优化留作后续，当前仍有 0.2 秒扫描。
-10. 未做附件、R3 原生会话、飞书、小程序签名、电脑端 UI、长期 Task/Attempt；未与真实服务端联调。
+10. 未做附件、R3 原生会话、飞书、小程序签名、电脑端 UI、长期 Task/Attempt。R1-P2 真实服务端联调已由主代理完成；D44 本轮未复跑真实 Agent 联调。
 
 ## P1 与电脑端前端接线
 
 - 使用冻结的 pairing-requests 与 /ws/v2/worker。wireRevision=1 与包版本独立，hello.protocolVersion 取生成常量。
 - accepted 是持久接单，不是执行完成。逐条 rejected 可在原连接处理、原回执重放；被拒 submit 仍有顺序占位。同 run 控制串行，不同 run 和新消息可独立接单。
 - unknown 控制保持 unconfirmed，重连不会重发可能已消费的原生决定。
-- 四个本机 remote API 在 v1，复用桌面 Bearer/Host/Origin；远程浏览器 Cookie 不授予 v1 权限，JSON/事件不提供 Hub Token 或设备 secret。
+- 四个本机 remote API 同时提供 v1 Bearer 入口与 D44 v2 本机 Cookie 会话入口，共用实现和状态。浏览器工作台使用 `/api/v2/remote/*`，写请求带可信 Origin 和 Idempotency-Key；本机 Cookie 不授予 v1 权限，远程云端网站的 Cookie 也不是本机会话。JSON/事件不提供 Hub Token 或设备 secret。
 - GET 与 remote.link.changed 共用 RemoteLinkView。pairCode 只在 pairing；lastConnectedAt=null 表示尚未成功握手；frozen+online 仍不能投递执行命令。
 - unlink 后 unpaired.lastErrorCode=REMOTE_AUTH_REQUIRED 表示“本机已解绑、服务端撤销未确认”，不承诺取消运行中的任务。旧 remote 对话仍只读；local 不自动转换、同步或重放历史。
 
-## 本轮提交
+## R1-P2 首次交付提交（D44 提交见上文）
 
 ```text
 199382e 完善远程连接与本机执行证据隔离

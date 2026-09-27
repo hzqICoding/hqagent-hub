@@ -22,7 +22,8 @@ from runtime.directory_picker import LocalDirectoryPicker
 
 
 def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowserAuth,
-                         ports: Any, events: Any, token: str) -> None:
+                         ports: Any, events: Any, token: str, *,
+                         remote_router: APIRouter | None = None) -> None:
     directory_picker = LocalDirectoryPicker()
     def authenticated(request: Request) -> bool:
         bearer = request.headers.get("authorization", "")
@@ -63,6 +64,8 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
 
     app.include_router(public)
     router = APIRouter(prefix="/api/v2", dependencies=[Depends(require_auth)])
+    if remote_router is not None:
+        router.include_router(remote_router)
 
     @router.get("/bootstrap")
     async def bootstrap():
