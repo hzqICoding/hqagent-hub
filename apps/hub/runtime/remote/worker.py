@@ -45,6 +45,7 @@ class RemoteWorker:
         self.connector = connector or NoRedirectConnect
         self.retry_seconds = retry_seconds
         self.job = None
+        self.expiry_job = None
         self.socket = None
         self.closed = False
         self.link.disconnect = self.disconnect
@@ -59,13 +60,25 @@ class RemoteWorker:
         if self.job is not None:
             return
         self.repo.boot()
+        self.delivery.clock.invalidate()
+        self.busy.connection_id = None
+        if self.sync.active():
+            self.repo.source_mapper = self.sync.source_event
+        # Startup cannot depend on a successful socket or wait behind connect
+        # timeout/backoff. Only ungranted receipts are rejected here.
+        await self.delivery.expire_pending(recovery=True)
         self.probe_revision2 = True
         self.peer_revision2 = None
         self.closed = False
+        self.expiry_job = asyncio.create_task(self.expire_reservations())
         self.job = asyncio.create_task(self.run())
 
     async def stop(self):
         self.closed = True
+        if self.expiry_job:
+            self.expiry_job.cancel()
+            await asyncio.gather(self.expiry_job, return_exceptions=True)
+            self.expiry_job = None
         await self.disconnect()
         if self.job:
             self.job.cancel()
@@ -75,6 +88,18 @@ class RemoteWorker:
         await self.delivery.cancel_executions()
         self.delivery.clock.invalidate()
         self.state("offline")
+
+    async def expire_reservations(self):
+        # This task belongs to the Worker lifecycle, not to any connection.
+        # Unlink/revocation/reset reuse it: no matching pending rows is a no-op.
+        while not self.closed:
+            await asyncio.sleep(1)
+            try:
+                await self.delivery.expire_pending()
+            except Exception:
+                # Retry transient storage failures without reflecting command
+                # bodies, transport headers or credential-bearing exceptions.
+                logging.getLogger(__name__).error("远程送达预留清理暂未完成，将重试")
 
     async def disconnect(self):
         if self.socket:
@@ -158,6 +183,8 @@ class RemoteWorker:
                     revoked=revoked, frozen=code == 4409 or auth_failed, generation=generation)
             finally:
                 self.socket = None
+                self.busy.connection_id = None
+                self.delivery.clock.invalidate()
             if self.repo.get("link")["generation"] == generation:
                 self.state("offline")
             if time.monotonic() - attempt_started >= 45:

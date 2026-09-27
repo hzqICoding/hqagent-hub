@@ -19,6 +19,7 @@ class DeliveryBridge(CommandBridge):
         self.busy, self.sync = busy, sync
         self.clock = DeliveryClock()
         self.busy.expire = self.expire
+        self.busy.reservation_live = self.reservation_live
         self.sync.delivery = self
 
     def scope(self):
@@ -33,6 +34,23 @@ class DeliveryBridge(CommandBridge):
     def execution_frame(self, command_id):
         row = self.row(command_id)
         return json.loads(row["execution_json"]) if row and row["execution_json"] else None
+
+    def reservation_live(self, run_id):
+        """Read-only busy evidence; neither GET nor archive grants or expires."""
+        worker = self.repo.get("link")["view"].get("workerId")
+        if worker is None:
+            return False
+        with self.repo.database.locked_connection() as db:
+            row = db.execute("SELECT command_json FROM remote2_delivery WHERE worker_id=? AND store_id=? "
+                "AND run_id=? AND state IN ('waiting','provisional')",
+                (worker, self.repo.get("identity")["store"], run_id)).fetchone()
+        if row is None or row[0] is None:
+            return False
+        try:
+            self.clock.check(json.loads(row[0]))
+        except HubError:
+            return False
+        return True
 
     def _check_connection(self, frame):
         if self.repo.get("identity").get("wireRevision") != 2:
@@ -148,12 +166,13 @@ class DeliveryBridge(CommandBridge):
                 raise HubError("IDEMPOTENCY_MISMATCH", "消息已由其它命令提交")
             run_id = receipt.run_id
             tx.connection.execute("INSERT INTO remote2_gates VALUES(?,'provisional')", (run_id,))
-            self.busy.record_snapshot(tx)
         event = self.repo.emit(tx, "command.received", commandId=frame["commandId"], conversationId=frame["conversationId"],
             commandDigest=request_hash(frame), deliverBy=frame["deliverBy"], receivedAt=now())
         tx.connection.execute("UPDATE remote2_delivery SET state='provisional',run_id=?,received_json=? WHERE worker_id=? AND store_id=? AND command_id=?",
             (run_id, canonical(event), *self.scope(), frame["commandId"]))
         self.repo.patch_inbox(tx, frame["commandId"], run_id=run_id, receipt_json=canonical(event))
+        if run_id:
+            self.busy.record_snapshot(tx)
         return event
 
     def _rejected(self, tx, frame, code):
@@ -171,8 +190,9 @@ class DeliveryBridge(CommandBridge):
 
     def expire(self, tx, *, recovery=False):
         if not self.busy.enabled() or not self.repo.get("link", tx)["view"].get("workerId"):
-            return
+            return 0
         rows = [dict(r) for r in tx.connection.execute("SELECT * FROM remote2_delivery WHERE worker_id=? AND store_id=? AND state IN ('waiting','provisional')", self.scope())]
+        expired = 0
         for row in rows:
             frame = json.loads(row["command_json"])
             code = None
@@ -189,6 +209,20 @@ class DeliveryBridge(CommandBridge):
                     code = "REMOTE_DELIVERY_EXPIRED"
             if code:
                 self._rejected(tx, frame, code)
+                expired += 1
+        return expired
+
+    async def expire_pending(self, *, recovery=False):
+        """Connection-independent cleanup; never schedule admitted execution."""
+        async with self.lock:
+            if not self.busy.enabled() or not self.repo.get("link")["view"].get("workerId"):
+                return
+            if not self.repo.check_continuity():
+                return
+            with self.repo.database.transaction() as tx:
+                if self.expire(tx, recovery=recovery):
+                    self.busy.record_snapshot(tx)
+                    self.repo.seal(tx)
 
     def release_pending(self, tx, code):
         rows = tx.connection.execute("SELECT command_json FROM remote2_delivery WHERE worker_id=? AND store_id=? AND state IN ('waiting','provisional')", self.scope()).fetchall()
