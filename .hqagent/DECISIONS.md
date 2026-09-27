@@ -383,3 +383,21 @@ Phase 1.1 的三 Agent 目标后移**。另两个选项存档备查：
 解绑删除本机凭据并断开，尽力通知服务端撤销，完成状态unpaired；不能冒称服务端必已撤销，不扩远程HTTP或给设备Bearer授予owner权限。既有remote对话不回退local，本机只读。LocalConversationView追加可选authority=local/remote，缺省视为local以兼容旧对象。后续如何接续解绑对话另行设计。
 
 **影响**：P2实现连接状态/凭据生命周期和authority写拦截，P3-B本机配对界面消费此契约。具体状态字段、并发与通知边界见R1-contract.md§12。
+
+### D44 本机浏览器会话下的远程连接等价路由（主代理裁决，2026-09-26）
+
+**背景**：D43只有本机v1 Bearer操作，实际工作台通过连接码取得本机Cookie后使用v2 API。不能把Hub Token交给浏览器来打通配对，FZ-R1.1回执接线事项2需协议明确入口。
+
+**决定**：在已有本机Cookie契约 `packages/protocol/openapi/local-chat.v2.yaml` 增加GET /api/v2/remote/link、POST/DELETE /api/v2/remote/pairing、POST /api/v2/remote/unlink。请求和响应完全复用RemoteLinkView/RemoteLinkPairingInput与既有错误码。使用localSession Cookie，写请求沿用Origin、Idempotency-Key规则，全部响应Cache-Control:no-store。允许轮询GET link，remote.link.changed不变。
+
+本机Local Hub的v2与云端Hub Server的remote-hub.v2不是同一服务，Cookie不能互换；本机v1 Bearer路由保留给桌面壳和诊断。包版本0.6.2、wireRevision仍为1，不新增类型、不修改云端接口或执行内核。
+
+**影响**：P2复用本机v2认证依赖和D43同一连接管理器实现等价路由，覆盖错误与中间件拒绝的no-store响应；P3-B使用本机Cookie入口并可轮询。关闭FZ-R1.1接线事项2的协议缺口，应用实现与联调由对应工作包负责。解绑的云端授权通知仍是原有best-effort边界，本次不扩权。
+
+### D45 会话快照带出待处理审批（主代理裁决，2026-09-26）
+
+**背景**：手机晚于审批发起打开对话，或游标过期后重建，无法只靠之后的增量事件发现已有pending审批，尤其无法拒绝高风险动作。
+
+**决定**：RemoteConversationSnapshot增加可选approvals数组，元素复用RemoteApprovalView，只包含该对话当前pending且未过期的审批，最多100条；有更多符合条件记录时沿用hasMore。旧服务端缺省字段时前端按空数组处理，不新增列审批路由。快照是浏览器对账入口，重建以approvals初始化，再用增量审批事件更新；消费、失效或到期的审批不再出现在快照。禁止远程approve的高风险pending审批仍应可见并可按既有规则reject。
+
+**影响**：包版本0.6.3，仅浏览器HTTP DTO增量，wireRevision仍为1。P1负责同事务、owner/对话归属和期限过滤后填充；P3-B负责快照恢复及增量维护。通用审批视图/Worker事件不变，执行状态与审批权限不扩展。本轮只改协议，服务端填充另行实现。

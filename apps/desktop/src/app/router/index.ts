@@ -27,6 +27,11 @@ const routes: RouteRecordRaw[] = [
     children: [{ path: '', name: 'scenes', component: () => import('@/pages/scenes/ScenesPage.vue'), meta: { title: '场景与角色配置' } }],
   },
   {
+    path: '/remote-link',
+    component: LocalChatLayout,
+    children: [{ path: '', name: 'remote-link', component: () => import('@/pages/remote-link/RemoteLinkPage.vue'), meta: { title: '连接手机' } }],
+  },
+  {
     path: '/',
     component: AppLayout,
     children: [

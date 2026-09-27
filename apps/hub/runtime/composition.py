@@ -181,6 +181,7 @@ def _bind_orchestration(application: Any, ports: HubPorts, profiles: Any) -> Non
         WorktreeManager(application.paths.worktrees),
         approval_coordinator=coordinator,
     )
+    ports_tasks.execution_commit_observer = application.app.state.remote_worker.repo.seal
     # HubPorts 是 slots dataclass，就地改字段而不是 replace——
     # api 层持有的是同一个 ports 引用，replace 出来的新对象它看不见。
     ports.tasks = ports_tasks
@@ -199,3 +200,17 @@ def _bind_workspaces(application: Any, ports: HubPorts) -> None:
     except ImportError:  # pragma: no cover - 打包漏文件时才会走到
         return
     ports.workspaces = WorkspaceService(WorkspaceRepository(application.database))
+
+
+def build_remote_worker(database, events, local_chat, paths, token, *, development=False):
+    from runtime.remote.commands import CommandBridge
+    from runtime.remote.link import LinkService
+    from runtime.remote.security import CredentialVault
+    from runtime.remote.worker import RemoteWorker
+    from storage.remote import RemoteRepository
+
+    directory = paths.root / "remote"
+    repository = RemoteRepository(database, events, directory)
+    local_chat.remote_dispatch_guard = repository.allow_dispatch
+    link = LinkService(repository, CredentialVault(directory), development=development, hub_token=token)
+    return RemoteWorker(repository, link, CommandBridge(repository, local_chat, link))

@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer, model_validator
 
-PROTOCOL_VERSION = "0.6.1"
+PROTOCOL_VERSION = "0.6.3"
 
 
 class _Base(BaseModel):
@@ -1828,6 +1828,7 @@ class RemoteConversationSnapshot(_RemoteBase):
     commands: list[RemoteCommandView] = Field(alias="commands", max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
     messages: list[RemoteMessageView] = Field(alias="messages", max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
     has_more: bool = Field(alias="hasMore", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    approvals: list[RemoteApprovalView] | None = Field(default=None, alias="approvals", max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
 
 
 class RemoteCreateConversationInput(_RemoteBase):
