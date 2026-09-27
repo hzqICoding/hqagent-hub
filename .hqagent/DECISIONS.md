@@ -408,8 +408,22 @@ Phase 1.1 的三 Agent 目标后移**。另两个选项存档备查：
 
 **影响**：复用已有配对协议和后端，不新增接口、DTO或认证。本工作包只登记，不实现二维码或改前端。依据为手机远程接入方案v0.3 §11.1。
 
-### D47 电脑对话镜像与手机接力（产品方向已定，协议冻结待Q1裁决，2026-09-27）
+### D47 电脑唯一写入、完整副本与两端继续（v0.4主代理裁决，2026-09-27）
 
-**决定**：按手机远程接入方案v0.3 §11，本地对话以只读镜像同步，默认开启全局mirrorEnabled，允许单对话不同步；关闭或排除要删除对应镜像内容，设备撤销删除该设备镜像。镜像不改变local权威。手机以conversation.handover请求接力，校验local、未归档、无活跃/排队轮次、工作区登记，通过后原子变更authority、远程绑定与序号起点，保持原本地上下文链。不支持remote降回local。
+**决定**：9bb608d / bf15428那一版镜像+接力草稿作废。电脑是唯一写入方，服务端保存完整副本，手机和电脑都继续原对话；不需要handover。同步默认开启，关闭/电脑删除/设备撤销须删除对应副本。全文不截断，超帧分段拼齐再发布；历史分批并有完成标记。visibility=both/pc_only/mobile_only只作显示过滤，不控制上传。电脑可includeHidden找回mobile_only。
 
-**协议状态**：本方向需要新增线路修订2，保留修订1；尚未冻结0.7.0。发现“新增注册错误码”与“修订1 DTO及严格性完全不变”的共享枚举冲突，登记为R15-P0 Q1，等待主代理裁决，禁止以本条宣称P1/P2/P3协议已就绪。证据及两个选项见 `.hqagent/handoffs/R15-P0-remote-protocol.md`；当前VERSION仍0.6.3。
+busy只由电脑queued/running/waiting_approval轮次推导，recoveryRequired只提示不占忙碌锁；重连及每次变化发送完整忙碌集合，服务端整体覆盖，不持锁，手机不持锁。取消不受busy限制。高风险审批规则不变。
+
+**实现取舍**：修订2独立命名DTO/union；为30秒未送达失败后不执行的承诺增加provisional收件与持久显式grant门闩，ACK不充当授权。手机创建对话也以电脑执行的控制命令完成。具体原子性、分段和双向升级栅栏见packages/protocol/remote/R1.5-contract.md。
+
+### D48 撤销本机只读与离线排队（主代理裁决，2026-09-27）
+
+**决定**：撤销D43的remote对话本机只读，本机写入口不再因authority=remote返回CONVERSATION_AUTHORITY_MISMATCH；authority保留为兼容来源字段。撤销新浏览器操作的服务端离线排队，离线立即REMOTE_DEVICE_OFFLINE，输入保留。在线传输缺省/最多30秒deliverBy，未获得grant到期失败，迟到命令不执行、不接单。旧已受理的修订1命令继续如实对账，不能伪造失败或取消。
+
+**影响**：P2改同一本机互斥/事务边界与执行门闩；P1改准入/期限竞争和只读投影；前端去掉authority只读假设。新提交要求修订2，旧连接仍可兼容对账，不能对rev1承诺新门闩保证。
+
+### D49 修订1错误值域单独冻结（Q1采用建议B，主代理裁决，2026-09-27）
+
+**决定**：批准必要的Schema/生成类型引用调整例外，保持修订1旧报文接受/拒绝行为不变。RemoteWire1ErrorCode固定为0.6.3注册表；RemoteWire1Error及RemoteWire1ApprovalView封装固定字段，rev1帧仅替换错误/审批payload引用。公共ErrorCode仍跟随registry追加，仅HTTP和rev2可用新码。原rev1 Fixture不改。
+
+**影响**：Q1已关闭，不再needs-decision。冻结测试需检查引用闭包和值域，不仅对比顶层frame文本；不得把公共ErrorCode锁死或偷偷放宽rev1。

@@ -1,0 +1,19 @@
+{
+  "type": "sync.content.redaction",
+  "wireRevision": 2,
+  "redactionId": "redaction_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "syncGeneration": 1,
+  "deletionEventId": "event_reset",
+  "deletionSeq": 2,
+  "slots": [
+    {
+      "seq": 1,
+      "eventId": "event_content",
+      "originalType": "sync.message.segment",
+      "eventSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}

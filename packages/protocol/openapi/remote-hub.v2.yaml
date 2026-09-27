@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HQAgent R1 Remote Communication
-  version: 0.6.0
+  version: 0.7.0
   description: Remote HTTPS origin only. Owner derives from authenticated session, never request parameters. D40/D41
     map current execution core. No model invocation/credentials, native history, attachments or signed approvals.
 servers:
@@ -372,7 +372,10 @@ paths:
   /api/v2/conversations:
     get:
       operationId: listRemoteConversations
-      description: ''
+      description: ' R1.5: hide pc_only in all reads, events and referenced resources (NOT_FOUND); no authority
+        write gate. See R1.5-contract.md. Select workerId before browsing projects. New clients require workerId;
+        omit only for legacy owner-scoped read compatibility. Order lastActivityAt descending, stable conversationId
+        tie-break; signed cursor pins scope/cut.'
       security:
       - remoteSession: []
       responses:
@@ -385,8 +388,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteConversationPage
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       parameters:
       - name: cursor
         in: query
@@ -403,24 +406,37 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
+      - name: workerId
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: workspaceId
+        in: query
+        required: false
+        schema:
+          type: string
     post:
       operationId: createRemoteConversation
-      description: Create remote conversation for owner-bound device/store and indexed workspace/scene, including
-        while device is offline. Fixed target in R1; never replay imported local history as commands.
+      description: 'R1.5 online-only submission: offline immediately REMOTE_DEVICE_OFFLINE; revision 1 transport
+        cannot implement this operation (REMOTE_REVISION_REQUIRED). Persist a bounded 30-second delivery attempt,
+        not an offline queue. Worker is sole writer; explicit delivery grant before execution.  This is conversation.create
+        on the computer; transport IDs may be reserved server-side but no authoritative conversation or user
+        message is created on the server.'
       security:
       - remoteSession: []
       responses:
-        '201':
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+        '202':
           description: ApiEnvelope data; no raw authentication credential in JSON.
           content:
             application/json:
               schema:
                 $ref: ../schema/envelope.json#/$defs/ApiEnvelope
           x-dataSchema:
-            $ref: ../schema/remote.json#/$defs/RemoteConversationView
-        default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+            $ref: ../schema/remote.json#/$defs/RemoteQueuedReceipt
       requestBody:
         required: true
         content:
@@ -445,7 +461,8 @@ paths:
   /api/v2/conversations/{conversationId}:
     get:
       operationId: getRemoteConversation
-      description: ''
+      description: ' R1.5: hide pc_only in all reads, events and referenced resources (NOT_FOUND); no authority
+        write gate. See R1.5-contract.md.'
       security:
       - remoteSession: []
       responses:
@@ -458,20 +475,19 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteConversationView
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       parameters:
       - name: conversationId
         in: path
         required: true
         schema:
           type: string
-  /api/v2/conversations/{conversationId}/messages:
-    post:
-      operationId: sendRemoteMessage
-      description: Atomically store message + command + outbox and allocate one conversationSeq only for execution
-        message. clientMessageId and Idempotency-Key both deduplicate within authenticated owner/conversation. Offline
-        returns202 queued_offline, never running. Accepted commands do not expire mid-execution.
+    patch:
+      operationId: updateRemoteConversation
+      description: Online-only conversation.update control to Worker, no conversationSeq. 202 is a delivery receipt.
+        Mutations title/archived/visibility require expectedVersion and Worker CAS; sync events publish the authoritative
+        result. Hide pc_only afterwards; return NOT_FOUND on future direct reads.
       security:
       - remoteSession: []
       responses:
@@ -484,8 +500,55 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteQueuedReceipt
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote-sync.json#/$defs/RemoteSyncConversationInput
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
+  /api/v2/conversations/{conversationId}/messages:
+    post:
+      operationId: sendRemoteMessage
+      description: 'R1.5 online-only submission: offline immediately REMOTE_DEVICE_OFFLINE; revision 1 transport
+        cannot implement this operation (REMOTE_REVISION_REQUIRED). Persist a bounded 30-second delivery attempt,
+        not an offline queue. Worker is sole writer; explicit delivery grant before execution. Busy submission
+        returns REMOTE_CONVERSATION_BUSY; controls/cancel/approval do not acquire a busy lock. '
+      security:
+      - remoteSession: []
+      responses:
+        '202':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote.json#/$defs/RemoteQueuedReceipt
+        default:
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       requestBody:
         required: true
         content:
@@ -514,7 +577,10 @@ paths:
           maxLength: 256
     get:
       operationId: listRemoteMessages
-      description: ''
+      description: Newest complete messages first by Worker messageSequence DESC, limit<=100. before is an exclusive
+        opaque signed cursor pinned to owner/worker/store/conversation and snapshot cut. No before means latest
+        page. New arrivals merge by messageId/messageRevision, sorted by messageSequence; never shift offset
+        or reuse before across conversations. pc_only returns NOT_FOUND; incomplete segments are never visible.
       security:
       - remoteSession: []
       responses:
@@ -525,23 +591,16 @@ paths:
               schema:
                 $ref: ../schema/envelope.json#/$defs/ApiEnvelope
           x-dataSchema:
-            $ref: ../schema/remote.json#/$defs/RemoteMessagePage
+            $ref: ../schema/remote-sync.json#/$defs/RemoteSyncMessagePage
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       parameters:
       - name: conversationId
         in: path
         required: true
         schema:
           type: string
-      - name: cursor
-        in: query
-        required: false
-        schema:
-          type: string
-          minLength: 16
-          maxLength: 2048
       - name: limit
         in: query
         required: false
@@ -550,10 +609,16 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
+      - name: before
+        in: query
+        required: false
+        schema:
+          type: string
   /api/v2/conversations/{conversationId}/runs:
     get:
       operationId: listRemoteRuns
-      description: ''
+      description: ' R1.5: hide pc_only in all reads, events and referenced resources (NOT_FOUND); no authority
+        write gate. See R1.5-contract.md.'
       security:
       - remoteSession: []
       responses:
@@ -566,8 +631,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteRunPage
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       parameters:
       - name: conversationId
         in: path
@@ -592,7 +657,8 @@ paths:
   /api/v2/conversations/{conversationId}/commands:
     get:
       operationId: listRemoteCommands
-      description: ''
+      description: ' R1.5: hide pc_only in all reads, events and referenced resources (NOT_FOUND); no authority
+        write gate. See R1.5-contract.md.'
       security:
       - remoteSession: []
       responses:
@@ -605,8 +671,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteCommandPage
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       parameters:
       - name: conversationId
         in: path
@@ -631,7 +697,8 @@ paths:
   /api/v2/runs/{runId}:
     get:
       operationId: getRemoteRun
-      description: ''
+      description: ' R1.5: hide pc_only in all reads, events and referenced resources (NOT_FOUND); no authority
+        write gate. See R1.5-contract.md.'
       security:
       - remoteSession: []
       responses:
@@ -644,8 +711,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteRunView
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       parameters:
       - name: runId
         in: path
@@ -655,9 +722,9 @@ paths:
   /api/v2/runs/{runId}/commands:
     post:
       operationId: controlRemoteRun
-      description: runId is LocalRun user handle. Resolve all execution references in owner/device/conversation
-        scope. No conversationSeq. Worker retains existing TaskStatus and retry child Task semantics. A transport202
-        is not a confirmed control outcome.
+      description: 'R1.5 online-only submission: offline immediately REMOTE_DEVICE_OFFLINE; revision 1 transport
+        cannot implement this operation (REMOTE_REVISION_REQUIRED). Persist a bounded 30-second delivery attempt,
+        not an offline queue. Worker is sole writer; explicit delivery grant before execution. '
       security:
       - remoteSession: []
       responses:
@@ -670,8 +737,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteQueuedReceipt
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       requestBody:
         required: true
         content:
@@ -701,7 +768,8 @@ paths:
   /api/v2/commands/{commandId}:
     get:
       operationId: getRemoteCommand
-      description: ''
+      description: ' R1.5: hide pc_only in all reads, events and referenced resources (NOT_FOUND); no authority
+        write gate. See R1.5-contract.md.'
       security:
       - remoteSession: []
       responses:
@@ -714,8 +782,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteCommandView
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       parameters:
       - name: commandId
         in: path
@@ -725,10 +793,9 @@ paths:
   /api/v2/commands/{commandId}/cancellations:
     post:
       operationId: withdrawRemoteCommand
-      description: 'Only for run.submit before a visible Run is bound. Never-dispatched: reject original command
-        with REMOTE_COMMAND_WITHDRAWN and persist ordered skip in same transaction. Possibly dispatched: withdrawalState=requested
-        plus an unsequenced command.withdraw; cannot mark confirmed before Worker reconciliation. A known Run must
-        use cancel by runId. Race/unknown outcome stays pending, not success.'
+      description: 'R1.5 online-only submission: offline immediately REMOTE_DEVICE_OFFLINE; revision 1 transport
+        cannot implement this operation (REMOTE_REVISION_REQUIRED). Persist a bounded 30-second delivery attempt,
+        not an offline queue. Worker is sole writer; explicit delivery grant before execution. '
       security:
       - remoteSession: []
       responses:
@@ -741,8 +808,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteCommandView
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       requestBody:
         required: true
         content:
@@ -772,7 +839,8 @@ paths:
   /api/v2/approvals/{approvalId}:
     get:
       operationId: getRemoteApproval
-      description: Owner-scoped last Worker projection, not server permission authority.
+      description: 'Owner-scoped last Worker projection, not server permission authority. R1.5: hide pc_only
+        in all reads, events and referenced resources (NOT_FOUND); no authority write gate. See R1.5-contract.md.'
       security:
       - remoteSession: []
       responses:
@@ -785,8 +853,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteApprovalView
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       parameters:
       - name: approvalId
         in: path
@@ -796,9 +864,9 @@ paths:
   /api/v2/approvals/{approvalId}/decisions:
     post:
       operationId: decideRemoteApproval
-      description: R1 remote approve of git_push/deploy/delete/db_migrate or locally blocked actions => REMOTE_APPROVAL_FORBIDDEN403;
-        no command enqueued. Worker repeats check from actual pending request and current local policy. Remote reject
-        may be delivered without granting permission. A202 is not consumed approval.
+      description: 'R1.5 online-only submission: offline immediately REMOTE_DEVICE_OFFLINE; revision 1 transport
+        cannot implement this operation (REMOTE_REVISION_REQUIRED). Persist a bounded 30-second delivery attempt,
+        not an offline queue. Worker is sole writer; explicit delivery grant before execution. '
       security:
       - remoteSession: []
       responses:
@@ -811,8 +879,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteQueuedReceipt
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       requestBody:
         required: true
         content:
@@ -878,9 +946,10 @@ paths:
   /api/v2/conversations/{conversationId}/snapshot:
     get:
       operationId: getRemoteConversationSnapshot
-      description: Transactionally consistent selected-conversation projection and stream cursor. Fetch more bounded
-        history when hasMore=true, then apply subsequent events by cursor. Event endpoint may be polled; browser
-        websocket streaming is not required by R1-P0.
+      description: 'Transactionally consistent selected-conversation projection and stream cursor. Fetch more
+        bounded history when hasMore=true, then apply subsequent events by cursor. Event endpoint may be polled;
+        browser websocket streaming is not required by R1-P0. R1.5: hide pc_only in all reads, events and referenced
+        resources (NOT_FOUND); no authority write gate. See R1.5-contract.md.'
       security:
       - remoteSession: []
       responses:
@@ -893,8 +962,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/remote.json#/$defs/RemoteConversationSnapshot
         default:
-          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign IDs,
-            account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
+          description: ApiEnvelope error. Cross-owner/missing resources both NOT_FOUND; never include foreign
+            IDs, account identity or credentials in detail. Remote codes are registered in error-codes.yaml.
       parameters:
       - name: conversationId
         in: path

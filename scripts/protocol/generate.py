@@ -440,6 +440,17 @@ def emit_py(index: dict, registries: dict, order: list[str], version: str) -> st
                 out.append(f"class {name}(StrEnum):")
                 for v in d["enum"]:
                     out.append(f'    {py_member(v)} = "{v}"')
+                if d.get("x-wire-strict"):
+                    # Strict scalar boundary DTOs support the same fixture API as
+                    # object DTOs without wrapping or changing the wire value.
+                    out.extend([
+                        "", "    @classmethod",
+                        "    def model_validate(cls, value):",
+                        "        from pydantic import TypeAdapter",
+                        "        return TypeAdapter(cls).validate_python(value)",
+                        "", "    def model_dump(self, **kwargs):",
+                        "        return self.value",
+                    ])
                 out.append("")
             else:
                 out.append("")

@@ -231,7 +231,24 @@
             "local",
             "remote"
           ],
-          "description": "Optional for compatibility. Missing means local at the consuming boundary. A persisted remote conversation never reverts to local after unlink and remains locally read-only."
+          "description": "Legacy metadata only; not a write restriction in R1.5. Missing=local."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "both",
+            "pc_only",
+            "mobile_only"
+          ]
+        },
+        "busy": {
+          "type": "boolean"
+        },
+        "busyObservedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
         }
       }
     },
@@ -544,7 +561,7 @@
       "required": [
         "expectedVersion"
       ],
-      "description": "At least one non-null title or archived field is required. Workspace, scene and session associations are immutable.",
+      "description": "At least one non-null title, archived or visibility is required. Workspace, scene and session associations remain unchanged.",
       "properties": {
         "expectedVersion": {
           "type": "integer",
@@ -557,6 +574,14 @@
         },
         "archived": {
           "type": "boolean"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "both",
+            "pc_only",
+            "mobile_only"
+          ]
         }
       }
     },
