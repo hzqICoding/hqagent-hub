@@ -68,17 +68,18 @@ class SyncService(Service):
             require(not command or command.get('error', {}).get('code') != 'REMOTE_DELIVERY_EXPIRED', 'REMOTE_DELIVERY_EXPIRED')
         return result
 
-    def view(self, owner, kind, value):
+    def view(self, owner, kind, value, *, busy_fresh=None):
         result = super().view(owner, kind, value)
         if kind == 'device':
             conn = self.connections.get((owner, value['workerId']))
             online = self.online(owner, value['workerId'])
-            result.update(online=online, busySnapshotFresh=bool(online and conn and not conn.closed and getattr(conn, 'busy_fresh', False)), supportedWireRevisions=value.get('_supported', []))
+            result.update(online=online, busySnapshotFresh=bool(online and not value.get('_frozen') and conn and not conn.closed and getattr(conn, 'busy_fresh', False)), supportedWireRevisions=value.get('_supported', []))
         if kind == 'conversation':
             conn = self.connections.get((owner, value['targetWorkerId']))
-            fresh = bool(conn and self.online(owner, value['targetWorkerId']) and getattr(conn, 'busy_fresh', False) and value.get('_busyConnection') == conn.identifier)
+            fresh = bool(conn and self.online(owner, value['targetWorkerId']) and
+                         (getattr(conn, 'busy_fresh', False) if busy_fresh is None else busy_fresh) and value.get('_busyConnection') == conn.identifier)
             result.update(workerId=value['targetWorkerId'], visibility=value.get('visibility', 'both'),
-                          busy=value.get('_busy', False), busyFresh=fresh,
+                          busy=bool(fresh and value.get('_busy', False)), busyFresh=fresh,
                           archived=value.get('archived', False), lastActivityAt=value.get('lastActivityAt', value['updatedAt']))
             if value.get('_busyObservedAt'):
                 result['busyObservedAt'] = value['_busyObservedAt']
@@ -88,6 +89,23 @@ class SyncService(Service):
             if value.get('_granted') and value['status'] == 'queued':
                 result['deliveryState'] = 'granted'
         return result
+
+    def invalidate_busy(self, tx, owner, connection):
+        state = self.replica.state(tx, owner, connection.worker, connection.store)
+        if state.get('busyConnection') != connection.identifier:
+            return  # Never let an obsolete socket invalidate its replacement.
+        state.update(busyFresh=False, busyPending=None)
+        self.replica.save_state(tx, owner, state)
+        tx.after_commit(('busy', owner, connection.worker), lambda: setattr(connection, 'busy_fresh', False))
+        for conv in tx.list(owner, 'conversation', worker=connection.worker, store=connection.store):
+            if conv.get('visibility', 'both') != 'pc_only':
+                self.event(tx, owner, 'conversation.updated', self.view(owner, 'conversation', conv, busy_fresh=False))
+
+    def freeze(self, tx, owner, device, code):
+        super().freeze(tx, owner, device, code)
+        connection = self.connections.get((owner, device['workerId']))
+        if connection is not None:
+            self.invalidate_busy(tx, owner, connection)
 
     def command_event(self, tx, owner, command):
         if self.command_visible(tx, owner, command['conversationId']):
@@ -358,6 +376,13 @@ class SyncService(Service):
                 command_event = body['type'] == 'command.updated' or (body['type'] == 'worker.event' and payload.get('type', '').startswith('command.'))
                 allowed = body['type'] in {'conversation.deleted', 'store.reset'} or conversation is None or self.replica.visible(tx, owner, conversation) or (command_event and self.command_visible(tx, owner, conversation))
                 if allowed:
+                    if body['type'] == 'conversation.updated':
+                        # Browser transport freshness is current, not an
+                        # immutable Worker execution fact. Replaying an old
+                        # cursor must not resurrect a disconnected busy badge.
+                        current = self.view(owner, 'conversation', self.get(tx, owner, 'conversation', conversation))
+                        body = dict(body, payload=dict(payload, **{key: current[key]
+                            for key in ('busy', 'busyFresh', 'busyObservedAt') if key in current}))
                     added = len(canonical(body).encode())
                     if items and size + added > 33554432:
                         budget_full = True
