@@ -84,7 +84,8 @@ def test_pending_fixture_includes_remotely_rejectable_high_risk_approval():
 
 def test_only_one_optional_browser_property_changes_and_all_wire_defs_stay_identical():
     original = json.loads(before('packages/protocol/schema/remote.json'))
-    current = json.loads((PROTOCOL / 'schema/remote.json').read_text(encoding='utf-8'))
+    # Historical D45 delta; live snapshot/legacy-wire scope is checked by test_remote_sync_contract.
+    current = json.loads(subprocess.check_output(['git', 'show', '500bf1f:packages/protocol/schema/remote.json'], cwd=ROOT))
     prop = current['$defs']['RemoteConversationSnapshot']['properties'].pop('approvals')
     assert prop == {
         'type': 'array', 'items': {'$ref': 'remote.json#/$defs/RemoteApprovalView'},
@@ -94,4 +95,4 @@ def test_only_one_optional_browser_property_changes_and_all_wire_defs_stay_ident
     assert current == original
     assert 'approvals' not in current['$defs']['RemoteConversationSnapshot']['required']
     for path in ['openapi/remote-hub.v2.yaml', 'events/event-dictionary.md', 'registry/error-codes.yaml']:
-        assert (PROTOCOL / path).read_text(encoding='utf-8') == before('packages/protocol/' + path)
+        assert subprocess.check_output(['git', 'show', '500bf1f:packages/protocol/' + path], cwd=ROOT).decode('utf-8') == before('packages/protocol/' + path)

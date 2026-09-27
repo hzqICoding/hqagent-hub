@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "messageId": "message_demo",
+      "conversationId": "conversation_demo",
+      "role": "user",
+      "text": "只读分析已登记项目，不修改文件。",
+      "createdAt": "2026-09-26T12:00:00Z"
+    }
+  ],
+  "hasMore": false,
+  "snapshotCursor": "opaque_snapshot_cursor_demo"
+}
