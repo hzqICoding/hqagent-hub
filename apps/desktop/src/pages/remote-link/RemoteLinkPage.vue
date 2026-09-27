@@ -35,6 +35,7 @@ const formError = ref<string | null>(null)
 
 // Unlink Modal State
 const isUnlinkModalOpen = ref(false)
+const isDisableSyncModalOpen = ref(false)
 
 // Copy short code feedback
 const isCopied = ref(false)
@@ -127,6 +128,9 @@ onMounted(async () => {
 
   try {
     await remoteLinkStore.refreshLink()
+    if (remoteLinkStore.isPaired) {
+      await remoteLinkStore.fetchSyncSettings()
+    }
     if (remoteLinkStore.serverOrigin) {
       inputServerOrigin.value = remoteLinkStore.serverOrigin
     }
@@ -181,6 +185,15 @@ async function confirmUnlink() {
     await remoteLinkStore.unlink()
   } catch {
     // Store captures actionError
+  }
+}
+
+async function confirmDisableSync() {
+  try {
+    await remoteLinkStore.updateSyncSettings(false)
+    isDisableSyncModalOpen.value = false
+  } catch {
+    // Error recorded in store
   }
 }
 
@@ -487,9 +500,45 @@ async function copyPairCode() {
           </div>
         </div>
 
+        <!-- Sync Settings Master Switch -->
+        <div class="p-4 rounded-xl bg-bg-app border border-border/80 flex items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-text">同步总开关</span>
+              <HqBadge size="sm" :variant="remoteLinkStore.mirrorEnabled ? 'success' : 'neutral'">
+                {{ remoteLinkStore.mirrorEnabled ? '已开启' : '已关闭' }}
+              </HqBadge>
+            </div>
+            <p class="text-[11px] text-text-muted mt-0.5">
+              开启后对话内容会保存到你的服务器上
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <HqButton
+              v-if="remoteLinkStore.mirrorEnabled"
+              variant="secondary"
+              size="sm"
+              :disabled="remoteLinkStore.isSyncSettingsLoading"
+              @click="isDisableSyncModalOpen = true"
+            >
+              关闭同步
+            </HqButton>
+            <HqButton
+              v-else
+              variant="primary"
+              size="sm"
+              :disabled="remoteLinkStore.isSyncSettingsLoading"
+              :loading="remoteLinkStore.isSyncSettingsLoading"
+              @click="remoteLinkStore.updateSyncSettings(true)"
+            >
+              开启同步
+            </HqButton>
+          </div>
+        </div>
+
         <div class="flex items-center justify-between border-t border-border/80 pt-4">
           <p class="text-xs text-text-muted">
-            已成功接入手机远程通道。手机发起的会话在电脑上呈现只读。
+            已成功接入手机远程通道。两端可互通协作对话。
           </p>
           <HqButton
             variant="danger"
@@ -624,6 +673,46 @@ async function copyPairCode() {
           @click="confirmUnlink"
         >
           确认解除绑定
+        </HqButton>
+      </template>
+    </HqDialog>
+
+    <!-- Disable Sync Confirmation Dialog -->
+    <HqDialog
+      :open="isDisableSyncModalOpen"
+      title="关闭同步确认"
+      description="请仔细阅读关闭同步影响后再确认操作"
+      @close="isDisableSyncModalOpen = false"
+    >
+      <div class="space-y-3.5 py-2 text-xs text-text">
+        <div class="p-3 rounded-xl bg-danger/10 border border-danger/25 text-danger flex items-start gap-2.5">
+          <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
+          <div class="space-y-1.5 leading-relaxed text-[11px]">
+            <p class="font-bold text-xs text-danger">警告：该操作将影响手机端展示</p>
+            <p>
+              关闭后服务器上这台电脑的对话副本将被删除，手机上将看不到任何对话。本地数据不受影响。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <HqButton
+          size="sm"
+          variant="secondary"
+          :disabled="remoteLinkStore.isSyncSettingsLoading"
+          @click="isDisableSyncModalOpen = false"
+        >
+          取消
+        </HqButton>
+        <HqButton
+          size="sm"
+          variant="danger"
+          :disabled="remoteLinkStore.isSyncSettingsLoading"
+          :loading="remoteLinkStore.isSyncSettingsLoading"
+          @click="confirmDisableSync"
+        >
+          确认关闭
         </HqButton>
       </template>
     </HqDialog>

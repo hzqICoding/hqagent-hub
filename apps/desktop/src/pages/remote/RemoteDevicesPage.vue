@@ -18,7 +18,9 @@ import {
   LogOut,
   AlertTriangle,
   Radio,
+  ChevronRight,
 } from 'lucide-vue-next'
+import { onUnmounted } from 'vue'
 
 const router = useRouter()
 const chatStore = useRemoteChatStore()
@@ -27,9 +29,45 @@ const authStore = useRemoteAuthStore()
 const deviceToRevoke = ref<RemoteDeviceView | null>(null)
 const isRevoking = ref(false)
 
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startPolling() {
+  stopPolling()
+  pollTimer = setInterval(async () => {
+    if (!document.hidden) {
+      await chatStore.fetchDevices()
+    }
+  }, 15000)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function handleVisibilityChange() {
+  if (!document.hidden) {
+    void chatStore.fetchDevices()
+  }
+}
+
 onMounted(async () => {
   await chatStore.fetchDevices()
+  startPolling()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
+
+onUnmounted(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
+
+function selectDevice(device: RemoteDeviceView) {
+  chatStore.selectDevice(device.workerId)
+  router.push({ path: '/remote/chat', query: { workerId: device.workerId } })
+}
 
 function openRevokeDialog(device: RemoteDeviceView) {
   deviceToRevoke.value = device
@@ -59,7 +97,7 @@ async function handleLogout() {
     <header class="h-14 bg-panel border-b border-border px-4 flex items-center justify-between shrink-0">
       <div class="flex items-center gap-2">
         <Radio class="w-4 h-4 text-primary animate-pulse" />
-        <span class="font-bold text-sm text-text">已配对设备</span>
+        <span class="font-bold text-sm text-text">我的电脑</span>
       </div>
 
       <div class="flex items-center gap-2">
@@ -126,7 +164,7 @@ async function handleLogout() {
       <div v-else-if="chatStore.devices.length === 0" class="py-8">
         <HqEmptyState
           title="暂无已绑定电脑"
-          description="请在电脑端打开 HQAgent-Hub 获取配对短码，点击上方按钮完成绑定"
+          description="在电脑端打开 HQAgent-Hub，点击『连接手机』获取配对码"
         />
       </div>
 
@@ -134,7 +172,8 @@ async function handleLogout() {
         <div
           v-for="device in chatStore.devices"
           :key="device.workerId"
-          class="p-4 rounded-xl bg-panel border border-border space-y-3 shadow-xs"
+          class="p-4 rounded-xl bg-panel border border-border space-y-3 shadow-xs cursor-pointer hover:border-primary/50 transition-colors"
+          @click="selectDevice(device)"
         >
           <div class="flex items-start justify-between gap-3">
             <div class="flex items-center gap-3 min-w-0">
@@ -150,6 +189,12 @@ async function handleLogout() {
                   <span>•</span>
                   <span>{{ device.architecture }}</span>
                 </p>
+                <div class="flex items-center gap-1.5 flex-wrap mt-1">
+                  <HqBadge v-if="device.supportedWireRevisions?.includes(2)" size="sm" variant="primary">
+                    支持互通 (v2)
+                  </HqBadge>
+                  <span v-else class="text-[10px] text-text-muted">协议 v1</span>
+                </div>
               </div>
             </div>
 
@@ -161,14 +206,17 @@ async function handleLogout() {
 
           <div class="flex items-center justify-between text-[11px] text-text-muted border-t border-border/50 pt-2.5">
             <span class="truncate">Worker: {{ device.workerId }}</span>
-            <button
-              type="button"
-              class="text-danger hover:text-danger-hover cursor-pointer font-medium flex items-center gap-1 transition-colors"
-              @click="openRevokeDialog(device)"
-            >
-              <Trash2 class="w-3.5 h-3.5" />
-              撤销设备
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="text-danger hover:text-danger-hover cursor-pointer font-medium flex items-center gap-1 transition-colors"
+                @click.stop="openRevokeDialog(device)"
+              >
+                <Trash2 class="w-3.5 h-3.5" />
+                撤销设备
+              </button>
+              <ChevronRight class="w-4 h-4 text-text-muted" />
+            </div>
           </div>
         </div>
       </div>

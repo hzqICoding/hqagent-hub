@@ -39,6 +39,7 @@ export const useChatStore = defineStore('chat', () => {
   const searchQuery = ref('')
   const showArchived = ref(false)
   const collapsedWorkspaceIds = ref<Record<string, boolean>>({})
+  const includeHiddenConversations = ref(false)
   const isLoadingConversations = ref(false)
   const isMetadataUpdating = ref(false)
   const metadataError = ref<string | null>(null)
@@ -105,6 +106,7 @@ export const useChatStore = defineStore('chat', () => {
     const q = searchQuery.value.trim().toLowerCase()
     return conversations.value.filter(
       (c) => {
+        if (!includeHiddenConversations.value && c.visibility === 'mobile_only') return false
         if (Boolean(c.archived) !== showArchived.value) return false
         if (!q) return true
         const workspace = workspaces.value.find((w) => w.id === c.workspaceId)
@@ -124,6 +126,7 @@ export const useChatStore = defineStore('chat', () => {
           || workspace.path.toLowerCase().includes(q)
         const items = conversations.value.filter((conversation) => {
           if (conversation.workspaceId !== workspace.id) return false
+          if (!includeHiddenConversations.value && conversation.visibility === 'mobile_only') return false
           if (Boolean(conversation.archived) !== showArchived.value) return false
           return workspaceMatches || conversation.title.toLowerCase().includes(q)
         })
@@ -134,15 +137,16 @@ export const useChatStore = defineStore('chat', () => {
 
   const isActiveConversationArchived = computed(() => Boolean(activeConversation.value?.archived))
   const isRemoteConversation = computed(() => activeConversation.value?.authority === 'remote')
+  const isConversationBusy = computed(() => Boolean(activeConversation.value?.busy))
 
   const nonArchivableStatuses: TaskStatus[] = ['queued', 'running', 'waiting_approval', 'paused']
 
   function canArchiveConversation(conversation: LocalConversationView): boolean {
-    if (conversation.authority === 'remote') return false
     const status = conversation.lastRunStatus
     return !conversation.archived
       && !(status && nonArchivableStatuses.includes(status))
       && !conversation.activeRunId
+      && !conversation.busy
   }
 
   function getConversationDraft(conversationId: string): string {
@@ -256,7 +260,9 @@ export const useChatStore = defineStore('chat', () => {
     isLoadingConversations.value = true
     try {
       const gateway = getLocalChatGateway()
-      const items = await gateway.listLocalConversations()
+      const items = await gateway.listLocalConversations({
+        includeHidden: includeHiddenConversations.value,
+      })
       if (generation !== viewGeneration) return
       conversations.value = items.map((conversation) => {
         const normalized = {
@@ -438,10 +444,6 @@ export const useChatStore = defineStore('chat', () => {
   ): Promise<LocalConversationView> {
     const conversation = conversations.value.find((item) => item.id === conversationId)
     if (!conversation) throw new HubApiError('任务不存在', 'NOT_FOUND', 404)
-    if (conversation.authority === 'remote') {
-      metadataError.value = '这是手机远程对话，无法在电脑上修改或归档'
-      throw new HubApiError('这是手机远程对话，无法在电脑上修改或归档', 'CONVERSATION_AUTHORITY_MISMATCH', 409)
-    }
     const input: UpdateLocalConversationInput = {
       expectedVersion: conversation.version ?? 1,
       ...patch,
@@ -498,6 +500,18 @@ export const useChatStore = defineStore('chat', () => {
     return updateConversationMetadata(conversationId, { archived })
   }
 
+  async function setConversationVisibility(
+    conversationId: string,
+    visibility: 'both' | 'pc_only' | 'mobile_only'
+  ): Promise<LocalConversationView> {
+    return updateConversationMetadata(conversationId, { visibility })
+  }
+
+  async function setIncludeHiddenConversations(value: boolean): Promise<void> {
+    includeHiddenConversations.value = value
+    await fetchConversations()
+  }
+
   async function registerWorkspace(path: string): Promise<WorkspaceView> {
     const workspace = await getLocalChatGateway().addLocalWorkspace({ path: path.trim() })
     workspaces.value = [workspace, ...workspaces.value.filter(w => w.id !== workspace.id)]
@@ -518,9 +532,9 @@ export const useChatStore = defineStore('chat', () => {
     const convId = activeConversationId.value
     if (!convId || !text.trim() || sendingConversationIds.value.includes(convId)) return
     const conversation = conversations.value.find((item) => item.id === convId)
-    if (conversation?.authority === 'remote') {
-      sendError.value = '这是手机远程对话，请在手机上继续'
-      throw new HubApiError('这是手机远程对话，无法在电脑上发送消息，请在手机上继续', 'CONVERSATION_AUTHORITY_MISMATCH', 409)
+    if (isConversationBusy.value) {
+      sendError.value = '对话正在进行，结束后再继续'
+      throw new HubApiError('对话正在进行，结束后再继续', 'REMOTE_CONVERSATION_BUSY', 409)
     }
     if (conversation?.archived) {
       throw new HubApiError('请先恢复已归档任务，再发送消息', 'CONFLICT', 409)
@@ -620,9 +634,9 @@ export const useChatStore = defineStore('chat', () => {
   ): Promise<void> {
     const conversationId = activeConversationId.value
     const generation = viewGeneration
-    if (activeConversation.value?.authority === 'remote') {
-      actionError.value = '这是手机远程对话，请在手机上继续'
-      throw new HubApiError('这是手机远程对话，无法在电脑上控制运行，请在手机上继续', 'CONVERSATION_AUTHORITY_MISMATCH', 409)
+    if (isConversationBusy.value && action !== 'cancel') {
+      actionError.value = '对话正在进行，结束后再继续'
+      throw new HubApiError('对话正在进行，结束后再继续', 'REMOTE_CONVERSATION_BUSY', 409)
     }
     if (isActiveConversationArchived.value && (action === 'resume' || action === 'retry')) {
       throw new HubApiError('请先恢复已归档任务，再继续或重试', 'CONFLICT', 409)
@@ -1182,6 +1196,7 @@ export const useChatStore = defineStore('chat', () => {
     metadataError.value = null
     sessionMode.value = 'new'
     pendingContextReset.value = false
+    includeHiddenConversations.value = false
   }
 
   return {
@@ -1195,6 +1210,9 @@ export const useChatStore = defineStore('chat', () => {
     groupedConversations,
     isActiveConversationArchived,
     isRemoteConversation,
+    isConversationBusy,
+    isBusyFromOtherEnd: isConversationBusy,
+    includeHiddenConversations,
     canArchiveConversation,
     toggleWorkspaceCollapsed,
     conversationDrafts,
@@ -1235,6 +1253,8 @@ export const useChatStore = defineStore('chat', () => {
     ingestEvent,
     init,
     fetchConversations,
+    setIncludeHiddenConversations,
+    setConversationVisibility,
     selectConversation,
     fetchMessages,
     fetchConversationRuns,

@@ -41,10 +41,14 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '设备配对' },
   },
   {
+    path: '/remote',
+    redirect: '/remote/devices',
+  },
+  {
     path: '/remote/devices',
     name: 'remote-devices',
     component: () => import('@/pages/remote/RemoteDevicesPage.vue'),
-    meta: { title: '已配对设备' },
+    meta: { title: '我的电脑' },
   },
   {
     path: '/remote/chat',
@@ -185,9 +189,9 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  // 2. If running in remote mode and user visits root / or /chat, redirect to /remote/chat
-  if (getRuntimeMode() === 'remote' && (to.path === '/' || to.path === '/chat')) {
-    next('/remote/chat')
+  // 2. If running in remote mode and user visits root / or /chat or /remote, redirect to /remote/devices
+  if (getRuntimeMode() === 'remote' && (to.path === '/' || to.path === '/chat' || to.path === '/remote')) {
+    next('/remote/devices')
     return
   }
 

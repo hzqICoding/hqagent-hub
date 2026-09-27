@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { RemoteLinkView, RemoteLinkPairingInput, ErrorCode } from '@hqagent/protocol'
+import type { RemoteLinkView, RemoteLinkPairingInput, ErrorCode, RemoteSyncSettingsView } from '@hqagent/protocol'
 import { getLocalChatGateway, HubApiError } from '@/shared/api'
 import { getRemoteLinkErrorMessage } from '@/shared/i18n/remote-link-errors'
 
@@ -12,6 +12,11 @@ export const useRemoteLinkStore = defineStore('remoteLink', () => {
   const actionError = ref<string | null>(null)
   const countdownSeconds = ref<number | null>(null)
   const lastRefreshedAt = ref<string | null>(null)
+
+  // Sync settings
+  const syncSettings = ref<RemoteSyncSettingsView | null>(null)
+  const isSyncSettingsLoading = ref(false)
+  const syncSettingsError = ref<string | null>(null)
 
   let pollInterval: ReturnType<typeof setInterval> | null = null
   let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -235,8 +240,48 @@ export const useRemoteLinkStore = defineStore('remoteLink', () => {
     }
   }
 
+  const mirrorEnabled = computed(() => syncSettings.value?.mirrorEnabled ?? true)
+
+  async function fetchSyncSettings(): Promise<RemoteSyncSettingsView | null> {
+    isSyncSettingsLoading.value = true
+    syncSettingsError.value = null
+    try {
+      const gateway = getLocalChatGateway()
+      const settings = await gateway.getRemoteSyncSettings()
+      syncSettings.value = settings
+      return settings
+    } catch (err) {
+      syncSettingsError.value = err instanceof Error ? err.message : '获取同步设置失败'
+      return null
+    } finally {
+      isSyncSettingsLoading.value = false
+    }
+  }
+
+  async function updateSyncSettings(enabled: boolean): Promise<RemoteSyncSettingsView> {
+    isSyncSettingsLoading.value = true
+    syncSettingsError.value = null
+    try {
+      const gateway = getLocalChatGateway()
+      const expectedVersion = syncSettings.value?.version ?? 1
+      const updated = await gateway.setRemoteSyncSettings({
+        mirrorEnabled: enabled,
+        expectedVersion,
+      })
+      syncSettings.value = updated
+      return updated
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '更新同步设置失败'
+      syncSettingsError.value = message
+      throw err
+    } finally {
+      isSyncSettingsLoading.value = false
+    }
+  }
+
   function clearError() {
     actionError.value = null
+    syncSettingsError.value = null
   }
 
   return {
@@ -246,6 +291,13 @@ export const useRemoteLinkStore = defineStore('remoteLink', () => {
     actionError,
     countdownSeconds,
     lastRefreshedAt,
+    // Sync settings
+    syncSettings,
+    isSyncSettingsLoading,
+    syncSettingsError,
+    mirrorEnabled,
+    fetchSyncSettings,
+    updateSyncSettings,
     // Computed
     state,
     isUnpaired,

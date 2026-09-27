@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useRemoteChatStore } from '@/stores/remote-chat.store'
 import { useRemoteAuthStore } from '@/stores/remote-auth.store'
-import type { RemoteApprovalView, RemoteCommandView } from '@hqagent/protocol'
+import type { RemoteApprovalView, RemoteCommandView, RemoteConversationView } from '@hqagent/protocol'
 import {
   HqButton,
   HqBadge,
@@ -16,15 +16,18 @@ import {
   Send,
   Laptop,
   AlertTriangle,
+  AlertCircle,
   Pause,
   Play,
   XCircle,
+  X,
   RotateCcw,
   Clock,
   ShieldAlert,
   LogOut,
   Undo2,
   MessageSquare,
+  MoreHorizontal,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -42,6 +45,50 @@ const newTitle = ref('')
 const newSceneId = ref('analyze')
 const isCreating = ref(false)
 
+// Conversation Settings State
+const isConvSettingsOpen = ref(false)
+const isPcOnlyConfirmOpen = ref(false)
+const settingsTarget = ref<RemoteConversationView | null>(null)
+const settingsTitle = ref('')
+const settingsArchived = ref(false)
+const settingsVisibility = ref<'both' | 'pc_only' | 'mobile_only'>('both')
+const isSavingSettings = ref(false)
+
+function openConversationSettings(conv: RemoteConversationView) {
+  settingsTarget.value = conv
+  settingsTitle.value = conv.title
+  settingsArchived.value = conv.archived ?? false
+  settingsVisibility.value = conv.visibility || 'both'
+  isConvSettingsOpen.value = true
+}
+
+async function handleSaveSettings() {
+  if (!settingsTarget.value) return
+  if (settingsVisibility.value === 'pc_only' && settingsTarget.value.visibility !== 'pc_only') {
+    isPcOnlyConfirmOpen.value = true
+    return
+  }
+  await executeSaveSettings()
+}
+
+async function executeSaveSettings() {
+  if (!settingsTarget.value) return
+  isSavingSettings.value = true
+  try {
+    await chatStore.updateConversationSettings(settingsTarget.value.conversationId, {
+      title: settingsTitle.value.trim(),
+      archived: settingsArchived.value,
+      visibility: settingsVisibility.value,
+    })
+    isConvSettingsOpen.value = false
+    isPcOnlyConfirmOpen.value = false
+  } catch {
+    // Error captured in chatStore.actionError
+  } finally {
+    isSavingSettings.value = false
+  }
+}
+
 // Withdrawal dialog
 const commandToWithdraw = ref<RemoteCommandView | null>(null)
 const isWithdrawing = ref(false)
@@ -57,9 +104,34 @@ function handleVisibilityChange() {
   }
 }
 
+async function loadMoreMessages() {
+  if (!messageContainerRef.value || chatStore.isLoadingEarlierMessages || !chatStore.hasMoreMessages) return
+  const container = messageContainerRef.value
+  const previousScrollHeight = container.scrollHeight
+  const previousScrollTop = container.scrollTop
+
+  await chatStore.loadEarlierMessages()
+  await nextTick()
+
+  const heightDiff = container.scrollHeight - previousScrollHeight
+  container.scrollTop = previousScrollTop + heightDiff
+}
+
+function handleScroll() {
+  if (!messageContainerRef.value) return
+  if (messageContainerRef.value.scrollTop <= 40 && chatStore.hasMoreMessages && !chatStore.isLoadingEarlierMessages) {
+    void loadMoreMessages()
+  }
+}
+
 onMounted(async () => {
   await chatStore.fetchDevices()
-  await chatStore.fetchConversations()
+  const workerIdQuery = router?.currentRoute?.value?.query?.workerId as string | undefined
+  if (workerIdQuery) {
+    await chatStore.selectDevice(workerIdQuery)
+  } else {
+    await chatStore.fetchConversations()
+  }
   chatStore.startPolling(3000)
   chatStore.startDevicePolling(15000)
   if (typeof document !== 'undefined') {
@@ -140,16 +212,33 @@ async function handleSendMessage() {
   const text = inputText.value.trim()
   if (!text || chatStore.isSending) return
 
-  inputText.value = ''
-  await chatStore.sendMessage(text, sessionMode.value)
-  scrollToBottom()
+  if (!chatStore.isWorkerOnline) {
+    chatStore.sendError = '设备离线，发送失败'
+    return
+  }
+  if (chatStore.isConversationBusy) {
+    chatStore.sendError = '当前电脑正在执行，请等待完成'
+    return
+  }
+
+  try {
+    await chatStore.sendMessage(text, sessionMode.value)
+    inputText.value = ''
+    scrollToBottom()
+  } catch {
+    // Input retained on failure
+  }
 }
 
 async function handleCreateConversation() {
   if (!newTitle.value.trim() || !chatStore.activeDevice) return
+  if (!chatStore.isWorkerOnline) {
+    chatStore.actionError = '设备离线，发送失败'
+    return
+  }
   isCreating.value = true
   try {
-    const newConv = await chatStore.createConversation({
+    const res = await chatStore.createConversation({
       targetWorkerId: chatStore.activeDevice.workerId,
       title: newTitle.value.trim(),
       workspaceId: chatStore.catalog?.workspaces[0]?.workspaceId || 'workspace_demo',
@@ -157,11 +246,13 @@ async function handleCreateConversation() {
       sceneVersion: 1,
       workerStoreId: chatStore.activeDevice.workerStoreId,
     })
-    if (newConv) {
+    if (res) {
       isNewConversationDialogOpen.value = false
       newTitle.value = ''
       isMobileSidebarOpen.value = false
     }
+  } catch {
+    // Handled in store
   } finally {
     isCreating.value = false
   }
@@ -169,7 +260,15 @@ async function handleCreateConversation() {
 
 async function handleControl(action: 'pause' | 'resume' | 'cancel' | 'retry') {
   if (!chatStore.activeRun) return
-  await chatStore.controlRun(chatStore.activeRun.runId, action)
+  if (!chatStore.isWorkerOnline) {
+    chatStore.actionError = '设备离线，发送失败'
+    return
+  }
+  try {
+    await chatStore.controlRun(chatStore.activeRun.runId, action)
+  } catch {
+    // Handled in store
+  }
 }
 
 function openWithdrawDialog(cmd: RemoteCommandView) {
@@ -194,7 +293,15 @@ async function confirmWithdraw() {
 }
 
 async function handleApproval(approval: RemoteApprovalView, decision: 'approve' | 'reject') {
-  await chatStore.decideApproval(approval.approvalId, decision)
+  if (!chatStore.isWorkerOnline) {
+    chatStore.actionError = '设备离线，发送失败'
+    return
+  }
+  try {
+    await chatStore.decideApproval(approval.approvalId, decision)
+  } catch {
+    // Handled in store
+  }
 }
 
 async function handleLogout() {
@@ -258,13 +365,19 @@ function getExecutionStatusLabel(status?: string): string {
         </button>
 
         <div class="min-w-0 flex items-center gap-2">
-          <span class="font-bold text-sm text-text truncate max-w-[140px] sm:max-w-xs">
-            {{ chatStore.activeConversation?.title || '远程控制台' }}
-          </span>
+          <button
+            type="button"
+            class="font-bold text-sm text-text truncate max-w-[140px] sm:max-w-xs hover:text-primary transition-colors flex items-center gap-1 cursor-pointer text-left"
+            title="切换电脑"
+            @click="router.push('/remote/devices')"
+          >
+            <span>{{ chatStore.selectedDevice?.deviceName || '我的电脑' }}</span>
+            <span class="text-xs text-text-muted font-normal truncate">/ {{ chatStore.activeConversation?.title || '对话' }}</span>
+          </button>
 
           <!-- Layer 1: Transport Status (Worker Online/Offline badge) -->
           <HqBadge
-            :variant="chatStore.isWorkerOnline ? 'success' : 'warning'"
+            :variant="chatStore.isWorkerOnline ? 'success' : 'neutral'"
             class="shrink-0 text-[10px]"
           >
             {{ chatStore.isWorkerOnline ? '电脑在线' : '电脑离线' }}
@@ -325,35 +438,111 @@ function getExecutionStatusLabel(status?: string): string {
           </HqButton>
         </div>
 
-        <!-- Conversation list -->
-        <div class="flex-1 overflow-y-auto p-2 space-y-1">
+        <!-- Workspace-grouped conversation list -->
+        <div class="flex-1 overflow-y-auto p-2 space-y-3">
+          <!-- Pending Creation Placeholder (F1) -->
           <div
-            v-if="chatStore.conversations.length === 0"
+            v-if="chatStore.pendingConversation"
+            class="p-2.5 rounded-lg text-xs border border-dashed transition-all"
+            :class="[
+              chatStore.pendingConversation.status === 'creating'
+                ? 'bg-primary/5 border-primary/30 text-text-muted opacity-80 cursor-not-allowed select-none'
+                : 'bg-danger/10 border-danger/30 text-danger'
+            ]"
+          >
+            <div v-if="chatStore.pendingConversation.status === 'creating'" class="flex items-center gap-2">
+              <Clock class="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
+              <div class="min-w-0 flex-1">
+                <div class="font-medium text-text truncate">{{ chatStore.pendingConversation.title }}</div>
+                <div class="text-[11px] text-primary/80">正在电脑上创建…</div>
+              </div>
+            </div>
+            <div v-else class="flex items-center justify-between gap-2 w-full">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <AlertCircle class="w-3.5 h-3.5 text-danger shrink-0" />
+                <span class="truncate">创建失败，请重试</span>
+              </div>
+              <button
+                type="button"
+                class="p-1 text-danger hover:opacity-80 shrink-0 cursor-pointer"
+                title="关闭"
+                @click="chatStore.clearPendingConversation()"
+              >
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="chatStore.conversations.length === 0 && !chatStore.pendingConversation"
             class="py-8 text-center text-xs text-text-muted"
           >
             暂无对话，点击上方新建
           </div>
 
-          <button
-            v-for="conv in chatStore.conversations"
-            :key="conv.conversationId"
-            type="button"
-            class="w-full text-left p-2.5 rounded-lg text-xs transition-colors flex flex-col gap-1 cursor-pointer"
-            :class="[
-              conv.conversationId === chatStore.activeConversationId
-                ? 'bg-primary/10 text-primary font-medium border border-primary/20'
-                : 'text-text hover:bg-panel-hover border border-transparent',
-            ]"
-            @click="
-              chatStore.selectConversation(conv.conversationId);
-              isMobileSidebarOpen = false;
-            "
+          <div
+            v-for="group in chatStore.conversationsByWorkspace"
+            :key="group.workspaceId"
+            class="space-y-1"
           >
-            <span class="truncate font-medium">{{ conv.title }}</span>
-            <span class="text-[10px] text-text-muted truncate">
-              场景: {{ conv.sceneId }}
-            </span>
-          </button>
+            <div class="px-2 py-1 text-[11px] font-medium text-text-muted flex items-center justify-between">
+              <span class="truncate">{{ group.workspaceName }}</span>
+              <span class="text-[10px] tabular-nums">{{ group.conversations.length }}</span>
+            </div>
+
+            <div
+              v-for="conv in group.conversations"
+              :key="conv.conversationId"
+              class="w-full text-left p-2.5 rounded-lg text-xs transition-colors flex items-center justify-between gap-2 cursor-pointer group"
+              :class="[
+                conv.conversationId === chatStore.activeConversationId
+                  ? 'bg-primary/10 text-primary font-medium border border-primary/20'
+                  : 'text-text hover:bg-panel-hover border border-transparent',
+              ]"
+              @click="
+                chatStore.selectConversation(conv.conversationId);
+                isMobileSidebarOpen = false;
+              "
+            >
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="truncate font-medium">{{ conv.title }}</span>
+                  <span
+                    v-if="conv.visibility === 'mobile_only'"
+                    class="shrink-0 text-[9px] px-1 py-0.5 rounded bg-warning/15 text-warning border border-warning/25"
+                  >
+                    仅手机
+                  </span>
+                  <span
+                    v-else-if="conv.visibility === 'pc_only'"
+                    class="shrink-0 text-[9px] px-1 py-0.5 rounded bg-muted text-text-muted border border-border"
+                  >
+                    仅电脑
+                  </span>
+                  <span
+                    v-if="conv.busy"
+                    class="shrink-0 text-[9px] px-1 py-0.5 rounded bg-warning/15 text-warning"
+                  >
+                    忙碌
+                  </span>
+                </div>
+                <div class="flex items-center gap-2 text-[10px] text-text-muted mt-0.5">
+                  <span>场景: {{ conv.sceneId }}</span>
+                  <span v-if="conv.archived">(已归档)</span>
+                </div>
+              </div>
+
+              <!-- Conversation Settings Button -->
+              <button
+                type="button"
+                class="p-1 rounded text-text-muted hover:text-text hover:bg-panel opacity-60 group-hover:opacity-100 transition-opacity shrink-0"
+                title="对话设置"
+                @click.stop="openConversationSettings(conv)"
+              >
+                <MoreHorizontal class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="p-3 border-t border-border flex items-center justify-between text-xs text-text-muted">
@@ -395,7 +584,7 @@ function getExecutionStatusLabel(status?: string): string {
 
         <!-- 3-LAYER STATUS DASHBOARD BANNER -->
         <section
-          v-if="chatStore.activeRun || !chatStore.isWorkerOnline"
+          v-if="chatStore.activeRun || !chatStore.isWorkerOnline || (latestControlCommand && latestControlCommand.controlResult)"
           class="p-2.5 bg-panel border-b border-border shrink-0 space-y-2 text-xs"
         >
           <!-- Three Layers Display -->
@@ -412,7 +601,7 @@ function getExecutionStatusLabel(status?: string): string {
                   class="font-semibold"
                   :class="chatStore.isWorkerOnline ? 'text-text' : 'text-warning'"
                 >
-                  {{ chatStore.isWorkerOnline ? '电脑在线' : '电脑离线，指令已排队' }}
+                  {{ chatStore.isWorkerOnline ? '电脑在线' : '电脑离线' }}
                 </span>
               </div>
             </div>
@@ -584,7 +773,21 @@ function getExecutionStatusLabel(status?: string): string {
         <div
           ref="messageContainerRef"
           class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3"
+          @scroll="handleScroll"
         >
+          <!-- Earlier messages loader -->
+          <div v-if="chatStore.hasMoreMessages" class="py-2 text-center text-xs text-text-muted">
+            <button
+              v-if="!chatStore.isLoadingEarlierMessages"
+              type="button"
+              class="text-primary hover:underline cursor-pointer"
+              @click="loadMoreMessages"
+            >
+              加载更早的消息
+            </button>
+            <span v-else>正在加载更早的消息...</span>
+          </div>
+
           <div
             v-if="chatStore.messages.length === 0"
             class="h-full flex items-center justify-center"
@@ -630,14 +833,13 @@ function getExecutionStatusLabel(status?: string): string {
                 <span class="font-medium text-text">{{ cmd.status === 'accepted' ? '指令处理中' : '指令排队中' }}</span>
               </div>
 
-              <!-- Mandatory: display '电脑离线，指令已排队' when offline, never running -->
               <HqBadge
                 :variant="cmd.deliveryState === 'queued_offline' || !chatStore.isWorkerOnline ? 'warning' : cmd.status === 'accepted' ? 'success' : 'info'"
                 class="text-[10px]"
               >
                 {{
                   cmd.deliveryState === 'queued_offline' || !chatStore.isWorkerOnline
-                    ? '电脑离线，指令已排队'
+                    ? '电脑离线'
                     : cmd.status === 'accepted'
                       ? '已接单'
                       : '已投递到云端'
@@ -663,6 +865,15 @@ function getExecutionStatusLabel(status?: string): string {
 
         <!-- Composer -->
         <footer class="p-2.5 sm:p-3 bg-panel border-t border-border shrink-0 space-y-2">
+          <!-- Busy lock banner -->
+          <div
+            v-if="chatStore.isConversationBusy"
+            class="p-1.5 px-2 rounded bg-warning/15 border border-warning/30 text-[11px] text-warning flex items-center gap-1.5"
+          >
+            <Clock class="w-3.5 h-3.5 shrink-0 animate-spin" />
+            <span>当前电脑正在执行，请等待完成</span>
+          </div>
+
           <!-- Interrupted previous run alert -->
           <div
             v-if="chatStore.activeRun && (chatStore.activeRun.status === 'cancelled' || chatStore.activeRun.status === 'failed')"
@@ -699,7 +910,7 @@ function getExecutionStatusLabel(status?: string): string {
             </div>
 
             <span class="text-[10px]">
-              {{ chatStore.isWorkerOnline ? '电脑在线就绪' : '电脑离线 (排队投递)' }}
+              {{ chatStore.isWorkerOnline ? '电脑在线就绪' : '电脑离线' }}
             </span>
           </div>
 
@@ -710,7 +921,7 @@ function getExecutionStatusLabel(status?: string): string {
               rows="1"
               placeholder="输入给电脑上 Agent 的指令..."
               class="flex-1 py-2 px-3 text-xs sm:text-sm bg-bg-app border border-border rounded-xl text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors resize-none max-h-24"
-              :disabled="chatStore.isSending"
+              :disabled="chatStore.isSending || chatStore.isConversationBusy"
               @keydown.enter.exact.prevent="handleSendMessage"
             />
 
@@ -718,7 +929,7 @@ function getExecutionStatusLabel(status?: string): string {
               variant="primary"
               class="h-9 px-3.5 rounded-xl shrink-0"
               :loading="chatStore.isSending"
-              :disabled="!inputText.trim() || chatStore.isSending"
+              :disabled="!inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
               @click="handleSendMessage"
             >
               <Send class="w-4 h-4" />
@@ -822,6 +1033,109 @@ function getExecutionStatusLabel(status?: string): string {
             @click="confirmWithdraw"
           >
             确认撤回
+          </HqButton>
+        </div>
+      </template>
+    </HqDialog>
+
+    <!-- Conversation Settings Dialog -->
+    <HqDialog
+      :open="isConvSettingsOpen"
+      title="对话设置"
+      @close="isConvSettingsOpen = false"
+    >
+      <div class="space-y-4 text-xs text-text">
+        <div class="space-y-1.5">
+          <label for="settings-title" class="block font-medium text-text-secondary">对话标题</label>
+          <input
+            id="settings-title"
+            v-model="settingsTitle"
+            type="text"
+            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
+          />
+        </div>
+
+        <div class="space-y-1.5">
+          <label class="block font-medium text-text-secondary">可见性</label>
+          <div class="space-y-2">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" v-model="settingsVisibility" value="both" class="accent-primary" />
+              <span>两端均可见 (默认)</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" v-model="settingsVisibility" value="pc_only" class="accent-primary" />
+              <span>仅电脑可见</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" v-model="settingsVisibility" value="mobile_only" class="accent-primary" />
+              <span>仅手机可见</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-border">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" v-model="settingsArchived" class="accent-primary" />
+            <span>归档此对话</span>
+          </label>
+        </div>
+
+        <div v-if="chatStore.settingsNotice" class="text-xs text-primary/80 bg-primary/10 p-2 rounded">
+          {{ chatStore.settingsNotice }}
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="flex items-center justify-end gap-2">
+          <HqButton
+            variant="ghost"
+            size="sm"
+            :disabled="isSavingSettings"
+            @click="isConvSettingsOpen = false"
+          >
+            取消
+          </HqButton>
+          <HqButton
+            variant="primary"
+            size="sm"
+            :loading="isSavingSettings"
+            @click="handleSaveSettings"
+          >
+            保存
+          </HqButton>
+        </div>
+      </template>
+    </HqDialog>
+
+    <!-- PC Only Confirmation Dialog -->
+    <HqDialog
+      :open="isPcOnlyConfirmOpen"
+      title="设置为仅电脑可见确认"
+      @close="isPcOnlyConfirmOpen = false"
+    >
+      <div class="space-y-3 text-xs text-text">
+        <p class="leading-relaxed">
+          设置为『仅电脑』后，该对话将从手机端列表中移除，只能在电脑端查看和继续。确认设置？
+        </p>
+      </div>
+
+      <template #footer>
+        <div class="flex items-center justify-end gap-2">
+          <HqButton
+            variant="ghost"
+            size="sm"
+            :disabled="isSavingSettings"
+            @click="isPcOnlyConfirmOpen = false"
+          >
+            取消
+          </HqButton>
+          <HqButton
+            variant="danger"
+            size="sm"
+            :loading="isSavingSettings"
+            @click="executeSaveSettings"
+          >
+            确认设置
           </HqButton>
         </div>
       </template>

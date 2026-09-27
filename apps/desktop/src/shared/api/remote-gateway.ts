@@ -17,7 +17,8 @@ import type {
   RemoteConversationView,
   RemoteQueuedReceipt,
   RemoteSendMessageInput,
-  RemoteMessagePage,
+  RemoteSyncConversationInput,
+  RemoteSyncMessagePage,
   RemoteRunPage,
   RemoteRunView,
   RemoteRunControlInput,
@@ -265,22 +266,47 @@ export class RemoteGateway implements IRemoteGateway {
 
   // --- Conversations ---
 
-  async listConversations(cursor?: string, limit?: number): Promise<RemoteConversationPage> {
+  async listConversations(params?: {
+    workerId?: string
+    workspaceId?: string
+    cursor?: string
+    limit?: number
+  }): Promise<RemoteConversationPage> {
     return this.fetchApi<RemoteConversationPage>('/api/v2/conversations', {
       method: 'GET',
-      params: { cursor, limit },
+      params: {
+        workerId: params?.workerId,
+        workspaceId: params?.workspaceId,
+        cursor: params?.cursor,
+        limit: params?.limit,
+      },
     })
   }
 
   async createConversation(
     input: RemoteCreateConversationInput,
     idempotencyKey?: string
-  ): Promise<RemoteConversationView> {
-    return this.fetchApi<RemoteConversationView>('/api/v2/conversations', {
+  ): Promise<RemoteQueuedReceipt> {
+    return this.fetchApi<RemoteQueuedReceipt>('/api/v2/conversations', {
       method: 'POST',
       body: input,
       idempotencyKey,
     })
+  }
+
+  async updateConversation(
+    conversationId: string,
+    input: RemoteSyncConversationInput,
+    idempotencyKey?: string
+  ): Promise<RemoteQueuedReceipt> {
+    return this.fetchApi<RemoteQueuedReceipt>(
+      `/api/v2/conversations/${encodeURIComponent(conversationId)}`,
+      {
+        method: 'PATCH',
+        body: input,
+        idempotencyKey,
+      }
+    )
   }
 
   async getConversation(conversationId: string): Promise<RemoteConversationView> {
@@ -315,12 +341,12 @@ export class RemoteGateway implements IRemoteGateway {
     )
   }
 
-  async listMessages(conversationId: string, cursor?: string, limit?: number): Promise<RemoteMessagePage> {
-    return this.fetchApi<RemoteMessagePage>(
+  async listMessages(conversationId: string, before?: string, limit?: number): Promise<RemoteSyncMessagePage> {
+    return this.fetchApi<RemoteSyncMessagePage>(
       `/api/v2/conversations/${encodeURIComponent(conversationId)}/messages`,
       {
         method: 'GET',
-        params: { cursor, limit },
+        params: { before, limit },
       }
     )
   }
