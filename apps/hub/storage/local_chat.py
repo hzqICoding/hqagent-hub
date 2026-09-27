@@ -37,6 +37,7 @@ def uid(prefix: str) -> str:
 class LocalChatRepository:
     def __init__(self, database: Database) -> None:
         self.database = database
+        self.busy_state = None
         self.role_templates = LocalRoleTemplateRepository(database)
         self._role_catalog = BuiltinCatalog.load()
         self._seed_scenes()
@@ -252,6 +253,7 @@ class LocalChatRepository:
             raise HubError("INTERNAL", "对话元数据版本无效", detail={"version": version})
         return value.model_copy(update={
             "authority": value.authority or "local",
+            "visibility": value.visibility or "both",
             "version": version,
             "archived": bool(value.archived),
             "last_run_id": run_id or value.last_run_id,
@@ -270,7 +272,7 @@ class LocalChatRepository:
             (conversation_id,),
         ).fetchone()
 
-    def conversations(self) -> list[LocalConversationView]:
+    def conversations(self, *, include_hidden: bool = False, workspace_id: str | None = None) -> list[LocalConversationView]:
         with self.database.locked_connection() as db:
             rows = db.execute(
                 "SELECT c.payload_json,r.run_id,COALESCE(t.status,r.status) FROM local_conversations c "
@@ -280,14 +282,18 @@ class LocalChatRepository:
                 "LEFT JOIN tasks t ON t.task_id=r.task_id "
                 "ORDER BY c.updated_at DESC"
             ).fetchall()
-        return [self._conversation_view(row[0], row[1], row[2]) for row in rows]
+        values = [self._conversation_view(row[0], row[1], row[2]) for row in rows]
+        return [self.busy_state.decorate(v) if self.busy_state else v for v in values
+                if (include_hidden or str(v.visibility) != "mobile_only")
+                and (workspace_id is None or v.workspace_id == workspace_id)]
 
     def conversation(self, conversation_id: str) -> LocalConversationView:
         with self.database.locked_connection() as db:
             row = self._conversation_row(db, conversation_id)
         if row is None:
             raise HubError("NOT_FOUND", "对话不存在")
-        return self._conversation_view(row[0], row[1], row[2])
+        view = self._conversation_view(row[0], row[1], row[2])
+        return self.busy_state.decorate(view) if self.busy_state else view
 
     def create_conversation(self, value: CreateLocalConversationInput, key: str) -> LocalConversationView:
         self.scene(str(value.scene_id))
@@ -306,14 +312,15 @@ class LocalChatRepository:
         return LocalConversationView.model_validate(result)
 
     def update_conversation(self, conversation_id: str, value: UpdateLocalConversationInput,
-                            key: str) -> LocalConversationView:
-        self.assert_local_authority(conversation_id)
-        supplied = value.model_fields_set & {"title", "archived"}
+                            key: str, *, transaction: Transaction | None = None) -> LocalConversationView:
+        supplied = value.model_fields_set & {"title", "archived", "visibility"}
         title = value.title.strip() if value.title is not None else None
 
         def update(tx: Transaction) -> dict:
             if not supplied:
-                raise HubError("VALIDATION_FAILED", "至少提供title或archived")
+                raise HubError("VALIDATION_FAILED", "至少提供title、archived或visibility")
+            if "visibility" in supplied and value.visibility is None:
+                raise HubError("VALIDATION_FAILED", "visibility不能为null")
             if value.expected_version < 1:
                 raise HubError("VALIDATION_FAILED", "expectedVersion必须大于等于1")
             if "title" in supplied and value.title is None:
@@ -330,20 +337,21 @@ class LocalChatRepository:
                 raise HubError("CONFLICT", "对话已更新，请刷新后重试",
                                detail={"currentVersion": current.version})
             if value.archived is True:
-                active = tx.connection.execute(
+                active = (conversation_id in self.busy_state.ids(tx)) if self.busy_state and self.busy_state.enabled() else tx.connection.execute(
                     "SELECT COALESCE(t.status,r.status) FROM local_runs r "
                     "LEFT JOIN tasks t ON t.task_id=r.task_id WHERE r.conversation_id=? "
                     "AND COALESCE(t.status,r.status) "
                     "IN ('queued','running','waiting_approval','paused') LIMIT 1",
                     (conversation_id,),
                 ).fetchone()
-                if active is not None:
+                if active is not None and active is not False:
                     raise HubError("CONFLICT", "对话仍有未完成任务，不能归档",
-                                   detail={"runStatus": active[0]})
+                                   detail={"runStatus": active[0]} if not isinstance(active, bool) else None)
             stamp = now()
             changed = current.model_copy(update={
                 "title": title if "title" in supplied else current.title,
                 "archived": value.archived if "archived" in supplied else current.archived,
+                "visibility": value.visibility if "visibility" in supplied else current.visibility,
                 "version": current.version + 1,
                 "updated_at": stamp,
             })
@@ -355,6 +363,8 @@ class LocalChatRepository:
             return changed.model_dump(mode="json", by_alias=True, exclude_none=True)
 
         request = value.model_dump(mode="json", by_alias=True, exclude_unset=True)
+        if transaction is not None:
+            return LocalConversationView.model_validate(update(transaction))
         result, _ = self.command(f"conversation.update:{conversation_id}", key, request, update)
         return LocalConversationView.model_validate(result)
 
@@ -363,8 +373,9 @@ class LocalChatRepository:
             raise HubError("CONFLICT", "对话已归档，请先恢复后再执行")
 
     def assert_local_authority(self, conversation_id: str) -> None:
-        if str(self.conversation(conversation_id).authority) == "remote":
-            raise HubError("CONVERSATION_AUTHORITY_MISMATCH", "远程对话只能通过远程服务提交命令")
+        # D48: retained internal call sites only validate existence. Authority is
+        # provenance; it cannot make a computer-owned conversation read-only.
+        self.conversation(conversation_id)
 
     def assert_local_task(self, task_id: str) -> None:
         seen = set()
@@ -408,7 +419,7 @@ class LocalChatRepository:
         return [dict(row) for row in rows]
 
     def enqueue(self, conversation_id: str, value: SendLocalMessageInput, key: str, *,
-                transaction: Transaction | None = None) -> LocalMessageReceipt:
+                transaction: Transaction | None = None, legacy: bool = False) -> LocalMessageReceipt:
         # Only the internal remote admission path supplies a transaction.
         if transaction is None:
             self.assert_local_authority(conversation_id)
@@ -432,6 +443,8 @@ class LocalChatRepository:
                 if prior[0] != digest:
                     raise HubError("IDEMPOTENCY_MISMATCH", "相同clientMessageId不能用于不同内容")
                 return {**json.loads(prior[1]), "duplicate": True}
+            if self.busy_state is not None and not legacy:
+                self.busy_state.require_idle(tx, conversation_id)
             queued = tx.connection.execute("SELECT COUNT(*) FROM local_runs WHERE conversation_id=? AND status='queued'", (conversation_id,)).fetchone()[0]
             if queued >= 20:
                 raise HubError("TASK_ACTION_INVALID", "排队消息过多，请等待当前任务完成")
@@ -447,6 +460,8 @@ class LocalChatRepository:
             receipt = {"commandId": uid("command"), "conversationId": conversation_id,
                     "messageId": message_id, "runId": run_id, "status": "queued", "duplicate": False}
             tx.connection.execute("INSERT INTO local_commands VALUES(?,?,?,?)", (alias_route, value.client_message_id, digest, json.dumps(receipt, ensure_ascii=False)))
+            if self.busy_state is not None and not legacy:
+                self.busy_state.record_snapshot(tx)
             return receipt
         if transaction is not None:
             return LocalMessageReceipt.model_validate(create(transaction))
@@ -476,8 +491,31 @@ class LocalChatRepository:
         return [dict(row) for row in rows]
 
     def next_run(self, conversation_id: str) -> dict | None:
+        if self.busy_state is not None and self.busy_state.enabled():
+            with self.database.locked_connection() as db:
+                rows = db.execute("SELECT r.*,m.sequence AS message_sequence FROM local_runs r "
+                    "JOIN local_messages m ON m.message_id=r.message_id WHERE r.conversation_id=? "
+                    "AND r.status NOT IN ('succeeded','failed','cancelled') ORDER BY m.sequence", (conversation_id,)).fetchall()
+                for row in rows:
+                    state = self.busy_state.observe(row)
+                    if state["recoveryRequired"] or state["status"] == "paused":
+                        continue
+                    gate = db.execute("SELECT state FROM remote2_gates WHERE run_id=?", (row["run_id"],)).fetchone()
+                    # A recovery gate never schedules a fresh execution. Once
+                    # local recovery explicitly resumed an existing Task and
+                    # cleared its structured recovery flag, observe that Task
+                    # again so its terminal reply reaches the original run.
+                    if gate and gate[0] != "granted" and not (row["task_id"] and gate[0] == "recovery"):
+                        return None
+                    return dict(row)
+            return None
         with self.database.locked_connection() as db:
             row = db.execute("SELECT r.*,m.sequence AS message_sequence FROM local_runs r JOIN local_messages m ON m.message_id=r.message_id WHERE r.conversation_id=? AND r.status NOT IN ('succeeded','failed','cancelled') ORDER BY m.sequence LIMIT 1", (conversation_id,)).fetchone()
+        if row and self.busy_state is not None:
+            with self.database.locked_connection() as db:
+                gate = db.execute("SELECT state FROM remote2_gates WHERE run_id=?", (row["run_id"],)).fetchone()
+            if gate and gate[0] != "granted":
+                return None
         return dict(row) if row else None
 
     def run_text(self, run_id: str) -> str:
@@ -489,6 +527,8 @@ class LocalChatRepository:
         with self.database.transaction() as tx:
             tx.connection.execute("UPDATE local_runs SET status=?,task_id=COALESCE(?,task_id),error=?,updated_at=? WHERE run_id=?",
                                   (status, task_id, error, now(), run_id))
+            if self.busy_state is not None:
+                self.busy_state.record_snapshot(tx)
 
     def reply(self, run_id: str, text: str) -> None:
         run = self.run_record(run_id)
@@ -498,6 +538,7 @@ class LocalChatRepository:
                                   (uid("message"), run["conversation_id"], seq, "assistant", text, run_id, now()))
 
     def complete_run(self, run_id: str, status: str, text: str, *, error: str | None = None,
+                     error_code: str | None = None,
                      transaction: Transaction | None = None) -> None:
         """A terminal projection and its visible answer must commit together."""
         def complete(tx):
@@ -505,14 +546,25 @@ class LocalChatRepository:
             if row is None:
                 raise HubError("NOT_FOUND", "执行轮次不存在")
             stamp = now()
+            if error_code is not None:
+                tx.connection.execute("INSERT INTO hub_state(key,value_json,updated_at) VALUES(?,?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
+                    ("local-run-failure:" + run_id, json.dumps({"code": error_code}), stamp))
             tx.connection.execute("UPDATE local_runs SET status=?,error=?,updated_at=? WHERE run_id=?", (status, error, stamp, run_id))
             seq = tx.connection.execute("SELECT COALESCE(MAX(sequence),0)+1 FROM local_messages WHERE conversation_id=?", (row[0],)).fetchone()[0]
             tx.connection.execute("INSERT OR IGNORE INTO local_messages VALUES(?,?,?,?,?,?,?)", (uid("message"), row[0], seq, "assistant", text, run_id, stamp))
+            if self.busy_state is not None:
+                self.busy_state.record_snapshot(tx)
         if transaction is not None:
             complete(transaction)
         else:
             with self.database.transaction() as tx:
                 complete(tx)
+
+    def failure_code(self, run_id: str) -> str | None:
+        with self.database.locked_connection() as db:
+            row = db.execute("SELECT value_json FROM hub_state WHERE key=?", ("local-run-failure:" + run_id,)).fetchone()
+        return json.loads(row[0])["code"] if row else None
 
     def request_cancel(self, run_id: str, transaction: Transaction) -> None:
         transaction.connection.execute("INSERT INTO hub_state(key,value_json,updated_at) VALUES(?, '{}', ?) ON CONFLICT(key) DO NOTHING", (f"local-cancel:{run_id}", now()))

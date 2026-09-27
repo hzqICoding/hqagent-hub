@@ -66,6 +66,10 @@ class RemoteRepository:
             tx.connection.execute("UPDATE local_runs SET status='paused',error=? WHERE conversation_id IN "
                 "(SELECT conversation_id FROM remote_conversations) AND status NOT IN ('succeeded','failed','cancelled')",
                 ("远程存储恢复后执行事实待核对",))
+            tx.connection.execute("UPDATE local_runs SET status='paused',error=? WHERE run_id IN "
+                "(SELECT run_id FROM remote2_delivery WHERE run_id IS NOT NULL) AND status NOT IN ('succeeded','failed','cancelled')",
+                ("远程存储恢复后执行事实待核对",))
+            tx.connection.execute("UPDATE remote2_gates SET state='recovery' WHERE state IN ('provisional','granted')")
             link = self.get("link", tx)
             if link["view"]["state"] in {"paired", "frozen", "revoked"}:
                 self.set_view(tx, {**link["view"], "state": "frozen", "connectionStatus": "offline", "lastErrorCode": "REMOTE_STORE_CHANGED"})
@@ -75,6 +79,7 @@ class RemoteRepository:
     def allow_dispatch(self, record):
         with self.database.locked_connection() as db:
             remote = db.execute("SELECT 1 FROM remote_conversations WHERE conversation_id=?", (record["conversation_id"],)).fetchone()
+            remote = remote or db.execute("SELECT 1 FROM remote2_delivery WHERE run_id=?", (record["run_id"],)).fetchone()
         if not remote:
             return True
         return self.check_continuity() and not self.get("identity").get("reconciliationRequired", False)
@@ -189,7 +194,7 @@ class RemoteRepository:
     def base(self, kind, seq, identity):
         if seq > MAX_SEQ:
             raise HubError("REMOTE_ACK_CONFLICT", "持久事件序号已耗尽，需要更换存储世代")
-        return {"type": kind, "wireRevision": WIRE_REVISION, "eventId": uid("remote"),
+        return {"type": kind, "wireRevision": identity.get("wireRevision", WIRE_REVISION), "eventId": uid("remote"),
             "workerId": self.get("link")["view"]["workerId"], "workerStoreId": identity["store"],
             "workerEpoch": identity["epoch"], "seq": seq, "occurredAt": now()}
 
@@ -219,7 +224,7 @@ class RemoteRepository:
     def frames(self):
         identity = self.get("identity")
         with self.database.locked_connection() as db:
-            return [r[0] for r in db.execute("SELECT frame_json FROM remote_outbox WHERE store_id=? ORDER BY seq LIMIT 200", (identity["store"],))]
+            return [r[0] for r in db.execute("SELECT frame_json FROM remote_outbox WHERE store_id=? AND frame_json<>'{}' ORDER BY seq LIMIT 200", (identity["store"],))]
 
     def ack(self, position):
         if not self.check_continuity():
@@ -238,7 +243,7 @@ class RemoteRepository:
         with self.database.locked_connection() as db:
             for row in db.execute("SELECT frame_json FROM remote_outbox WHERE store_id=? AND seq>?", (identity["store"], position["seq"])):
                 raw = json.loads(row[0])
-                if raw["type"] == "events.omitted" and raw["firstSeq"] <= position["seq"]:
+                if raw.get("type") == "events.omitted" and raw["firstSeq"] <= position["seq"]:
                     self.freeze("REMOTE_ACK_CONFLICT")
                     raise HubError("REMOTE_ACK_CONFLICT", "确认位置截断了不可变覆盖记录")
         with self.database.transaction() as tx:

@@ -115,6 +115,7 @@ class TaskService:
         self.idempotency = IdempotencyRepository(database, ttl_hours=None)
         self._pumps: dict[str, asyncio.Task[None]] = {}
         self._outcomes: dict[str, Any] = {}
+        self._dispatching: set[str] = set()
         self._task_locks: dict[str, asyncio.Lock] = {}
         self.execution_commit_observer = None
 
@@ -631,10 +632,13 @@ class TaskService:
             if not all(_text(nodes[dep].status) == NodeStatus.SUCCEEDED.value for dep in item["dependsOn"]):
                 continue
             try:
+                self._dispatching.add(task_id)
                 await self._dispatch_node(task_id, node, item["roleId"], spec)
             except (HubError, OrchestrationError) as error:
                 # Preparation failures belong to this node, not its completed predecessor.
                 await self._fail_node(task_id, self._node(task_id, node.id), str(error))
+            finally:
+                self._dispatching.discard(task_id)
             return
         if nodes and all(_text(node.status) == NodeStatus.SUCCEEDED.value for node in nodes.values()):
             self.repository.save(task.model_copy(update={"status": TaskStatus.SUCCEEDED, "updated_at": _now()}))
@@ -1341,6 +1345,17 @@ class TaskService:
             return {"evidenceAvailable": False}
         return {"evidenceAvailable": True, **{key: spec.get(key) for key in (
             "recoveryRequired", "pauseRequested", "controlEvidence", "unresolvedCancellation")}}
+
+    def activity_observation(self, task_id: str) -> dict[str, Any]:
+        """Internal R1.5 busy evidence, independent of display/error strings."""
+        state = self.control_observation(task_id)
+        task = self.repository.get(task_id)
+        status = _text(task.status)
+        live = task_id in getattr(self, "_dispatching", ()) or any(n.id in getattr(self, "_outcomes", {}) for n in self.repository.list_nodes(task_id))
+        unknown = state.get("evidenceAvailable") is False or bool(state.get("recoveryRequired")) or bool(state.get("unresolvedCancellation"))
+        if status in {"running", "waiting_approval"} and not live:
+            unknown = True
+        return {"status": status, "recoveryRequired": unknown, "pauseRequested": bool(state.get("pauseRequested"))}
 
     def _record_control_evidence(self, task_id: str, kind: str, **values: Any) -> None:
         state = getattr(self, "state", None)
