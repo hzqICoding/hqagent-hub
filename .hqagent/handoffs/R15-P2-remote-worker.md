@@ -2,10 +2,10 @@
 wp: R15-P2
 status: done
 scope_declared: [apps/hub/runtime/remote/**, apps/hub/storage/remote*.py, apps/hub/storage/migrations.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/tasks.py, apps/hub/storage/local_chat.py, apps/hub/api/local_chat.py, apps/hub/api/app.py, apps/hub/runtime/composition.py, apps/hub/tests/**, .hqagent/handoffs/R15-P2-remote-worker.md]
-scope_touched: [apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/remote/api.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/commands.py, apps/hub/runtime/remote/deadline.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/link.py, apps/hub/runtime/remote/security.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_delivery_guards.py, apps/hub/tests/test_r15_local_api.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r15_sync.py, apps/hub/tests/test_r15_worker.py, apps/hub/tests/test_remote_guards.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R15-P2-remote-worker.md]
+scope_touched: [apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/remote/api.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/commands.py, apps/hub/runtime/remote/deadline.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/link.py, apps/hub/runtime/remote/security.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_delivery_guards.py, apps/hub/tests/test_r15_local_api.py, apps/hub/tests/test_r15_offline_expiry.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r15_sync.py, apps/hub/tests/test_r15_worker.py, apps/hub/tests/test_remote_guards.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R15-P2-remote-worker.md]
 build: pass
 tests: pass
-commit: 0771e0b36b0dab32c2b2659729c1ec600c78986d
+commit: 0b93d7bc4885f07233e136759c75304126fe101a
 open_questions: 0
 ---
 
@@ -76,9 +76,9 @@ conversation.create/update 在 grant 事务内创建/修改本机元数据，upd
 
 busy.py 从 local_runs 的 queued/running/waiting_approval（以及待核对的 paused 记录）读取候选；有 task_id 时由 TaskService.activity_observation 结合真实 Task 状态、`task_spec:<id>` 的 recoveryRequired / unresolvedCancellation、当前执行句柄和派发期观察判断。缺证据或遗留 running 无句柄进入恢复提醒；不读报错文本，不把旧 running 标签直接当锁。
 
-无 Task 的真正 queued 预留计入忙碌；未证实的 running 无活跃 LocalChat job 进入恢复。连接建立后先 delivery.recover / busy.reconcile，再发送当前连接完整集合；空集合显式发一片，超过 100 ID 使用同一 snapshotId 分片。集合变化重发完整集合，服务端不得累积 IDs。
+无 Task 的普通 queued 轮次计入忙碌；provisional 预留还必须能证明期限未过、时钟界限有效，否则只读忙碌观察立即排除它，不把实际状态伪造为终态。未证实的 running 无活跃 LocalChat job 进入恢复。Worker 启动完成前先释放上一进程的未获许可预留，不等待网络；连接建立后仍执行 delivery.recover / busy.reconcile，再发送当前连接完整集合。空集合显式发一片，超过 100 ID 使用同一 snapshotId 分片。集合变化重发完整集合，服务端不得累积 IDs。
 
-本机 enqueue 与远程 provisional 入队都在同一本机 SQLite 写事务检查 busy 并排序，先到者取得 queued 槽，后到者 BUSY。取消不依赖 busy。无 grant 过期、本机取消、解绑、撤销和重启未确认都会释放预留。恢复提醒不占忙碌，不阻挡后续显式新上下文。用户本机明确恢复原 Task 后，监督器重新跟踪原 LocalRun 的终态与回复；不会因残留 recovery 门闩丢失结果。
+本机 enqueue 与远程 provisional 入队都在同一本机 SQLite 写事务检查 busy 并排序，先到者取得 queued 槽，后到者 BUSY。取消不依赖 busy。无 grant 过期或时钟界限失效由独立于连接的 1 秒清理任务持久拒绝；启动前遗留的 waiting/provisional 则在 RemoteWorker.start 内以 recovery=True 立即释放。离线、连接尝试阻塞、退避及冻结均不要求用户发消息来触发释放；本机取消、解绑、撤销、关闭同步保留原事务释放路径。已 granted 的轮次不由这些预留清理路径改为 rejected。恢复提醒不占忙碌，不阻挡后续显式新上下文。用户本机明确恢复原 Task 后，监督器重新跟踪原 LocalRun 的终态与回复；不会因残留 recovery 门闩丢失结果。具体返修与验证见文末「返修 1」。
 
 ### §6：grant 状态机
 
@@ -124,7 +124,7 @@ sync.capture 在事务中捕获 journal 高水位、backfillId/generation 和磁
 
 ## 测试、旧断言变更与实际输出
 
-新增五个测试文件共 **39 项**，原 285 项数量保留，最终合计 324 项：
+初次交付新增五个测试文件共 **39 项**，原 285 项数量保留，当时合计 324 项；本次返修新增项及最新全量结果见文末「返修 1」：
 
 | 测试文件 | 主要覆盖 |
 | --- | --- |
@@ -158,7 +158,7 @@ sync.capture 在事务中捕获 journal 高水位、backfillId/generation 和磁
 
 这不替代 rev1-only 兼容测试。新增 `test_rev1_only_server_falls_back_reports_no_sync_and_executes_original_protocol` 真正验证服务端仅支持 1：请求修订依次 `[2,1]`，仍能执行旧命令，全部上行帧为 1，没有 sync.*，link 显示 `REMOTE_REVISION_REQUIRED`，设置写入返回该错误。另有完整升级/禁止降级/服务端延后升级测试。依据 D47/D49 与契约 §1，不是通过改参数绕开回退要求。
 
-### 最终 Hub 全量输出
+### 初次交付 Hub 全量输出（返修最新结果见文末）
 
 cwd：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/apps/hub`。Windows 沙箱默认 TEMP 会 WinError 5，本轮显式将 TEMP、TMP、basetemp 全部放入 worktree 内 git 忽略的 `.tmp`：
 
@@ -226,3 +226,101 @@ exit $LASTEXITCODE
 - 本回执单独提交。
 
 每次提交后均执行 `git log -1 --format=%B` 自查；提交信息仅描述改动，无署名或生成标记。本轮无 0xC0000142 或额度错误。
+
+## 返修 1：F1 离线/启动预留释放与 F2 措辞校正
+
+返修基线 `df58df7`。修复与新增测试提交 `0b93d7bc4885f07233e136759c75304126fe101a`；本节另提交。没有合并其它分支，没有修改既有测试断言。
+
+### 问题与处理方式
+
+主代理指出的问题成立：初次实现的 expire/recovery 依赖连接循环、下行命令或本机 enqueue；服务端一直不可达时，单纯 GET 和归档会继续看到 queued provisional 为忙碌。初次回执“重启未确认都会释放预留”遗漏了必须先重连的前提。上文忙碌段落已按本次实际行为修正，不把初次实现说成已经具备离线释放能力。
+
+本次只改三个生产文件，并新增 `tests/test_r15_offline_expiry.py`：
+
+1. **busy.py / delivery.py：读路径只读排除。** `observe()` 对无 Task、闸门为 provisional 的 queued 预留，通过 `reservation_live()` 读取当前绑定的持久收件，并调用同一个 DeliveryClock.check 验证期限和时钟界限。`ids()` 排除无法证明仍有效的预留，因此 decorate、归档事务、完整快照和 require_idle 得到一致的非忙碌结果。`reservationLive` 只是内部观察字段，没有添加公共 DTO 字段。GET 不创建拒绝记录、不发事件、不 seal，不把实际 queued 状态伪装为已取消；正式拒绝由下一次写事务完成。waiting 缺口记录没有 LocalRun，不占忙碌，也纳入持久清理。
+2. **worker.py / delivery.py：独立 1 秒周期。** 增加随 Worker 生命周期运行的 expiry_job，独立于 socket、publish、连接超时与指数退避。它在短暂接单锁内执行 expire_pending，只处理 waiting/provisional，拒绝结果、取消未派发预留、顺序槽消费及 Outbox 共用原事务；正常无到期记录时不重复 seal。即使连接尝试一直阻塞或 link frozen，也会运行。解绑/撤销/关闭同步沿用原事务释放，周期复用并在没有匹配预留时空操作；stop 取消并 await 清理任务。清理异常仅输出固定、无凭据/正文/异常回显的重试日志，任务继续按周期重试。
+3. **worker.py：启动先释放，再联网。** RemoteWorker.start 先 boot、使旧时钟界限失效；若持久身份为修订 2，先接回修订 2 source mapper，然后 await expire_pending(recovery=True)，最后才创建网络与周期任务。真实 Hub lifespan 在此之后才完成启动。旧 waiting/provisional 当场持久化为 rejected / REMOTE_DELIVERY_EXPIRED，稍后恢复连接按原 Outbox 上报，不依赖成功握手。没有提前执行原 recover 的已获许可控制分支。
+4. **已 granted 不受影响。** 周期/启动清理的 SQL 状态集合不包含 accepted/admitted/执行中/最终结果，原 gate=granted 和实际 Task 恢复核对保留。正常运行即使 deliverBy 已过或网络时钟失效，仍按真实内核状态计为忙碌，不伪造 rejected 或取消。
+5. **两项配套。** provisional 的完整 busy 快照仍在原接单事务中生成，但移到 delivery.run_id/state 已写入之后，使只读校验能看到完整绑定；连接退出时清空 busy.connection_id 并使时钟失效，离线清理不会借旧连接 ID 生成新快照。新连接依旧发送新的完整集合。
+
+本轮没有改 TaskService、LocalChat 内核、API 路由、迁移或协议，F1 由远程层完成。此前 D48 断言清单与修订 1 测试说明原样保留。
+
+### 新增 13 项测试
+
+全部使用现有 TLS 假服务端和生成 DTO；连接不可达由测试连接器持续阻塞模拟，真实旧 WSS 连接已关闭，不访问外网。
+
+| 测试 | 验证内容 |
+| --- | --- |
+| test_disconnected_reservation_expires_without_user_write_and_computer_stays_usable | provisional 后断线，禁止重连；不发 GET/写请求，先等到周期持久拒绝（5 秒超时）；越过 deliverBy 后 Cookie GET busy=false，归档/恢复归档成功，本机消息执行成功，原远程命令从未进内核 |
+| test_startup_rejects_precrash_receipt_before_server_is_reachable_and_reports_it_later（waiting / provisional 两项） | 保留未获许可持久状态模拟崩溃、重建 System，经过真实 Hub lifespan；连接器未返回前已持久 rejected，busy=false；服务恢复后收到同一拒绝事实，迟到 grant/命令不执行 |
+| test_offline_busy_reads_are_write_free_and_expiry_does_not_wait_for_local_input（deadline / wall-back / wall-forward / sleep / restart 五项） | 暂持清理锁，离线注入期限过去或时钟失界限；连续 GET busy=false 且 SQLite total_changes 不变，记录仍 provisional；同一时刻归档事务成功；释放锁后周期自行持久拒绝，无发送触发 |
+| test_offline_expiry_never_rejects_or_cancels_granted_running_execution | granted 且已运行后断线，越过期限并经过至少两个清理周期；保留 accepted/grant/实际 running、busy=true，Adapter 无取消，没有 rejected |
+| test_expiry_task_is_reused_across_link_and_sync_state_changes_and_stops_cleanly（unlink / revoke / reset / freeze 四项） | 离线清理与解绑、撤销、关闭同步、冻结共存，预留释放、同一周期任务保持可用，Worker.stop 后任务已回收 |
+
+原 324 项保留，新增 13 项，合计 **337 项**。未放宽既有断言，没有为 pytest 增加生产分支。
+
+### 本次实际验证输出
+
+cwd 为 `apps/hub`，TEMP / TMP / basetemp 全部位于本 worktree 内已忽略的 `.tmp`，避免沙箱默认临时目录的 WinError 5。没有并行 pytest，没有启动 vitest 或前端测试。
+
+```powershell
+$env:TEMP = 'E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP = $env:TEMP
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r15-f1-full 2>&1 | Tee-Object -FilePath ../../.tmp/r15-f1-hub.log
+exit $LASTEXITCODE
+```
+
+实际结果（退出码 0）：
+
+```text
+337 passed, 4 warnings in 171.74s (0:02:51)
+```
+
+这次全量中出现一次清理任务的通用重试日志，原管道记录有编码乱码；不能从该日志推断异常原因。随后在忽略目录加入临时诊断插件，仅在出现该日志时记录测试名、异常类型及调用位置，不记录异常文本、正文或凭据；不修改生产逻辑，不纳入提交。先复跑既有 restart recovery 三项（3 passed），再串行诊断全量：
+
+```powershell
+$env:TEMP = 'E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP = $env:TEMP
+$env:PYTHONPATH = $env:TEMP
+$env:PYTHONIOENCODING = 'utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider -p expiry_diagnostics --basetemp ../../.tmp/r15-f1-audit 2>&1 | Tee-Object -FilePath ../../.tmp/r15-f1-audit.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 21%]
+........................................................................ [ 42%]
+........................................................................ [ 64%]
+........................................................................ [ 85%]
+.................................................                        [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+337 passed, 4 warnings in 151.77s (0:02:31)
+```
+
+退出码 0；这次没有复现清理日志，诊断文件未产生，**未取得可归因的异常栈，不宣称已查明该次重试原因**。两轮均无测试失败，4 个 warning 均为原有依赖弃用提示。F1 的离线释放、无写 GET 和 granted 隔离已有上述独立测试，不以“全量绿”替代对应业务断言。
+
+协议验证在 pytest 结束后单独执行，cwd 为 worktree 根目录，TEMP/TMP 同上：
+
+```powershell
+$env:PYTHONIOENCODING = 'utf-8'
+$env:PATH = (Join-Path (Get-Location) '.venv/Scripts') + ';' + $env:PATH
+pwsh scripts/protocol/validate.ps1 -CheckGenerated 2>&1 | Tee-Object -FilePath .tmp/r15-f1-protocol.log
+exit $LASTEXITCODE
+```
+
+```text
+协议校验通过：321 个类型，173 个 Contract Fixture
+```
+
+退出码 0。完整输出见 `.tmp/r15-f1-hub.log`、`.tmp/r15-f1-audit.log`、`.tmp/r15-f1-protocol.log`。`git diff --check` 无输出；本轮未发生 0xC0000142 或额度错误。前端及真实修订 2 服务端联调仍由主代理安排。
