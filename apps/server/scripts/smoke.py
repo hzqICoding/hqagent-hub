@@ -1,5 +1,6 @@
 """Local real-process smoke; never contacts a remote host or invokes a model."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import secrets
@@ -15,7 +16,7 @@ from protocol.generated import python as dto
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from server.common import stamp, uid
+from server.common import digest, stamp, uid
 
 
 def main():
@@ -65,34 +66,65 @@ def main():
             print("pairing preview and confirmation: PASS")
             worker = challenge["workerId"]
             def hello():
-                return dict(type="worker.hello", wireRevision=1, protocolVersion=dto.PROTOCOL_VERSION, workerId=worker, workerStoreId=store, workerEpoch=epoch, platform="linux", architecture="x86_64", capabilityRevision=1, lastServerAck=None)
+                return dict(type="worker.hello", wireRevision=2, protocolVersion=dto.PROTOCOL_VERSION, workerId=worker, workerStoreId=store, workerEpoch=epoch, platform="linux", architecture="x86_64", capabilityRevision=1, lastServerAck=None)
             def receive(ws):
                 value = json.loads(ws.recv(timeout=5))
-                dto.RemoteServerOutboundFrame.model_validate(value)
+                dto.RemoteV2ServerOutboundFrame.model_validate(value)
                 return value
             def send(ws, value):
-                dto.RemoteWorkerOutboundFrame.model_validate(value)
+                dto.RemoteV2WorkerOutboundFrame.model_validate(value)
                 ws.send(json.dumps(value))
+            seq = 0
+            def emit(ws, kind, **fields):
+                nonlocal seq
+                seq += 1
+                value = dict(type=kind, wireRevision=2, eventId=uid(), workerId=worker, workerStoreId=store, workerEpoch=epoch, seq=seq, occurredAt=stamp(time.time()), **fields)
+                send(ws, value)
+                ack = receive(ws)
+                assert ack['type'] == 'worker.events_ack' and ack['position']['seq'] == seq
+            def grant(ws, command):
+                emit(ws, 'command.received', commandId=command['commandId'], conversationId=command['conversationId'], commandDigest=digest(command), deliverBy=command['deliverBy'], receivedAt=stamp(time.time()))
+                permission = receive(ws)
+                assert permission['type'] == 'command.delivery_granted' and permission['commandDigest'] == digest(command)
+                emit(ws, 'command.accepted', commandId=command['commandId'], conversationId=command['conversationId'], receivedAt=stamp(time.time()), status='accepted')
             ws_headers = {"Authorization": "Bearer " + secret, "X-Forwarded-Proto": "https"}
             with connect(f"ws://127.0.0.1:{port}/ws/v2/worker", additional_headers=ws_headers, proxy=None) as ws:
                 send(ws, hello())
-                assert receive(ws)["commandDelivery"] == "ready"
+                handshake = receive(ws)
+                assert handshake["commandDelivery"] == "ready"
                 catalog = dict(workerId=worker, workerStoreId=store, capabilityRevision=1, observedAt=stamp(time.time()), workspaces=[dict(workspaceId="workspace", name="Smoke", displayPath="/workspace", vcs="git", canWrite=True)], scenes=[dict(sceneId="scene", name="Smoke", version=1, readOnly=False)], remotelyBlockedActions=[])
-                send(ws, dict(type="capability.changed", wireRevision=1, eventId=uid(), workerId=worker, workerStoreId=store, workerEpoch=epoch, seq=1, occurredAt=stamp(time.time()), payload=catalog))
-                assert receive(ws)["position"]["seq"] == 1
-            conv = request("POST", "/conversations", dict(targetWorkerId=worker, workerStoreId=store, title="Smoke", workspaceId="workspace", sceneId="scene", sceneVersion=1), "RemoteConversationView").json()["data"]["conversationId"]
-            queued = request("POST", "/conversations/" + conv + "/messages", dict(clientMessageId=uid(), text="Smoke communication only", sessionMode="new"), "RemoteQueuedReceipt").json()["data"]
-            assert queued["deliveryState"] == "queued_offline"
+                emit(ws, 'capability.changed', payload=catalog)
+                emit(ws, 'sync.busy.snapshot', snapshotId=uid(), connectionId=handshake['connectionId'], capturedAt=stamp(time.time()), partIndex=0, partCount=1, conversationIds=[])
+                create_response = request('POST', '/conversations', dict(targetWorkerId=worker, workerStoreId=store, title='Smoke', workspaceId='workspace', sceneId='scene', sceneVersion=1), 'RemoteQueuedReceipt')
+                assert create_response.status_code == 202
+                conv = create_response.json()['data']['conversationId']
+                command = receive(ws)
+                assert command['type'] == 'conversation.create'
+                grant(ws, command)
+                local = command['localConversationId']
+                emit(ws, 'sync.conversation.upserted', syncGeneration=1, payload=dict(conversationId=local, workspaceId='workspace', sceneId='scene', sceneVersion=1, title='Smoke', createdAt=stamp(time.time()), updatedAt=stamp(time.time()), archived=False, visibility='both', metadataVersion=1, authority='remote'))
+                control = dict(outcome='confirmed', executionMayStillBeRunning=False, orphanProcessIds=[], reason='Metadata committed', evidence='metadata_committed', observedAt=stamp(time.time()))
+                emit(ws, 'command.completed', commandId=command['commandId'], conversationId=conv, resultStatus='confirmed', controlResult=control)
+                queued = request('POST', '/conversations/' + conv + '/messages', dict(clientMessageId=uid(), text='Smoke communication only', sessionMode='new'), 'RemoteQueuedReceipt').json()['data']
+                assert queued['deliveryState'] == 'queued_online'
+                submit = receive(ws)
+                grant(ws, submit)
+                answer = 'Complete reply from fake computer'
+                emit(ws, 'sync.message.segment', syncGeneration=1, payload=dict(messageId='message-local', conversationId=local, messageSequence=1, messageRevision=1, role='assistant', createdAt=stamp(time.time()), text=answer, segmentIndex=0, segmentCount=1, totalUtf8Bytes=len(answer.encode()), contentSha256=hashlib.sha256(answer.encode()).hexdigest()))
+                messages = request('GET', '/conversations/' + conv + '/messages', model='RemoteSyncMessagePage').json()['data']
+                assert messages['items'][0]['text'] == answer
+            offline = client.post('/api/v2/conversations/' + conv + '/messages', json=dict(clientMessageId=uid(), text='Must not queue', sessionMode='new'), headers={'Idempotency-Key': uid()})
+            dto.ApiEnvelope.model_validate(offline.json())
+            assert offline.status_code == 409 and offline.json()['error']['code'] == 'REMOTE_DEVICE_OFFLINE'
             with connect(f"ws://127.0.0.1:{port}/ws/v2/worker", additional_headers=ws_headers, proxy=None) as ws:
                 send(ws, hello())
-                assert receive(ws)["commandDelivery"] == "ready"
-                command = receive(ws)
-                assert command["commandId"] == queued["commandId"] and command["conversationSeq"] == 1
-                send(ws, dict(type="command.accepted", wireRevision=1, eventId=uid(), workerId=worker, workerStoreId=store, workerEpoch=epoch, seq=2, occurredAt=stamp(time.time()), commandId=command["commandId"], conversationId=conv, receivedAt=stamp(time.time()), status="accepted"))
-                assert receive(ws)["position"]["seq"] == 2
+                handshake = receive(ws)
+                assert handshake['commandDelivery'] == 'ready'
+                assert not request('GET', '/devices/' + worker, model='RemoteDeviceView').json()['data']['busySnapshotFresh']
+                emit(ws, 'sync.busy.snapshot', snapshotId=uid(), connectionId=handshake['connectionId'], capturedAt=stamp(time.time()), partIndex=0, partCount=1, conversationIds=[])
             request("GET", "/conversations/" + conv + "/snapshot", model="RemoteConversationSnapshot")
             assert request("GET", "/commands/" + queued["commandId"], model="RemoteCommandView").json()["data"]["status"] == "accepted"
-            print("fake Worker revision 1, offline queue, reconnect and durable ack: PASS")
+            print("fake Worker revision 2, create/grant/sync, offline refusal and reconnect: PASS")
             backup = subprocess.run([sys.executable, "-m", "server.cli", "backup", str(data / "backup.sqlite3")], cwd=ROOT, env=env, capture_output=True, text=True, timeout=15)
             assert backup.returncode == 0
             print(backup.stdout.strip())
