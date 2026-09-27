@@ -11,6 +11,7 @@ import type {
   RemoteBrowserEvent,
   RemoteBrowserEventPage,
   RemoteApprovalView,
+  RemoteWire1ApprovalView,
 } from '@hqagent/protocol'
 
 describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () => {
@@ -391,7 +392,7 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     expect(store.activeApprovals.length).toBe(0)
 
     // 1. New pending approval arrives via event
-    const newApproval: RemoteApprovalView = {
+    const newApproval: RemoteWire1ApprovalView = {
       approvalId: 'appr_inc_01',
       resultRef: { runId: 'run_demo' },
       action: 'shell',
