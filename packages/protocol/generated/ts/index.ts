@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.6.3' as const
+export const PROTOCOL_VERSION = '0.7.0' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -168,6 +168,13 @@ export type ErrorCode =
   | 'REMOTE_PAIRING_IN_PROGRESS'
   | 'REMOTE_SERVER_UNREACHABLE'
   | 'REMOTE_SERVER_ORIGIN_INVALID'
+  | 'REMOTE_CONVERSATION_BUSY'
+  | 'REMOTE_STATE_NOT_READY'
+  | 'REMOTE_SYNC_CONFLICT'
+  | 'REMOTE_SYNC_DISABLED'
+  | 'REMOTE_DELIVERY_EXPIRED'
+  | 'REMOTE_REVISION_REQUIRED'
+  | 'REMOTE_SYNC_RESOURCE_LIMIT'
 
 /** 任何 Port 方法失败时的统一结构。接入失败或缺少硬能力必须走这里，不得返回成功后在事件里静默降级。 */
 export interface AdapterFailure {
@@ -1015,8 +1022,11 @@ export interface LocalConversationView {
   /** Archived conversations remain readable. Legacy records default to false. */
   archived?: boolean
   lastRunStatus?: TaskStatus
-  /** Optional for compatibility. Missing means local at the consuming boundary. A persisted remote conversation never reverts to local after unlink and remains locally read-only. */
+  /** Legacy metadata only; not a write restriction in R1.5. Missing=local. */
   authority?: 'local' | 'remote'
+  visibility?: 'both' | 'pc_only' | 'mobile_only'
+  busy?: boolean
+  busyObservedAt?: string
 }
 
 export interface LocalEventPage {
@@ -1284,6 +1294,97 @@ export interface RemoteResultRef {
   parentExecutionTaskId?: string
 }
 
+export type RemoteWire1ErrorCode =
+  | 'BAD_REQUEST'
+  | 'VALIDATION_FAILED'
+  | 'UNAUTHORIZED'
+  | 'ORIGIN_NOT_ALLOWED'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'IDEMPOTENCY_MISMATCH'
+  | 'PROTOCOL_VERSION_MISMATCH'
+  | 'HUB_NOT_READY'
+  | 'HUB_MAINTENANCE'
+  | 'EVENT_CURSOR_EXPIRED'
+  | 'FEATURE_UNAVAILABLE'
+  | 'AGENT_NOT_FOUND'
+  | 'AGENT_OFFLINE'
+  | 'AGENT_NOT_LOGGED_IN'
+  | 'AGENT_INCOMPATIBLE'
+  | 'CAPABILITY_MISSING'
+  | 'ROLE_UNRESOLVED'
+  | 'SESSION_NOT_RESUMABLE'
+  | 'TASK_NOT_CANCELLABLE'
+  | 'TASK_ACTION_INVALID'
+  | 'WORKTREE_BUSY'
+  | 'PATH_NOT_ALLOWED'
+  | 'APPROVAL_REQUIRED'
+  | 'APPROVAL_EXPIRED'
+  | 'APPROVAL_ALREADY_DECIDED'
+  | 'UPDATE_NOT_AVAILABLE'
+  | 'UPDATE_BUSY'
+  | 'UPDATE_VERIFY_FAILED'
+  | 'UPDATE_DRAIN_TIMEOUT'
+  | 'INTERNAL'
+  | 'REMOTE_AUTH_REQUIRED'
+  | 'REMOTE_CSRF_REJECTED'
+  | 'REMOTE_DEVICE_OFFLINE'
+  | 'REMOTE_DEVICE_REVOKED'
+  | 'REMOTE_DEVICE_AUTH_FAILED'
+  | 'REMOTE_PAIRING_EXPIRED'
+  | 'REMOTE_PAIRING_CONFLICT'
+  | 'REMOTE_PAIRING_INVALID'
+  | 'REMOTE_COMMAND_EXPIRED'
+  | 'REMOTE_COMMAND_WITHDRAWN'
+  | 'REMOTE_WITHDRAWAL_UNCONFIRMED'
+  | 'REMOTE_STORE_CHANGED'
+  | 'REMOTE_EPOCH_STALE'
+  | 'REMOTE_PROTOCOL_UNSUPPORTED'
+  | 'REMOTE_EVENT_CONFLICT'
+  | 'REMOTE_ACK_CONFLICT'
+  | 'REMOTE_SEQUENCE_GAP'
+  | 'REMOTE_APPROVAL_FORBIDDEN'
+  | 'CONVERSATION_AUTHORITY_MISMATCH'
+  | 'REMOTE_TARGET_MISMATCH'
+  | 'REMOTE_SCENE_VERSION_MISMATCH'
+  | 'REMOTE_CURSOR_EXPIRED'
+  | 'REMOTE_CURSOR_INVALID'
+  | 'REMOTE_RATE_LIMITED'
+  | 'REMOTE_FRAME_TOO_LARGE'
+  | 'REMOTE_WITHDRAWAL_TOO_LATE'
+  | 'REMOTE_PAIRING_IN_PROGRESS'
+  | 'REMOTE_SERVER_UNREACHABLE'
+  | 'REMOTE_SERVER_ORIGIN_INVALID'
+
+/** Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely. */
+export interface RemoteWire1ApprovalView {
+  approvalId: string
+  resultRef: RemoteResultRef
+  action: DangerousAction
+  targetSummary: string
+  riskLevel: RiskLevel
+  status: ApprovalStatus
+  requestedAt: string
+  expiresAt: string
+  remoteApprovalAllowed: boolean
+  workerPolicyRevision: number
+  denialCode?: RemoteWire1ErrorCode
+}
+
+export interface RemoteApprovalEvent {
+  type: 'approval.state_changed'
+  /** Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen. */
+  wireRevision: 1
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  payload: RemoteWire1ApprovalView
+}
+
 /** Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely. */
 export interface RemoteApprovalView {
   approvalId: string
@@ -1299,20 +1400,6 @@ export interface RemoteApprovalView {
   denialCode?: ErrorCode
 }
 
-export interface RemoteApprovalEvent {
-  type: 'approval.state_changed'
-  /** Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen. */
-  wireRevision: 1
-  eventId: string
-  workerId: string
-  workerStoreId: string
-  workerEpoch: string
-  seq: number
-  occurredAt: string
-  conversationId: string
-  payload: RemoteApprovalView
-}
-
 export interface RemoteAuthenticatedSession {
   authenticated: true
   account: RemoteAccountView
@@ -1321,14 +1408,11 @@ export interface RemoteAuthenticatedSession {
   csrfToken: string
 }
 
-/** D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist. */
-export interface RemoteControlConfirmed {
-  outcome: 'confirmed'
-  executionMayStillBeRunning: boolean
-  orphanProcessIds: number[]
-  reason: string
-  evidence: 'adapter_confirmed' | 'node_boundary_paused' | 'already_terminal' | 'retry_enqueued' | 'supervisor_resumed' | 'inbox_tombstone'
-  observedAt: string
+/** Sanitized error. No credential, raw environment, owner locator or arbitrary detail object. */
+export interface RemoteError {
+  code: ErrorCode
+  message: string
+  retryable: boolean
 }
 
 /** D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist. */
@@ -1352,24 +1436,27 @@ export interface RemoteControlUnconfirmed {
   observedAt: string
 }
 
-export type RemoteControlResult = RemoteControlConfirmed | RemoteControlRejected | RemoteControlUnconfirmed
-
-/** Sanitized error. No credential, raw environment, owner locator or arbitrary detail object. */
-export interface RemoteError {
-  code: ErrorCode
-  message: string
-  retryable: boolean
+/** D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist. */
+export interface RemoteV2ControlConfirmed {
+  outcome: 'confirmed'
+  executionMayStillBeRunning: boolean
+  orphanProcessIds: number[]
+  reason: string
+  evidence: 'adapter_confirmed' | 'node_boundary_paused' | 'already_terminal' | 'retry_enqueued' | 'supervisor_resumed' | 'inbox_tombstone' | 'metadata_committed'
+  observedAt: string
 }
+
+export type RemoteV2ControlResult = RemoteV2ControlConfirmed | RemoteControlRejected | RemoteControlUnconfirmed
 
 /** Three layers must be displayed separately: transport/delivery, Worker controlResult, execution status from RemoteRunView. No inference from disconnected transport or command.completed to task success. */
 export interface RemoteCommandView {
   commandId: string
   conversationId: string
   targetWorkerId: string
-  type: 'run.submit' | 'run.pause' | 'run.resume' | 'run.cancel' | 'run.retry' | 'approval.decide' | 'command.withdraw'
+  type: 'run.submit' | 'run.pause' | 'run.resume' | 'run.cancel' | 'run.retry' | 'approval.decide' | 'command.withdraw' | 'conversation.update' | 'conversation.create'
   conversationSeq?: number
   status: 'queued' | 'accepted' | 'rejected' | 'completed' | 'failed'
-  deliveryState: 'queued_online' | 'queued_offline' | 'sent' | 'acknowledged' | 'reconciliation_required'
+  deliveryState: 'queued_online' | 'queued_offline' | 'sent' | 'acknowledged' | 'reconciliation_required' | 'awaiting_receipt' | 'granted'
   withdrawalState: 'none' | 'requested' | 'confirmed' | 'denied'
   workerOnline: boolean
   observedAt: string
@@ -1377,9 +1464,10 @@ export interface RemoteCommandView {
   expiresAt: string
   resultStatus?: 'succeeded' | 'cancelled' | 'confirmed' | 'retry_enqueued' | 'approval_consumed' | 'withdrawn' | 'failed' | 'rejected'
   resultRef?: RemoteResultRef
-  controlResult?: RemoteControlResult
+  controlResult?: RemoteV2ControlResult
   error?: RemoteError
   withdrawalCommandId?: string
+  deliverBy?: string
 }
 
 /** Owner-scoped browser event; ordering/resume is only by opaque serverCursor, never by payload Worker seq. */
@@ -1391,11 +1479,19 @@ export interface RemoteBrowserCommandEvent {
   payload: RemoteCommandView
 }
 
-/** Owner implicitly comes from browser authentication. Fixed Worker for the lifetime of R1 conversation; no dual writer or automatic migration of existing local history. */
+export interface RemoteBrowserConversationDeleted {
+  type: 'conversation.deleted'
+  /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
+  serverCursor: string
+  recordedAt: string
+  conversationId: string
+}
+
+/** Worker is the sole writer. authority is legacy metadata, never a write gate. Omitted visibility=both, busy=false, busyFresh=false; targetWorkerId is the legacy workerId alias. */
 export interface RemoteConversationView {
   conversationId: string
   targetWorkerId: string
-  authority: 'remote'
+  authority: 'local' | 'remote'
   title: string
   workspaceId: string
   sceneId: string
@@ -1403,6 +1499,14 @@ export interface RemoteConversationView {
   createdAt: string
   updatedAt: string
   workerStoreId: string
+  workerId?: string
+  visibility?: 'both' | 'pc_only' | 'mobile_only'
+  busy?: boolean
+  busyObservedAt?: string
+  busyFresh?: boolean
+  lastActivityAt?: string
+  archived?: boolean
+  metadataVersion?: number
 }
 
 /** Owner-scoped browser event; ordering/resume is only by opaque serverCursor, never by payload Worker seq. */
@@ -1418,10 +1522,13 @@ export interface RemoteMessageView {
   messageId: string
   conversationId: string
   role: 'user' | 'assistant' | 'system'
+  /** Complete assembled content, never truncated. Resource quota failures are explicit; no partial message is published. */
   text: string
   createdAt: string
   commandId?: string
   runId?: string
+  messageSequence?: number
+  messageRevision?: number
 }
 
 /** Owner-scoped browser event; ordering/resume is only by opaque serverCursor, never by payload Worker seq. */
@@ -1431,6 +1538,29 @@ export interface RemoteBrowserMessageEvent {
   serverCursor: string
   recordedAt: string
   payload: RemoteMessageView
+}
+
+export interface RemoteBrowserStoreReset {
+  type: 'store.reset'
+  /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
+  serverCursor: string
+  recordedAt: string
+  workerId: string
+  workerStoreId: string
+}
+
+export interface RemoteV2ApprovalEvent {
+  type: 'approval.state_changed'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  payload: RemoteApprovalView
 }
 
 /** Worker scene index only; model/provider credential or installation/subscription data is not relayed. */
@@ -1459,6 +1589,206 @@ export interface RemoteCatalogView {
   scenes: RemoteSceneSummary[]
   remotelyBlockedActions: DangerousAction[]
   workerStoreId: string
+}
+
+export interface RemoteV2CatalogEvent {
+  type: 'capability.changed'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  payload: RemoteCatalogView
+}
+
+/** Durable inbox admission, not model/execution success. Duplicate immutable commands return the original receipt/event. */
+export interface RemoteV2CommandAccepted {
+  type: 'command.accepted'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  receivedAt: string
+  status: 'accepted'
+  resultRef?: RemoteResultRef
+}
+
+/** Not universally task success. Retry completes on durable new execution reference; execute completes on actual terminal Run success/cancellation. Cancel/pause/resume require confirmed structured control result. */
+export interface RemoteV2CommandCompleted {
+  type: 'command.completed'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  resultStatus: 'succeeded' | 'cancelled' | 'confirmed' | 'retry_enqueued' | 'approval_consumed' | 'withdrawn'
+  resultRef?: RemoteResultRef
+  controlResult?: RemoteV2ControlConfirmed
+}
+
+/** Failure after admission. A refused control is distinct from unconfirmed cancellation; do not infer that an Agent process has stopped. */
+export interface RemoteV2CommandFailed {
+  type: 'command.failed'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  resultStatus: 'failed' | 'rejected'
+  error: RemoteError
+  resultRef?: RemoteResultRef
+  controlResult?: RemoteControlRejected
+}
+
+/** Pre-admission rejection only. An expired sequenced submit consumes its ordered slot without execution. */
+export interface RemoteV2CommandRejected {
+  type: 'command.rejected'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  receivedAt: string
+  status: 'rejected'
+  error: RemoteError
+}
+
+/** D41: unconfirmed leaves command accepted and pending reconciliation. Run-scoped controls include resultRef/executionStatus. Before a Run exists (withdrawal reconciliation), omit both rather than invent an identity or execution state. */
+export interface RemoteV2ControlObserved {
+  type: 'command.control_result'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  resultRef?: RemoteResultRef
+  controlResult: RemoteV2ControlResult
+  executionStatus?: TaskStatus
+}
+
+/** Worker may emit assistant/system messages, never impersonate a user or allocate conversationSeq. */
+export interface RemoteWorkerMessagePayload {
+  messageId: string
+  conversationId: string
+  role: 'assistant' | 'system'
+  text: string
+  createdAt: string
+  commandId?: string
+  runId?: string
+}
+
+export interface RemoteV2MessageEvent {
+  type: 'message.appended'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  payload: RemoteWorkerMessagePayload
+}
+
+/** Sanitized observable progress only. Never private model reasoning, raw provider auth, full environment, or credential files. */
+export interface RemoteV2ProgressEvent {
+  type: 'run.progress'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  resultRef: RemoteResultRef
+  message: string
+}
+
+/** Worker execution facts only. Server derives workerOnline for browser RemoteRunView; Worker cannot declare server transport liveness. */
+export interface RemoteRunStatePayload {
+  runId: string
+  conversationId: string
+  executionTaskId?: string
+  status: TaskStatus
+  observedAt: string
+  summary?: string
+  /** Existing kernel Task.parentTaskId only. Never invented retryOfRunId or a long-lived Task identity. */
+  parentExecutionTaskId?: string
+}
+
+/** Worker creates/binds LocalRun and execution Task using existing semantics; it does not invent long-lived Task or retryOfRunId. */
+export interface RemoteV2RunStateEvent {
+  type: 'run.state_changed'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  payload: RemoteRunStatePayload
+}
+
+/** Worker records ordered skip in the same durable inbox ordering ledger as submits. */
+export interface RemoteV2SkipRecorded {
+  type: 'conversation.skip_recorded'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  conversationSeq: number
+}
+
+export type RemoteV2ExecutionEvent = RemoteV2CommandAccepted | RemoteV2CommandRejected | RemoteV2CommandCompleted | RemoteV2CommandFailed | RemoteV2ControlObserved | RemoteV2RunStateEvent | RemoteV2MessageEvent | RemoteV2ApprovalEvent | RemoteV2ProgressEvent | RemoteV2CatalogEvent | RemoteV2SkipRecorded
+
+/** Owner-scoped browser event; ordering/resume is only by opaque serverCursor, never by payload Worker seq. */
+export interface RemoteBrowserV2WorkerEvent {
+  type: 'worker.event'
+  /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
+  serverCursor: string
+  recordedAt: string
+  payload: RemoteV2ExecutionEvent
 }
 
 export interface RemoteCatalogEvent {
@@ -1492,6 +1822,16 @@ export interface RemoteCommandAccepted {
   resultRef?: RemoteResultRef
 }
 
+/** D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist. */
+export interface RemoteControlConfirmed {
+  outcome: 'confirmed'
+  executionMayStillBeRunning: boolean
+  orphanProcessIds: number[]
+  reason: string
+  evidence: 'adapter_confirmed' | 'node_boundary_paused' | 'already_terminal' | 'retry_enqueued' | 'supervisor_resumed' | 'inbox_tombstone'
+  observedAt: string
+}
+
 /** Not universally task success. Retry completes on durable new execution reference; execute completes on actual terminal Run success/cancellation. Cancel/pause/resume require confirmed structured control result. */
 export interface RemoteCommandCompleted {
   type: 'command.completed'
@@ -1510,6 +1850,13 @@ export interface RemoteCommandCompleted {
   controlResult?: RemoteControlConfirmed
 }
 
+/** Sanitized error. No credential, raw environment, owner locator or arbitrary detail object. */
+export interface RemoteWire1Error {
+  code: RemoteWire1ErrorCode
+  message: string
+  retryable: boolean
+}
+
 /** Failure after admission. A refused control is distinct from unconfirmed cancellation; do not infer that an Agent process has stopped. */
 export interface RemoteCommandFailed {
   type: 'command.failed'
@@ -1524,7 +1871,7 @@ export interface RemoteCommandFailed {
   commandId: string
   conversationId: string
   resultStatus: 'failed' | 'rejected'
-  error: RemoteError
+  error: RemoteWire1Error
   resultRef?: RemoteResultRef
   controlResult?: RemoteControlRejected
 }
@@ -1544,8 +1891,10 @@ export interface RemoteCommandRejected {
   conversationId: string
   receivedAt: string
   status: 'rejected'
-  error: RemoteError
+  error: RemoteWire1Error
 }
+
+export type RemoteControlResult = RemoteControlConfirmed | RemoteControlRejected | RemoteControlUnconfirmed
 
 /** D41: unconfirmed leaves command accepted and pending reconciliation. Run-scoped controls include resultRef/executionStatus. Before a Run exists (withdrawal reconciliation), omit both rather than invent an identity or execution state. */
 export interface RemoteControlObserved {
@@ -1563,17 +1912,6 @@ export interface RemoteControlObserved {
   resultRef?: RemoteResultRef
   controlResult: RemoteControlResult
   executionStatus?: TaskStatus
-}
-
-/** Worker may emit assistant/system messages, never impersonate a user or allocate conversationSeq. */
-export interface RemoteWorkerMessagePayload {
-  messageId: string
-  conversationId: string
-  role: 'assistant' | 'system'
-  text: string
-  createdAt: string
-  commandId?: string
-  runId?: string
 }
 
 export interface RemoteMessageEvent {
@@ -1604,18 +1942,6 @@ export interface RemoteProgressEvent {
   conversationId: string
   resultRef: RemoteResultRef
   message: string
-}
-
-/** Worker execution facts only. Server derives workerOnline for browser RemoteRunView; Worker cannot declare server transport liveness. */
-export interface RemoteRunStatePayload {
-  runId: string
-  conversationId: string
-  executionTaskId?: string
-  status: TaskStatus
-  observedAt: string
-  summary?: string
-  /** Existing kernel Task.parentTaskId only. Never invented retryOfRunId or a long-lived Task identity. */
-  parentExecutionTaskId?: string
 }
 
 /** Worker creates/binds LocalRun and execution Task using existing semantics; it does not invent long-lived Task or retryOfRunId. */
@@ -1661,7 +1987,7 @@ export interface RemoteBrowserWorkerEvent {
   payload: RemoteVisibleWorkerEvent
 }
 
-export type RemoteBrowserEvent = RemoteBrowserWorkerEvent | RemoteBrowserCommandEvent | RemoteBrowserConversationEvent | RemoteBrowserMessageEvent
+export type RemoteBrowserEvent = RemoteBrowserWorkerEvent | RemoteBrowserCommandEvent | RemoteBrowserConversationEvent | RemoteBrowserMessageEvent | RemoteBrowserV2WorkerEvent | RemoteBrowserConversationDeleted | RemoteBrowserStoreReset
 
 /** GET after opaque serverCursor. Unknown/expired cursor requires snapshot; never silently reset to zero. */
 export interface RemoteBrowserEventPage {
@@ -1861,7 +2187,7 @@ export interface RemoteConversationSnapshot {
   approvals?: RemoteApprovalView[]
 }
 
-/** IDs must belong to current owner/target device exported catalog. New remote conversations may be created while device is offline; no model starts on creation. */
+/** Owner/device/workspace/scene references for a Worker-owned creation command. Requires online revision 2; 202 is a transport receipt, not a server-created conversation. */
 export interface RemoteCreateConversationInput {
   targetWorkerId: string
   title: string
@@ -1883,6 +2209,9 @@ export interface RemoteDeviceView {
   lastSeenAt?: string
   pairedAt: string
   revokedAt?: string
+  online?: boolean
+  busySnapshotFresh?: boolean
+  supportedWireRevisions?: number[]
 }
 
 export interface RemoteDevicePage {
@@ -2085,7 +2414,7 @@ export interface RemoteRunPage {
   nextCursor?: string
 }
 
-/** Server fixes target/workspace/scene from owner-scoped conversation, assigns sequence atomically. Default TTL 24h, max 7d; client cannot choose owner/sequence/type/risk. */
+/** Computer orders messages. Offline rejects immediately; revision 2 requires a 30-second delivery grant. Legacy expiresAt cannot extend delivery deadline. */
 export interface RemoteSendMessageInput {
   clientMessageId: string
   text: string
@@ -2117,7 +2446,7 @@ export interface RemoteWorkerHelloAck {
   pendingCommandCursor: string
   heartbeatIntervalSeconds: 15
   offlineAfterSeconds: 45
-  reason?: RemoteError
+  reason?: RemoteWire1Error
   serverTime: string
 }
 
@@ -2125,12 +2454,517 @@ export interface RemoteWorkerHelloRejected {
   type: 'worker.hello_rejected'
   /** Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen. */
   wireRevision: 1
-  error: RemoteError
+  error: RemoteWire1Error
   /** Server supported wire revisions, mandatory on rejection (including REMOTE_PROTOCOL_UNSUPPORTED). Initially [1]; during upgrades advertise N and N-1. */
   supportedWireRevisions: number[]
 }
 
 export type RemoteServerOutboundFrame = RemoteWorkerHelloAck | RemoteWorkerHelloRejected | RemoteServerHeartbeat | RemoteEventAck | RemoteCommandEnvelope | RemoteConversationSkip
+
+/** Worker local identifiers. Server namespaces by worker/store and maps browser IDs; visibility is display-only. */
+export interface RemoteSyncConversation {
+  conversationId: string
+  workspaceId: string
+  sceneId: string
+  sceneVersion: number
+  title: string
+  createdAt: string
+  updatedAt: string
+  archived: boolean
+  visibility: 'both' | 'pc_only' | 'mobile_only'
+  metadataVersion: number
+  authority: 'local' | 'remote'
+}
+
+/** At least one mutable field; browser cannot update copy directly. */
+export interface RemoteSyncConversationInput {
+  expectedVersion: number
+  title?: string
+  archived?: boolean
+  visibility?: 'both' | 'pc_only' | 'mobile_only'
+}
+
+/** At least one title/archived/visibility change; Worker checks metadataVersion atomically. */
+export interface RemoteSyncConversationUpdate {
+  conversationId: string
+  expectedVersion: number
+  title?: string
+  archived?: boolean
+  visibility?: 'both' | 'pc_only' | 'mobile_only'
+}
+
+/** Newest first. before and snapshotCursor are opaque owner/device/conversation-scoped signed cursors. New items merge by messageId/revision; never by offset. */
+export interface RemoteSyncMessagePage {
+  items: RemoteMessageView[]
+  hasMore: boolean
+  before?: string
+  snapshotCursor: string
+}
+
+/** Whole UTF-8 text, never truncated; 0-based contiguous segments. Immutable metadata per messageRevision, atomic publish only after digest/byte-count verification. */
+export interface RemoteSyncMessageSegment {
+  messageId: string
+  conversationId: string
+  messageSequence: number
+  messageRevision: number
+  role: 'user' | 'assistant' | 'system'
+  createdAt: string
+  runId?: string
+  text: string
+  segmentIndex: number
+  segmentCount: number
+  totalUtf8Bytes: number
+  contentSha256: string
+}
+
+/** Only retired content slots, never admission/grant/control facts. Original identity and digest are retained, not rewritten. */
+export interface RemoteSyncRedactedSlot {
+  seq: number
+  eventId: string
+  originalType: 'sync.conversation.upserted' | 'sync.message.segment' | 'sync.run.state' | 'sync.backfill.progress' | 'message.appended'
+  eventSha256: string
+}
+
+export interface RemoteSyncRunState {
+  runId: string
+  conversationId: string
+  status: TaskStatus
+  observedAt: string
+  executionTaskId?: string
+  recoveryRequired?: boolean
+}
+
+export interface RemoteSyncSettingsInput {
+  mirrorEnabled: boolean
+  expectedVersion: number
+}
+
+/** Global sync toggle, default true on initialization. Historical name mirrorEnabled does not mean read-only or handover. */
+export interface RemoteSyncSettingsView {
+  mirrorEnabled: boolean
+  version: number
+  syncGeneration: number
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV2ApprovalDecisionCommand {
+  type: 'approval.decide'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteApprovalDecisionPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+export interface RemoteV2BackfillProgress {
+  type: 'sync.backfill.progress'
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  backfillId: string
+  batchIndex: number
+  batchEventCount: number
+  snapshotHighWater: number
+  complete: boolean
+}
+
+export interface RemoteV2BusySnapshot {
+  type: 'sync.busy.snapshot'
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  snapshotId: string
+  connectionId: string
+  capturedAt: string
+  partIndex: number
+  partCount: number
+  conversationIds: string[]
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV2CancelCommand {
+  type: 'run.cancel'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV2CommandWithdrawalCommand {
+  type: 'command.withdraw'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteCommandWithdrawalPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV2ConversationCreateCommand {
+  type: 'conversation.create'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteCreateConversationInput
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV2ConversationUpdateCommand {
+  type: 'conversation.update'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteSyncConversationUpdate
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV2PauseCommand {
+  type: 'run.pause'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV2ResumeCommand {
+  type: 'run.resume'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV2RetryCommand {
+  type: 'run.retry'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV2RunSubmitCommand {
+  type: 'run.submit'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  conversationSeq: number
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunSubmitPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+export type RemoteV2CommandEnvelope = RemoteV2RunSubmitCommand | RemoteV2PauseCommand | RemoteV2ResumeCommand | RemoteV2CancelCommand | RemoteV2RetryCommand | RemoteV2ApprovalDecisionCommand | RemoteV2CommandWithdrawalCommand | RemoteV2ConversationUpdateCommand | RemoteV2ConversationCreateCommand
+
+export type RemoteV2CommandReceipt = RemoteV2CommandAccepted | RemoteV2CommandRejected
+
+export interface RemoteV2CommandReceived {
+  type: 'command.received'
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  commandDigest: string
+  deliverBy: string
+  receivedAt: string
+}
+
+/** Authenticated privacy coverage control, not a replacement immutable event. Bound to a durable reset/deletion fence. No new seq allocation; normal contiguous ACK only after all covered identities/digests and deletion are committed. */
+export interface RemoteV2ContentRedaction {
+  type: 'sync.content.redaction'
+  wireRevision: 2
+  redactionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  /** Deletion-fence generation. Reset retires content generations up to this value; conversation deletion additionally restricts the local conversation ID. Never cover later generations or seq >= deletionSeq. */
+  syncGeneration: number
+  deletionEventId: string
+  deletionSeq: number
+  conversationId?: string
+  slots: RemoteSyncRedactedSlot[]
+}
+
+export interface RemoteV2ConversationDeleted {
+  type: 'sync.conversation.deleted'
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  conversationId: string
+  deletedAt: string
+}
+
+/** Worker requests missing commands or skip records. Never run a later user message across a sequence gap. */
+export interface RemoteV2ConversationGap {
+  type: 'conversation.gap'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  conversationId: string
+  expectedSeq: number
+  receivedSeq: number
+}
+
+/** Durable ordered tombstone for a never-dispatched submit. Not an execution/control command; cannot be used to erase accepted work. Retain until gap replay/snapshot acknowledgement is safe. */
+export interface RemoteV2ConversationSkip {
+  type: 'conversation.skip'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  conversationSeq: number
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  reason: 'withdrawn_before_dispatch' | 'expired_before_dispatch'
+  recordedAt: string
+}
+
+export interface RemoteV2ConversationUpserted {
+  type: 'sync.conversation.upserted'
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: RemoteSyncConversation
+}
+
+/** Explicit durable execution permission. Continuous event ACK is never permission. Late unconsumed grants expire; persisted grants are not reverted by server timers. */
+export interface RemoteV2DeliveryGrant {
+  type: 'command.delivery_granted'
+  wireRevision: 2
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  receivedEventId: string
+  commandDigest: string
+  deliverBy: string
+  grantedAt: string
+}
+
+/** Only advances after event persistence AND projection/browser-outbox commit; old store ack never trims new store outbox. */
+export interface RemoteV2EventAck {
+  type: 'worker.events_ack'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  connectionId: string
+  workerId: string
+  position: RemoteEventPosition
+}
+
+export interface RemoteV2MessageSegment {
+  type: 'sync.message.segment'
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: RemoteSyncMessageSegment
+}
+
+/** Worker local event seq continuity without publishing local-only history. Covers inclusive [firstSeq,seq], firstSeq<=seq. Opaque tombstone only, no local conversation/path/model data. Cannot cover any already published event or remote-critical event; immutable bounded ranges are replayed whole. Persist range coverage before advancing contiguous ack. */
+export interface RemoteV2OmittedEvents {
+  type: 'events.omitted'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  firstSeq: number
+  reason: 'not_remote_visible'
+}
+
+/** Heartbeat acknowledgement is not event ack. After 45 seconds without authenticated Worker traffic mark offline without modifying execution state. */
+export interface RemoteV2ServerHeartbeat {
+  type: 'server.heartbeat'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  connectionId: string
+  receivedAt: string
+}
+
+/** Frozen delivery requires a reason. Store changes or ack regression require reconciliation; R1 exposes no automatic force-unfreeze API. */
+export interface RemoteV2WorkerHelloAck {
+  type: 'worker.hello_ack'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  connectionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  commandDelivery: 'ready' | 'frozen'
+  lastServerAck: RemoteEventPosition | null
+  /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
+  pendingCommandCursor: string
+  heartbeatIntervalSeconds: 15
+  offlineAfterSeconds: 45
+  reason?: RemoteError
+  serverTime: string
+}
+
+export interface RemoteV2WorkerHelloRejected {
+  type: 'worker.hello_rejected'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  error: RemoteError
+  /** Server supported wire revisions, mandatory on rejection (including REMOTE_PROTOCOL_UNSUPPORTED). Initially [1]; during upgrades advertise N and N-1. */
+  supportedWireRevisions: number[]
+}
+
+export type RemoteV2ServerOutboundFrame = RemoteV2WorkerHelloAck | RemoteV2WorkerHelloRejected | RemoteV2ServerHeartbeat | RemoteV2EventAck | RemoteV2CommandEnvelope | RemoteV2ConversationSkip | RemoteV2DeliveryGrant
+
+export interface RemoteV2SyncReset {
+  type: 'sync.reset'
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+}
+
+export interface RemoteV2SyncedRunState {
+  type: 'sync.run.state'
+  wireRevision: 2
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: RemoteSyncRunState
+}
+
+export type RemoteV2VisibleWorkerEvent = RemoteV2CommandAccepted | RemoteV2CommandRejected | RemoteV2CommandCompleted | RemoteV2CommandFailed | RemoteV2ControlObserved | RemoteV2RunStateEvent | RemoteV2MessageEvent | RemoteV2ApprovalEvent | RemoteV2ProgressEvent | RemoteV2CatalogEvent | RemoteV2SkipRecorded | RemoteV2ConversationUpserted | RemoteV2MessageSegment | RemoteV2SyncedRunState | RemoteV2ConversationDeleted | RemoteV2SyncReset | RemoteV2BusySnapshot | RemoteV2BackfillProgress | RemoteV2CommandReceived
+
+export type RemoteV2WorkerEvent = RemoteV2VisibleWorkerEvent | RemoteV2OmittedEvents
+
+/** Sent every 15 seconds. It reports liveness only, not durable business-event progress. */
+export interface RemoteV2WorkerHeartbeat {
+  type: 'worker.heartbeat'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  connectionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  sentAt: string
+  lastServerAck: RemoteEventPosition | null
+}
+
+/** First frame after device-authenticated WSS. Same store preserves seq across boots; new store requires null ack. Credentials never appear in frames. */
+export interface RemoteV2WorkerHello {
+  type: 'worker.hello'
+  /** Revision 2; select by connection codec, never by package version. */
+  wireRevision: 2
+  /** Protocol package semantic version for diagnostics only. Never negotiate or reject based on this value. */
+  protocolVersion: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  platform: 'windows' | 'linux' | 'darwin'
+  architecture: 'x86_64' | 'aarch64'
+  capabilityRevision: number
+  lastServerAck: RemoteEventPosition | null
+}
+
+export type RemoteV2WorkerOutboundFrame = RemoteV2WorkerHello | RemoteV2WorkerHeartbeat | RemoteV2ConversationGap | RemoteV2WorkerEvent | RemoteV2ContentRedaction
 
 export type RemoteWorkerEvent = RemoteVisibleWorkerEvent | RemoteOmittedEvents
 
@@ -2467,11 +3301,12 @@ export interface UpdateHealthCheckPayload {
   checks: HealthCheckOutcome[]
 }
 
-/** At least one non-null title or archived field is required. Workspace, scene and session associations are immutable. */
+/** At least one non-null title, archived or visibility is required. Workspace, scene and session associations remain unchanged. */
 export interface UpdateLocalConversationInput {
   expectedVersion: number
   title?: string
   archived?: boolean
+  visibility?: 'both' | 'pc_only' | 'mobile_only'
 }
 
 export interface UpdateLocalRoleTemplateInput {
@@ -2658,4 +3493,11 @@ export const ERROR_CATALOG: Record<ErrorCode, { http: number; retryable: boolean
   REMOTE_PAIRING_IN_PROGRESS: { http: 409, retryable: false },
   REMOTE_SERVER_UNREACHABLE: { http: 503, retryable: true },
   REMOTE_SERVER_ORIGIN_INVALID: { http: 422, retryable: false },
+  REMOTE_CONVERSATION_BUSY: { http: 409, retryable: true },
+  REMOTE_STATE_NOT_READY: { http: 409, retryable: true },
+  REMOTE_SYNC_CONFLICT: { http: 409, retryable: false },
+  REMOTE_SYNC_DISABLED: { http: 409, retryable: false },
+  REMOTE_DELIVERY_EXPIRED: { http: 409, retryable: true },
+  REMOTE_REVISION_REQUIRED: { http: 409, retryable: false },
+  REMOTE_SYNC_RESOURCE_LIMIT: { http: 413, retryable: false },
 }

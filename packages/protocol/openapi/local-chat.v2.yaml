@@ -1,11 +1,73 @@
 openapi: 3.1.0
 info:
   title: HQAgent N0 Local Chat
-  version: 0.6.2
+  version: 0.7.0
   description: N0 additive contract. Responses use the existing ApiEnvelope; response
     schema below describes data, see x-envelope.
 x-envelope: ../schema/envelope.json#/$defs/ApiEnvelope
 paths:
+  /api/v2/remote/sync-settings:
+    get:
+      operationId: getSyncSettingsV2
+      security: &id001
+      - localSession: []
+      description: Computer-owned persisted sync setting; missing configuration initializes mirrorEnabled=true.
+        Visibility never disables upload.
+      responses:
+        '200':
+          description: 'ApiEnvelope.data; Cache-Control: no-store.'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote-sync.json#/$defs/RemoteSyncSettingsView
+    put:
+      operationId: setSyncSettingsV2
+      security: *id001
+      description: Same manager for v1/v2. expectedVersion CAS, Idempotency-Key replay. Persist setting and reset/tombstone
+        intent atomically; do not claim server deletion is already confirmed. Disabling deletes store copies
+        when reset is delivered.
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote-sync.json#/$defs/RemoteSyncSettingsInput
+      responses:
+        '200':
+          description: 'ApiEnvelope.data; Cache-Control: no-store.'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-dataSchema:
+            $ref: ../schema/remote-sync.json#/$defs/RemoteSyncSettingsView
+        default:
+          description: Existing ApiEnvelope error; no-store.
   /api/v2/remote/link:
     get:
       operationId: getLocalRemoteLink
@@ -152,7 +214,7 @@ paths:
         完成本机断开和凭据删除后才返回state=unpaired，通知服务端撤销为best-effort，不能冒充服务端已确认。
         不把设备Bearer当浏览器Cookie调用远程owner撤销接口；缺乏可用授权通知途径或离线也不阻塞本机解绑，
         可通过unpaired.lastErrorCode报告REMOTE_AUTH_REQUIRED或REMOTE_SERVER_UNREACHABLE。
-        凭据删除失败不得返回成功。既有remote对话authority保持remote，本机只读，不自动回退local或重放消息。
+        凭据删除失败不得返回成功。既有remote对话authority保留历史来源，本机可继续，不自动重放消息。
         本操作不承诺取消已在运行的任务。所有写操作使用v2既有Cookie鉴权，不新增凭据。
          本机Local Hub API；云端Cookie不能用于此接口。所有成功及错误响应均Cache-Control:no-store。 浏览器写请求必须使用可信Origin与Idempotency-Key；复用本机v2幂等规则。
       parameters:
@@ -434,8 +496,8 @@ paths:
       operationId: listLocalConversations
       responses:
         '200':
-          description: ApiEnvelope.data contains the declared payload; success/error
-            envelope is shared with v1.
+          description: ApiEnvelope.data contains the declared payload; success/error envelope is shared with
+            v1.
           content:
             application/json:
               schema:
@@ -444,15 +506,29 @@ paths:
             type: array
             items:
               $ref: ../schema/local-chat.json#/$defs/LocalConversationView
-      parameters: []
+      parameters:
+      - name: includeHidden
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+      - name: workspaceId
+        in: query
+        required: false
+        schema:
+          type: string
       security:
       - localSession: []
+      description: Computer list excludes mobile_only by default. includeHidden=true recovers hidden rows for
+        editing; visibility is display-only. authority is not a write gate; busy is derived from actual kernel
+        state.
     post:
       operationId: createLocalConversation
       responses:
         '201':
-          description: ApiEnvelope.data contains the declared payload; success/error
-            envelope is shared with v1.
+          description: ApiEnvelope.data contains the declared payload; success/error envelope is shared with
+            v1.
           content:
             application/json:
               schema:
@@ -476,7 +552,10 @@ paths:
   /api/v2/conversations/{conversationId}:
     patch:
       operationId: updateLocalConversation
-      description: Rename or archive/restore a conversation with metadata version checking. At least one non-null title or archived field is required. Title is trimmed and must remain nonempty. Archiving is rejected while any run is queued, running, waiting_approval or paused; it never cancels work. Archived conversations remain readable but cannot accept messages or execution retry/resume until restored. Metadata edits preserve all task/session associations. List includes archived conversations; old clients may ignore optional fields. Matching Idempotency-Key replays the original response without incrementing revision again.
+      description: Worker-owned conversation metadata; title/archived/visibility with expectedVersion CAS and
+        at least one mutation. Local and remote authority are both writable. Workspace/scene/session associations
+        remain unchanged. Archive requires no queued/running/waiting_approval round; recovery-only rounds show
+        warning, not a busy lock.
       security:
       - localSession: []
       parameters:
@@ -498,7 +577,8 @@ paths:
               $ref: ../schema/local-chat.json#/$defs/UpdateLocalConversationInput
       responses:
         '200':
-          description: Updated conversation; version increments for a successful metadata edit. lastRunStatus reflects latest actual run/task state and is absent if no runs exist.
+          description: Updated conversation; version increments for a successful metadata edit. lastRunStatus
+            reflects latest actual run/task state and is absent if no runs exist.
           content:
             application/json:
               schema:
@@ -506,7 +586,8 @@ paths:
           x-dataSchema:
             $ref: ../schema/local-chat.json#/$defs/LocalConversationView
         '409':
-          description: Version mismatch or conversation has unfinished work; ApiEnvelope error CONFLICT. Same key with different input yields IDEMPOTENCY_MISMATCH.
+          description: Version mismatch or conversation has unfinished work; ApiEnvelope error CONFLICT. Same
+            key with different input yields IDEMPOTENCY_MISMATCH.
         '422':
           description: Empty patch, null field or invalid/blank title; ApiEnvelope error VALIDATION_FAILED.
   /api/v2/conversations/{conversationId}/messages:

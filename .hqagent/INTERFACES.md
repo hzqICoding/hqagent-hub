@@ -166,3 +166,25 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 - 不新增列审批路由、类型或错误码；保留 RemoteApprovalView 的通用状态语义。高风险不可远程 approve 的 pending 项仍可见并可依现有规则 reject。wireRevision 仍为 1，所有 Worker 帧不变。
 - 实测：validate -CheckGenerated 通过（258 类型 / 110 Fixture）；协议 212 passed；Hub 285 passed / 4 warnings；server 85 passed / 1 warning。未启动 Vitest，前端验证交主代理。
 - [FZ-R1.3 回执](handoffs/R1-FZ13-remote-protocol.md) 附真实输出、测试调整说明及下游验收项。P1 尚未填充该字段；本次服务端回归通过证明可选字段兼容，不代表审批补全业务已实现。
+
+## 已作废：R1.5 v0.3 镜像+接力草稿（9bb608d / bf15428）
+
+> 以下是历史记录，不是当前状态。v0.4取代该方案；Q1已按D49建议B解决，当前冻结见下一节。
+
+- 已合入 integration/phase1@`ab889b3a04ebf50ee4246dc8e3f27a10751b096c`，merge `d495c051f836ddf4ca25a992d1cceef4fbe0a097`；本分支尚未合回集成。
+- **没有0.7.0冻结SHA，P1/P2/P3不可据此记录按新协议开工。** VERSION仍为0.6.3，线路仍只有修订1，Schema、注册表与生成物均未改动。
+- Q1：新增接力/镜像专用错误码会经公共ErrorCode扩大rev1 DTO可接受值域，和“rev1 DTO一字不改且不放宽严格性”冲突。需主代理选择注册表值域例外，或授权独立rev1冻结错误类型及保持线路行为的引用调整。
+- 只读证据提交：`9bb608dcca8be3cb89110934dd6f9f83ce8f27ea`，不是协议冻结提交。D46已登记；D47登记产品方向及协议待裁决状态。
+- [R15-P0回执](handoffs/R15-P0-remote-protocol.md) 含复现、选项和接续事项。未运行发布门禁全套，未启动Vitest；等待Q1裁决后继续，不用0.6.3结果冒充0.7.0验证。
+
+
+## R1.5 / 0.7.0 — 已冻结（v0.4，2026-09-27）
+
+**R1.5 协议 0.7.0 已冻结，P1 / P2 / 前端可开工。**
+
+- 冻结SHA：`4e597fb5e88a315a271d39528d43e7846d53aa40`；基线integration/phase1@`8d2058f43f7bd94028b4d3fd1fd2bac65e6b1992`，开工merge为`2c839b1e402d52e585ab9afd8d4edb5b74145c34`。提交仍在feat/remote-protocol，未合回integration。
+- D46扫码只改前端；D47电脑唯一写入、完整副本、两端继续、完整忙碌集合、显示可见性；D48撤销本机remote只读与新提交的离线排队；D49独立冻结修订1错误值域。旧镜像+接力和Q1待裁决状态全部作废。
+- 线路支持1/2；rev2独立DTO/union，39个具体帧；原27个rev1帧仅做批准的错误引用替换，110份旧Fixture不变。63个新类型都有Fixture，共321类型/173Fixture。
+- 全文分段拼齐才发布；关闭/删除通过无正文覆盖记录及栅栏避免复活并维持连续ACK。30秒送达要求使用provisional→持久grant→正式接单门闩，ACK不作许可。服务端不持有对话锁，忙碌以电脑最新完整集合覆盖。
+- 协议304 passed；Hub285 passed/4 warnings；Server110 passed/1 failed/1 warning，唯一失败是P1尚未适配新HTTP绑定，详见回执。前端测试依分工由主代理运行，未启动Vitest。
+- [当前契约](../packages/protocol/remote/R1.5-contract.md)、[覆盖后的回执](handoffs/R15-P0-remote-protocol.md)、[复核与失败证据](reviews/R15-P0-v04-review.md)。冻结的是协议，尚未实现新同步/门闩/分页/忙碌业务，不能把既有测试通过当作新功能已部署。

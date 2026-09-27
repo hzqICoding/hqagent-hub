@@ -166,7 +166,7 @@ errors:
   - code: REMOTE_DEVICE_OFFLINE
     http: 409
     retryable: true
-    description: 目标设备离线；可排队命令仍返回202和queued_offline，不将离线误报执行失败
+    description: 目标设备离线；R1.5浏览器提交立即失败，不排队；修订1历史记录只读保留
   - code: REMOTE_DEVICE_REVOKED
     http: 403
     retryable: false
@@ -230,7 +230,7 @@ errors:
   - code: CONVERSATION_AUTHORITY_MISMATCH
     http: 409
     retryable: false
-    description: 本地写接口不能写remote对话，必须走权威服务端；旧local对话不自动转换
+    description: 0.7起不再用于本机remote只读拦截；保留历史/真实归属冲突。原语义：本地写接口不能写remote对话，必须走权威服务端；旧local对话不自动转换
   - code: REMOTE_TARGET_MISMATCH
     http: 409
     retryable: false
@@ -273,3 +273,33 @@ errors:
     http: 422
     retryable: false
     description: serverOrigin不是允许的HTTPS origin，或未获本机开发模式允许的localhost/127.0.0.1 HTTP origin
+
+  # R1.5 HTTP/revision 2 only; revision 1 uses its frozen enum.
+  - code: REMOTE_CONVERSATION_BUSY
+    http: 409
+    retryable: true
+    description: 电脑已有queued/running/waiting_approval轮次；保留输入，取消不受此限制
+  - code: REMOTE_STATE_NOT_READY
+    http: 409
+    retryable: true
+    description: 等待当前连接的完整忙碌快照；不是持久锁
+  - code: REMOTE_SYNC_CONFLICT
+    http: 409
+    retryable: false
+    description: 同步分段/版本/快照内容冲突，不得发布部分正文
+  - code: REMOTE_SYNC_DISABLED
+    http: 409
+    retryable: false
+    description: 该电脑关闭内容同步，不能向已删除副本提交
+  - code: REMOTE_DELIVERY_EXPIRED
+    http: 409
+    retryable: true
+    description: 送达期限已过且未获执行许可；设备离线，发送失败
+  - code: REMOTE_REVISION_REQUIRED
+    http: 409
+    retryable: false
+    description: 该操作要求线路修订2，不能降级执行
+  - code: REMOTE_SYNC_RESOURCE_LIMIT
+    http: 413
+    retryable: false
+    description: 全文同步资源配额不足，明确失败，不截断伪装成功

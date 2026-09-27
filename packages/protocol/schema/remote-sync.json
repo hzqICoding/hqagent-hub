@@ -1,0 +1,3749 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "remote-sync.json",
+  "title": "R1.5 revision 2 and browser/local sync boundary",
+  "$defs": {
+    "RemoteV2ApprovalDecisionCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload",
+        "deliverBy",
+        "localConversationId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "approval.decide"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteApprovalDecisionPayload"
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "localConversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteV2ApprovalEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "conversationId",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "approval.state_changed"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteApprovalView"
+        }
+      }
+    },
+    "RemoteV2CancelCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload",
+        "deliverBy",
+        "localConversationId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.cancel"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunControlPayload"
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "localConversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteV2CatalogEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "capability.changed"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteCatalogView"
+        }
+      }
+    },
+    "RemoteV2CommandAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "receivedAt",
+        "status"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.accepted"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "receivedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "status": {
+          "type": "string",
+          "const": "accepted"
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        }
+      },
+      "description": "Durable inbox admission, not model/execution success. Duplicate immutable commands return the original receipt/event."
+    },
+    "RemoteV2CommandCompleted": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "resultStatus"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.completed"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultStatus": {
+          "type": "string",
+          "enum": [
+            "succeeded",
+            "cancelled",
+            "confirmed",
+            "retry_enqueued",
+            "approval_consumed",
+            "withdrawn"
+          ]
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "controlResult": {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ControlConfirmed"
+        }
+      },
+      "description": "Not universally task success. Retry completes on durable new execution reference; execute completes on actual terminal Run success/cancellation. Cancel/pause/resume require confirmed structured control result."
+    },
+    "RemoteV2CommandEnvelope": {
+      "oneOf": [
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2RunSubmitCommand"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2PauseCommand"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ResumeCommand"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CancelCommand"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2RetryCommand"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ApprovalDecisionCommand"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandWithdrawalCommand"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ConversationUpdateCommand"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ConversationCreateCommand"
+        }
+      ]
+    },
+    "RemoteV2CommandFailed": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "resultStatus",
+        "error"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.failed"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultStatus": {
+          "type": "string",
+          "enum": [
+            "failed",
+            "rejected"
+          ]
+        },
+        "error": {
+          "$ref": "remote.json#/$defs/RemoteError"
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "controlResult": {
+          "$ref": "remote.json#/$defs/RemoteControlRejected"
+        }
+      },
+      "description": "Failure after admission. A refused control is distinct from unconfirmed cancellation; do not infer that an Agent process has stopped."
+    },
+    "RemoteV2CommandReceipt": {
+      "oneOf": [
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandAccepted"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandRejected"
+        }
+      ]
+    },
+    "RemoteV2CommandRejected": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "receivedAt",
+        "status",
+        "error"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.rejected"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "receivedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "status": {
+          "type": "string",
+          "const": "rejected"
+        },
+        "error": {
+          "$ref": "remote.json#/$defs/RemoteError"
+        }
+      },
+      "description": "Pre-admission rejection only. An expired sequenced submit consumes its ordered slot without execution."
+    },
+    "RemoteV2CommandWithdrawalCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload",
+        "deliverBy",
+        "localConversationId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.withdraw"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteCommandWithdrawalPayload"
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "localConversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteV2ControlObserved": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "controlResult"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.control_result"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "controlResult": {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ControlResult"
+        },
+        "executionStatus": {
+          "$ref": "common.json#/$defs/TaskStatus"
+        }
+      },
+      "description": "D41: unconfirmed leaves command accepted and pending reconciliation. Run-scoped controls include resultRef/executionStatus. Before a Run exists (withdrawal reconciliation), omit both rather than invent an identity or execution state."
+    },
+    "RemoteV2ConversationGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "conversationId",
+        "expectedSeq",
+        "receivedSeq"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "conversation.gap"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "receivedSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "description": "Worker requests missing commands or skip records. Never run a later user message across a sequence gap."
+    },
+    "RemoteV2ConversationSkip": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "conversationSeq",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "reason",
+        "recordedAt"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "conversation.skip"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "withdrawn_before_dispatch",
+            "expired_before_dispatch"
+          ]
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Durable ordered tombstone for a never-dispatched submit. Not an execution/control command; cannot be used to erase accepted work. Retain until gap replay/snapshot acknowledgement is safe."
+    },
+    "RemoteV2EventAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "connectionId",
+        "workerId",
+        "position"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.events_ack"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "position": {
+          "$ref": "remote.json#/$defs/RemoteEventPosition"
+        }
+      },
+      "description": "Only advances after event persistence AND projection/browser-outbox commit; old store ack never trims new store outbox."
+    },
+    "RemoteV2MessageEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "conversationId",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "message.appended"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteWorkerMessagePayload"
+        }
+      }
+    },
+    "RemoteV2OmittedEvents": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "firstSeq",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "events.omitted"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "firstSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "reason": {
+          "type": "string",
+          "const": "not_remote_visible"
+        }
+      },
+      "description": "Worker local event seq continuity without publishing local-only history. Covers inclusive [firstSeq,seq], firstSeq<=seq. Opaque tombstone only, no local conversation/path/model data. Cannot cover any already published event or remote-critical event; immutable bounded ranges are replayed whole. Persist range coverage before advancing contiguous ack."
+    },
+    "RemoteV2PauseCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload",
+        "deliverBy",
+        "localConversationId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.pause"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunControlPayload"
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "localConversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteV2ProgressEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "conversationId",
+        "resultRef",
+        "message"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.progress"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 4000
+        }
+      },
+      "description": "Sanitized observable progress only. Never private model reasoning, raw provider auth, full environment, or credential files."
+    },
+    "RemoteV2ResumeCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload",
+        "deliverBy",
+        "localConversationId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.resume"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunControlPayload"
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "localConversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteV2RetryCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload",
+        "deliverBy",
+        "localConversationId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.retry"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunControlPayload"
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "localConversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteV2RunStateEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.state_changed"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunStatePayload"
+        }
+      },
+      "description": "Worker creates/binds LocalRun and execution Task using existing semantics; it does not invent long-lived Task or retryOfRunId."
+    },
+    "RemoteV2RunSubmitCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "conversationSeq",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload",
+        "deliverBy",
+        "localConversationId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "run.submit"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteRunSubmitPayload"
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "localConversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteV2ServerHeartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "connectionId",
+        "receivedAt"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "server.heartbeat"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "receivedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Heartbeat acknowledgement is not event ack. After 45 seconds without authenticated Worker traffic mark offline without modifying execution state."
+    },
+    "RemoteV2ServerOutboundFrame": {
+      "oneOf": [
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2WorkerHelloAck"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2WorkerHelloRejected"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ServerHeartbeat"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2EventAck"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandEnvelope"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ConversationSkip"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2DeliveryGrant"
+        }
+      ]
+    },
+    "RemoteV2SkipRecorded": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "conversationSeq"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "conversation.skip_recorded"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "description": "Worker records ordered skip in the same durable inbox ordering ledger as submits."
+    },
+    "RemoteV2VisibleWorkerEvent": {
+      "oneOf": [
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandAccepted"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandRejected"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandCompleted"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandFailed"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ControlObserved"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2RunStateEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2MessageEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ApprovalEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ProgressEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CatalogEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2SkipRecorded"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ConversationUpserted"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2MessageSegment"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2SyncedRunState"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ConversationDeleted"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2SyncReset"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2BusySnapshot"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2BackfillProgress"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandReceived"
+        }
+      ]
+    },
+    "RemoteV2WorkerEvent": {
+      "oneOf": [
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2VisibleWorkerEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2OmittedEvents"
+        }
+      ]
+    },
+    "RemoteV2WorkerHeartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "connectionId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "sentAt",
+        "lastServerAck"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.heartbeat"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sentAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "lastServerAck": {
+          "oneOf": [
+            {
+              "$ref": "remote.json#/$defs/RemoteEventPosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "Sent every 15 seconds. It reports liveness only, not durable business-event progress."
+    },
+    "RemoteV2WorkerHello": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "protocolVersion",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "platform",
+        "architecture",
+        "capabilityRevision",
+        "lastServerAck"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.hello"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "protocolVersion": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "description": "Protocol package semantic version for diagnostics only. Never negotiate or reject based on this value."
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "windows",
+            "linux",
+            "darwin"
+          ]
+        },
+        "architecture": {
+          "type": "string",
+          "enum": [
+            "x86_64",
+            "aarch64"
+          ]
+        },
+        "capabilityRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "lastServerAck": {
+          "oneOf": [
+            {
+              "$ref": "remote.json#/$defs/RemoteEventPosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "First frame after device-authenticated WSS. Same store preserves seq across boots; new store requires null ack. Credentials never appear in frames."
+    },
+    "RemoteV2WorkerHelloAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "connectionId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "commandDelivery",
+        "lastServerAck",
+        "pendingCommandCursor",
+        "heartbeatIntervalSeconds",
+        "offlineAfterSeconds",
+        "serverTime"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.hello_ack"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "commandDelivery": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "frozen"
+          ]
+        },
+        "lastServerAck": {
+          "oneOf": [
+            {
+              "$ref": "remote.json#/$defs/RemoteEventPosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pendingCommandCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "heartbeatIntervalSeconds": {
+          "type": "integer",
+          "const": 15
+        },
+        "offlineAfterSeconds": {
+          "type": "integer",
+          "const": 45
+        },
+        "reason": {
+          "$ref": "remote.json#/$defs/RemoteError"
+        },
+        "serverTime": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Frozen delivery requires a reason. Store changes or ack regression require reconciliation; R1 exposes no automatic force-unfreeze API."
+    },
+    "RemoteV2WorkerHelloRejected": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "error",
+        "supportedWireRevisions"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.hello_rejected"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "error": {
+          "$ref": "remote.json#/$defs/RemoteError"
+        },
+        "supportedWireRevisions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "description": "Server supported wire revisions, mandatory on rejection (including REMOTE_PROTOCOL_UNSUPPORTED). Initially [1]; during upgrades advertise N and N-1."
+        }
+      }
+    },
+    "RemoteV2WorkerOutboundFrame": {
+      "oneOf": [
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2WorkerHello"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2WorkerHeartbeat"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ConversationGap"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2WorkerEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ContentRedaction"
+        }
+      ]
+    },
+    "RemoteWire1ErrorCode": {
+      "type": "string",
+      "enum": [
+        "BAD_REQUEST",
+        "VALIDATION_FAILED",
+        "UNAUTHORIZED",
+        "ORIGIN_NOT_ALLOWED",
+        "NOT_FOUND",
+        "CONFLICT",
+        "IDEMPOTENCY_MISMATCH",
+        "PROTOCOL_VERSION_MISMATCH",
+        "HUB_NOT_READY",
+        "HUB_MAINTENANCE",
+        "EVENT_CURSOR_EXPIRED",
+        "FEATURE_UNAVAILABLE",
+        "AGENT_NOT_FOUND",
+        "AGENT_OFFLINE",
+        "AGENT_NOT_LOGGED_IN",
+        "AGENT_INCOMPATIBLE",
+        "CAPABILITY_MISSING",
+        "ROLE_UNRESOLVED",
+        "SESSION_NOT_RESUMABLE",
+        "TASK_NOT_CANCELLABLE",
+        "TASK_ACTION_INVALID",
+        "WORKTREE_BUSY",
+        "PATH_NOT_ALLOWED",
+        "APPROVAL_REQUIRED",
+        "APPROVAL_EXPIRED",
+        "APPROVAL_ALREADY_DECIDED",
+        "UPDATE_NOT_AVAILABLE",
+        "UPDATE_BUSY",
+        "UPDATE_VERIFY_FAILED",
+        "UPDATE_DRAIN_TIMEOUT",
+        "INTERNAL",
+        "REMOTE_AUTH_REQUIRED",
+        "REMOTE_CSRF_REJECTED",
+        "REMOTE_DEVICE_OFFLINE",
+        "REMOTE_DEVICE_REVOKED",
+        "REMOTE_DEVICE_AUTH_FAILED",
+        "REMOTE_PAIRING_EXPIRED",
+        "REMOTE_PAIRING_CONFLICT",
+        "REMOTE_PAIRING_INVALID",
+        "REMOTE_COMMAND_EXPIRED",
+        "REMOTE_COMMAND_WITHDRAWN",
+        "REMOTE_WITHDRAWAL_UNCONFIRMED",
+        "REMOTE_STORE_CHANGED",
+        "REMOTE_EPOCH_STALE",
+        "REMOTE_PROTOCOL_UNSUPPORTED",
+        "REMOTE_EVENT_CONFLICT",
+        "REMOTE_ACK_CONFLICT",
+        "REMOTE_SEQUENCE_GAP",
+        "REMOTE_APPROVAL_FORBIDDEN",
+        "CONVERSATION_AUTHORITY_MISMATCH",
+        "REMOTE_TARGET_MISMATCH",
+        "REMOTE_SCENE_VERSION_MISMATCH",
+        "REMOTE_CURSOR_EXPIRED",
+        "REMOTE_CURSOR_INVALID",
+        "REMOTE_RATE_LIMITED",
+        "REMOTE_FRAME_TOO_LARGE",
+        "REMOTE_WITHDRAWAL_TOO_LATE",
+        "REMOTE_PAIRING_IN_PROGRESS",
+        "REMOTE_SERVER_UNREACHABLE",
+        "REMOTE_SERVER_ORIGIN_INVALID"
+      ],
+      "x-wire-strict": true
+    },
+    "RemoteWire1Error": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "remote-sync.json#/$defs/RemoteWire1ErrorCode"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "description": "Sanitized error. No credential, raw environment, owner locator or arbitrary detail object."
+    },
+    "RemoteWire1ApprovalView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "approvalId",
+        "resultRef",
+        "action",
+        "targetSummary",
+        "riskLevel",
+        "status",
+        "requestedAt",
+        "expiresAt",
+        "remoteApprovalAllowed",
+        "workerPolicyRevision"
+      ],
+      "properties": {
+        "approvalId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "action": {
+          "$ref": "common.json#/$defs/DangerousAction"
+        },
+        "targetSummary": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "riskLevel": {
+          "$ref": "common.json#/$defs/RiskLevel"
+        },
+        "status": {
+          "$ref": "common.json#/$defs/ApprovalStatus"
+        },
+        "requestedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "remoteApprovalAllowed": {
+          "type": "boolean"
+        },
+        "workerPolicyRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "denialCode": {
+          "$ref": "remote-sync.json#/$defs/RemoteWire1ErrorCode"
+        }
+      },
+      "description": "Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely."
+    },
+    "RemoteSyncConversation": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "conversationId",
+        "workspaceId",
+        "sceneId",
+        "sceneVersion",
+        "title",
+        "createdAt",
+        "updatedAt",
+        "archived",
+        "visibility",
+        "metadataVersion",
+        "authority"
+      ],
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sceneId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sceneVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "updatedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "both",
+            "pc_only",
+            "mobile_only"
+          ]
+        },
+        "metadataVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "authority": {
+          "type": "string",
+          "enum": [
+            "local",
+            "remote"
+          ]
+        }
+      },
+      "description": "Worker local identifiers. Server namespaces by worker/store and maps browser IDs; visibility is display-only."
+    },
+    "RemoteSyncMessageSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "messageId",
+        "conversationId",
+        "messageSequence",
+        "messageRevision",
+        "role",
+        "createdAt",
+        "text",
+        "segmentIndex",
+        "segmentCount",
+        "totalUtf8Bytes",
+        "contentSha256"
+      ],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "messageSequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "messageRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "user",
+            "assistant",
+            "system"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "segmentIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "segmentCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "totalUtf8Bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "contentSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "minLength": 64,
+          "maxLength": 64
+        }
+      },
+      "description": "Whole UTF-8 text, never truncated; 0-based contiguous segments. Immutable metadata per messageRevision, atomic publish only after digest/byte-count verification."
+    },
+    "RemoteSyncRunState": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "runId",
+        "conversationId",
+        "status",
+        "observedAt"
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "status": {
+          "$ref": "common.json#/$defs/TaskStatus"
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "executionTaskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "recoveryRequired": {
+          "type": "boolean"
+        }
+      }
+    },
+    "RemoteV2ConversationUpserted": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "syncGeneration",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "sync.conversation.upserted"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "syncGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "payload": {
+          "$ref": "remote-sync.json#/$defs/RemoteSyncConversation"
+        }
+      }
+    },
+    "RemoteV2MessageSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "syncGeneration",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "sync.message.segment"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "syncGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "payload": {
+          "$ref": "remote-sync.json#/$defs/RemoteSyncMessageSegment"
+        }
+      }
+    },
+    "RemoteV2SyncedRunState": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "syncGeneration",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "sync.run.state"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "syncGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "payload": {
+          "$ref": "remote-sync.json#/$defs/RemoteSyncRunState"
+        }
+      }
+    },
+    "RemoteV2ConversationDeleted": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "syncGeneration",
+        "conversationId",
+        "deletedAt"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "sync.conversation.deleted"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "syncGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "deletedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      }
+    },
+    "RemoteV2SyncReset": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "syncGeneration"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "sync.reset"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "syncGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "RemoteV2BusySnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "snapshotId",
+        "connectionId",
+        "capturedAt",
+        "partIndex",
+        "partCount",
+        "conversationIds"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "sync.busy.snapshot"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "snapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "capturedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "partIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "partCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "conversationIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "maxItems": 100
+        }
+      }
+    },
+    "RemoteV2BackfillProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "syncGeneration",
+        "backfillId",
+        "batchIndex",
+        "batchEventCount",
+        "snapshotHighWater",
+        "complete"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "sync.backfill.progress"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "syncGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "backfillId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "batchIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "batchEventCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "snapshotHighWater": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "RemoteV2CommandReceived": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "eventId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "seq",
+        "occurredAt",
+        "commandId",
+        "conversationId",
+        "commandDigest",
+        "deliverBy",
+        "receivedAt"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.received"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "occurredAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "commandDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "receivedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      }
+    },
+    "RemoteV2DeliveryGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "receivedEventId",
+        "commandDigest",
+        "deliverBy",
+        "grantedAt"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command.delivery_granted"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "receivedEventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "commandDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "grantedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "Explicit durable execution permission. Continuous event ACK is never permission. Late unconsumed grants expire; persisted grants are not reverted by server timers."
+    },
+    "RemoteSyncConversationUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "conversationId",
+        "expectedVersion"
+      ],
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "both",
+            "pc_only",
+            "mobile_only"
+          ]
+        }
+      },
+      "description": "At least one title/archived/visibility change; Worker checks metadataVersion atomically."
+    },
+    "RemoteV2ConversationUpdateCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload",
+        "deliverBy",
+        "localConversationId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "conversation.update"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote-sync.json#/$defs/RemoteSyncConversationUpdate"
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "localConversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteV2ExecutionEvent": {
+      "oneOf": [
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandAccepted"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandRejected"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandCompleted"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CommandFailed"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ControlObserved"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2RunStateEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2MessageEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ApprovalEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ProgressEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2CatalogEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2SkipRecorded"
+        }
+      ]
+    },
+    "RemoteV2ControlConfirmed": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "outcome",
+        "executionMayStillBeRunning",
+        "orphanProcessIds",
+        "reason",
+        "evidence",
+        "observedAt"
+      ],
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "const": "confirmed"
+        },
+        "executionMayStillBeRunning": {
+          "type": "boolean"
+        },
+        "orphanProcessIds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "maxItems": 0
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "evidence": {
+          "type": "string",
+          "enum": [
+            "adapter_confirmed",
+            "node_boundary_paused",
+            "already_terminal",
+            "retry_enqueued",
+            "supervisor_resumed",
+            "inbox_tombstone",
+            "metadata_committed"
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "description": "D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist."
+    },
+    "RemoteV2ControlResult": {
+      "oneOf": [
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ControlConfirmed"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteControlRejected"
+        },
+        {
+          "$ref": "remote.json#/$defs/RemoteControlUnconfirmed"
+        }
+      ]
+    },
+    "RemoteSyncSettingsView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "mirrorEnabled",
+        "version",
+        "syncGeneration"
+      ],
+      "properties": {
+        "mirrorEnabled": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "syncGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "description": "Global sync toggle, default true on initialization. Historical name mirrorEnabled does not mean read-only or handover."
+    },
+    "RemoteSyncSettingsInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "mirrorEnabled",
+        "expectedVersion"
+      ],
+      "properties": {
+        "mirrorEnabled": {
+          "type": "boolean"
+        },
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "RemoteSyncConversationInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "expectedVersion"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "both",
+            "pc_only",
+            "mobile_only"
+          ]
+        }
+      },
+      "description": "At least one mutable field; browser cannot update copy directly."
+    },
+    "RemoteSyncMessagePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "items",
+        "hasMore",
+        "snapshotCursor"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteMessageView"
+          },
+          "maxItems": 100
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "before": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048
+        },
+        "snapshotCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048
+        }
+      },
+      "description": "Newest first. before and snapshotCursor are opaque owner/device/conversation-scoped signed cursors. New items merge by messageId/revision; never by offset."
+    },
+    "RemoteBrowserV2WorkerEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "serverCursor",
+        "recordedAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.event"
+        },
+        "serverCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ExecutionEvent"
+        }
+      },
+      "description": "Owner-scoped browser event; ordering/resume is only by opaque serverCursor, never by payload Worker seq."
+    },
+    "RemoteBrowserConversationDeleted": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "serverCursor",
+        "recordedAt",
+        "conversationId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "conversation.deleted"
+        },
+        "serverCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      }
+    },
+    "RemoteBrowserStoreReset": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "serverCursor",
+        "recordedAt",
+        "workerId",
+        "workerStoreId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "store.reset"
+        },
+        "serverCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      }
+    },
+    "RemoteV2ConversationCreateCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "commandId",
+        "conversationId",
+        "targetWorkerId",
+        "expectedWorkerStoreId",
+        "createdAt",
+        "expiresAt",
+        "payload",
+        "deliverBy",
+        "localConversationId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "conversation.create"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2,
+          "description": "Revision 2; select by connection codec, never by package version."
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "targetWorkerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expectedWorkerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote.json#/$defs/RemoteCreateConversationInput"
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "localConversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."
+    },
+    "RemoteSyncRedactedSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "seq",
+        "eventId",
+        "eventSha256",
+        "originalType"
+      ],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "originalType": {
+          "type": "string",
+          "enum": [
+            "sync.conversation.upserted",
+            "sync.message.segment",
+            "sync.run.state",
+            "sync.backfill.progress",
+            "message.appended"
+          ]
+        },
+        "eventSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "minLength": 64,
+          "maxLength": 64
+        }
+      },
+      "description": "Only retired content slots, never admission/grant/control facts. Original identity and digest are retained, not rewritten."
+    },
+    "RemoteV2ContentRedaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "wireRevision",
+        "redactionId",
+        "workerId",
+        "workerStoreId",
+        "workerEpoch",
+        "syncGeneration",
+        "deletionEventId",
+        "deletionSeq",
+        "slots"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "sync.content.redaction"
+        },
+        "wireRevision": {
+          "type": "integer",
+          "const": 2
+        },
+        "redactionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerStoreId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workerEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "syncGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "description": "Deletion-fence generation. Reset retires content generations up to this value; conversation deletion additionally restricts the local conversation ID. Never cover later generations or seq >= deletionSeq."
+        },
+        "deletionEventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "deletionSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "$ref": "remote-sync.json#/$defs/RemoteSyncRedactedSlot"
+          },
+          "minItems": 1,
+          "maxItems": 100
+        }
+      },
+      "description": "Authenticated privacy coverage control, not a replacement immutable event. Bound to a durable reset/deletion fence. No new seq allocation; normal contiguous ACK only after all covered identities/digests and deletion are committed."
+    }
+  }
+}
