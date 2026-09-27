@@ -145,3 +145,14 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 - 继续遵守 D40/D41：远程契约映射现有执行内核；vNext 技术方案 §4、§5.1 为目标模型，本轮不迁移。
 - 验证：258 类型 / 109 Fixture；协议 187 passed；Hub 199 passed；前端 typecheck 通过，41 文件 / 201 passed。
 - [FZ-R1.1 回执](handoffs/R1-FZ11-remote-protocol.md) 记录输出来源、下游接线与待确认项。本次是协议冻结，不表示远程功能已实现或部署。
+
+## FZ-R1.2 / 0.6.2 — 已冻结（2026-09-26）
+
+**FZ-R1.2 / 0.6.2 已冻结；P2 与 P3-B 的本机浏览器配对入口以此为准。**
+
+- 冻结 SHA：`1e00d2c20ca346e4ab37cc690d59a1e2b2fac64f`。已先用 merge `96b7adfd886b75db91efe7d4423282be810889fa` 合入 integration/phase1@`b84fe9137bcc35e0bb97f9f149d75476ca358c8d`；本次改动仅在 feat/remote-protocol，尚未合回集成分支。
+- D44：四个本机 Cookie 等价操作位于现有 `packages/protocol/openapi/local-chat.v2.yaml`：GET /api/v2/remote/link、POST/DELETE /api/v2/remote/pairing、POST /api/v2/remote/unlink。复用 D43 DTO/错误码、本机 localSession 鉴权、Origin 和 Idempotency-Key；成功和错误响应都 no-store。允许轮询 GET link。
+- 本机 Local Hub 的 v2 与云端 Hub Server 的 remote-hub.v2 是不同服务，Cookie 不可互换。本机 v1 Bearer 保留给桌面壳/诊断；remote.link.changed 不变。FZ-R1.1 接线事项2的协议缺口已由 D44 关闭。
+- wireRevision 仍为 1；没有新增类型、错误码或 Fixture，没有修改云端 HTTP、v1 路由或现有执行内核。D40/D41 仍有效，vNext 技术方案 §4、§5.1 为目标模型。
+- 本轮实测：validate -CheckGenerated 通过（258 类型 / 109 Fixture）；协议 198 passed；Hub 270 passed / 4 个已有 warning。前端验证依任务要求交主代理，本轮未启动 Vitest。
+- [FZ-R1.2 回执](handoffs/R1-FZ12-remote-protocol.md) 含完整命令、输出与下游要求；新 Cookie 路由的业务实现和真实联调由 P2/P3 承担，本次只冻结契约。
