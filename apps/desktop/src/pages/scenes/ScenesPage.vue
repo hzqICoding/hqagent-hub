@@ -474,7 +474,7 @@ async function refreshTemplates() {
 
 <template>
   <div class="h-full flex flex-col bg-bg-app overflow-hidden">
-    <div class="px-4 py-2 bg-panel-header border-b border-border flex items-center justify-between gap-3 text-xs text-text">
+    <div class="px-3 sm:px-4 py-2 bg-panel-header border-b border-border flex items-center justify-between gap-2 sm:gap-3 text-xs text-text flex-wrap">
       <div class="flex items-center gap-2 min-w-0">
         <Info class="w-4 h-4 text-primary shrink-0" />
         <span class="font-medium text-text">场景与角色配置</span>
@@ -483,32 +483,32 @@ async function refreshTemplates() {
         </span>
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <HqButton size="sm" variant="secondary" @click="openTemplateManager">
+        <HqButton size="sm" variant="secondary" class="min-h-[36px] sm:min-h-0" @click="openTemplateManager">
           <Library class="w-3.5 h-3.5 mr-1" />
           角色模板
         </HqButton>
-        <HqButton size="sm" variant="secondary" @click="handleRefresh">
+        <HqButton size="sm" variant="secondary" class="min-h-[36px] sm:min-h-0" @click="handleRefresh">
           <RefreshCw class="w-3.5 h-3.5 mr-1" />
           刷新配置
         </HqButton>
       </div>
     </div>
 
-    <div class="flex-1 flex overflow-hidden">
-      <aside class="w-64 border-r border-border bg-panel p-3 shrink-0 select-none overflow-y-auto">
-        <div class="flex items-center justify-between gap-2 px-1 mb-3">
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
+      <aside class="w-full md:w-64 border-b md:border-b-0 md:border-r border-border bg-panel p-2.5 sm:p-3 shrink-0 select-none overflow-y-auto">
+        <div class="flex items-center justify-between gap-2 px-1 mb-2 sm:mb-3">
           <h3 class="text-xs font-semibold text-text">场景清单</h3>
-          <HqButton size="sm" variant="primary" @click="openCreateSceneDialog">
+          <HqButton size="sm" variant="primary" class="min-h-[36px] sm:min-h-0" @click="openCreateSceneDialog">
             <Plus class="w-3.5 h-3.5 mr-1" />
             新建
           </HqButton>
         </div>
-        <div class="space-y-2">
+        <div class="flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-x-visible pb-1 md:pb-0">
           <button
             v-for="scene in scenesStore.scenes"
             :key="scene.id"
             type="button"
-            class="w-full p-3 rounded-[var(--radius-md)] border text-left transition-all space-y-1.5"
+            class="w-52 sm:w-60 md:w-full p-2.5 sm:p-3 rounded-[var(--radius-md)] border text-left transition-all space-y-1.5 shrink-0 cursor-pointer"
             :class="selectedSceneId === scene.id
               ? 'border-primary bg-primary/10 shadow-xs'
               : 'border-border bg-bg-app hover:border-border-strong'"
@@ -530,9 +530,9 @@ async function refreshTemplates() {
       </aside>
 
       <main class="flex-1 flex flex-col overflow-hidden bg-bg-app">
-        <header class="p-4 border-b border-border bg-panel flex items-center justify-between gap-4 shrink-0">
+        <header class="p-3 sm:p-4 border-b border-border bg-panel flex items-center justify-between gap-2 sm:gap-4 shrink-0 flex-wrap">
           <div v-if="scenesStore.currentScene" class="min-w-0">
-            <div class="flex items-center gap-2 mb-1">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
               <h2 class="text-sm font-semibold text-text truncate">{{ sceneName }}</h2>
               <span class="font-mono text-xs text-text-muted">v{{ scenesStore.currentScene.version }}</span>
               <HqBadge size="sm" :variant="isBuiltinScene ? 'neutral' : 'primary'">
@@ -545,6 +545,7 @@ async function refreshTemplates() {
             v-if="scenesStore.currentScene"
             variant="primary"
             size="sm"
+            class="min-h-[44px] sm:min-h-0"
             :disabled="scenesStore.isSaving || Boolean(sceneValidationError)"
             :loading="scenesStore.isSaving"
             @click="handleSave"
@@ -628,13 +629,13 @@ async function refreshTemplates() {
                   只读权限
                 </HqBadge>
                 <template v-if="isCustomScene">
-                  <button type="button" class="p-1 rounded hover:bg-muted text-text-muted" title="上移阶段" :disabled="index === 0" @click="moveStage(index, -1)">
+                  <button type="button" class="min-w-[36px] min-h-[36px] p-2 rounded hover:bg-muted text-text-muted flex items-center justify-center cursor-pointer" title="上移阶段" aria-label="上移阶段" :disabled="index === 0" @click="moveStage(index, -1)">
                     <ArrowUp class="w-3.5 h-3.5" />
                   </button>
-                  <button type="button" class="p-1 rounded hover:bg-muted text-text-muted" title="下移阶段" :disabled="index === editableRoles.length - 1" @click="moveStage(index, 1)">
+                  <button type="button" class="min-w-[36px] min-h-[36px] p-2 rounded hover:bg-muted text-text-muted flex items-center justify-center cursor-pointer" title="下移阶段" aria-label="下移阶段" :disabled="index === editableRoles.length - 1" @click="moveStage(index, 1)">
                     <ArrowDown class="w-3.5 h-3.5" />
                   </button>
-                  <button type="button" class="p-1 rounded hover:bg-danger/10 text-danger" title="移除阶段" @click="removeStage(index)">
+                  <button type="button" class="min-w-[36px] min-h-[36px] p-2 rounded hover:bg-danger/10 text-danger flex items-center justify-center cursor-pointer" title="移除阶段" aria-label="移除阶段" @click="removeStage(index)">
                     <Trash2 class="w-3.5 h-3.5" />
                   </button>
                 </template>

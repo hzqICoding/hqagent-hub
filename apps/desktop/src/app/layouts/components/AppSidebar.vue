@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, inject, ref, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app.store'
 import { useWorkspaceStore } from '@/stores/workspace.store'
@@ -23,6 +23,7 @@ import {
   Radio,
   ShieldAlert,
   Smartphone,
+  X,
 } from 'lucide-vue-next'
 import { HqBadge, HqTooltip } from '@/shared/ui'
 
@@ -30,6 +31,8 @@ const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const workspaceStore = useWorkspaceStore()
+const isMobileNavOpen = inject<Ref<boolean>>('isMobileNavOpen', ref(false))
+const closeMobileNav = inject<() => void>('closeMobileNav', () => {})
 
 interface NavItem {
   id: string
@@ -153,6 +156,7 @@ function handleNavClick(item: NavItem) {
   if (item.featureKey && !appStore.isFeatureAvailable(item.featureKey)) {
     return
   }
+  closeMobileNav()
   router.push(item.path)
 }
 
@@ -164,8 +168,12 @@ function onScenarioChange(event: Event) {
 
 <template>
   <aside
-    class="flex flex-col bg-sidebar border-r border-border-subtle select-none transition-all duration-200"
-    :class="appStore.sidebarCollapsed ? 'w-16' : 'w-[220px]'"
+    class="flex flex-col bg-sidebar border-r border-border-subtle select-none transition-all duration-200 z-50 md:z-auto"
+    :class="[
+      appStore.sidebarCollapsed ? 'w-16' : 'w-[220px]',
+      'fixed inset-y-0 left-0 md:static',
+      isMobileNavOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0',
+    ]"
   >
     <!-- Brand / Header -->
     <div class="h-14 flex items-center px-4 gap-3 border-b border-border-subtle shrink-0">
@@ -176,6 +184,17 @@ function onScenarioChange(event: Event) {
         <span class="font-bold text-sm text-content-primary leading-tight truncate">HQAgent-Hub</span>
         <span class="text-2xs text-content-muted leading-tight truncate">AI 团队控制中心</span>
       </div>
+
+      <!-- Mobile Close Button -->
+      <button
+        type="button"
+        class="md:hidden ml-auto min-w-[44px] min-h-[44px] p-2 text-content-muted hover:text-content-primary rounded-lg flex items-center justify-center cursor-pointer"
+        title="关闭菜单"
+        aria-label="关闭菜单"
+        @click="closeMobileNav()"
+      >
+        <X class="w-4 h-4" />
+      </button>
     </div>
 
     <!-- Active Workspace Quick Switcher -->

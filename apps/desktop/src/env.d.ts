@@ -7,7 +7,8 @@ declare module '*.vue' {
 }
 
 interface ImportMetaEnv {
-  readonly VITE_GATEWAY_MODE?: 'mock' | 'local'
+  readonly VITE_GATEWAY_MODE?: 'mock' | 'local' | 'remote'
+  readonly VITE_REMOTE_MOCK?: string
 }
 
 interface ImportMeta {

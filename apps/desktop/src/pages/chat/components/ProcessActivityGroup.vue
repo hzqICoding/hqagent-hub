@@ -97,7 +97,7 @@ const summaryTitle = computed(() => {
     <!-- Header button -->
     <button
       type="button"
-      class="w-full p-2.5 px-3 flex items-center justify-between text-xs hover:bg-panel transition-colors text-left gap-2 select-none cursor-pointer"
+      class="w-full min-h-[44px] p-2.5 px-3 flex items-center justify-between text-xs hover:bg-panel transition-colors text-left gap-2 select-none cursor-pointer"
       @click="isExpanded = !isExpanded"
     >
       <div class="flex items-center gap-2 min-w-0">
@@ -225,8 +225,9 @@ const summaryTitle = computed(() => {
             <!-- Detail toggle chevron -->
             <button
               type="button"
-              class="p-0.5 rounded hover:bg-panel text-text-muted hover:text-text transition-colors flex items-center cursor-pointer"
+              class="min-w-[32px] min-h-[32px] p-1.5 rounded hover:bg-panel text-text-muted hover:text-text transition-colors flex items-center justify-center cursor-pointer"
               :title="expandedItemIds.has(item.id) ? '收起详情' : '展开详情'"
+              aria-label="展开或收起步骤详情"
               @click.stop="toggleItemDetail(item.id)"
             >
               <ChevronRight

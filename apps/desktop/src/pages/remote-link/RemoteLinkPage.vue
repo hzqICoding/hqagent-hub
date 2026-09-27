@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, inject } from 'vue'
+import { ref, onMounted, onUnmounted, computed, inject, watch } from 'vue'
 import { routeLocationKey, type RouteLocationNormalizedLoaded } from 'vue-router'
+import QRCode from 'qrcode'
 import { useRemoteLinkStore } from '@/stores/remote-link.store'
 import {
   HqButton,
@@ -34,9 +35,43 @@ const formError = ref<string | null>(null)
 
 // Unlink Modal State
 const isUnlinkModalOpen = ref(false)
+const isDisableSyncModalOpen = ref(false)
 
 // Copy short code feedback
 const isCopied = ref(false)
+
+// QR Code State (B7)
+const qrDataUrl = ref<string>('')
+const qrCodeContent = computed(() => {
+  if (!remoteLinkStore.isPairing || !remoteLinkStore.pairCode || !remoteLinkStore.serverOrigin) {
+    return ''
+  }
+  const cleanOrigin = remoteLinkStore.serverOrigin.replace(/\/$/, '')
+  return `${cleanOrigin}/remote/pair#code=${remoteLinkStore.pairCode}`
+})
+
+watch(
+  qrCodeContent,
+  async (content) => {
+    if (content) {
+      try {
+        qrDataUrl.value = await QRCode.toDataURL(content, {
+          margin: 1,
+          width: 200,
+          color: {
+            dark: '#000000',
+            light: '#ffffff',
+          },
+        })
+      } catch {
+        qrDataUrl.value = ''
+      }
+    } else {
+      qrDataUrl.value = ''
+    }
+  },
+  { immediate: true }
+)
 
 const isValidOrigin = computed(() => {
   const origin = inputServerOrigin.value.trim()
@@ -93,6 +128,9 @@ onMounted(async () => {
 
   try {
     await remoteLinkStore.refreshLink()
+    if (remoteLinkStore.isPaired) {
+      await remoteLinkStore.fetchSyncSettings()
+    }
     if (remoteLinkStore.serverOrigin) {
       inputServerOrigin.value = remoteLinkStore.serverOrigin
     }
@@ -147,6 +185,15 @@ async function confirmUnlink() {
     await remoteLinkStore.unlink()
   } catch {
     // Store captures actionError
+  }
+}
+
+async function confirmDisableSync() {
+  try {
+    await remoteLinkStore.updateSyncSettings(false)
+    isDisableSyncModalOpen.value = false
+  } catch {
+    // Error recorded in store
   }
 }
 
@@ -327,26 +374,43 @@ async function copyPairCode() {
         </div>
 
         <div class="text-center py-4 space-y-4">
-          <p class="text-xs text-text-muted">请在手机端打开浏览器，进入远程工作台并输入下方 8 位配对短码：</p>
-          
-          <div class="inline-flex items-center gap-3 bg-panel-header px-6 py-4 rounded-2xl border border-primary/30 shadow-xs">
-            <span class="text-3xl sm:text-4xl font-mono tracking-widest text-primary font-bold select-all">
-              {{ remoteLinkStore.pairCode }}
-            </span>
-            <button
-              type="button"
-              class="p-2 rounded-lg hover:bg-panel text-text-muted hover:text-text transition-colors"
-              title="复制短码"
-              @click="copyPairCode"
+          <p class="text-xs text-text-muted">请使用手机扫描下方二维码，或手动输入 8 位配对短码：</p>
+
+          <!-- QR Code (B7) -->
+          <div>
+            <div
+              v-if="qrDataUrl"
+              class="inline-flex flex-col items-center justify-center p-2.5 sm:p-3 bg-white rounded-2xl border border-border shadow-xs"
             >
-              <Check v-if="isCopied" class="w-5 h-5 text-success" />
-              <Copy v-else class="w-5 h-5" />
-            </button>
+              <img
+                :src="qrDataUrl"
+                alt="配对二维码"
+                data-testid="pair-qrcode"
+                class="w-40 h-40 sm:w-48 sm:h-48 block rounded-lg"
+              />
+            </div>
+          </div>
+          
+          <div>
+            <div class="inline-flex items-center gap-2.5 sm:gap-3 bg-panel-header px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl border border-primary/30 shadow-xs max-w-full">
+              <span class="text-2xl sm:text-4xl font-mono tracking-widest text-primary font-bold select-all">
+                {{ remoteLinkStore.pairCode }}
+              </span>
+              <button
+                type="button"
+                class="p-1.5 sm:p-2 rounded-lg hover:bg-panel text-text-muted hover:text-text transition-colors shrink-0"
+                title="复制短码"
+                @click="copyPairCode"
+              >
+                <Check v-if="isCopied" class="w-5 h-5 text-success" />
+                <Copy v-else class="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           <p v-if="isCopied" class="text-xs text-success">已复制配对短码</p>
           <p class="text-[11px] text-text-muted max-w-md mx-auto">
-            短码仅用于建立连接，有效期 5 分钟。短码过期或被取消后，本地临时配对凭据将自动擦除。
+            短码与二维码仅用于建立连接，有效期 5 分钟。短码过期或被取消后，本地临时配对凭据将自动擦除。
           </p>
         </div>
 
@@ -436,9 +500,45 @@ async function copyPairCode() {
           </div>
         </div>
 
+        <!-- Sync Settings Master Switch -->
+        <div class="p-4 rounded-xl bg-bg-app border border-border/80 flex items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-text">同步总开关</span>
+              <HqBadge size="sm" :variant="remoteLinkStore.mirrorEnabled ? 'success' : 'neutral'">
+                {{ remoteLinkStore.mirrorEnabled ? '已开启' : '已关闭' }}
+              </HqBadge>
+            </div>
+            <p class="text-[11px] text-text-muted mt-0.5">
+              开启后对话内容会保存到你的服务器上
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <HqButton
+              v-if="remoteLinkStore.mirrorEnabled"
+              variant="secondary"
+              size="sm"
+              :disabled="remoteLinkStore.isSyncSettingsLoading"
+              @click="isDisableSyncModalOpen = true"
+            >
+              关闭同步
+            </HqButton>
+            <HqButton
+              v-else
+              variant="primary"
+              size="sm"
+              :disabled="remoteLinkStore.isSyncSettingsLoading"
+              :loading="remoteLinkStore.isSyncSettingsLoading"
+              @click="remoteLinkStore.updateSyncSettings(true)"
+            >
+              开启同步
+            </HqButton>
+          </div>
+        </div>
+
         <div class="flex items-center justify-between border-t border-border/80 pt-4">
           <p class="text-xs text-text-muted">
-            已成功接入手机远程通道。手机发起的会话在电脑上呈现只读。
+            已成功接入手机远程通道。两端可互通协作对话。
           </p>
           <HqButton
             variant="danger"
@@ -573,6 +673,46 @@ async function copyPairCode() {
           @click="confirmUnlink"
         >
           确认解除绑定
+        </HqButton>
+      </template>
+    </HqDialog>
+
+    <!-- Disable Sync Confirmation Dialog -->
+    <HqDialog
+      :open="isDisableSyncModalOpen"
+      title="关闭同步确认"
+      description="请仔细阅读关闭同步影响后再确认操作"
+      @close="isDisableSyncModalOpen = false"
+    >
+      <div class="space-y-3.5 py-2 text-xs text-text">
+        <div class="p-3 rounded-xl bg-danger/10 border border-danger/25 text-danger flex items-start gap-2.5">
+          <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
+          <div class="space-y-1.5 leading-relaxed text-[11px]">
+            <p class="font-bold text-xs text-danger">警告：该操作将影响手机端展示</p>
+            <p>
+              关闭后服务器上这台电脑的对话副本将被删除，手机上将看不到任何对话。本地数据不受影响。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <HqButton
+          size="sm"
+          variant="secondary"
+          :disabled="remoteLinkStore.isSyncSettingsLoading"
+          @click="isDisableSyncModalOpen = false"
+        >
+          取消
+        </HqButton>
+        <HqButton
+          size="sm"
+          variant="danger"
+          :disabled="remoteLinkStore.isSyncSettingsLoading"
+          :loading="remoteLinkStore.isSyncSettingsLoading"
+          @click="confirmDisableSync"
+        >
+          确认关闭
         </HqButton>
       </template>
     </HqDialog>

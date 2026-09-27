@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, provide, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app.store'
 import { useWorkspaceStore } from '@/stores/workspace.store'
 import AppSidebar from './components/AppSidebar.vue'
@@ -10,6 +10,15 @@ import ContextInspector from './components/ContextInspector.vue'
 
 const appStore = useAppStore()
 const workspaceStore = useWorkspaceStore()
+const isMobileNavOpen = ref(false)
+
+provide('isMobileNavOpen', isMobileNavOpen)
+provide('toggleMobileNav', () => {
+  isMobileNavOpen.value = !isMobileNavOpen.value
+})
+provide('closeMobileNav', () => {
+  isMobileNavOpen.value = false
+})
 
 onMounted(async () => {
   await appStore.fetchBootstrap()
@@ -20,7 +29,14 @@ onMounted(async () => {
 <template>
   <div class="h-full w-full overflow-hidden flex flex-col bg-app text-content-primary">
     <!-- Top Body Area: Sidebar + Main Area + Inspector -->
-    <div class="flex-1 flex overflow-hidden">
+    <div class="flex-1 flex overflow-hidden relative">
+      <!-- Mobile Backdrop for AppSidebar -->
+      <div
+        v-if="isMobileNavOpen"
+        class="fixed inset-0 bg-black/50 backdrop-blur-xs z-40 md:hidden transition-opacity"
+        @click="isMobileNavOpen = false"
+      />
+
       <!-- Left: Sidebar -->
       <AppSidebar />
 

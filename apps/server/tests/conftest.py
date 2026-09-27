@@ -28,10 +28,10 @@ class Clock:
         self.value += seconds
 
 
-def check_http(result, method, path):
+def check_http(result, method, path, routes=None):
     dto.ApiEnvelope.model_validate(result.json())
     if result.json()["success"]:
-        for verb, route, _, _, output, _ in ROUTES:
+        for verb, route, _, _, output, _ in (routes or ROUTES):
             if method == verb and re.fullmatch("/api/v2" + re.sub(r"\{[^}]+\}", "[^/]+", route), path.split("?")[0]):
                 getattr(dto, output).model_validate(result.json()["data"])
                 return
@@ -53,8 +53,11 @@ class Browser:
     def request(self, method, path, body=None, key=None, headers=None):
         auth = {"Origin": self.env.settings.origin, "Cookie": COOKIE + "=" + self.cookie, "X-CSRF-Token": self.csrf, "Idempotency-Key": key or uid()}
         auth.update(headers or {})
-        result = self.env.client.request(method, "/api/v2" + path, json=body, headers=auth)
-        check_http(result, method, "/api/v2" + path)
+        transport_path = path
+        if getattr(self.env, 'legacy', False) and '/messages?cursor=' in path:
+            transport_path = path.replace('/messages?cursor=', '/messages?before=')
+        result = self.env.client.request(method, "/api/v2" + transport_path, json=body, headers=auth)
+        check_http(result, method, "/api/v2" + path, self.env.routes)
         return result
 
     def get(self, path):
@@ -148,12 +151,24 @@ class Environment:
     pass
 
 
-@pytest.fixture
-def env(tmp_path):
+@contextmanager
+def environment(tmp_path, legacy=False):
     value = Environment()
     value.clock = Clock()
     value.settings = Settings(tmp_path / "hub.sqlite3", secrets.token_bytes(32), origin="https://testserver", clock=value.clock, monotonic=value.clock, rate_limit=10000)
-    value.app = create_app(value.settings)
+    value.legacy = legacy
+    value.routes = ROUTES
+    if legacy:
+        from legacy_support import HistoricalService, LEGACY_ROUTES
+        from server.events import Events
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr('server.app.SyncService', HistoricalService)
+            patch.setattr('server.app.SyncEvents', Events)
+            patch.setattr('server.app.ROUTES', LEGACY_ROUTES)
+            value.app = create_app(value.settings)
+        value.routes = LEGACY_ROUTES
+    else:
+        value.app = create_app(value.settings)
     value.service = value.app.state.service
     for name in ("alice", "bob"):
         value.service.security.create_account(name, PASSWORD, name.title())
@@ -161,6 +176,18 @@ def env(tmp_path):
         value.client = client
         value.alice = Browser(value, "alice")
         value.bob = Browser(value, "bob")
+        yield value
+
+
+@pytest.fixture
+def env(tmp_path):
+    with environment(tmp_path, legacy=True) as value:
+        yield value
+
+
+@pytest.fixture
+def r15_env(tmp_path):
+    with environment(tmp_path) as value:
         yield value
 
 
