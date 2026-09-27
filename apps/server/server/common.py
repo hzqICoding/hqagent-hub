@@ -64,7 +64,8 @@ class Fault(Exception):
         super().__init__(code)
 
     def view(self):
-        return validated("RemoteError", dict(code=self.code, message=self.code, retryable=self.retryable))
+        message = '设备离线，发送失败' if self.code in {'REMOTE_DEVICE_OFFLINE', 'REMOTE_DELIVERY_EXPIRED'} else self.code
+        return validated("RemoteError", dict(code=self.code, message=message, retryable=self.retryable))
 
 
 def require(condition, code="VALIDATION_FAILED"):

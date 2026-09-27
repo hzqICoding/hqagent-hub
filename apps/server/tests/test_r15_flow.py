@@ -23,6 +23,7 @@ def test_copy_upsert_message_and_offline_failure(env):
         assert env.alice.get('/conversations/' + conv).json()['data']['busyFresh'] is True
     failed = env.alice.post('/conversations/' + conv + '/messages', dict(clientMessageId=uid(), text='never queued', sessionMode='continue'))
     assert failed.status_code == 409 and failed.json()['error']['code'] == 'REMOTE_DEVICE_OFFLINE'
+    assert failed.json()['error']['message'] == '设备离线，发送失败'
     assert env.alice.get('/conversations/' + conv + '/commands').json()['data']['items'] == []
     events = env.alice.get('/events?after=' + tail).json()['data']['items']
     assert any(e['type'] == 'conversation.updated' and e['payload']['conversationId'] == conv for e in events)
@@ -72,6 +73,7 @@ def test_delivery_deadline_transaction_race(env, grant_first):
             assert env.alice.get('/commands/' + receipt['commandId']).json()['data']['status'] == 'accepted'
         else:
             assert view['status'] == 'failed' and view['error']['code'] == 'REMOTE_DELIVERY_EXPIRED'
+            assert view['error']['message'] == '设备离线，发送失败'
             w.received(frame)
             with env.service.repo.transaction() as tx:
                 owner = env.service.security.session(tx, env.alice.cookie)['owner']
