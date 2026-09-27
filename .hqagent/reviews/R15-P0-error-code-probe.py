@@ -1,3 +1,4 @@
+# Historical v0.3 probe: replay only at commit 9bb608d; D49 fixes this in 0.7.0.
 """Read-only reproduction: a registry addition widens an unchanged rev1 DTO."""
 from copy import deepcopy
 import importlib.util

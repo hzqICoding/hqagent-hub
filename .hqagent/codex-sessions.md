@@ -175,3 +175,14 @@ codex 有自己的默认署名行为。
 用户已确认工作台能运行并继续下一步。复用/root/project_backend、/root/project_frontend（均gpt-5.6-sol/high，工具未提供独立UUID），最多3个含root。前后端分别在custom-scenes-backend/custom-scenes-frontend独立worktree，从80f845f起，协议前置94b75bc(0.5.0)。主代理负责协议、边界审查、实际接口/执行验收与部署。角色模板引用四个已验证基础权限类型，runtime不注册任意新权限；顺序工作流，每基础类型最多一次，不实现并行DAG或循环。进行中。
 
 本批次已完成：backend a3b6168→4e1157f；frontend 2956cdd/260c7f6→bfc39f8/55012b0；主API验证修复620c98b→3e0d99e。全量backend199/frontend201通过，真实Claude自定义场景V1副本及同native session继续通过，schema4→5旧记录完整保留。两子会话已完成，可followup复用；跨客户端恢复未验证。回执：[自定义场景验收](reviews/N0-custom-scenes.md)。
+
+
+## 2026-09-27 R15-P0 v0.4接续复核
+
+上一版镜像+接力草稿及Q1待裁决状态已作废；Q1按主代理建议B完成。启动时原生list_agents仅返回/root，没有可恢复的存活子代理，因此新建一个只读窄范围复核并在本轮两次followup复用，未开第三个代理或并行测试。主代理独占全部写入。
+
+| 职责 | canonical task | thread ID | session ID | 模型/等级 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| 30秒送达门闩、删除覆盖及双线路闭包复核 | /root/r15_v04_delivery_review | 01a0e296-43f2-7ae1-8b67-5963954e8449 | 01a0ceda-3bd5-7092-a443-c9e36b1eff9c（可能继承父会话，不作为独立thread） | gpt-6-astra/high（委派配置） | 已完成；只读、无测试、无文件写入 |
+
+复核推动补齐显式grant、删除内容无正文覆盖记录、代次关系及两处旧只读文案。主代理已落实并独立校验；回执R15-P0-remote-protocol.md覆盖为v0.4。可在本线程树followup接续，跨客户端恢复未验证。

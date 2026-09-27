@@ -1,3 +1,5 @@
+> 已作废：这是v0.3镜像+接力的历史复核。当前以v0.4回执为准；Q1已采纳建议B。
+
 # R15-P0 独立只读复核记录
 
 复核代理 `/root/r15_protocol_review`，委派 `gpt-6-astra/high`。下述证据由主代理结合实际文件复查；没有实现协议草稿，没有修改apps/docs。合入基线为 integration/phase1@ab889b3。
