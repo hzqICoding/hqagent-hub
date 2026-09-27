@@ -26,6 +26,7 @@ import type {
   RemoteCommandWithdrawalInput,
   RemoteApprovalView,
   RemoteApprovalDecisionInput,
+  RemoteBrowserEvent,
   RemoteBrowserEventPage,
   RemoteConversationSnapshot,
 } from '@hqagent/protocol'
@@ -399,6 +400,12 @@ export class MockRemoteGateway implements IRemoteGateway {
       workerOnline: this.workerOnline,
     }))
     const messages = this.messages.filter((m) => m.conversationId === conversationId)
+    const approvals = this.approvals
+      .filter((a) => a.status === 'pending')
+      .map((a) => ({
+        ...a,
+        remoteApprovalAllowed: this.highRiskApprovalAllowed,
+      }))
 
     this.streamCursor = `snapshot_cursor_${Date.now()}_${++this.cursorCounter}`
 
@@ -409,6 +416,7 @@ export class MockRemoteGateway implements IRemoteGateway {
       runs,
       commands,
       messages,
+      approvals,
       hasMore: false,
     }
   }
@@ -673,7 +681,11 @@ export class MockRemoteGateway implements IRemoteGateway {
 
   // --- Events ---
 
-  async listEvents(): Promise<RemoteBrowserEventPage> {
+  public eventPages: RemoteBrowserEventPage[] = []
+  public pendingEvents: RemoteBrowserEvent[] = []
+  public hasMoreEvents = false
+
+  async listEvents(_cursor?: string): Promise<RemoteBrowserEventPage> {
     if (this.cursorExpired) {
       throw new RemoteApiError({
         message: getRemoteErrorMessage('REMOTE_CURSOR_EXPIRED'),
@@ -682,11 +694,18 @@ export class MockRemoteGateway implements IRemoteGateway {
       })
     }
 
+    if (this.eventPages.length > 0) {
+      const page = this.eventPages.shift()!
+      this.streamCursor = page.nextServerCursor
+      return page
+    }
+
     this.streamCursor = `opaque_server_cursor_${Date.now()}`
+    const items = [...this.pendingEvents]
     return {
-      items: [],
+      items,
       nextServerCursor: this.streamCursor,
-      hasMore: false,
+      hasMore: this.hasMoreEvents,
     }
   }
 }

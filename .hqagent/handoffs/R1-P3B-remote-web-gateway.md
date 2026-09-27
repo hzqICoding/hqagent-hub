@@ -245,3 +245,160 @@ dist/assets/RemoteDevicesPage-Fhm4QBd0.js                         5.18 kB │ gz
 dist/assets/remote-chat.store-CPpQMp5m.js                         5.19 kB │ gzip:  2.22 kB
 ✓ built in 6.82s
 ```
+
+---
+
+## 9. 返修 1 交付说明
+
+- 分支：`feat/remote-web-gateway`
+- 工作区：`E:\OtherPro\HQAgent-Hub-worktrees\remote-web-gateway`
+- 基线与测试：合入 `integration/phase1` 并修复 B1–B3 后，实测 **50 个测试文件、253 tests passed**，`typecheck` 0 错误，`lint` 0 错误 0 警告，`build` 生产构建成功。
+
+### 9.1 问题修复详情
+
+#### 1. B1：增量事件循环处理与状态响应
+- **问题根因**：原 `pollEvents()` 仅推进了 `serverCursor`，未遍历处理 `page.items`，导致手机端收不到后续指令接单、执行完成、助手消息追加等事件。
+- **修复措施**：
+  - 在 `remote-chat.store.ts` 中实现完整的 `applyEvent(event: RemoteBrowserEvent)`：
+    - 支持顶层 `conversation.updated`、`command.updated`、`message.appended`；
+    - 支持 `worker.event` 上行事件原文，按 `payload.type` 精确分发：`command.accepted`（更新状态为 `accepted` 并更新 `deliveryState = 'sent'`）、`command.rejected`、`command.completed`（提取 `controlResult` 并处理 `approval_consumed`）、`command.failed`、`command.control_result`、`run.state_changed`、`message.appended`、`approval.state_changed`、`run.progress`、`capability.changed` 等；
+    - 按唯一 ID 去重合并（`messageId`、`commandId`、`runId`、`approvalId`），用户本地乐观发送的临时消息在正式消息到达后精准无感替换；
+    - 严格校验事件所属会话，非当前活跃会话的事件直接忽略，避免跨会话污染；
+    - 遇到当前会话但结构未知的事件类型时，自动调用 `rebuildFromSnapshot(activeId)` 降级全量刷新，杜绝静默丢弃；
+  - `pollEvents()` 改造为连续拉取循环：当 `page.hasMore === true` 时持续拉取下一页直到全部接收完成，并配备并发防重入锁；
+  - 控制结果严格以 `command.control_result` / `command.completed` / `command.failed` 事件或 `RemoteCommandView.controlResult` 为准，绝不从 Worker 执行状态推断；`RemoteChatPage.vue` 取最新含 `controlResult` 的控制指令精准展示「已确认生效」、「已被拒绝 (执行可能仍在进行)」、「未能确认 (需回电脑核对)」三态；
+  - `RemoteChatPage.vue` 命令卡片与徽章对齐 `queued`（已投递）与 `accepted`（已接单）状态展示。
+
+#### 2. B2：清除硬编码 Mock 审批 ID
+- **问题根因**：`rebuildFromSnapshot()` 曾硬编码 `gateway.getApproval('approval_demo')`，侵入生产网关路径。
+- **修复措施**：
+  - 彻底移除 `gateway.getApproval('approval_demo')`；
+  - 接入协议 0.6.3 快照字段，审批集合以 `snapshot.approvals ?? []` 作为初始集合；
+  - 增量事件 `approval.state_changed` 动态处理新增待审批与已决/已消费审批的移除；
+  - `MockRemoteGateway.getConversationSnapshot()` 对齐协议返回当前会话 pending 审批；
+  - 编写静态扫描断言，确保生产代码路径无任何 `approval_demo` 或写死 ID。
+
+#### 3. B3：运行模式与路由守卫前缀冲突
+- **问题根因**：原判定为 `startsWith('/remote')`，导致电脑端刚合入的 `/remote-link` 页面在刷新或跳转时被误判为手机远程模式而重定向至 `/remote/login`。
+- **修复措施**：
+  - `runtime-mode.ts` 与 `router/index.ts` 均修改为：`pathname === '/remote' || pathname.startsWith('/remote/')`；
+  - 路由守卫中动态调用 `getRuntimeMode()`，确保单测与真实环境均能动态感应模式切换；
+  - `/remote-link` 判为 `local`，完全不受远程守卫拦截；`/remote/chat` 与 `/remote` 正常受远程守卫保护。
+
+---
+
+### 9.2 补测套件与覆盖
+
+1. **`src/pages/remote/RemoteModeIsolation.test.ts`（4 tests passed）**：
+   - 验证 `/remote-link` 解析为 `local` 模式；
+   - 验证未登录状态下访问 `/remote-link` 不触发远程重定向；
+   - 验证 `/remote` 与 `/remote/chat` 解析为 `remote` 模式并触发未登录重定向至 `/remote/login`。
+
+2. **`src/pages/remote/RemoteEvents.test.ts`（8 tests passed）**：
+   - **四步时序联动**：依次模拟发送消息（已投递）→ `command.accepted`（已接单）→ `message.appended`（助手回复正文）→ `run.state_changed`（执行成功），页面依次响应展示对应状态与内容；
+   - **控制结果三态验证**：事件里的 `confirmed`、`rejected`、`unconfirmed` 分别准确渲染对应状态文案与警告；
+   - **`hasMore` 连续拉取**：验证多页分页事件在单次 `pollEvents()` 期间连续抓取并合并完毕，游标正确推移；
+   - **跨会话隔离**：验证非活跃会话事件被安全丢弃，不影响当前会话；
+   - **未知事件降级**：验证识别到当前会话但结构未知的事件会触发快照全量重建；
+   - **快照审批展示**：快照带待审批项时在页面正确渲染；
+   - **增量审批状态变更**：增量事件带来待审批时新增渲染，被消费/决策后自动从列表移除；
+   - **生产代码静态校验**：断言 `remote-chat.store.ts` 源码中 0 处包含 `approval_demo` 或硬编码 `getApproval`。
+
+---
+
+### 9.3 返修 1 真实验证命令输出
+
+#### 1. 类型检查（Typecheck 0 错误）
+```text
+$ pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+# 退出码 0，无任何类型错误
+```
+
+#### 2. 代码风格（Lint 0 错误 0 警告）
+```text
+$ pnpm --filter @hqagent/desktop lint
+$ eslint src
+# 退出码 0，无错误无警告
+```
+
+#### 3. 完整测试套件（50 test files / 253 passed）
+```text
+$ pnpm --filter @hqagent/desktop test
+
+ RUN  v2.1.9 E:/OtherPro/HQAgent-Hub-worktrees/remote-web-gateway/apps/desktop
+
+ ✓ src/shared/api/local-chat-gateway.test.ts (8 tests)
+ ✓ src/shared/api/local-hub-gateway.test.ts (8 tests)
+ ✓ src/shared/api/mock-local-chat-gateway.test.ts (16 tests)
+ ✓ src/stores/chat.polling.test.ts (6 tests)
+ ✓ src/stores/chat.context.test.ts (7 tests)
+ ✓ src/stores/chat.store.test.ts (9 tests)
+ ✓ src/stores/task.store.test.ts (7 tests)
+ ✓ src/pages/remote/RemoteGateway.test.ts (4 tests)
+ ✓ src/stores/chat.reliability.test.ts (7 tests)
+ ✓ src/pages/chat/components/ProcessActivityGroup.test.ts (5 tests)
+ ✓ src/shared/api/mock-gateway.test.ts (10 tests)
+ ✓ src/stores/scenes.store.test.ts (6 tests)
+ ✓ src/pages/chat/components/ChatComposer.test.ts (7 tests)
+ ✓ src/pages/remote/RemoteEvents.test.ts (8 tests)
+ ✓ src/pages/remote/RemoteChat.test.ts (7 tests)
+ ✓ src/pages/chat/RemoteConversationReadOnly.test.ts (7 tests)
+ ✓ src/pages/remote-link/RemoteLink.test.ts (8 tests)
+ ✓ src/pages/scenes/ScenesPage.test.ts (9 tests)
+ ✓ src/pages/remote/RemoteModeIsolation.test.ts (4 tests)
+ ✓ src/pages/chat/ChatMobile.test.ts (6 tests)
+ ✓ src/pages/chat/ChatPage.test.ts (7 tests)
+ ✓ src/pages/remote/RemoteAuth.test.ts (4 tests)
+ ✓ src/pages/chat/components/ChatSidebar.test.ts (3 tests)
+ ✓ src/stores/app.store.test.ts (8 tests)
+ ✓ src/pages/remote/RemotePairing.test.ts (4 tests)
+ ✓ src/pages/chat/components/RunSnapshotDrawer.test.ts (1 test)
+ ✓ src/pages/tasks/TaskDetailPage.test.ts (5 tests)
+ ✓ src/shared/ui/HqMarkdown.test.ts (6 tests)
+ ✓ src/shared/theme/theme.engine.test.ts (5 tests)
+ ✓ src/stores/approval.store.test.ts (4 tests)
+ ✓ src/pages/chat/components/ChatMessageItem.test.ts (3 tests)
+ ✓ src/stores/chat.action-scope.test.ts (2 tests)
+ ✓ src/app/layouts/AppLayout.test.ts (3 tests)
+ ✓ src/shared/api/local-chat-timeout.test.ts (3 tests)
+ ✓ src/pages/approvals/ApprovalsPage.test.ts (3 tests)
+ ✓ src/pages/tasks/TasksPage.test.ts (3 tests)
+ ✓ src/stores/workspace.store.test.ts (3 tests)
+ ✓ src/pages/templates/TemplatesPage.test.ts (3 tests)
+ ✓ src/pages/sessions/SessionsPage.test.ts (3 tests)
+ ✓ src/stores/agent.store.test.ts (3 tests)
+ ✓ src/pages/agents/AgentsPage.test.ts (3 tests)
+ ✓ src/stores/team.store.test.ts (5 tests)
+ ✓ src/pages/auth/ConnectPage.test.ts (2 tests)
+ ✓ src/pages/workspaces/WorkspacesPage.test.ts (3 tests)
+ ✓ src/pages/onboarding/OnboardingPage.test.ts (2 tests)
+ ✓ src/stores/local-auth.store.test.ts (2 tests)
+ ✓ src/shared/ui/HqButton.test.ts (4 tests)
+ ✓ src/pages/teams/TeamsPage.test.ts (3 tests)
+ ✓ src/pages/overview/OverviewPage.test.ts (2 tests)
+ ✓ src/stores/session.store.test.ts (2 tests)
+
+ Test Files  50 passed (50)
+      Tests  253 passed (253)
+   Duration  8.39s
+```
+
+#### 4. 生产构建（Build 成功）
+```text
+$ pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1736 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                                                   2.56 kB │ gzip:  1.04 kB
+dist/assets/ChatPage-DQ8nlvA7.css                                                 0.24 kB │ gzip:  0.17 kB
+dist/assets/index-B8ybjWec.css                                                   55.33 kB │ gzip: 10.25 kB
+dist/assets/RemoteChatPage-DYibGRJA.js                                           17.45 kB │ gzip:  5.89 kB
+dist/assets/RemoteLinkPage-xZOh-ztz.js                                           18.69 kB │ gzip:  6.87 kB
+dist/assets/remote-chat.store-iZdWj0zP.js                                         9.89 kB │ gzip:  3.17 kB
+dist/assets/index-Ff_rc5KI.js                                                   209.02 kB │ gzip: 67.45 kB
+✓ built in 7.52s
+```

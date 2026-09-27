@@ -16,9 +16,12 @@ export function getRuntimeMode(): AppRuntimeMode {
     return 'remote'
   }
 
-  // 2. URL path starts with /remote in browser
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/remote')) {
-    return 'remote'
+  // 2. URL path is /remote or starts with /remote/ in browser
+  if (typeof window !== 'undefined') {
+    const pathname = window.location.pathname
+    if (pathname === '/remote' || pathname.startsWith('/remote/')) {
+      return 'remote'
+    }
   }
 
   return 'local'

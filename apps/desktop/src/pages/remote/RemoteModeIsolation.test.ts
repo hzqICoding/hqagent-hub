@@ -6,6 +6,7 @@ import { useRemoteAuthStore } from '@/stores/remote-auth.store'
 import { setLocalChatGatewayMode } from '@/shared/api'
 import { mockRemoteGateway } from '@/shared/api/mock-remote-gateway'
 import { setRemoteGatewayForTesting } from '@/shared/api/remote-provider'
+import { router } from '@/app/router'
 
 describe('Runtime Mode Isolation & Credential Security', () => {
   beforeEach(() => {
@@ -61,5 +62,39 @@ describe('Runtime Mode Isolation & Credential Security', () => {
     // Local auth remains unaffected
     const localStore = useLocalAuthStore()
     expect(localStore.currentMode).toBe('mock')
+  })
+
+  it('B3: strictly isolates /remote-link as local mode and /remote or /remote/* as remote mode without prefix collision', async () => {
+    const originalPathname = window.location.pathname
+
+    try {
+      // 1. /remote-link must resolve to local mode
+      window.history.replaceState({}, '', '/remote-link')
+      setRuntimeModeForTesting(null)
+      expect(getRuntimeMode()).toBe('local')
+
+      // 2. /remote/chat and /remote must resolve to remote mode
+      window.history.replaceState({}, '', '/remote/chat')
+      setRuntimeModeForTesting(null)
+      expect(getRuntimeMode()).toBe('remote')
+
+      window.history.replaceState({}, '', '/remote')
+      setRuntimeModeForTesting(null)
+      expect(getRuntimeMode()).toBe('remote')
+
+      // 3. Router navigation guard check: /remote-link does NOT trigger remote login redirect
+      const remoteAuthStore = useRemoteAuthStore()
+      remoteAuthStore.isAuthenticated = false
+
+      await router.push('/remote-link')
+      expect(router.currentRoute.value.path).toBe('/remote-link')
+
+      // 4. Navigating to /remote/chat while unauthenticated triggers redirect to /remote/login
+      mockRemoteGateway.authenticated = false
+      await router.push('/remote/chat')
+      expect(router.currentRoute.value.path).toBe('/remote/login')
+    } finally {
+      window.history.replaceState({}, '', originalPathname)
+    }
   })
 })

@@ -75,9 +75,18 @@ watch(
 
 const pendingCommands = computed(() =>
   chatStore.commands.filter(
-    (c) => c.status === 'queued' || c.deliveryState === 'queued_offline'
+    (c) => c.status === 'queued' || c.status === 'accepted' || c.deliveryState === 'queued_offline'
   )
 )
+
+const latestControlCommand = computed(() => {
+  for (let i = chatStore.commands.length - 1; i >= 0; i--) {
+    if (chatStore.commands[i].controlResult) {
+      return chatStore.commands[i]
+    }
+  }
+  return null
+})
 
 async function handleSendMessage() {
   const text = inputText.value.trim()
@@ -364,15 +373,15 @@ function getExecutionStatusLabel(status?: string): string {
             <div class="space-y-0.5">
               <span class="text-[10px] text-text-muted font-medium">2. 控制结果</span>
               <div>
-                <template v-if="chatStore.commands.length > 0 && chatStore.commands[chatStore.commands.length - 1].controlResult">
+                <template v-if="latestControlCommand && latestControlCommand.controlResult">
                   <span
-                    v-if="chatStore.commands[chatStore.commands.length - 1].controlResult?.outcome === 'confirmed'"
+                    v-if="latestControlCommand.controlResult?.outcome === 'confirmed'"
                     class="text-success font-medium"
                   >
                     已确认生效
                   </span>
                   <span
-                    v-else-if="chatStore.commands[chatStore.commands.length - 1].controlResult?.outcome === 'rejected'"
+                    v-else-if="latestControlCommand.controlResult?.outcome === 'rejected'"
                     class="text-danger font-medium"
                   >
                     已被拒绝 (执行可能仍在进行)
@@ -570,15 +579,21 @@ function getExecutionStatusLabel(status?: string): string {
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-1.5">
                 <Clock class="w-3.5 h-3.5 text-warning shrink-0" />
-                <span class="font-medium text-text">指令排队中</span>
+                <span class="font-medium text-text">{{ cmd.status === 'accepted' ? '指令处理中' : '指令排队中' }}</span>
               </div>
 
               <!-- Mandatory: display '电脑离线，指令已排队' when offline, never running -->
               <HqBadge
-                :variant="cmd.deliveryState === 'queued_offline' || !chatStore.isWorkerOnline ? 'warning' : 'info'"
+                :variant="cmd.deliveryState === 'queued_offline' || !chatStore.isWorkerOnline ? 'warning' : cmd.status === 'accepted' ? 'success' : 'info'"
                 class="text-[10px]"
               >
-                {{ cmd.deliveryState === 'queued_offline' || !chatStore.isWorkerOnline ? '电脑离线，指令已排队' : '已投递到云端' }}
+                {{
+                  cmd.deliveryState === 'queued_offline' || !chatStore.isWorkerOnline
+                    ? '电脑离线，指令已排队'
+                    : cmd.status === 'accepted'
+                      ? '已接单'
+                      : '已投递到云端'
+                }}
               </HqBadge>
             </div>
 

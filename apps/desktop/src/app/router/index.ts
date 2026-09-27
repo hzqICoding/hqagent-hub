@@ -3,7 +3,7 @@ import AppLayout from '../layouts/AppLayout.vue'
 import LocalChatLayout from '../layouts/LocalChatLayout.vue'
 import { useLocalAuthStore } from '@/stores/local-auth.store'
 import { useRemoteAuthStore } from '@/stores/remote-auth.store'
-import { isRemoteMode } from '@/shared/config/runtime-mode'
+import { getRuntimeMode } from '@/shared/config/runtime-mode'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -171,7 +171,7 @@ router.beforeEach(async (to, _from, next) => {
   }
 
   // 2. If running in remote mode and user visits root / or /chat, redirect to /remote/chat
-  if (isRemoteMode && (to.path === '/' || to.path === '/chat')) {
+  if (getRuntimeMode() === 'remote' && (to.path === '/' || to.path === '/chat')) {
     next('/remote/chat')
     return
   }
