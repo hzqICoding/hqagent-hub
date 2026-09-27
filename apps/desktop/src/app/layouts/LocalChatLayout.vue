@@ -34,6 +34,7 @@ async function disconnect() {
       <nav class="flex items-center gap-4 text-xs">
         <router-link to="/chat" active-class="text-primary font-semibold">本地对话</router-link>
         <router-link to="/scenes" active-class="text-primary font-semibold">场景与角色</router-link>
+        <router-link to="/remote-link" active-class="text-primary font-semibold">连接手机</router-link>
       </nav>
       <span class="ml-auto text-xs" :class="auth.isMockMode ? 'text-warning' : 'text-text-muted'">
         {{ auth.isMockMode ? '演示数据 · 不会执行真实任务' : '本机 Worker' }}
