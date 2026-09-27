@@ -9,7 +9,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-from .common import canonical, stamp
+from .common import canonical, seconds, stamp
 
 SCHEMA_VERSION = 3
 MIGRATIONS = {1: """
@@ -152,6 +152,29 @@ class UnitOfWork:
 
     def pending_outbox(self, owner, worker, store):
         return [json.loads(r[0]) for r in self.db.execute("SELECT body FROM records WHERE owner=? AND kind='outbox' AND worker=? AND store=? AND outbox_done=0 ORDER BY ordinal", (owner, worker, store))]
+
+    def pending_approvals(self, owner, worker, store, conversation, observed_at, limit=101):
+        # Filter before limiting; expiresAt allows different fractional precision,
+        # so compare parsed instants, not lexicographic timestamp strings.
+        rows = self.db.execute("""SELECT a.body FROM records a
+            WHERE a.owner=? AND a.kind='approval' AND a.worker=? AND a.store=? AND a.parent=?
+              AND json_extract(a.body,'$.status')='pending'
+              AND NOT EXISTS (
+                SELECT 1 FROM records c WHERE c.owner=a.owner AND c.kind='command'
+                  AND c.worker=a.worker AND c.store=a.store AND c.parent=a.parent
+                  AND c.command_status='completed' AND json_extract(c.body,'$.type')='approval.decide'
+                  AND json_extract(c.body,'$.resultStatus')='approval_consumed'
+                  AND json_extract(c.body,'$._frame.payload.approvalId')=a.id)
+            ORDER BY a.ordinal""", (owner, worker, store, conversation))
+        cutoff = seconds(observed_at)
+        result = []
+        for row in rows:
+            value = json.loads(row[0])
+            if seconds(value["expiresAt"]) > cutoff:
+                result.append(value)
+                if len(result) == limit:
+                    break
+        return result
 
     def list(self, owner, kind, *, worker=None, store=None, parent=None, limit=None, offset=0):
         query = "SELECT body FROM records WHERE owner=? AND kind=?"

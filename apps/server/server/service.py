@@ -346,4 +346,7 @@ class Service:
             items = tx.list(owner, kind, parent=identifier, limit=101)
             result[plural] = [self.view(owner, kind, item) for item in items[:100]]
             result["hasMore"] |= len(items) > 100
+        approvals = tx.pending_approvals(owner, conv["targetWorkerId"], conv["workerStoreId"], identifier, result["observedAt"])
+        result["approvals"] = [self.view(owner, "approval", value) for value in approvals[:100]]
+        result["hasMore"] |= len(approvals) > 100
         return result
