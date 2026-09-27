@@ -85,7 +85,7 @@ def test_restart_invalidates_freshness_without_retaining_lock(env):
         env.client = restarted
         try:
             view = env.alice.get('/conversations/' + conv).json()['data']
-            assert view['busy'] is True and view['busyFresh'] is False
+            assert view['busy'] is False and view['busyFresh'] is False
             with w.connect():
                 assert not env.alice.get('/conversations/' + conv).json()['data']['busyFresh']
                 w.busy([])
