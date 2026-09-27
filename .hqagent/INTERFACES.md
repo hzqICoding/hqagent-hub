@@ -156,3 +156,13 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 - wireRevision 仍为 1；没有新增类型、错误码或 Fixture，没有修改云端 HTTP、v1 路由或现有执行内核。D40/D41 仍有效，vNext 技术方案 §4、§5.1 为目标模型。
 - 本轮实测：validate -CheckGenerated 通过（258 类型 / 109 Fixture）；协议 198 passed；Hub 270 passed / 4 个已有 warning。前端验证依任务要求交主代理，本轮未启动 Vitest。
 - [FZ-R1.2 回执](handoffs/R1-FZ12-remote-protocol.md) 含完整命令、输出与下游要求；新 Cookie 路由的业务实现和真实联调由 P2/P3 承担，本次只冻结契约。
+
+## FZ-R1.3 / 0.6.3 — 已冻结（2026-09-26）
+
+**FZ-R1.3 / 0.6.3 已冻结；P1 快照填充与 P3-B 审批对账以此为准。**
+
+- 冻结 SHA：`500bf1f215fd6d96eb80f9e8677401e57229aa19`。已通过 merge `d442bdc311c4cbd59ee398a730858da880e03b19` 合入 integration/phase1@`dd12a2e0dba162078339d7d7c81306926da3af5e`；本次提交仍在 feat/remote-protocol，未合回集成分支。
+- D45：RemoteConversationSnapshot 增加可选 approvals: RemoteApprovalView[]，只含该对话当前 pending 且未过期的审批，最多 100 条，超出以 hasMore 表达。字段缺省按空数组处理，快照初始化后用增量审批事件更新；消费、失效或过期项不再入快照。
+- 不新增列审批路由、类型或错误码；保留 RemoteApprovalView 的通用状态语义。高风险不可远程 approve 的 pending 项仍可见并可依现有规则 reject。wireRevision 仍为 1，所有 Worker 帧不变。
+- 实测：validate -CheckGenerated 通过（258 类型 / 110 Fixture）；协议 212 passed；Hub 285 passed / 4 warnings；server 85 passed / 1 warning。未启动 Vitest，前端验证交主代理。
+- [FZ-R1.3 回执](handoffs/R1-FZ13-remote-protocol.md) 附真实输出、测试调整说明及下游验收项。P1 尚未填充该字段；本次服务端回归通过证明可选字段兼容，不代表审批补全业务已实现。
