@@ -1,6 +1,5 @@
 {
   "type": "run.submit",
-  "protocolVersion": "0.6.0",
   "commandId": "command_demo",
   "conversationId": "conversation_demo",
   "conversationSeq": 1,
@@ -15,5 +14,6 @@
     "sceneVersion": 1,
     "sessionMode": "new",
     "text": "只读分析已登记项目，不修改文件。"
-  }
+  },
+  "wireRevision": 1
 }

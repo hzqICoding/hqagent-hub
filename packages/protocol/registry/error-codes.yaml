@@ -259,3 +259,17 @@ errors:
     http: 409
     retryable: false
     description: 原提交已形成可见Run或已执行结束，不能声称撤回从未执行；已知Run应按runId控制
+
+  # ---- FZ-R1.1 local pairing controls ----
+  - code: REMOTE_PAIRING_IN_PROGRESS
+    http: 409
+    retryable: false
+    description: 本机已有配对请求进行中；同幂等请求可重放，新请求须先取消旧配对
+  - code: REMOTE_SERVER_UNREACHABLE
+    http: 503
+    retryable: true
+    description: 配置的远程服务无法连接或响应未确认；不得伪造配对或服务端撤销成功
+  - code: REMOTE_SERVER_ORIGIN_INVALID
+    http: 422
+    retryable: false
+    description: serverOrigin不是允许的HTTPS origin，或未获本机开发模式允许的localhost/127.0.0.1 HTTP origin

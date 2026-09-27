@@ -1,10 +1,10 @@
 {
   "type": "worker.events_ack",
-  "protocolVersion": "0.6.0",
   "connectionId": "connection_demo",
   "workerId": "worker_demo",
   "position": {
     "workerStoreId": "store_demo",
     "seq": 1
-  }
+  },
+  "wireRevision": 1
 }

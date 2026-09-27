@@ -22,6 +22,7 @@ import {
   GitBranch,
   Radio,
   ShieldAlert,
+  Smartphone,
   X,
 } from 'lucide-vue-next'
 import { HqBadge, HqTooltip } from '@/shared/ui'
@@ -125,6 +126,12 @@ const navItems = computed<NavItem[]>(() => [
     path: '/updates',
     icon: Download,
     featureKey: 'updates',
+  },
+  {
+    id: 'remote-link',
+    label: '连接手机',
+    path: '/remote-link',
+    icon: Smartphone,
   },
   {
     id: 'settings',

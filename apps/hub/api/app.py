@@ -88,6 +88,18 @@ class LocalBoundaryMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        if scope["path"].startswith(("/api/v1/remote/", "/api/v2/remote/")):
+            original_send = send
+            async def send_no_store(message: dict[str, Any]) -> None:
+                if message["type"] == "http.response.start":
+                    message = {**message, "headers": [
+                        (key, value) for key, value in message.get("headers", [])
+                        if key.lower() != b"cache-control"
+                    ] + [(b"cache-control", b"no-store")]}
+                await original_send(message)
+            # Includes authentication and validation errors, without changing
+            # the existing Bearer, Cookie, Host or Origin decisions below.
+            send = send_no_store
         headers = {key.decode("latin1").lower(): value.decode("latin1") for key, value in scope["headers"]}
         host = headers.get("host", "").split(":", 1)[0].lower()
         origin = headers.get("origin")
@@ -108,7 +120,7 @@ class LocalBoundaryMiddleware:
         if scope["method"] == "OPTIONS":
             requested_headers = headers.get("access-control-request-headers", "authorization,content-type,idempotency-key")
             response_headers = cors_headers + [
-                (b"access-control-allow-methods", b"GET,POST,PUT,OPTIONS"),
+                (b"access-control-allow-methods", b"GET,POST,PUT,PATCH,DELETE,OPTIONS"),
                 (b"access-control-allow-headers", requested_headers.encode("latin1")),
                 (b"access-control-max-age", b"600"),
             ]
@@ -182,15 +194,21 @@ def create_application(
     from storage.local_chat import LocalChatRepository
     local_auth = LocalBrowserAuth()
     local_chat = LocalChatService(LocalChatRepository(database), resolved_ports)
+    from runtime.composition import build_remote_worker
+    from runtime.remote.api import install_remote_routes
+    remote_worker = build_remote_worker(database, event_store, local_chat, paths, token,
+        development=os.environ.get("HQAGENT_REMOTE_DEVELOPMENT") == "1")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "recover_pending"):
             await resolved_ports.tasks.recover_pending()
         await local_chat.start()
+        await remote_worker.start()
         try:
             yield
         finally:
+            await remote_worker.stop()
             await local_chat.stop()
             if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "shutdown"):
                 await resolved_ports.tasks.shutdown()
@@ -200,13 +218,16 @@ def create_application(
     app = FastAPI(title="HQAgent-Hub Local Hub", version=APP_VERSION, lifespan=lifespan)
     app.state.local_auth = local_auth
     app.state.local_chat = local_chat
+    app.state.remote_worker = remote_worker
     app.add_middleware(
         LocalBoundaryMiddleware,
         token=token,
         allowed_origins=allowed_origins or set(DEFAULT_ALLOWED_ORIGINS),
         allowed_hosts=allowed_hosts or {"127.0.0.1", "localhost"},
     )
-    install_local_routes(app, local_chat, local_auth, resolved_ports, event_store, token)
+    remote_router = install_remote_routes(app, remote_worker.link)
+    install_local_routes(app, local_chat, local_auth, resolved_ports, event_store, token,
+                         remote_router=remote_router)
 
     bootstrap = BootstrapService(
         resolved_ports,
@@ -325,6 +346,9 @@ def create_application(
     ) -> JSONResponse:
         if maintenance.enabled:
             raise HubError("HUB_MAINTENANCE", "Local Hub 正在维护，暂不接受新任务")
+        if value.parent_task_id:
+            local_chat.repository.assert_local_task(value.parent_task_id)
+        local_chat.repository.assert_local_profile(value.profile_id)
         return success_response(await resolved_ports.tasks.create_task(value, idempotency_key))
 
     @app.get("/api/v1/tasks/{task_id}")
@@ -337,6 +361,7 @@ def create_application(
         value: TaskActionInput,
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ) -> JSONResponse:
+        local_chat.repository.assert_local_task(task_id)
         return success_response(await resolved_ports.tasks.act(task_id, value, idempotency_key))
 
     @app.get("/api/v1/sessions")
@@ -355,6 +380,10 @@ def create_application(
 
     @app.post("/api/v1/sessions/{session_id}/resume")
     async def resume_session(session_id: str, value: ResumeSessionInput) -> JSONResponse:
+        with database.locked_connection() as db:
+            row = db.execute("SELECT task_id FROM sessions WHERE session_id=?", (session_id,)).fetchone()
+        if row:
+            local_chat.repository.assert_local_task(row[0])
         return success_response(await resolved_ports.sessions.resume(session_id, value))
 
     @app.get("/api/v1/approvals")

@@ -23,6 +23,7 @@ export {
   getLocalChatGateway,
   getLocalChatGatewayMode,
   setLocalChatGatewayMode,
+  setLocalChatGatewayForTesting,
   type LocalChatGatewayMode,
 } from './local-chat-provider'
 

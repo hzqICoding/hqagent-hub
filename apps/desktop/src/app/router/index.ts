@@ -53,6 +53,11 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '远程对话工作台' },
   },
   {
+    path: '/remote-link',
+    component: LocalChatLayout,
+    children: [{ path: '', name: 'remote-link', component: () => import('@/pages/remote-link/RemoteLinkPage.vue'), meta: { title: '连接手机' } }],
+  },
+  {
     path: '/',
     component: AppLayout,
     children: [
@@ -148,7 +153,7 @@ export const router = createRouter({
 // Navigation Guard: In real mode, enforce local session check
 router.beforeEach(async (to, _from, next) => {
   // 1. Remote routes guard
-  if (to.path.startsWith('/remote')) {
+  if (to.path === '/remote' || to.path.startsWith('/remote/')) {
     if (to.path === '/remote/login') {
       next()
       return

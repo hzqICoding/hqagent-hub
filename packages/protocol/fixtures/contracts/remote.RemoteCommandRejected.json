@@ -1,6 +1,5 @@
 {
   "type": "command.rejected",
-  "protocolVersion": "0.6.0",
   "eventId": "event_demo",
   "workerId": "worker_demo",
   "workerStoreId": "store_demo",
@@ -15,5 +14,6 @@
     "code": "REMOTE_COMMAND_EXPIRED",
     "message": "Request cannot be admitted",
     "retryable": false
-  }
+  },
+  "wireRevision": 1
 }

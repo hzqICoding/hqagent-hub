@@ -1,6 +1,5 @@
 {
   "type": "command.failed",
-  "protocolVersion": "0.6.0",
   "eventId": "event_demo",
   "workerId": "worker_demo",
   "workerStoreId": "store_demo",
@@ -14,5 +13,6 @@
     "code": "TASK_NOT_CANCELLABLE",
     "message": "Worker refused cancellation",
     "retryable": false
-  }
+  },
+  "wireRevision": 1
 }

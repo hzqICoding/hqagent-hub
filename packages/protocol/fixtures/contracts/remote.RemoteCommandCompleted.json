@@ -1,6 +1,5 @@
 {
   "type": "command.completed",
-  "protocolVersion": "0.6.0",
   "eventId": "event_demo",
   "workerId": "worker_demo",
   "workerStoreId": "store_demo",
@@ -12,5 +11,6 @@
   "resultStatus": "succeeded",
   "resultRef": {
     "runId": "run_demo"
-  }
+  },
+  "wireRevision": 1
 }

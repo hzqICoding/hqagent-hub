@@ -1,9 +1,12 @@
 {
   "type": "worker.hello_rejected",
-  "protocolVersion": "0.6.0",
   "error": {
     "code": "REMOTE_PROTOCOL_UNSUPPORTED",
     "message": "Request cannot be admitted",
     "retryable": false
-  }
+  },
+  "wireRevision": 1,
+  "supportedWireRevisions": [
+    1
+  ]
 }

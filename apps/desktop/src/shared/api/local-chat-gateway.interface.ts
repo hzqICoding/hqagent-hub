@@ -26,9 +26,20 @@ import type {
   ApprovalView,
   ApprovalResponseInput,
   SessionView,
+  RemoteLinkView,
+  RemoteLinkPairingInput,
 } from '@hqagent/protocol'
 
 export interface LocalChatGateway {
+  // Remote Link (D44)
+  getRemoteLink(): Promise<RemoteLinkView>
+  startRemotePairing(
+    input: RemoteLinkPairingInput,
+    idempotencyKey?: string
+  ): Promise<RemoteLinkView>
+  cancelRemotePairing(idempotencyKey?: string): Promise<RemoteLinkView>
+  unlinkRemote(idempotencyKey?: string): Promise<RemoteLinkView>
+
   // Auth
   getLocalAuthStatus(): Promise<LocalAuthView>
   openLocalSession(input: LocalAuthInput): Promise<LocalAuthView>

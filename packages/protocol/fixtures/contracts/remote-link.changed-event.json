@@ -1,0 +1,17 @@
+{
+  "eventId": "local_remote_link_evt_1",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "aggregateType": "system",
+  "aggregateId": "remote-link",
+  "type": "remote.link.changed",
+  "protocolVersion": "0.6.1",
+  "payload": {
+    "state": "pairing",
+    "serverOrigin": "https://hub.example.invalid",
+    "deviceName": "Office PC",
+    "pairRequestId": "pair_demo",
+    "pairCode": "ABCD2345",
+    "expiresAt": "2026-09-26T12:05:00Z"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "conversation": {
+    "conversationId": "conversation_demo",
+    "targetWorkerId": "worker_demo",
+    "authority": "remote",
+    "title": "Remote test conversation",
+    "workspaceId": "workspace_demo",
+    "sceneId": "analyze",
+    "sceneVersion": 1,
+    "createdAt": "2026-09-26T12:00:00Z",
+    "updatedAt": "2026-09-26T12:00:00Z",
+    "workerStoreId": "store_demo"
+  },
+  "serverCursor": "opaque_owner_cursor_example_001",
+  "observedAt": "2026-09-26T12:00:00Z",
+  "runs": [
+    {
+      "runId": "run_demo",
+      "conversationId": "conversation_demo",
+      "status": "waiting_approval",
+      "observedAt": "2026-09-26T12:00:00Z",
+      "workerOnline": false
+    }
+  ],
+  "commands": [],
+  "messages": [],
+  "hasMore": false,
+  "approvals": [
+    {
+      "approvalId": "approval_demo",
+      "resultRef": {
+        "runId": "run_demo"
+      },
+      "action": "git_push",
+      "targetSummary": "example",
+      "riskLevel": "high",
+      "status": "pending",
+      "requestedAt": "2026-09-26T12:00:00Z",
+      "expiresAt": "2026-09-26T12:05:00Z",
+      "remoteApprovalAllowed": false,
+      "workerPolicyRevision": 1,
+      "denialCode": "REMOTE_APPROVAL_FORBIDDEN"
+    }
+  ]
+}

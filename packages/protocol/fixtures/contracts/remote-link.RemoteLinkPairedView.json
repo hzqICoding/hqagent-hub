@@ -1,0 +1,8 @@
+{
+  "state": "paired",
+  "serverOrigin": "https://hub.example.invalid",
+  "deviceName": "Office PC",
+  "workerId": "worker_demo",
+  "connectionStatus": "connecting",
+  "lastConnectedAt": null
+}

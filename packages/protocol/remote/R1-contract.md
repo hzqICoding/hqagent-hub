@@ -1,4 +1,4 @@
-# R1 远程通信契约 0.6.0
+# R1 远程通信契约（协议包0.6.3，线路修订1）
 
 ## 1. 定位、事实源与范围
 
@@ -30,7 +30,7 @@
 
 ## 4. Worker WSS与存储世代
 
-`/ws/v2/worker`只接受已配对、未撤销的设备Authorization头；不接受URL token、浏览器cookie或本机Hub Token替代。10秒内首帧hello。0.6.0只协商0.6.0，版本不符明确REMOTE_PROTOCOL_UNSUPPORTED，不降级命令语义。
+`/ws/v2/worker`只接受已配对、未撤销的设备Authorization头；不接受URL token、浏览器cookie或本机Hub Token替代。10秒内首帧hello。按D42仅以整数wireRevision协商，本轮修订号为1。hello.protocolVersion是协议包semver诊断值，不参与接入或兼容性判断。hello_ack回显已接受的wireRevision；hello_rejected返回supportedWireRevisions，初值[1]，不能只返回错误文字。
 
 hello绑定workerId、workerStoreId、workerEpoch、platform、architecture、capabilityRevision与lastServerAck。当前连接的workerId必须匹配credential绑定。每个Worker只允许一个有效连接，新认证连接获得connectionId并fence旧连接；连接标识是传输栅栏，不是本地Session/Workspace锁。
 
@@ -113,6 +113,10 @@ Worker事件seq绑定workerStoreId，沿同一本地持久序号空间单调分�
 8. R1浏览器可以HTTPS轮询/events；本轮只冻结Worker WSS，不要求浏览器WS。已观察在线时间来自服务端连接，不由Worker上行Run payload伪造；RemoteRunView.workerOnline由P1附加。
 9. 终态、审批、关键错误不可当进度噪声丢弃；本版omitted仅用于非远程可见事件，不允许掩盖远程缺失结果。日志与文本必须Worker侧脱敏，不能包含环境变量、认证文件或私有思考过程。
 
+**D45（0.6.3，浏览器快照对账）**：首次打开对话或serverCursor过期后，浏览器必须以该对话快照重建状态。RemoteConversationSnapshot新增可选 `approvals: RemoteApprovalView[]`，仅包含该对话在快照observedAt仍为pending且expiresAt严格晚于observedAt的审批，与对话投影及serverCursor在同一事务视图取得。字段缺省时按空数组处理，兼容旧服务端；它不是null，也不注入序列化默认值。浏览器用快照approvals替换初始待处理集合，再从快照serverCursor之后按顺序应用增量approval.state_changed事件，按approvalId更新或移除，不能把重建前的旧待处理项无条件合并回来。
+
+approvals与其它快照数组一样最多100条；P1先按owner、对话归属、pending及期限筛选，再截取100条，存在额外符合条件记录时将hasMore置true（与其它数组截断条件取或）。hasMore表示快照有界且可能不完整，不能将截断后的100条宣称为全部审批。本版不新增列审批或分页审批路由，快照就是浏览器对账入口；已知ID仍可使用既有GET /approvals/{approvalId}。本次仅浏览器HTTP DTO增量，Worker帧结构和wireRevision=1不变。
+
 ## 9. 对话权威与审批分级
 
 配对后新建对话为remote；未配对纯本地对话保持现状。既有local对话不自动改权威、不双写、不重放历史。remote对话的消息排序和用户命令入口只有服务端，电脑界面也走RemoteGateway。
@@ -123,6 +127,8 @@ P2须持久记录authority，并在本地HTTP发送/追加/重试/恢复等写�
 
 审批ID绑定实际run/node/执行器请求、有效期及消费状态；任务终止、策略变更或已有决定都需重新校验。重复请求只返回同一结果，不重复发送给原生工具；消费不明保持不明，不自动重批。ApprovalView中的remoteApprovalAllowed是Worker可见投影，收到命令时仍要重新读取当前真实请求，服务器即使篡改风险级别也不能改变本地判断。
 
+**D45待处理集合**：审批已被消费、失效或过期后，服务端不得再将其放入会话快照approvals；不能只按数据库里尚未更新的pending标签忽略expiresAt。高风险且remoteApprovalAllowed=false的pending审批仍须出现在快照中，用户仍可按既有规则远程reject；禁止approve不等于隐藏审批。浏览器快照重建后以approvals为初始集合，随后通过增量审批事件维护，终态/失效事件移除对应项；时间到期即停止将其作为可操作项，即使没有新的事件也不能延长权限。请求提交时P1/P2继续重新校验当前状态与期限，快照不是批准凭证。归属、实时期限及消费状态的筛选由P1实现，通用RemoteApprovalView仍可用于历史/终态事件，本次不收窄其status枚举。
+
 ## 10. 大小、生成器与消费者校验
 
 Worker WS帧最大256KiB（UTF-8字节），超限明确拒绝/1009，不截断后继续。结构字段另有限长/数量限制；组合后仍须检查总字节数。Catalog是有界原子完整快照，超限必须报告而不能偷偷截掉工作区。浏览器历史用有界分页；大历史不一次同步。附件不通过这些帧传送。
@@ -130,3 +136,61 @@ Worker WS帧最大256KiB（UTF-8字节），超限明确拒绝/1009，不截断�
 oneOf生成TS联合和Python RootModel（通过model_validate()/model_dump()保持裸JSON形状）。只有新远程对象启用x-wire-strict；不改变旧DTO验证语义。显式null仅用于允许的ack位置；可选字段未提供应省略，不以null替代。Python序列化使用mode=json/by_alias=True/exclude_none=True，必填可空ack会保留null。整数、布尔及数组标量严格校验；跨资源、三层状态、期限顺序、firstSeq<=seq、hasMore与cursor等关系仍是P1/P2业务校验责任。
 
 普通重放的内容哈希不含传输重试次数或新epoch；原事件不可变。协议测试覆盖结构与样例，不冒充P1/P2的事务和网络故障验收。P1/P2/P3要按本文件补并发、越权、连续ack、撤回先到、世代变化、审批伪造和恢复故障测试。
+
+
+## 11. FZ-R1.1 线路修订演进（D42）
+
+- Worker↔Server的27个具体帧使用wireRevision:1，除了hello的诊断protocolVersion外，不再携带协议包版本。
+- hello.protocolVersion使用semver pattern，允许0.6.0、0.6.1、未来包版本及合法预发行/构建标识。P1不得拿它与自己的包版本相等比较；P2应填生成常量，而不是模型、CLI或Python分发包元数据版本。
+- hello_ack的wireRevision是接受的线路修订。拒绝帧统一带supportedWireRevisions；REMOTE_PROTOCOL_UNSUPPORTED时必须提供列表。先读取有限握手字段判断线路版本，再按对应DTO验证整帧，不能先硬套当前DTO然后丢掉协商信息。
+- 同一wireRevision内结构冻结。在x-wire-strict下添加可选字段也会被旧端拒绝，所以任何帧结构变化都新开线路修订；不得悄悄修改修订1的DTO。未来新增修订保留旧修订解析器/序列化器，按连接选择。
+- 服务端在升级窗口同时支持N和N-1（修订1首次只有[1]）。老Worker继续说N-1，新Worker使用双方实际支持的修订；未知线路不得按包版本猜测或强行解释。结束兼容窗口需显式运营策略和升级提示。
+- 包版本升级（如0.6.1或后续本机接口更新）不改变wireRevision。HTTP的ApiEnvelope.protocolVersion和本机HubEvent.protocolVersion仍是包版本；remote-hub.v2的浏览器HTTP契约此次未修改。
+- 旧0.6.0草稿把包版本当线路号，不能自动视为修订1。P1当前开工代码需一次性改字段/校验/构造器及测试；不以数据重写伪造已确认事件的原始哈希。
+
+## 12. FZ-R1.1 本机连接管理（D43）
+
+事实源为schema/remote-link.json、local-hub.v1.yaml新增四个操作。只使用本机v1现有Bearer、Host/Origin和WS Ticket，不引入新认证或把设备secret给UI。本机HTTP只返回ApiEnvelope.data里的RemoteLinkView，状态以GET和remote.link.changed的最新快照为准。
+
+| state | 必需内容与意义 |
+| --- | --- |
+| unpaired | 无绑定；serverOrigin可作为非secret偏好保留，也可省略。通知服务端未确认可带lastErrorCode |
+| pairing | 已取得有效挑战，serverOrigin/deviceName/pairRequestId/pairCode/expiresAt齐备；不是已经绑定 |
+| paired | serverOrigin/workerId/deviceName/connectionStatus/lastConnectedAt。刚配对尚未连通过时lastConnectedAt=null，不能伪造成功连接时间 |
+| revoked | 保留原绑定识别信息，connectionStatus=offline；不自动重连或冒充执行已停止 |
+| frozen | 保留识别信息和真实连接状态。WSS在线也可能因世代/对账而禁止命令投递 |
+
+所有视图可包含的错误仅已登记错误码，不带原始Authorization、secret或Hub Token。lastConnectedAt是最近一次确认成功连接的时间，断线/重试不刷新它。短码只出现在pairing，取消/过期后不继续暴露。
+
+serverOrigin必须是规范化origin，不接受userinfo、任意path、query或fragment；HTTPS可使用合法主机/端口。仅本机Worker明确开启开发调试模式时允许http://127.0.0.1或http://localhost（可带端口），不能通过请求参数打开该例外。P2应使用URL解析器再次验证host/port、归一化scheme/host/default-port/root-slash，不以正则代替完整URL语义。跨origin重定向不得携带设备认证信息。Origin不合法返回REMOTE_SERVER_ORIGIN_INVALID；请求者仍要先通过v1认证。
+
+配对/取消/解绑由P2序列化并持久化操作世代，防止异步晚到响应复活已取消的绑定。POST pairing拿到真实短码才返回pairing；发请求尚未取得挑战属于内部in-flight状态，不能编造pairRequestId/短码。服务端响应不明时保存安全的重试意图并报告错误，幂等重试不创建第二secret或重复配对。
+
+DELETE pairing取消候选配对并清候选凭据/轮询；已paired/revoked/frozen须显式unlink，不能靠取消接口绕过。服务端已看到的短码挑战可能等待过期，不能宣称本机取消一定已在服务端撤销；本地取消后手机确认的迟到结果也不能自动恢复本机连接。
+
+POST unlink先完成本机凭据删除与断开，结束为unpaired；若本机删除失败，不能返回成功。服务器撤销通知是best-effort，不改变本地解绑完成的真实性：remote-hub.v2现有设备撤销需要owner浏览器会话，设备Bearer不是该授权；本轮不新增设备自撤销接口、线路帧或暗中转交浏览器Cookie。只有已有合法通知途径时尝试；离线或没有可用授权时可保留lastErrorCode（REMOTE_SERVER_UNREACHABLE/REMOTE_AUTH_REQUIRED），提示服务端撤销未确认，不谎称已全局撤销。P1的正常owner设备撤销入口保持原样。
+
+已有remote对话在解绑后仍为remote，本机只读。LocalConversationView.authority是可选字段，旧记录缺省视为local；这种兼容默认绝不能用于把已持久标记remote的对话降级。P2必须在本地写入口执行权威检查；未来如何接续已解绑remote对话另行设计，本版不自动迁移/重放。
+
+0.6.1中的本机配对接口要求现有v1 Gateway/桌面壳鉴权；本机浏览器Cookie不能自动获得v1权限，Hub Token不得塞进JSON或前端持久化存储。0.6.2按D44补充浏览器等价入口，见下节，未改变v1认证方式。
+
+## 13. FZ-R1.2 本机浏览器等价入口（D44）
+
+包版本0.6.2，线路修订仍为1。四个等价操作定义在已有本机Cookie会话契约 `openapi/local-chat.v2.yaml`，不在云端 `remote-hub.v2.yaml`：
+
+| 本机浏览器操作 | 保留的本机Bearer操作 | DTO |
+| --- | --- | --- |
+| GET /api/v2/remote/link | GET /api/v1/remote/link | RemoteLinkView |
+| POST /api/v2/remote/pairing | POST /api/v1/remote/pairing | RemoteLinkPairingInput → RemoteLinkView |
+| DELETE /api/v2/remote/pairing | DELETE /api/v1/remote/pairing | RemoteLinkView |
+| POST /api/v2/remote/unlink | POST /api/v1/remote/unlink | RemoteLinkView |
+
+这里的本机 `/api/v2` 是用户电脑上 Local Hub 的工作台 API；云端 Hub Server 的 `remote-hub.v2` 虽然也使用 `/api/v2` 前缀，属于另一个服务。两者Cookie不可互换，不能代理传递Cookie来补权限。本机浏览器使用连接码建立的 `hqagent_local_session`（OpenAPI localSession），无需取得或持久化Hub Token。v1 Bearer路由保留给桌面壳与诊断，不迁移、不降级其权限要求。
+
+浏览器写请求沿用现有本机v2的Origin校验及Idempotency-Key；缺少/不可信Origin使用ORIGIN_NOT_ALLOWED，无有效本机会话使用UNAUTHORIZED，缺少/不合法幂等键使用VALIDATION_FAILED，重放冲突按既有幂等规则处理。业务错误码与D43完全复用。新路由全部响应（成功、业务错误及认证/边界拒绝）均须 `Cache-Control: no-store`。P2需覆盖中间件提前拒绝的返回，不只在成功handler加头。
+
+两个本机路由版本必须操作同一份绑定状态和同一凭据生命周期，复用D43的配对、取消、解绑、authority和幂等语义，不另建第二份绑定管理器。既有remote对话在解绑后仍为remote、本机只读，解除绑定不等同停止已运行任务。
+
+`remote.link.changed` 的事件形状和语义不变。允许本机工作台轮询GET link获得最新完整快照；GET只读，不发起新配对、不延长短码期限。浏览器可仅使用轮询，不要求接入v1 WebSocket或取得其Ticket。页面应避免并发轮询的旧响应覆盖新状态，并在会话失效后停止认证失败重试。
+
+本次不新增类型或错误码，不修改Worker帧与线路修订、云端HTTP契约、v1路由或执行内核。本机业务实现由P2完成，协议测试不代表新路由已经部署。

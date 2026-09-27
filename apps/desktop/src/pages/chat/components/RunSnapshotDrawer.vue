@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   Package,
   X,
+  Smartphone,
 } from 'lucide-vue-next'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -186,7 +187,10 @@ function getReviewVerdictMeta(verdict: string) {
           </div>
         </div>
 
-        <div class="flex items-center gap-2 pt-1">
+        <div v-if="chatStore.isRemoteConversation" class="p-2 rounded bg-warning/10 border border-warning/20 text-xs text-warning">
+          这是手机远程对话，审批请在手机上处理
+        </div>
+        <div v-else class="flex items-center gap-2 pt-1">
           <HqButton size="sm" variant="primary" @click="handleApprove('approve')">
             批准放行
           </HqButton>
@@ -197,7 +201,18 @@ function getReviewVerdictMeta(verdict: string) {
       </div>
 
       <!-- Action Control Buttons -->
-      <div class="p-2.5 rounded-[var(--radius-sm)] bg-bg-app border border-border flex items-center justify-between gap-1.5">
+      <div
+        v-if="chatStore.isRemoteConversation"
+        class="p-2.5 rounded-[var(--radius-sm)] bg-primary/10 border border-primary/25 flex items-center gap-2 text-xs text-text"
+      >
+        <Smartphone class="w-4 h-4 text-primary shrink-0" />
+        <span class="text-[11px] font-medium">这是手机远程对话，运行控制请在手机上继续操作</span>
+      </div>
+
+      <div
+        v-else
+        class="p-2.5 rounded-[var(--radius-sm)] bg-bg-app border border-border flex items-center justify-between gap-1.5"
+      >
         <HqButton
           v-if="activeRun.status === 'running'"
           size="sm"

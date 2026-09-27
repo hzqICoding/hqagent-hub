@@ -6,7 +6,7 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.6.0"
+const Version = "0.6.3"
 
 type AdapterId = string
 
@@ -72,6 +72,9 @@ const (
 	ErrorCodeRemoteRateLimited ErrorCode = "REMOTE_RATE_LIMITED"
 	ErrorCodeRemoteFrameTooLarge ErrorCode = "REMOTE_FRAME_TOO_LARGE"
 	ErrorCodeRemoteWithdrawalTooLate ErrorCode = "REMOTE_WITHDRAWAL_TOO_LATE"
+	ErrorCodeRemotePairingInProgress ErrorCode = "REMOTE_PAIRING_IN_PROGRESS"
+	ErrorCodeRemoteServerUnreachable ErrorCode = "REMOTE_SERVER_UNREACHABLE"
+	ErrorCodeRemoteServerOriginInvalid ErrorCode = "REMOTE_SERVER_ORIGIN_INVALID"
 )
 
 type RoleId = string
