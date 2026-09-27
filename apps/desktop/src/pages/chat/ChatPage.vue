@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, computed, inject } from 'vue'
+import { routeLocationKey, type RouteLocationNormalizedLoaded } from 'vue-router'
 import { useChatStore } from '@/stores/chat.store'
 import { useLocalAuthStore } from '@/stores/local-auth.store'
 import ChatSidebar from './components/ChatSidebar.vue'
@@ -30,6 +31,7 @@ import {
 
 const chatStore = useChatStore()
 const authStore = useLocalAuthStore()
+const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null)
 
 const isDrawerOpen = ref(true)
 const sidebarRef = ref<{ openCreateModal: () => void } | null>(null)
@@ -38,7 +40,7 @@ const isScrolledUp = ref(false)
 const isContextResetDialogOpen = ref(false)
 let mounted = false
 
-const isContextResetDisabled = computed(() => !chatStore.canResetContext || chatStore.isActiveConversationArchived)
+const isContextResetDisabled = computed(() => !chatStore.canResetContext || chatStore.isActiveConversationArchived || chatStore.isRemoteConversation)
 
 const conversationMenuItems = computed(() => [
   {
@@ -72,6 +74,10 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', refreshOnReturn)
   await chatStore.init()
   if (!mounted) return
+  const convIdQuery = route?.query.convId as string | undefined
+  if (convIdQuery && chatStore.conversations.some((c) => c.id === convIdQuery)) {
+    await chatStore.selectConversation(convIdQuery)
+  }
   chatStore.startPolling()
   scrollToBottom()
 })
@@ -169,7 +175,7 @@ function getStarterPrompts(sceneId?: string) {
 }
 
 function applyStarterPrompt(prompt: string) {
-  if (chatStore.isActiveConversationArchived) return
+  if (chatStore.isActiveConversationArchived || chatStore.isRemoteConversation) return
   chatStore.sendMessage(prompt)
 }
 
@@ -228,6 +234,10 @@ async function restoreActiveConversation() {
 
             <HqBadge size="sm" variant="info" class="text-[10px] shrink-0">
               {{ getSceneLabel(chatStore.activeConversation.sceneId) }}
+            </HqBadge>
+
+            <HqBadge v-if="chatStore.activeConversation.authority === 'remote'" size="sm" variant="primary" class="text-[10px] shrink-0 font-medium">
+              手机远程
             </HqBadge>
 
             <HqBadge v-if="chatStore.isActiveConversationArchived" size="sm" variant="neutral" class="text-[10px] shrink-0">

@@ -32,7 +32,16 @@ export function setLocalChatGatewayMode(mode: LocalChatGatewayMode): void {
   }
 }
 
+let currentGatewayOverride: LocalChatGateway | null = null
+
+export function setLocalChatGatewayForTesting(gateway: LocalChatGateway | null): void {
+  currentGatewayOverride = gateway
+}
+
 export function getLocalChatGateway(): LocalChatGateway {
+  if (currentGatewayOverride) {
+    return currentGatewayOverride
+  }
   if (currentMode === 'mock') {
     return mockLocalChatGateway
   }
