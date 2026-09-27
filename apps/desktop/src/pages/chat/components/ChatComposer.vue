@@ -30,7 +30,7 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const canSend = computed(() => {
   return (
-    !chatStore.isBusyFromOtherEnd &&
+    !chatStore.isConversationBusy &&
     inputText.value.trim().length > 0 &&
     !chatStore.isActiveConversationArchived &&
     !chatStore.isSending &&
@@ -188,13 +188,13 @@ function handleStopRun() {
         </button>
       </div>
 
-      <!-- Cross-endpoint Busy Banner -->
+      <!-- Busy Banner -->
       <div
-        v-if="chatStore.isBusyFromOtherEnd"
+        v-if="chatStore.isConversationBusy"
         class="p-2.5 rounded-xl bg-warning/10 border border-warning/25 text-xs text-warning flex items-center gap-2 shadow-xs"
       >
         <Clock class="w-4 h-4 text-warning shrink-0 animate-spin" />
-        <span class="text-xs font-medium">手机上正在进行，结束后再继续</span>
+        <span class="text-xs font-medium">对话正在进行，结束后再继续</span>
       </div>
 
       <!-- 5. Floating Modern Composer Card (PI-Desktop / Codex style) -->
@@ -208,8 +208,8 @@ function handleStopRun() {
             v-model="inputText"
             :maxlength="32000"
             rows="1"
-            :disabled="chatStore.isBusyFromOtherEnd || chatStore.isActiveConversationArchived"
-            :placeholder="chatStore.isBusyFromOtherEnd ? '手机上正在进行，结束后再继续' : '向角色团队输入任务目标或补充要求... (Enter 发送，Shift + Enter 换行)'"
+            :disabled="chatStore.isConversationBusy || chatStore.isActiveConversationArchived"
+            :placeholder="chatStore.isConversationBusy ? '对话正在进行，结束后再继续' : '向角色团队输入任务目标或补充要求... (Enter 发送，Shift + Enter 换行)'"
             class="w-full bg-transparent text-xs text-text placeholder-text-muted/50 resize-none outline-none focus:ring-0 leading-relaxed max-h-44 min-h-[44px] disabled:opacity-60 disabled:cursor-not-allowed"
             @input="handleInput"
             @keydown="handleKeyDown"

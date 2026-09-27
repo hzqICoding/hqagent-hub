@@ -38,7 +38,7 @@
    - 对话设置模态窗：支持修改标题、归档、可见性设置（两端可见 / 仅电脑 / 仅手机），切换至 `pc_only` 时提供阻断性二次确认弹窗。
 4. `apps/desktop/src/stores/remote-chat.store.ts`
    - 设备与工作区适配：支持 `selectedWorkerId` 状态切换并重置对话与消息数据；
-   - 消息按需分页加载：`fetchMessages(conversationId, beforeCursor)`，基于 `messageId` 去重合并；
+   - 消息按需分页加载：使用服务端返回的游标 `page.before` 拉取更早历史，统一由 `mergeRemoteMessages` 按 `messageId` 与 `messageRevision` 去重合并；
    - 增量事件清理机制：收到重置或清理事件时同步刷新本地消息集合；
    - 设备在线状态与忙碌状态感知：严格依据 `online` 与 `busyFresh` 进行状态计算；
    - 离线操作即时拦截：在网络发起前直接拦截并抛出 `REMOTE_DEVICE_OFFLINE`，保留用户输入。
@@ -54,14 +54,13 @@
    - 增加来源标识（来自手机 / 本机发起）；跨端执行中取消按钮始终保持可点击。
 8. `apps/desktop/src/pages/remote-link/RemoteLinkPage.vue`
    - 新增全局同步总开关（`mirrorEnabled`，默认开启，文案：「开启后对话内容会保存到你的服务器上」）；
-   - 关闭同步时弹出二次危险警告确认对话框（「关闭后服务器上这台电脑的对话副本将被删除，手机上将看不到任何对话」）；
-   - 同步状态可视化展示（已同步 / 补传中 / 同步异常）。
+   - 关闭同步时弹出二次危险警告确认对话框（「关闭后服务器上这台电脑的对话副本将被删除，手机上将看不到任何对话」）。
 9. `apps/desktop/src/stores/chat.store.ts`
    - 允许向 `authority === 'remote'` 对话发送消息与控制指令；
    - 引入对话可见性过滤和修改可见性方法 `updateConversationVisibility`；
    - 跨端忙碌状态计算属性 `isRemoteBusy`。
 10. `apps/desktop/src/stores/remote-link.store.ts`
-    - 新增 `mirrorEnabled`、`syncStatus` 与 `updateMirrorEnabled` 接口和状态管理。
+    - 新增 `mirrorEnabled` 与 `updateMirrorEnabled` 接口和状态管理。
 11. `apps/desktop/src/shared/api/local-chat-gateway.interface.ts` / `local-chat-gateway.ts` / `mock-local-chat-gateway.ts`
     - 接口扩展：`updateConversationVisibility(conversationId, visibility)`，移除针对 remote 会话的权威性硬拦截；`mock-local-chat-gateway.ts` 的 `reset()` 方法修复未清理 `runs` 与 `messages` 导致的跨用例泄漏。
 12. `apps/desktop/src/shared/api/remote-gateway.interface.ts` / `remote-gateway.ts` / `mock-remote-gateway.ts`
@@ -112,8 +111,8 @@
   - 若目标设备离线，操作立即提示「设备离线，发送失败」，且输入框保留用户草稿。
 - **消息分页（`before` 游标）**：
   - 首次进入对话仅拉取最近一页（`limit=20`）；
-  - 向上滚动触顶时，以最旧消息的 `messageId` 作为 `before` 游标拉取更早历史，合并时记录 `scrollHeight` 差值维持视口平滑，杜绝页面跳动；
-  - 与轮询增量事件按 `messageId` 去重合并。
+  - 向上滚动触顶时，使用服务端上一页返回的游标 `page.before`（若 `page.hasMore` 为 true 且 `before` 存在）拉取更早历史，由服务端控制游标推进而非客户端提取消息 ID；合并时记录 `scrollHeight` 差值维持视口平滑，杜绝页面跳动；
+  - 与轮询增量事件统一通过 `mergeRemoteMessages` 进行去重（按 `messageId` + `messageRevision`）与排序。
 - **对话设置与可见性**：
   - 模态窗支持重命名、归档；
   - 可见性支持三档单选（两端可见、仅电脑、仅手机），标注「这只是显示设置，不是保密手段」；
@@ -131,8 +130,7 @@
   - 侧边栏默认隐藏 `mobile_only` 对话；底部提供「显示已隐藏的对话」复选开关，开启后展示隐藏会话并标注「已隐藏」，方便用户改回两端可见。
 - **「连接手机」页同步总开关 (`RemoteLinkPage.vue`)**：
   - 新增 `mirrorEnabled` 同步总开关，默认开启；
-  - 用户尝试关闭时，弹出二次危险警告确认框：「关闭后服务器上这台电脑的对话副本将被删除，手机上将看不到任何对话」；
-  - 状态面板直观展示「已同步」、「补传中」、「同步异常」等实时同步状态。
+  - 用户尝试关闭时，弹出二次危险警告确认框：「关闭后服务器上这台电脑的对话副本将被删除，手机上将看不到任何对话」。
 
 ### 3.3 安全红线核查
 - 所有 Token、配对短码、Cookie 均严格遵循零泄漏原则；
@@ -204,3 +202,83 @@ dist/assets/RemoteDevicesPage-BzNi7pep.js                                       
 
 1. **未连接真实 Hub Server 进行联调**：本次实现使用严格遵循 Protocol 0.7.0 规范的 `MockRemoteGateway` 和 `MockLocalChatGateway` 进行交互验证；真机与真实服务端的网络联调、断网重连边界测试需交由主代理及后续联调环境统一运行。
 2. **协议字段完整性**：未自行发明任何本地同步进度或状态字段，完全遵循 `@hqagent/protocol` 0.7.0 生成规范。
+
+---
+
+## 7. 返修 1（F1–F7）
+
+针对 R1.5 联调与代码审核提出的 F1–F7 问题，已完成全部修复并通过实测：
+
+### 7.1 问题修复项
+- **F1（新建对话占位与超时）**：
+  - 手机端 `createConversation` 收到 202 回执后，不再在 `conversations` 中乐观伪造 `RemoteConversationView`；
+  - 引入独立的 UI 状态 `pendingConversation`（`PendingConversationPlaceholder`），在列表顶部展示不可选中、不可发送的「正在电脑上创建…」占位条目；
+  - 若 30 秒内未收到电脑同步回来的真实对话，状态自动变为失败「创建失败，请重试」，并提供手动关闭按钮；
+  - 当真实对话通过 `conversation.updated` 到达时，自动清除占位并切换选中该对话；
+  - 设备离线时仍执行前置强校验，直接阻断并抛出 `REMOTE_DEVICE_OFFLINE`。
+- **F2（设置更新不改本地，冲突重拉）**：
+  - 手机端修改标题、归档、可见性收到 202 回执后，不修改本地会话数据，不自增 `metadataVersion`；
+  - 界面设置通知提示「等待电脑确认」，最终数据完全由电脑处理后触发的 `conversation.updated` 事件确定；
+  - 遇到服务端 409 `REMOTE_SYNC_CONFLICT` 时，自动调用网关重新拉取对话列表并抛错提示「同步冲突，请刷新」。
+- **F3（事件 upsert 与 workerId 过滤）**：
+  - `applyEvent` 中将 `conversation.updated` 移到 `if (!activeId) return` 之前，确保未打开会话时也能正确更新会话列表；
+  - 严格校验事件中的 `workerId` / `targetWorkerId` 必须与当前选中的电脑一致，忽略其他电脑的事件；
+  - 实施增量 upsert：本地不存在时插入，本地已存在且事件版本 `metadataVersion >= existing.metadataVersion` 时更新；
+  - 若会话被设为 `visibility === 'pc_only'`，自动从手机端会话列表中移除；若当前正处于该会话，重置 `activeConversationId = null`。
+- **F4（消息合并逻辑统一与 revision 去重）**：
+  - 抽取统一的纯函数 `mergeRemoteMessages(existing, incoming)`，供初次拉取、游标历史分页、乐观发送以及 `message.appended` 增量事件共同复用；
+  - 去重规则：以 `messageId` 为主键，相同 ID 保留 `messageRevision` 更高的一项；
+  - 排序规则：严格按 `messageSequence` 升序排列，不存在序号时降级使用 `createdAt`；
+  - 乐观消息替换：在收到对应电脑端生成的正式用户消息时，平滑替换 `temp_*` 临时消息。
+- **F5（细化发送前版本与就绪状态拦截）**：
+  - `sendMessage` 在检查设备在线后，若 `supportedWireRevisions` 不包含 `2`，明确提示并报错 `REMOTE_REVISION_REQUIRED`（「电脑端版本过旧，请升级 HQAgent」）；
+  - 若 `busySnapshotFresh === false`，明确提示并报错 `REMOTE_STATE_NOT_READY`（「正在同步电脑状态，请稍后再试」）。
+- **F6（电脑端统一忙碌锁提示与取消放行）**：
+  - 移除 `chat.store.ts` 中的 `locallyInitiatedRunIds` 依赖；
+  - 只要 `conv.busy` 为 true，电脑端无条件锁定发送区并展示中性提示「对话正在进行，结束后再继续」；
+  - 无论对话是否处于忙碌状态，取消按钮始终保持高亮可用，不受任何忙碌条件限制。
+- **F7（类型自然收窄与消除冗余拉取）**：
+  - `applyEvent` 中利用可辨识联合类型对 `conversation.deleted` 和 `store.reset` 进行自然类型收窄，彻底移除 `as any`；
+  - 在 `RemoteChatPage.vue` 的 `onMounted` 中 `await chatStore.selectDevice(workerIdQuery)` 避免异步竞态，并删除重复的 `fetchConversations()` 调用。
+
+### 7.2 返修后测试套件与产物验证
+
+#### 1. 单元与契约测试
+```bash
+$ pnpm --filter @hqagent/desktop test
+
+ Test Files  52 passed (52)
+      Tests  281 passed (281)
+   Start at  22:03:04
+   Duration  10.27s (transform 7.55s, setup 0ms, collect 43.04s, tests 15.53s, environment 51.94s, prepare 8.43s)
+```
+新增 5 个专项测试用例，覆盖 F1（占位渲染、30 秒超时、真实事件自动转正）、F2（冲突重拉与等待电脑确认）、F3（事件 upsert 与 `pc_only` 剔除）、F4（`messageRevision` 与 `messageSequence` 合并）、F5（`REMOTE_REVISION_REQUIRED` 与 `REMOTE_STATE_NOT_READY` 拦截）。测试套件总数由 276 增至 281，全部通过。
+
+#### 2. 代码规范校验
+```bash
+$ pnpm --filter @hqagent/desktop lint
+$ eslint src
+# 退出码 0，无任何 warning 或 error
+```
+
+#### 3. 类型安全校验
+```bash
+$ pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+# 退出码 0，0 errors
+```
+
+#### 4. 生产打包验证
+```bash
+$ pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1812 modules transformed.
+dist/index.html                                                                   2.56 kB │ gzip:  1.04 kB
+dist/assets/ChatPage-B8A9dhoa.js                                                 75.61 kB │ gzip: 22.65 kB
+dist/assets/RemoteLinkPage-BAkl67eK.js                                           46.37 kB │ gzip: 17.47 kB
+dist/assets/RemoteChatPage-Cbzeuphi.js                                           26.12 kB │ gzip:  8.05 kB
+dist/assets/RemoteDevicesPage-DPg7eU4U.js                                         6.12 kB │ gzip:  2.88 kB
+✓ built in 11.62s
+```

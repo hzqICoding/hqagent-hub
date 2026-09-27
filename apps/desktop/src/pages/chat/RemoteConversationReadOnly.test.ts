@@ -103,7 +103,7 @@ describe('Remote Conversation Interoperability and Cross-Endpoint Busy Lock on P
 
     // Remote conversation is busy from mobile
     expect(store.isRemoteConversation).toBe(true)
-    expect(store.isBusyFromOtherEnd).toBe(true)
+    expect(store.isConversationBusy).toBe(true)
 
     const wrapper = mount(ChatComposer, {
       global: {
@@ -116,12 +116,12 @@ describe('Remote Conversation Interoperability and Cross-Endpoint Busy Lock on P
     await flushPromises()
 
     // Alert banner for busy lock
-    expect(wrapper.text()).toContain('手机上正在进行，结束后再继续')
+    expect(wrapper.text()).toContain('对话正在进行，结束后再继续')
 
     // Textarea disabled & placeholder
     const textarea = wrapper.find('textarea')
     expect(textarea.attributes('disabled')).toBeDefined()
-    expect(textarea.attributes('placeholder')).toContain('手机上正在进行，结束后再继续')
+    expect(textarea.attributes('placeholder')).toContain('对话正在进行，结束后再继续')
 
     // When running from mobile, stop button is displayed and enabled (cancel is never locked)
     const stopBtn = wrapper.find('button[title*="中止当前执行轮次"]')
@@ -141,7 +141,7 @@ describe('Remote Conversation Interoperability and Cross-Endpoint Busy Lock on P
     remoteConv!.lastRunStatus = 'succeeded'
     await store.selectConversation(remoteConv!.id)
 
-    expect(store.isBusyFromOtherEnd).toBe(false)
+    expect(store.isConversationBusy).toBe(false)
 
     const wrapper = mount(ChatComposer, {
       global: {
@@ -154,7 +154,7 @@ describe('Remote Conversation Interoperability and Cross-Endpoint Busy Lock on P
     await flushPromises()
 
     // No busy lock banner
-    expect(wrapper.text()).not.toContain('手机上正在进行')
+    expect(wrapper.text()).not.toContain('对话正在进行')
 
     // Textarea is enabled
     const textarea = wrapper.find('textarea')
@@ -246,7 +246,7 @@ describe('Remote Conversation Interoperability and Cross-Endpoint Busy Lock on P
     expect(textarea.attributes('disabled')).toBeUndefined()
     expect(textarea.attributes('placeholder')).toContain('向角色团队输入任务目标')
     expect(wrapper.text()).not.toContain('这是手机远程对话')
-    expect(wrapper.text()).not.toContain('手机上正在进行')
+    expect(wrapper.text()).not.toContain('对话正在进行')
   })
 })
 

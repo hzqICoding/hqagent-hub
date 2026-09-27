@@ -40,7 +40,6 @@ export const useChatStore = defineStore('chat', () => {
   const showArchived = ref(false)
   const collapsedWorkspaceIds = ref<Record<string, boolean>>({})
   const includeHiddenConversations = ref(false)
-  const locallyInitiatedRunIds = ref<Set<string>>(new Set())
   const isLoadingConversations = ref(false)
   const isMetadataUpdating = ref(false)
   const metadataError = ref<string | null>(null)
@@ -138,15 +137,7 @@ export const useChatStore = defineStore('chat', () => {
 
   const isActiveConversationArchived = computed(() => Boolean(activeConversation.value?.archived))
   const isRemoteConversation = computed(() => activeConversation.value?.authority === 'remote')
-
-  const isBusyFromOtherEnd = computed(() => {
-    const conv = activeConversation.value
-    if (!conv || !conv.busy) return false
-    if (isSending.value) return false
-    if (conv.activeRunId && locallyInitiatedRunIds.value.has(conv.activeRunId)) return false
-    if (activeRun.value && locallyInitiatedRunIds.value.has(activeRun.value.id)) return false
-    return true
-  })
+  const isConversationBusy = computed(() => Boolean(activeConversation.value?.busy))
 
   const nonArchivableStatuses: TaskStatus[] = ['queued', 'running', 'waiting_approval', 'paused']
 
@@ -541,9 +532,9 @@ export const useChatStore = defineStore('chat', () => {
     const convId = activeConversationId.value
     if (!convId || !text.trim() || sendingConversationIds.value.includes(convId)) return
     const conversation = conversations.value.find((item) => item.id === convId)
-    if (isBusyFromOtherEnd.value) {
-      sendError.value = '手机上正在进行，结束后再继续'
-      throw new HubApiError('手机上正在进行，结束后再继续', 'REMOTE_CONVERSATION_BUSY', 409)
+    if (isConversationBusy.value) {
+      sendError.value = '对话正在进行，结束后再继续'
+      throw new HubApiError('对话正在进行，结束后再继续', 'REMOTE_CONVERSATION_BUSY', 409)
     }
     if (conversation?.archived) {
       throw new HubApiError('请先恢复已归档任务，再发送消息', 'CONFLICT', 409)
@@ -583,9 +574,6 @@ export const useChatStore = defineStore('chat', () => {
         idempotencyKey
       )
       completeOperation(identity)
-      if (receipt.runId) {
-        locallyInitiatedRunIds.value.add(receipt.runId)
-      }
       if (activeConversationId.value === convId) {
         pendingContextReset.value = false
         sessionMode.value = 'continue'
@@ -646,9 +634,9 @@ export const useChatStore = defineStore('chat', () => {
   ): Promise<void> {
     const conversationId = activeConversationId.value
     const generation = viewGeneration
-    if (isBusyFromOtherEnd.value && action !== 'cancel') {
-      actionError.value = '手机上正在进行，结束后再继续'
-      throw new HubApiError('手机上正在进行，结束后再继续', 'REMOTE_CONVERSATION_BUSY', 409)
+    if (isConversationBusy.value && action !== 'cancel') {
+      actionError.value = '对话正在进行，结束后再继续'
+      throw new HubApiError('对话正在进行，结束后再继续', 'REMOTE_CONVERSATION_BUSY', 409)
     }
     if (isActiveConversationArchived.value && (action === 'resume' || action === 'retry')) {
       throw new HubApiError('请先恢复已归档任务，再继续或重试', 'CONFLICT', 409)
@@ -666,9 +654,6 @@ export const useChatStore = defineStore('chat', () => {
         idempotencyKey
       )
       completeOperation(identity)
-      if (updatedRun.id) {
-        locallyInitiatedRunIds.value.add(updatedRun.id)
-      }
       if (generation === viewGeneration && activeConversationId.value === conversationId
         && updatedRun.conversationId === conversationId) {
         activeRun.value = updatedRun
@@ -1212,7 +1197,6 @@ export const useChatStore = defineStore('chat', () => {
     sessionMode.value = 'new'
     pendingContextReset.value = false
     includeHiddenConversations.value = false
-    locallyInitiatedRunIds.value = new Set()
   }
 
   return {
@@ -1226,9 +1210,9 @@ export const useChatStore = defineStore('chat', () => {
     groupedConversations,
     isActiveConversationArchived,
     isRemoteConversation,
-    isBusyFromOtherEnd,
+    isConversationBusy,
+    isBusyFromOtherEnd: isConversationBusy,
     includeHiddenConversations,
-    locallyInitiatedRunIds,
     canArchiveConversation,
     toggleWorkspaceCollapsed,
     conversationDrafts,

@@ -4,10 +4,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import RemoteDevicesPage from './RemoteDevicesPage.vue'
 import RemoteChatPage from './RemoteChatPage.vue'
-import { useRemoteChatStore } from '@/stores/remote-chat.store'
+import { useRemoteChatStore, mergeRemoteMessages } from '@/stores/remote-chat.store'
 import { mockRemoteGateway } from '@/shared/api/mock-remote-gateway'
 import { setRemoteGatewayForTesting } from '@/shared/api/remote-provider'
-import type { RemoteMessageView } from '@hqagent/protocol'
+import type { RemoteMessageView, RemoteConversationView } from '@hqagent/protocol'
 
 describe('R1.5 Remote Features: Multi-PC, Workspace Grouping, Pagination, Settings & Offline Lock', () => {
   enableAutoUnmount(afterEach)
@@ -15,13 +15,10 @@ describe('R1.5 Remote Features: Multi-PC, Workspace Grouping, Pagination, Settin
 
   beforeEach(async () => {
     setActivePinia(createPinia())
-    setRemoteGatewayForTesting(mockRemoteGateway)
-    mockRemoteGateway.workerOnline = true
-    mockRemoteGateway.cursorExpired = false
+    mockRemoteGateway.reset()
     mockRemoteGateway.runs = []
     mockRemoteGateway.commands = []
-    mockRemoteGateway.eventPages = []
-    mockRemoteGateway.pendingEvents = []
+    setRemoteGatewayForTesting(mockRemoteGateway)
 
     router = createRouter({
       history: createMemoryHistory(),
@@ -285,6 +282,319 @@ describe('R1.5 Remote Features: Multi-PC, Workspace Grouping, Pagination, Settin
 
       const sendBtn = wrapper.find('footer button')
       expect(sendBtn.attributes('disabled')).toBeDefined()
+    })
+  })
+
+  describe('F1: Asynchronous Conversation Creation Placeholder & Event Resolution', () => {
+    it('shows pending placeholder after 202 instead of fake conversation view, selects real conversation upon event, and fails after 30s timeout', async () => {
+      vi.useFakeTimers()
+      mockRemoteGateway.syncCreatedConversationImmediately = false
+      const store = useRemoteChatStore()
+      await store.fetchDevices()
+
+      const createdId = await store.createConversation({
+        targetWorkerId: 'worker_demo',
+        title: '新任务对话',
+        workspaceId: 'workspace_demo',
+        sceneId: 'analyze',
+        sceneVersion: 1,
+        workerStoreId: 'store_demo',
+      })
+
+      expect(createdId).toBeDefined()
+      // Does NOT forge RemoteConversationView in conversations
+      expect(store.conversations.some((c) => c.conversationId === createdId)).toBe(false)
+      // Pending placeholder exists
+      expect(store.pendingConversation).toBeDefined()
+      expect(store.pendingConversation?.status).toBe('creating')
+      expect(store.pendingConversation?.title).toBe('新任务对话')
+
+      // Timeout after 30s transitions to failed
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(store.pendingConversation?.status).toBe('failed')
+
+      // Can close failed placeholder
+      store.clearPendingConversation()
+      expect(store.pendingConversation).toBeNull()
+
+      // Reset and test resolution via conversation.updated
+      const nextId = await store.createConversation({
+        targetWorkerId: 'worker_demo',
+        title: '新任务对话2',
+        workspaceId: 'workspace_demo',
+        sceneId: 'analyze',
+        sceneVersion: 1,
+        workerStoreId: 'store_demo',
+      })
+      expect(store.pendingConversation?.status).toBe('creating')
+
+      // Real conversation event arrives from computer
+      const realConv: RemoteConversationView = {
+        conversationId: nextId!,
+        targetWorkerId: 'worker_demo',
+        workerId: 'worker_demo',
+        authority: 'remote',
+        title: '新任务对话2',
+        workspaceId: 'workspace_demo',
+        sceneId: 'analyze',
+        sceneVersion: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        workerStoreId: 'store_demo',
+        visibility: 'both',
+        busy: false,
+        busyFresh: true,
+        metadataVersion: 1,
+      }
+      await store.applyEvent({
+        type: 'conversation.updated',
+        serverCursor: 'cur_conv_1',
+        recordedAt: new Date().toISOString(),
+        payload: realConv,
+      })
+
+      // Placeholder removed and real conversation automatically selected
+      expect(store.pendingConversation).toBeNull()
+      expect(store.activeConversationId).toBe(nextId)
+      expect(store.conversations.some((c) => c.conversationId === nextId)).toBe(true)
+    })
+  })
+
+  describe('F2: Conversation Settings 202 without Local Mutation & Conflict Handling', () => {
+    it('does not modify local conversation on 202, updates on conversation.updated, and refetches on REMOTE_SYNC_CONFLICT', async () => {
+      const store = useRemoteChatStore()
+      await store.fetchDevices()
+      await store.fetchConversations('worker_demo')
+      await store.selectConversation('conversation_demo')
+
+      const originalTitle = store.conversations.find((c) => c.conversationId === 'conversation_demo')?.title
+      expect(originalTitle).toBe('远程分析系统架构')
+
+      // Call updateConversationSettings
+      await store.updateConversationSettings('conversation_demo', { title: '暂未确认的新标题' })
+
+      // Local conversation title MUST NOT be mutated before server event
+      expect(store.conversations.find((c) => c.conversationId === 'conversation_demo')?.title).toBe(originalTitle)
+      expect(store.settingsNotice).toBe('等待电脑确认')
+
+      // Server event arrives
+      await store.applyEvent({
+        type: 'conversation.updated',
+        serverCursor: 'cur_upd_1',
+        recordedAt: new Date().toISOString(),
+        payload: {
+          conversationId: 'conversation_demo',
+          targetWorkerId: 'worker_demo',
+          workerId: 'worker_demo',
+          authority: 'remote',
+          title: '电脑确认后的新标题',
+          workspaceId: 'workspace_demo',
+          sceneId: 'analyze',
+          sceneVersion: 1,
+          createdAt: '2026-09-26T12:00:00Z',
+          updatedAt: new Date().toISOString(),
+          workerStoreId: 'store_demo',
+          visibility: 'both',
+          metadataVersion: 2,
+        },
+      })
+
+      // Now updated from event payload
+      expect(store.conversations.find((c) => c.conversationId === 'conversation_demo')?.title).toBe('电脑确认后的新标题')
+      expect(store.conversations.find((c) => c.conversationId === 'conversation_demo')?.metadataVersion).toBe(2)
+
+      // REMOTE_SYNC_CONFLICT handling: refetches conversations and displays error
+      const listSpy = vi.spyOn(mockRemoteGateway, 'listConversations')
+      vi.spyOn(mockRemoteGateway, 'updateConversation').mockRejectedValueOnce(
+        new (await import('@/shared/api')).RemoteApiError({
+          message: '同步冲突，请刷新',
+          code: 'REMOTE_SYNC_CONFLICT',
+          status: 409,
+        })
+      )
+
+      await expect(
+        store.updateConversationSettings('conversation_demo', { title: '冲突标题' })
+      ).rejects.toThrow()
+
+      expect(listSpy).toHaveBeenCalled()
+      expect(store.actionError).toBe('同步冲突，请刷新')
+    })
+  })
+
+  describe('F3: Upsert on conversation.updated, Worker Filtering, and pc_only Removal', () => {
+    it('upserts new conversation when no active conversation is selected, filters by workerId, and removes pc_only', async () => {
+      const store = useRemoteChatStore()
+      await store.fetchDevices()
+      await store.selectDevice('worker_demo')
+      store.activeConversationId = null // Ensure no active conversation
+
+      // 1. New conversation event for current worker arrives -> upserted into conversations
+      const newConv: RemoteConversationView = {
+        conversationId: 'conv_pc_side_new',
+        targetWorkerId: 'worker_demo',
+        workerId: 'worker_demo',
+        authority: 'local',
+        title: '电脑端新开对话',
+        workspaceId: 'workspace_demo',
+        sceneId: 'analyze',
+        sceneVersion: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        workerStoreId: 'store_demo',
+        visibility: 'both',
+        metadataVersion: 1,
+      }
+
+      await store.applyEvent({
+        type: 'conversation.updated',
+        serverCursor: 'cur_f3_1',
+        recordedAt: new Date().toISOString(),
+        payload: newConv,
+      })
+
+      expect(store.conversations.some((c) => c.conversationId === 'conv_pc_side_new')).toBe(true)
+
+      // 2. Event for another worker arrives -> ignored
+      await store.applyEvent({
+        type: 'conversation.updated',
+        serverCursor: 'cur_f3_2',
+        recordedAt: new Date().toISOString(),
+        payload: {
+          ...newConv,
+          conversationId: 'conv_other_pc',
+          workerId: 'worker_home_pc',
+          targetWorkerId: 'worker_home_pc',
+        },
+      })
+      expect(store.conversations.some((c) => c.conversationId === 'conv_other_pc')).toBe(false)
+
+      // 3. pc_only event arrives -> removed from mobile list, clears active conversation if active
+      await store.selectConversation('conv_pc_side_new')
+      expect(store.activeConversationId).toBe('conv_pc_side_new')
+
+      await store.applyEvent({
+        type: 'conversation.updated',
+        serverCursor: 'cur_f3_3',
+        recordedAt: new Date().toISOString(),
+        payload: {
+          ...newConv,
+          visibility: 'pc_only',
+        },
+      })
+
+      expect(store.conversations.some((c) => c.conversationId === 'conv_pc_side_new')).toBe(false)
+      expect(store.activeConversationId).toBeNull()
+    })
+  })
+
+  describe('F4: Message Merging and Ordering', () => {
+    it('higher revision replaces lower revision, out-of-order messages sorted by messageSequence, and deduplicates', () => {
+      const existing: RemoteMessageView[] = [
+        {
+          messageId: 'msg_1',
+          conversationId: 'conv_1',
+          role: 'user',
+          text: '初始消息版本 1',
+          createdAt: '2026-09-26T12:00:00Z',
+          messageSequence: 1,
+          messageRevision: 1,
+        },
+        {
+          messageId: 'temp_user_1',
+          conversationId: 'conv_1',
+          role: 'user',
+          text: '临时用户输入',
+          createdAt: '2026-09-26T12:01:00Z',
+        },
+      ]
+
+      const incoming: RemoteMessageView[] = [
+        {
+          messageId: 'msg_3',
+          conversationId: 'conv_1',
+          role: 'assistant',
+          text: '第三条消息（乱序提前到达）',
+          createdAt: '2026-09-26T12:03:00Z',
+          messageSequence: 3,
+          messageRevision: 1,
+        },
+        {
+          messageId: 'msg_1',
+          conversationId: 'conv_1',
+          role: 'user',
+          text: '更高修订版本 2',
+          createdAt: '2026-09-26T12:00:00Z',
+          messageSequence: 1,
+          messageRevision: 2,
+        },
+        {
+          messageId: 'msg_2',
+          conversationId: 'conv_1',
+          role: 'user',
+          text: '临时用户输入',
+          createdAt: '2026-09-26T12:01:00Z',
+          messageSequence: 2,
+          messageRevision: 1,
+        },
+      ]
+
+      const merged = mergeRemoteMessages(existing, incoming)
+
+      // Length is 3 (temp_user_1 replaced by msg_2, msg_1 deduplicated with rev 2, msg_3 included)
+      expect(merged).toHaveLength(3)
+
+      // Ordered strictly by messageSequence 1, 2, 3
+      expect(merged[0].messageId).toBe('msg_1')
+      expect(merged[0].text).toBe('更高修订版本 2')
+      expect(merged[0].messageRevision).toBe(2)
+
+      expect(merged[1].messageId).toBe('msg_2')
+      expect(merged[1].text).toBe('临时用户输入')
+
+      expect(merged[2].messageId).toBe('msg_3')
+      expect(merged[2].messageSequence).toBe(3)
+
+      // Lower revision does NOT overwrite higher revision
+      const mergedOlder = mergeRemoteMessages(merged, [
+        {
+          messageId: 'msg_1',
+          conversationId: 'conv_1',
+          role: 'user',
+          text: '旧版本 1 重新到达',
+          createdAt: '2026-09-26T12:00:00Z',
+          messageSequence: 1,
+          messageRevision: 1,
+        },
+      ])
+      expect(mergedOlder[0].text).toBe('更高修订版本 2')
+      expect(mergedOlder[0].messageRevision).toBe(2)
+    })
+  })
+
+  describe('F5: Distinguish Version Outdated from State Not Ready', () => {
+    it('throws REMOTE_REVISION_REQUIRED when wire revision 2 is unsupported, and REMOTE_STATE_NOT_READY when busySnapshotFresh is false', async () => {
+      const store = useRemoteChatStore()
+      await store.fetchDevices()
+      await store.selectDevice('worker_demo')
+      await store.selectConversation('conversation_demo')
+
+      // Case 1: supportedWireRevisions lacks 2
+      store.devices[0].supportedWireRevisions = [1]
+      await expect(store.sendMessage('test')).rejects.toMatchObject({
+        code: 'REMOTE_REVISION_REQUIRED',
+        message: '电脑端版本过旧，请升级 HQAgent',
+      })
+      expect(store.sendError).toBe('电脑端版本过旧，请升级 HQAgent')
+
+      // Case 2: supportedWireRevisions contains 2, but busySnapshotFresh is false
+      store.devices[0].supportedWireRevisions = [1, 2]
+      store.devices[0].busySnapshotFresh = false
+      await expect(store.sendMessage('test')).rejects.toMatchObject({
+        code: 'REMOTE_STATE_NOT_READY',
+        message: '正在同步电脑状态，请稍后再试',
+      })
+      expect(store.sendError).toBe('正在同步电脑状态，请稍后再试')
     })
   })
 })

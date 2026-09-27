@@ -20,6 +20,74 @@ export interface RemoteControlState {
   reason: string
 }
 
+export interface PendingConversationPlaceholder {
+  conversationId: string
+  title: string
+  status: 'creating' | 'failed'
+  createdAt: number
+  timerId?: ReturnType<typeof setTimeout>
+}
+
+export function mergeRemoteMessages(
+  existingMessages: RemoteMessageView[],
+  incomingMessages: RemoteMessageView[]
+): RemoteMessageView[] {
+  const map = new Map<string, RemoteMessageView>()
+  const tempMessages: RemoteMessageView[] = []
+
+  for (const msg of existingMessages) {
+    if (msg.messageId.startsWith('temp_')) {
+      tempMessages.push(msg)
+    } else {
+      map.set(msg.messageId, msg)
+    }
+  }
+
+  for (const incoming of incomingMessages) {
+    if (incoming.messageId.startsWith('temp_')) {
+      if (!tempMessages.some((t) => t.messageId === incoming.messageId)) {
+        tempMessages.push(incoming)
+      }
+      continue
+    }
+
+    if (incoming.role === 'user') {
+      const tempIdx = tempMessages.findIndex((t) => t.text === incoming.text)
+      if (tempIdx >= 0) {
+        tempMessages.splice(tempIdx, 1)
+      }
+    }
+
+    const existing = map.get(incoming.messageId)
+    if (!existing) {
+      map.set(incoming.messageId, incoming)
+    } else {
+      const incomingRev = incoming.messageRevision ?? 0
+      const existingRev = existing.messageRevision ?? 0
+      if (incomingRev >= existingRev) {
+        map.set(incoming.messageId, incoming)
+      }
+    }
+  }
+
+  const combined = [...map.values(), ...tempMessages]
+
+  combined.sort((a, b) => {
+    if (typeof a.messageSequence === 'number' && typeof b.messageSequence === 'number') {
+      if (a.messageSequence !== b.messageSequence) {
+        return a.messageSequence - b.messageSequence
+      }
+    } else if (typeof a.messageSequence === 'number') {
+      return -1
+    } else if (typeof b.messageSequence === 'number') {
+      return 1
+    }
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  })
+
+  return combined
+}
+
 export const useRemoteChatStore = defineStore('remoteChat', () => {
   // Devices
   const devices = ref<RemoteDeviceView[]>([])
@@ -32,6 +100,8 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   const conversations = ref<RemoteConversationView[]>([])
   const activeConversationId = ref<string | null>(null)
   const isLoadingConversations = ref(false)
+  const pendingConversation = ref<PendingConversationPlaceholder | null>(null)
+  const settingsNotice = ref<string | null>(null)
 
   // Messages & Pagination
   const messages = ref<RemoteMessageView[]>([])
@@ -247,6 +317,14 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       if (!activeConversationId.value && page.items.length > 0) {
         await selectConversation(page.items[0].conversationId)
       }
+      // F1: 下一次列表刷新拿到与占位相同的真实对话后，移除占位并自动选中
+      if (pendingConversation.value?.status === 'creating') {
+        const found = conversations.value.find((c) => c.conversationId === pendingConversation.value?.conversationId)
+        if (found) {
+          clearPendingConversation()
+          await selectConversation(found.conversationId)
+        }
+      }
     } catch (err: unknown) {
       actionError.value = err instanceof Error ? err.message : '获取对话列表失败'
     } finally {
@@ -254,7 +332,16 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     }
   }
 
-  async function createConversation(input: RemoteCreateConversationInput): Promise<RemoteConversationView | null> {
+  async function createConversation(input: RemoteCreateConversationInput): Promise<string | null> {
+    if (!isWorkerOnline.value) {
+      actionError.value = '设备离线，发送失败'
+      throw new RemoteApiError({
+        message: '设备离线，发送失败',
+        code: 'REMOTE_DEVICE_OFFLINE',
+        status: 409,
+      })
+    }
+
     try {
       const gateway = getRemoteGateway()
       const receipt = await gateway.createConversation(input)
@@ -262,34 +349,37 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       const found = conversations.value.find((c) => c.conversationId === receipt.conversationId)
       if (found) {
         await selectConversation(found.conversationId)
-        return found
+        return receipt.conversationId
       }
-      // Optimistic view until Worker sync arrives
-      const optimistic: RemoteConversationView = {
-        conversationId: receipt.conversationId,
-        targetWorkerId: input.targetWorkerId,
-        workerId: input.targetWorkerId,
-        authority: 'remote',
+
+      // F1: 202 后显示待创建占位（UI状态，不是 RemoteConversationView，不能选中/发送）
+      clearPendingConversation()
+      const placeholderId = receipt.conversationId
+      const timer = setTimeout(() => {
+        if (pendingConversation.value?.conversationId === placeholderId && pendingConversation.value.status === 'creating') {
+          pendingConversation.value.status = 'failed'
+        }
+      }, 30000)
+
+      pendingConversation.value = {
+        conversationId: placeholderId,
         title: input.title,
-        workspaceId: input.workspaceId,
-        sceneId: input.sceneId,
-        sceneVersion: input.sceneVersion,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        workerStoreId: input.workerStoreId,
-        visibility: 'both',
-        busy: false,
-        busyFresh: true,
-        metadataVersion: 1,
-        archived: false,
+        status: 'creating',
+        createdAt: Date.now(),
+        timerId: timer,
       }
-      conversations.value.unshift(optimistic)
-      await selectConversation(optimistic.conversationId)
-      return optimistic
+      return receipt.conversationId
     } catch (err: unknown) {
       actionError.value = err instanceof Error ? err.message : '创建对话失败'
       return null
     }
+  }
+
+  function clearPendingConversation(): void {
+    if (pendingConversation.value?.timerId) {
+      clearTimeout(pendingConversation.value.timerId)
+    }
+    pendingConversation.value = null
   }
 
   async function updateConversationSettings(
@@ -311,18 +401,23 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
     isActionLoading.value = true
     actionError.value = null
+    settingsNotice.value = null
     try {
       const gateway = getRemoteGateway()
       await gateway.updateConversation(conversationId, {
         expectedVersion: conv.metadataVersion ?? 1,
         ...patch,
       })
-      if (patch.title !== undefined) conv.title = patch.title
-      if (patch.archived !== undefined) conv.archived = patch.archived
-      if (patch.visibility !== undefined) conv.visibility = patch.visibility
-      conv.metadataVersion = (conv.metadataVersion ?? 1) + 1
+      // F2: 202 后不改本地数据，只显示「等待电脑确认」
+      settingsNotice.value = '等待电脑确认'
       return true
     } catch (err: unknown) {
+      if (err instanceof RemoteApiError && err.code === 'REMOTE_SYNC_CONFLICT') {
+        // F2: 收到 REMOTE_SYNC_CONFLICT 时重新拉取该对话，并提示「同步冲突，请刷新」
+        await fetchConversations(selectedWorkerId.value || activeDevice.value?.workerId)
+        actionError.value = '同步冲突，请刷新'
+        throw err
+      }
       actionError.value = err instanceof Error ? err.message : '更新对话设置失败'
       throw err
     } finally {
@@ -345,8 +440,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       const gateway = getRemoteGateway()
       const page = await gateway.listMessages(conversationId)
       if (page && Array.isArray(page.items)) {
-        // Reverse descending page items to display chronologically
-        messages.value = [...page.items].reverse()
+        messages.value = mergeRemoteMessages([], page.items)
         hasMoreMessages.value = Boolean(page.hasMore)
         beforeCursor.value = page.before || null
       }
@@ -365,9 +459,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       const gateway = getRemoteGateway()
       const page = await gateway.listMessages(targetId, beforeCursor.value)
       if (page && Array.isArray(page.items) && page.items.length > 0) {
-        const existingIds = new Set(messages.value.map((m) => m.messageId))
-        const earlierItems = [...page.items].reverse().filter((m) => !existingIds.has(m.messageId))
-        messages.value = [...earlierItems, ...messages.value]
+        messages.value = mergeRemoteMessages(messages.value, page.items)
         hasMoreMessages.value = Boolean(page.hasMore)
         beforeCursor.value = page.before || null
         return true
@@ -390,7 +482,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       const gateway = getRemoteGateway()
       const snapshot = await gateway.getConversationSnapshot(conversationId)
       serverCursor.value = snapshot.serverCursor
-      messages.value = snapshot.messages || []
+      messages.value = mergeRemoteMessages([], snapshot.messages || [])
       runs.value = snapshot.runs || []
       commands.value = snapshot.commands || []
       approvals.value = snapshot.approvals ?? []
@@ -417,7 +509,19 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       })
     }
 
-    if (!isDeviceSendReady.value) {
+    const d = activeDevice.value
+    // F5: 电脑端版本过旧提示
+    if (d?.supportedWireRevisions && !d.supportedWireRevisions.includes(2)) {
+      sendError.value = '电脑端版本过旧，请升级 HQAgent'
+      throw new RemoteApiError({
+        message: '电脑端版本过旧，请升级 HQAgent',
+        code: 'REMOTE_REVISION_REQUIRED',
+        status: 409,
+      })
+    }
+
+    // F5: 状态未就绪提示
+    if (d?.busySnapshotFresh === false || d?.status === 'reconciliation_required') {
       sendError.value = '正在同步电脑状态，请稍后再试'
       throw new RemoteApiError({
         message: '正在同步电脑状态，请稍后再试',
@@ -449,7 +553,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       text,
       createdAt: new Date().toISOString(),
     }
-    messages.value.push(optimisticMsg)
+    messages.value = mergeRemoteMessages(messages.value, [optimisticMsg])
 
     try {
       const gateway = getRemoteGateway()
@@ -615,9 +719,9 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   async function applyEvent(event: RemoteBrowserEvent): Promise<void> {
     const activeId = activeConversationId.value
 
-    // Handle conversation.deleted
+    // Handle conversation.deleted (F7: no as any)
     if (event.type === 'conversation.deleted') {
-      const deletedId = (event as any).conversationId
+      const deletedId = event.conversationId
       conversations.value = conversations.value.filter((c) => c.conversationId !== deletedId)
       if (activeConversationId.value === deletedId) {
         activeConversationId.value = null
@@ -629,10 +733,9 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       return
     }
 
-    // Handle store.reset
+    // Handle store.reset (F7: no as any)
     if (event.type === 'store.reset') {
-      const ev = event as any
-      if (activeDevice.value?.workerId === ev.workerId || activeDevice.value?.workerStoreId === ev.workerStoreId) {
+      if (activeDevice.value?.workerId === event.workerId || activeDevice.value?.workerStoreId === event.workerStoreId) {
         conversations.value = []
         activeConversationId.value = null
         messages.value = []
@@ -644,17 +747,49 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       return
     }
 
-    if (!activeId) return
-
-    // 1. Top-level conversation.updated
+    // F3: conversation.updated 处理移到 if (!activeId) return 之前
     if (event.type === 'conversation.updated') {
       const conv = event.payload
+      // F3: 只处理 workerId 等于当前选中电脑的事件
+      const currentWorkerId = selectedWorkerId.value || activeDevice.value?.workerId
+      const convWorkerId = conv.workerId || conv.targetWorkerId
+      if (currentWorkerId && convWorkerId && convWorkerId !== currentWorkerId) {
+        return
+      }
+
+      // F3: pc_only 的对话从手机列表移除；如果它是当前对话，就清空当前对话
+      if (conv.visibility === 'pc_only') {
+        conversations.value = conversations.value.filter((c) => c.conversationId !== conv.conversationId)
+        if (activeConversationId.value === conv.conversationId) {
+          activeConversationId.value = null
+          messages.value = []
+          runs.value = []
+          commands.value = []
+          approvals.value = []
+        }
+        return
+      }
+
+      // F3: 不存在就插入，存在就按 metadataVersion 取新值替换，不能用旧值覆盖新值
       const idx = conversations.value.findIndex((c) => c.conversationId === conv.conversationId)
       if (idx >= 0) {
-        conversations.value[idx] = { ...conversations.value[idx], ...conv }
+        const existing = conversations.value[idx]
+        if ((conv.metadataVersion ?? 0) >= (existing.metadataVersion ?? 0)) {
+          conversations.value[idx] = { ...existing, ...conv }
+        }
+      } else {
+        conversations.value.unshift(conv)
+      }
+
+      // F1: 通过 conversation.updated 事件拿到真实对话后，移除占位并自动选中
+      if (pendingConversation.value?.conversationId === conv.conversationId) {
+        clearPendingConversation()
+        await selectConversation(conv.conversationId)
       }
       return
     }
+
+    if (!activeId) return
 
     // 2. Top-level command.updated
     if (event.type === 'command.updated') {
@@ -695,22 +830,11 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       return
     }
 
-    // 3. Top-level message.appended
+    // 3. Top-level message.appended (F4: use mergeRemoteMessages)
     if (event.type === 'message.appended') {
       const msg = event.payload
       if (msg.conversationId !== activeId) return
-      if (msg.role === 'user') {
-        const tempIdx = messages.value.findIndex(
-          (m) => m.messageId.startsWith('temp_') && m.text === msg.text
-        )
-        if (tempIdx >= 0) {
-          messages.value[tempIdx] = msg
-          return
-        }
-      }
-      if (!messages.value.some((m) => m.messageId === msg.messageId)) {
-        messages.value.push(msg)
-      }
+      messages.value = mergeRemoteMessages(messages.value, [msg])
       return
     }
 
@@ -882,9 +1006,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
         case 'message.appended': {
           const msgPayload = workerEv.payload
           if (msgPayload.conversationId !== activeId) return
-          if (!messages.value.some((m) => m.messageId === msgPayload.messageId)) {
-            messages.value.push(msgPayload)
-          }
+          messages.value = mergeRemoteMessages(messages.value, [msgPayload])
           break
         }
 
@@ -1022,6 +1144,8 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     isActionLoading.value = false
     actionError.value = null
     lastRevocationInfo.value = null
+    clearPendingConversation()
+    settingsNotice.value = null
   }
 
   return {
@@ -1040,6 +1164,9 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     isDeviceSendReady,
     isConversationBusy,
     isLoadingConversations,
+    pendingConversation,
+    clearPendingConversation,
+    settingsNotice,
     messages,
     beforeCursor,
     hasMoreMessages,

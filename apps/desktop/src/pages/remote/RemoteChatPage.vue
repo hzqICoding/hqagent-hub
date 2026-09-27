@@ -16,9 +16,11 @@ import {
   Send,
   Laptop,
   AlertTriangle,
+  AlertCircle,
   Pause,
   Play,
   XCircle,
+  X,
   RotateCcw,
   Clock,
   ShieldAlert,
@@ -126,9 +128,10 @@ onMounted(async () => {
   await chatStore.fetchDevices()
   const workerIdQuery = router?.currentRoute?.value?.query?.workerId as string | undefined
   if (workerIdQuery) {
-    chatStore.selectDevice(workerIdQuery)
+    await chatStore.selectDevice(workerIdQuery)
+  } else {
+    await chatStore.fetchConversations()
   }
-  await chatStore.fetchConversations()
   chatStore.startPolling(3000)
   chatStore.startDevicePolling(15000)
   if (typeof document !== 'undefined') {
@@ -235,7 +238,7 @@ async function handleCreateConversation() {
   }
   isCreating.value = true
   try {
-    const newConv = await chatStore.createConversation({
+    const res = await chatStore.createConversation({
       targetWorkerId: chatStore.activeDevice.workerId,
       title: newTitle.value.trim(),
       workspaceId: chatStore.catalog?.workspaces[0]?.workspaceId || 'workspace_demo',
@@ -243,7 +246,7 @@ async function handleCreateConversation() {
       sceneVersion: 1,
       workerStoreId: chatStore.activeDevice.workerStoreId,
     })
-    if (newConv) {
+    if (res) {
       isNewConversationDialogOpen.value = false
       newTitle.value = ''
       isMobileSidebarOpen.value = false
@@ -437,8 +440,41 @@ function getExecutionStatusLabel(status?: string): string {
 
         <!-- Workspace-grouped conversation list -->
         <div class="flex-1 overflow-y-auto p-2 space-y-3">
+          <!-- Pending Creation Placeholder (F1) -->
           <div
-            v-if="chatStore.conversations.length === 0"
+            v-if="chatStore.pendingConversation"
+            class="p-2.5 rounded-lg text-xs border border-dashed transition-all"
+            :class="[
+              chatStore.pendingConversation.status === 'creating'
+                ? 'bg-primary/5 border-primary/30 text-text-muted opacity-80 cursor-not-allowed select-none'
+                : 'bg-danger/10 border-danger/30 text-danger'
+            ]"
+          >
+            <div v-if="chatStore.pendingConversation.status === 'creating'" class="flex items-center gap-2">
+              <Clock class="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
+              <div class="min-w-0 flex-1">
+                <div class="font-medium text-text truncate">{{ chatStore.pendingConversation.title }}</div>
+                <div class="text-[11px] text-primary/80">正在电脑上创建…</div>
+              </div>
+            </div>
+            <div v-else class="flex items-center justify-between gap-2 w-full">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <AlertCircle class="w-3.5 h-3.5 text-danger shrink-0" />
+                <span class="truncate">创建失败，请重试</span>
+              </div>
+              <button
+                type="button"
+                class="p-1 text-danger hover:opacity-80 shrink-0 cursor-pointer"
+                title="关闭"
+                @click="chatStore.clearPendingConversation()"
+              >
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="chatStore.conversations.length === 0 && !chatStore.pendingConversation"
             class="py-8 text-center text-xs text-text-muted"
           >
             暂无对话，点击上方新建
@@ -1042,6 +1078,10 @@ function getExecutionStatusLabel(status?: string): string {
             <input type="checkbox" v-model="settingsArchived" class="accent-primary" />
             <span>归档此对话</span>
           </label>
+        </div>
+
+        <div v-if="chatStore.settingsNotice" class="text-xs text-primary/80 bg-primary/10 p-2 rounded">
+          {{ chatStore.settingsNotice }}
         </div>
       </div>
 

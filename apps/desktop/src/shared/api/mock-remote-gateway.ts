@@ -46,6 +46,7 @@ export class MockRemoteGateway implements IRemoteGateway {
   public highRiskApprovalAllowed = false
   public withdrawalOutcome: 'success' | 'too_late' | 'unconfirmed' = 'success'
   public controlOutcome: 'confirmed' | 'rejected' | 'unconfirmed' = 'confirmed'
+  public syncCreatedConversationImmediately = false
 
   // In-memory data structures
   public session: RemoteAuthenticatedSession = {
@@ -534,7 +535,9 @@ export class MockRemoteGateway implements IRemoteGateway {
       metadataVersion: 1,
       archived: false,
     }
-    this.conversations.unshift(newConv)
+    if (this.syncCreatedConversationImmediately) {
+      this.conversations.unshift(newConv)
+    }
     return {
       commandId: `cmd_conv_create_${Date.now()}`,
       conversationId: convId,
@@ -975,7 +978,7 @@ export class MockRemoteGateway implements IRemoteGateway {
       serverCursor: `del_${Date.now()}`,
       recordedAt: new Date().toISOString(),
       conversationId,
-    } as any)
+    })
   }
 
   mockEmitStoreReset(workerId = 'worker_demo', workerStoreId = 'store_demo'): void {
@@ -985,7 +988,7 @@ export class MockRemoteGateway implements IRemoteGateway {
       recordedAt: new Date().toISOString(),
       workerId,
       workerStoreId,
-    } as any)
+    })
   }
 
   reset(): void {
@@ -997,6 +1000,7 @@ export class MockRemoteGateway implements IRemoteGateway {
     this.highRiskApprovalAllowed = false
     this.withdrawalOutcome = 'success'
     this.controlOutcome = 'confirmed'
+    this.syncCreatedConversationImmediately = false
     this.eventPages = []
     this.pendingEvents = []
     this.hasMoreEvents = false
