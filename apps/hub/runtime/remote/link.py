@@ -63,6 +63,7 @@ class LinkService:
         self.hub_token = hub_token
         self.lock = asyncio.Lock()
         self.disconnect = None
+        self.before_clear = None
 
     def sanitized(self, value):
         secret = self.vault.read() if self.vault.path.exists() else ""
@@ -165,6 +166,8 @@ class LinkService:
 
     def _clear_in_transaction(self, tx, code=None):
         self.vault.delete()  # On failure both the intent and completion roll back.
+        if self.before_clear is not None:
+            self.before_clear(tx)
         link = self.repo.get("link", tx)
         value = {"state": "unpaired"}
         if link["view"].get("serverOrigin"):

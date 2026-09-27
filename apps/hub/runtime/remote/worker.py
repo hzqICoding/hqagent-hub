@@ -14,6 +14,14 @@ from runtime.remote.link import machine
 from runtime.remote.security import normalize_origin
 from runtime.remote.wire import WIRE_REVISION, MAX_FRAME_BYTES, encode, decode
 from runtime.remote.projection import Projector
+from runtime.remote.busy import BusyState
+from runtime.remote.delivery import DeliveryBridge
+from runtime.remote.sync import SyncService
+from runtime.remote.window import SendWindow
+
+
+class Renegotiate(Exception):
+    """Close the current transport without treating an upgrade probe as failure."""
 
 
 class NoRedirectConnect(connect):
@@ -26,12 +34,21 @@ class RemoteWorker:
     def __init__(self, repository, link, bridge, *, connector=None, retry_seconds=1.0):
         self.repo, self.link, self.bridge = repository, link, bridge
         self.projector = Projector(bridge)
+        self.busy = BusyState(repository, bridge.chat)
+        self.sync = SyncService(repository, bridge.chat, link, self.busy)
+        self.delivery = DeliveryBridge(repository, bridge.chat, link, self.busy, self.sync)
+        bridge.chat.repository.busy_state = self.busy
+        self.probe_revision2 = True
+        self.peer_revision2 = None
+        self.revision_probe_seconds = 30
+        self.next_revision2_probe = 0.0
         self.connector = connector or NoRedirectConnect
         self.retry_seconds = retry_seconds
         self.job = None
         self.socket = None
         self.closed = False
         self.link.disconnect = self.disconnect
+        self.link.before_clear = self.sync.discard_binding
         # websockets DEBUG includes request headers. Isolate the transport logger
         # from application handlers, including applications enabling root DEBUG.
         self.logger = logging.Logger("remote.transport.silent", level=logging.CRITICAL + 1)
@@ -42,6 +59,8 @@ class RemoteWorker:
         if self.job is not None:
             return
         self.repo.boot()
+        self.probe_revision2 = True
+        self.peer_revision2 = None
         self.closed = False
         self.job = asyncio.create_task(self.run())
 
@@ -53,6 +72,8 @@ class RemoteWorker:
             await asyncio.gather(self.job, return_exceptions=True)
             self.job = None
         await self.bridge.cancel_executions()
+        await self.delivery.cancel_executions()
+        self.delivery.clock.invalidate()
         self.state("offline")
 
     async def disconnect(self):
@@ -80,6 +101,25 @@ class RemoteWorker:
                 view.pop("lastErrorCode", None)
             self.repo.set_view(tx, view)
             self.repo.seal(tx)
+        if revoked and self.sync.active():
+            self.sync.revoked()
+
+    def can_upgrade(self):
+        identity = self.repo.get("identity")
+        if identity.get("wireRevision", 1) != 1:
+            return False
+        with self.repo.database.locked_connection() as db:
+            pending = db.execute("SELECT 1 FROM remote_inbox WHERE worker_id=? AND json_extract(command_json,'$.expectedWorkerStoreId')=? "
+                "AND json_extract(command_json,'$.wireRevision')=1 AND status NOT IN ('completed','failed','rejected') LIMIT 1",
+                (self.repo.get("link")["view"].get("workerId"), identity["store"])).fetchone()
+            outbox = db.execute("SELECT 1 FROM remote_outbox WHERE store_id=? LIMIT 1", (identity["store"],)).fetchone()
+            projecting = db.execute("SELECT 1 FROM remote_inbox i JOIN local_runs r ON r.run_id=i.run_id "
+                "WHERE i.worker_id=? AND json_extract(i.command_json,'$.expectedWorkerStoreId')=? "
+                "AND json_extract(i.command_json,'$.wireRevision')=1 AND (r.status NOT IN ('succeeded','failed','cancelled') "
+                "OR EXISTS(SELECT 1 FROM local_messages m WHERE m.run_id=r.run_id AND m.role='assistant' "
+                "AND NOT EXISTS(SELECT 1 FROM remote_projections p WHERE p.key='message:'||m.message_id))) LIMIT 1",
+                (self.repo.get("link")["view"].get("workerId"), identity["store"])).fetchone()
+        return pending is None and outbox is None and projecting is None
 
     async def run(self):
         delay = self.retry_seconds
@@ -103,6 +143,8 @@ class RemoteWorker:
                 await self.connection(view, generation)
             except asyncio.CancelledError:
                 raise
+            except Renegotiate:
+                continue
             except HubError as error:
                 terminal = error.code in {"REMOTE_PROTOCOL_UNSUPPORTED", "REMOTE_STORE_CHANGED", "REMOTE_ACK_CONFLICT", "REMOTE_EPOCH_STALE", "REMOTE_FRAME_TOO_LARGE", "REMOTE_DEVICE_AUTH_FAILED", "REMOTE_SERVER_ORIGIN_INVALID"}
                 self.state("offline", code=error.code, frozen=terminal,
@@ -125,6 +167,8 @@ class RemoteWorker:
 
     async def connection(self, view, generation):
         self.state("connecting")
+        active = self.repo.get("identity").get("wireRevision", 1)
+        revision = 2 if active == 2 or (self.probe_revision2 and self.can_upgrade()) else 1
         origin = normalize_origin(view["serverOrigin"], development=self.link.development)
         url = ("wss" if origin.startswith("https:") else "ws") + origin[origin.index(":"):] + "/ws/v2/worker"
         async with self.connector(url, additional_headers={"Authorization": "Bearer " + self.link.vault.read()},
@@ -133,10 +177,17 @@ class RemoteWorker:
             identity = self.repo.get("identity")
             common = {"workerId": view["workerId"], "workerStoreId": identity["store"], "workerEpoch": identity["epoch"]}
             ack = lambda: None if self.repo.get("identity")["ack"] is None else {"workerStoreId": identity["store"], "seq": self.repo.get("identity")["ack"]}
-            await asyncio.wait_for(ws.send(encode({"type": "worker.hello", "wireRevision": WIRE_REVISION,
+            started = time.monotonic()
+            await asyncio.wait_for(ws.send(encode({"type": "worker.hello", "wireRevision": revision,
                 "protocolVersion": PROTOCOL_VERSION, **common, **machine(), "capabilityRevision": self.projector.capability_revision(), "lastServerAck": ack()})), 10)
-            hello = decode(await asyncio.wait_for(ws.recv(), 10))
+            hello = decode(await asyncio.wait_for(ws.recv(), 10), revision=revision, negotiation=True)
             if hello["type"] == "worker.hello_rejected":
+                if revision == 2 and active == 1 and 1 in hello["supportedWireRevisions"]:
+                    self.probe_revision2 = False
+                    self.peer_revision2 = 2 in hello["supportedWireRevisions"]
+                    self.next_revision2_probe = time.monotonic() + self.revision_probe_seconds
+                    self.state("offline", code="REMOTE_REVISION_REQUIRED")
+                    raise Renegotiate()
                 raise HubError(hello["error"]["code"], "Worker 握手被服务端拒绝")
             if hello["type"] != "worker.hello_ack" or any(hello.get(k) != v for k, v in common.items()):
                 raise HubError("REMOTE_EPOCH_STALE", "握手身份或存储世代不匹配")
@@ -145,9 +196,38 @@ class RemoteWorker:
             self.repo.ack(hello["lastServerAck"])
             if hello["commandDelivery"] == "frozen" and "reason" not in hello:
                 raise HubError("REMOTE_STORE_CHANGED", "服务端冻结响应缺少原因")
+            if revision == 2 and active == 1:
+                if hello["commandDelivery"] != "ready":
+                    self.probe_revision2 = False
+                    self.peer_revision2 = True
+                    self.next_revision2_probe = time.monotonic() + self.revision_probe_seconds
+                    raise Renegotiate()
+                # A ready rev2 handshake is the server's gate. Locally no old
+                # command/event is pending, and both acknowledgement watermarks
+                # are persisted before any revision-2 event is allocated.
+                if not self.can_upgrade():
+                    raise HubError("REMOTE_STORE_CHANGED", "旧线路未完成核对")
+                with self.repo.database.transaction() as tx:
+                    current = self.repo.get("identity", tx)
+                    current.update(wireRevision=2, upgradeFence={"local": current["high"], "server": current["ack"]})
+                    self.repo.put("identity", current, tx)
+                    self.repo.seal(tx)
+            self.repo.source_mapper = self.sync.source_event if revision == 2 else self.projector.source_event
             self.state("online", connected=True, frozen=hello["commandDelivery"] == "frozen",
-                code=hello.get("reason", {}).get("code"))
+                code=hello.get("reason", {}).get("code") or (
+                    ("REMOTE_REVISION_REQUIRED" if self.peer_revision2 is False else "REMOTE_STATE_NOT_READY") if revision == 1 else None))
             connection_id = hello["connectionId"]
+            bridge = self.delivery if revision == 2 else self.bridge
+            if revision == 2:
+                self.delivery.clock.calibrate(hello["serverTime"], started)
+                await self.delivery.recover()
+                self.busy.reconcile()
+                self.busy.connection_id = connection_id
+                self.busy.snapshot(force=True)
+                self.sync.prepare()
+            window = SendWindow(self.repo, self.sync) if revision == 2 else None
+            heartbeat_sends = []
+            last_server_time = hello["serverTime"]
             send_lock = asyncio.Lock()
             async def send(value):
                 async with send_lock:
@@ -155,7 +235,8 @@ class RemoteWorker:
             async def heartbeat():
                 while True:
                     await asyncio.sleep(15)
-                    await send({"type": "worker.heartbeat", "wireRevision": WIRE_REVISION, **common,
+                    heartbeat_sends.append(time.monotonic())
+                    await send({"type": "worker.heartbeat", "wireRevision": revision, **common,
                         "connectionId": connection_id, "sentAt": now(), "lastServerAck": ack()})
             async def publish():
                 sent = set()
@@ -169,10 +250,20 @@ class RemoteWorker:
                     if time.monotonic() >= catalog_at:
                         await self.projector.catalog()
                         catalog_at = time.monotonic() + 5
-                    await self.projector.poll()
+                    if revision == 2:
+                        await self.delivery.tick()
+                        await self.sync.poll_execution(self.delivery)
+                        self.busy.snapshot()
+                        self.sync.pump()
+                    else:
+                        await self.projector.poll()
                     with self.repo.database.transaction() as tx:
                         if self.repo.cover_private(tx):
                             self.repo.seal(tx)
+                    if revision == 2:
+                        await window.flush(send)
+                        await asyncio.sleep(0.2)
+                        continue
                     contents = self.repo.frames()
                     if time.monotonic() >= retransmit_at:
                         sent.clear()
@@ -183,22 +274,30 @@ class RemoteWorker:
                         if event["eventId"] not in sent:
                             await send(content)
                             sent.add(event["eventId"])
+                    if (self.probe_revision2 or (self.peer_revision2 is True and time.monotonic() >= self.next_revision2_probe)) and self.can_upgrade():
+                        self.probe_revision2 = True
+                        raise Renegotiate()
                     await asyncio.sleep(0.2)
             queue = asyncio.Queue(maxsize=200)
             async def consume():
-                await self.bridge.recover()
+                if revision == 1:
+                    await bridge.recover()
                 while True:
                     frame = await queue.get()
                     if generation != self.repo.get("link")["generation"]:
                         return
-                    receipt, gaps = await self.bridge.receive(frame)
+                    receipt, gaps = await bridge.receive(frame)
                     if receipt:
-                        await send(receipt)
+                        # New rev2 events pass through the bounded send window;
+                        # already ACKed immutable receipts can replay immediately.
+                        if revision == 1 or receipt.get("seq", 0) <= (self.repo.get("identity")["ack"] or 0):
+                            await send(receipt)
                     for gap in gaps:
                         await send(gap)
             async def receive():
+                nonlocal last_server_time
                 async for content in ws:
-                    frame = decode(content)
+                    frame = decode(content, revision=revision)
                     if generation != self.repo.get("link")["generation"]:
                         return
                     if frame["type"] in {"worker.events_ack", "server.heartbeat"}:
@@ -208,10 +307,17 @@ class RemoteWorker:
                             if frame["workerId"] != common["workerId"]:
                                 raise HubError("REMOTE_TARGET_MISMATCH", "确认设备不匹配")
                             self.repo.ack(frame["position"])
+                            if revision == 2:
+                                self.sync.on_ack()
+                        elif revision == 2 and heartbeat_sends and frame["receivedAt"] > last_server_time:
+                            sent_at = heartbeat_sends.pop(0)
+                            if time.monotonic() - sent_at <= 45:
+                                self.delivery.clock.calibrate(frame["receivedAt"], sent_at)
+                                last_server_time = frame["receivedAt"]
                     else:
                         if hello["commandDelivery"] == "frozen":
                             raise HubError("REMOTE_STORE_CHANGED", "冻结世代禁止命令投递")
-                        if frame["type"] not in {"run.submit", "run.pause", "run.resume", "run.cancel", "run.retry", "approval.decide", "command.withdraw", "conversation.skip"}:
+                        if frame["type"] not in {"run.submit", "run.pause", "run.resume", "run.cancel", "run.retry", "approval.decide", "command.withdraw", "conversation.skip", "conversation.create", "conversation.update", "command.delivery_granted"}:
                             raise HubError("REMOTE_EPOCH_STALE", "连接中出现非命令握手帧")
                         await queue.put(frame)
             jobs = [asyncio.create_task(fn()) for fn in (heartbeat, publish, consume, receive)]
@@ -227,4 +333,6 @@ class RemoteWorker:
                 finally:
                     # Keep the existing lost-delivery contract: cancel transport
                     # control jobs before reconnect recovery, not LocalChat runs.
-                    await self.bridge.cancel_executions()
+                    await bridge.cancel_executions()
+                    if revision == 2:
+                        self.delivery.clock.invalidate()
