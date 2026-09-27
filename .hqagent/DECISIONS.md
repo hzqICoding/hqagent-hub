@@ -383,3 +383,47 @@ Phase 1.1 的三 Agent 目标后移**。另两个选项存档备查：
 解绑删除本机凭据并断开，尽力通知服务端撤销，完成状态unpaired；不能冒称服务端必已撤销，不扩远程HTTP或给设备Bearer授予owner权限。既有remote对话不回退local，本机只读。LocalConversationView追加可选authority=local/remote，缺省视为local以兼容旧对象。后续如何接续解绑对话另行设计。
 
 **影响**：P2实现连接状态/凭据生命周期和authority写拦截，P3-B本机配对界面消费此契约。具体状态字段、并发与通知边界见R1-contract.md§12。
+
+### D44 本机浏览器会话下的远程连接等价路由（主代理裁决，2026-09-26）
+
+**背景**：D43只有本机v1 Bearer操作，实际工作台通过连接码取得本机Cookie后使用v2 API。不能把Hub Token交给浏览器来打通配对，FZ-R1.1回执接线事项2需协议明确入口。
+
+**决定**：在已有本机Cookie契约 `packages/protocol/openapi/local-chat.v2.yaml` 增加GET /api/v2/remote/link、POST/DELETE /api/v2/remote/pairing、POST /api/v2/remote/unlink。请求和响应完全复用RemoteLinkView/RemoteLinkPairingInput与既有错误码。使用localSession Cookie，写请求沿用Origin、Idempotency-Key规则，全部响应Cache-Control:no-store。允许轮询GET link，remote.link.changed不变。
+
+本机Local Hub的v2与云端Hub Server的remote-hub.v2不是同一服务，Cookie不能互换；本机v1 Bearer路由保留给桌面壳和诊断。包版本0.6.2、wireRevision仍为1，不新增类型、不修改云端接口或执行内核。
+
+**影响**：P2复用本机v2认证依赖和D43同一连接管理器实现等价路由，覆盖错误与中间件拒绝的no-store响应；P3-B使用本机Cookie入口并可轮询。关闭FZ-R1.1接线事项2的协议缺口，应用实现与联调由对应工作包负责。解绑的云端授权通知仍是原有best-effort边界，本次不扩权。
+
+### D45 会话快照带出待处理审批（主代理裁决，2026-09-26）
+
+**背景**：手机晚于审批发起打开对话，或游标过期后重建，无法只靠之后的增量事件发现已有pending审批，尤其无法拒绝高风险动作。
+
+**决定**：RemoteConversationSnapshot增加可选approvals数组，元素复用RemoteApprovalView，只包含该对话当前pending且未过期的审批，最多100条；有更多符合条件记录时沿用hasMore。旧服务端缺省字段时前端按空数组处理，不新增列审批路由。快照是浏览器对账入口，重建以approvals初始化，再用增量审批事件更新；消费、失效或到期的审批不再出现在快照。禁止远程approve的高风险pending审批仍应可见并可按既有规则reject。
+
+**影响**：包版本0.6.3，仅浏览器HTTP DTO增量，wireRevision仍为1。P1负责同事务、owner/对话归属和期限过滤后填充；P3-B负责快照恢复及增量维护。通用审批视图/Worker事件不变，执行状态与审批权限不扩展。本轮只改协议，服务端填充另行实现。
+
+### D46 扫码配对仅改前端（主代理已裁决，2026-09-27）
+
+**决定**：电脑配对页显示 `https://<服务器域名>/remote/pair#code=<8位短码>` 二维码，同时保留短码备用。手机仍需登录、预览和确认，读取短码后清除URL片段。短码不放入查询参数；前端依赖和锁文件由对应前端工作包/Integrator处理。
+
+**影响**：复用已有配对协议和后端，不新增接口、DTO或认证。本工作包只登记，不实现二维码或改前端。依据为手机远程接入方案v0.3 §11.1。
+
+### D47 电脑唯一写入、完整副本与两端继续（v0.4主代理裁决，2026-09-27）
+
+**决定**：9bb608d / bf15428那一版镜像+接力草稿作废。电脑是唯一写入方，服务端保存完整副本，手机和电脑都继续原对话；不需要handover。同步默认开启，关闭/电脑删除/设备撤销须删除对应副本。全文不截断，超帧分段拼齐再发布；历史分批并有完成标记。visibility=both/pc_only/mobile_only只作显示过滤，不控制上传。电脑可includeHidden找回mobile_only。
+
+busy只由电脑queued/running/waiting_approval轮次推导，recoveryRequired只提示不占忙碌锁；重连及每次变化发送完整忙碌集合，服务端整体覆盖，不持锁，手机不持锁。取消不受busy限制。高风险审批规则不变。
+
+**实现取舍**：修订2独立命名DTO/union；为30秒未送达失败后不执行的承诺增加provisional收件与持久显式grant门闩，ACK不充当授权。手机创建对话也以电脑执行的控制命令完成。具体原子性、分段和双向升级栅栏见packages/protocol/remote/R1.5-contract.md。
+
+### D48 撤销本机只读与离线排队（主代理裁决，2026-09-27）
+
+**决定**：撤销D43的remote对话本机只读，本机写入口不再因authority=remote返回CONVERSATION_AUTHORITY_MISMATCH；authority保留为兼容来源字段。撤销新浏览器操作的服务端离线排队，离线立即REMOTE_DEVICE_OFFLINE，输入保留。在线传输缺省/最多30秒deliverBy，未获得grant到期失败，迟到命令不执行、不接单。旧已受理的修订1命令继续如实对账，不能伪造失败或取消。
+
+**影响**：P2改同一本机互斥/事务边界与执行门闩；P1改准入/期限竞争和只读投影；前端去掉authority只读假设。新提交要求修订2，旧连接仍可兼容对账，不能对rev1承诺新门闩保证。
+
+### D49 修订1错误值域单独冻结（Q1采用建议B，主代理裁决，2026-09-27）
+
+**决定**：批准必要的Schema/生成类型引用调整例外，保持修订1旧报文接受/拒绝行为不变。RemoteWire1ErrorCode固定为0.6.3注册表；RemoteWire1Error及RemoteWire1ApprovalView封装固定字段，rev1帧仅替换错误/审批payload引用。公共ErrorCode仍跟随registry追加，仅HTTP和rev2可用新码。原rev1 Fixture不改。
+
+**影响**：Q1已关闭，不再needs-decision。冻结测试需检查引用闭包和值域，不仅对比顶层frame文本；不得把公共ErrorCode锁死或偷偷放宽rev1。

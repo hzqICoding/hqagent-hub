@@ -6,7 +6,7 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.6.1"
+const Version = "0.7.0"
 
 type AdapterId = string
 
@@ -75,6 +75,13 @@ const (
 	ErrorCodeRemotePairingInProgress ErrorCode = "REMOTE_PAIRING_IN_PROGRESS"
 	ErrorCodeRemoteServerUnreachable ErrorCode = "REMOTE_SERVER_UNREACHABLE"
 	ErrorCodeRemoteServerOriginInvalid ErrorCode = "REMOTE_SERVER_ORIGIN_INVALID"
+	ErrorCodeRemoteConversationBusy ErrorCode = "REMOTE_CONVERSATION_BUSY"
+	ErrorCodeRemoteStateNotReady ErrorCode = "REMOTE_STATE_NOT_READY"
+	ErrorCodeRemoteSyncConflict ErrorCode = "REMOTE_SYNC_CONFLICT"
+	ErrorCodeRemoteSyncDisabled ErrorCode = "REMOTE_SYNC_DISABLED"
+	ErrorCodeRemoteDeliveryExpired ErrorCode = "REMOTE_DELIVERY_EXPIRED"
+	ErrorCodeRemoteRevisionRequired ErrorCode = "REMOTE_REVISION_REQUIRED"
+	ErrorCodeRemoteSyncResourceLimit ErrorCode = "REMOTE_SYNC_RESOURCE_LIMIT"
 )
 
 type RoleId = string

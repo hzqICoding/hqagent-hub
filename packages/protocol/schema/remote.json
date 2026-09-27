@@ -405,6 +405,20 @@
           "minLength": 20,
           "maxLength": 40,
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "online": {
+          "type": "boolean"
+        },
+        "busySnapshotFresh": {
+          "type": "boolean"
+        },
+        "supportedWireRevisions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxItems": 16
         }
       }
     },
@@ -663,7 +677,7 @@
           "const": 45
         },
         "reason": {
-          "$ref": "remote.json#/$defs/RemoteError"
+          "$ref": "remote-sync.json#/$defs/RemoteWire1Error"
         },
         "serverTime": {
           "type": "string",
@@ -695,7 +709,7 @@
           "description": "Worker/Server wire revision, independent of protocol package version. Revision 1 shape is frozen."
         },
         "error": {
-          "$ref": "remote.json#/$defs/RemoteError"
+          "$ref": "remote-sync.json#/$defs/RemoteWire1Error"
         },
         "supportedWireRevisions": {
           "type": "array",
@@ -2020,7 +2034,7 @@
           "const": "rejected"
         },
         "error": {
-          "$ref": "remote.json#/$defs/RemoteError"
+          "$ref": "remote-sync.json#/$defs/RemoteWire1Error"
         }
       },
       "description": "Pre-admission rejection only. An expired sequenced submit consumes its ordered slot without execution."
@@ -2190,7 +2204,7 @@
           ]
         },
         "error": {
-          "$ref": "remote.json#/$defs/RemoteError"
+          "$ref": "remote-sync.json#/$defs/RemoteWire1Error"
         },
         "resultRef": {
           "$ref": "remote.json#/$defs/RemoteResultRef"
@@ -2439,7 +2453,7 @@
         },
         "text": {
           "type": "string",
-          "maxLength": 32000
+          "description": "Complete assembled content, never truncated. Resource quota failures are explicit; no partial message is published."
         },
         "createdAt": {
           "type": "string",
@@ -2456,6 +2470,16 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 160
+        },
+        "messageSequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "messageRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       }
     },
@@ -2705,7 +2729,7 @@
           "maxLength": 160
         },
         "payload": {
-          "$ref": "remote.json#/$defs/RemoteApprovalView"
+          "$ref": "remote-sync.json#/$defs/RemoteWire1ApprovalView"
         }
       }
     },
@@ -3054,7 +3078,10 @@
         },
         "authority": {
           "type": "string",
-          "const": "remote"
+          "enum": [
+            "local",
+            "remote"
+          ]
         },
         "title": {
           "type": "string",
@@ -3091,9 +3118,48 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 160
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "both",
+            "pc_only",
+            "mobile_only"
+          ]
+        },
+        "busy": {
+          "type": "boolean"
+        },
+        "busyObservedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "busyFresh": {
+          "type": "boolean"
+        },
+        "lastActivityAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "metadataVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       },
-      "description": "Owner implicitly comes from browser authentication. Fixed Worker for the lifetime of R1 conversation; no dual writer or automatic migration of existing local history."
+      "description": "Worker is the sole writer. authority is legacy metadata, never a write gate. Omitted visibility=both, busy=false, busyFresh=false; targetWorkerId is the legacy workerId alias."
     },
     "RemoteCreateConversationInput": {
       "type": "object",
@@ -3139,7 +3205,7 @@
           "maxLength": 160
         }
       },
-      "description": "IDs must belong to current owner/target device exported catalog. New remote conversations may be created while device is offline; no model starts on creation."
+      "description": "Owner/device/workspace/scene references for a Worker-owned creation command. Requires online revision 2; 202 is a transport receipt, not a server-created conversation."
     },
     "RemoteSendMessageInput": {
       "type": "object",
@@ -3175,7 +3241,7 @@
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
         }
       },
-      "description": "Server fixes target/workspace/scene from owner-scoped conversation, assigns sequence atomically. Default TTL 24h, max 7d; client cannot choose owner/sequence/type/risk."
+      "description": "Computer orders messages. Offline rejects immediately; revision 2 requires a 30-second delivery grant. Legacy expiresAt cannot extend delivery deadline."
     },
     "RemoteRunControlInput": {
       "type": "object",
@@ -3336,7 +3402,9 @@
             "run.cancel",
             "run.retry",
             "approval.decide",
-            "command.withdraw"
+            "command.withdraw",
+            "conversation.update",
+            "conversation.create"
           ]
         },
         "conversationSeq": {
@@ -3361,7 +3429,9 @@
             "queued_offline",
             "sent",
             "acknowledged",
-            "reconciliation_required"
+            "reconciliation_required",
+            "awaiting_receipt",
+            "granted"
           ]
         },
         "withdrawalState": {
@@ -3411,7 +3481,7 @@
           "$ref": "remote.json#/$defs/RemoteResultRef"
         },
         "controlResult": {
-          "$ref": "remote.json#/$defs/RemoteControlResult"
+          "$ref": "remote-sync.json#/$defs/RemoteV2ControlResult"
         },
         "error": {
           "$ref": "remote.json#/$defs/RemoteError"
@@ -3420,6 +3490,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 160
+        },
+        "deliverBy": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
         }
       },
       "description": "Three layers must be displayed separately: transport/delivery, Worker controlResult, execution status from RemoteRunView. No inference from disconnected transport or command.completed to task success."
@@ -3681,6 +3757,15 @@
         },
         {
           "$ref": "remote.json#/$defs/RemoteBrowserMessageEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteBrowserV2WorkerEvent"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteBrowserConversationDeleted"
+        },
+        {
+          "$ref": "remote-sync.json#/$defs/RemoteBrowserStoreReset"
         }
       ]
     },
@@ -3765,6 +3850,14 @@
         },
         "hasMore": {
           "type": "boolean"
+        },
+        "approvals": {
+          "type": "array",
+          "items": {
+            "$ref": "remote.json#/$defs/RemoteApprovalView"
+          },
+          "maxItems": 100,
+          "description": "Pending, unexpired approvals for this conversation; omitted means []. Truncation sets hasMore."
         }
       },
       "description": "Consistent selected-conversation projection and cursor transaction. For larger history, fetch bounded resource pages while replaying events after this cursor. No whole-history batch or credential content."

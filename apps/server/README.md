@@ -2,7 +2,7 @@
 
 账号认证、设备配对、命令排队、Worker 事件投影和浏览器轮询。服务端不调用模型，不保存模型凭据，不管理 AI 订阅或安装；所有执行发生在用户电脑的 Worker。
 
-协议包：0.6.1；Worker 线路：修订 1。只实现 `remote-hub.v2.yaml` 的 26 个 HTTP 操作与 `/ws/v2/worker`。本机 v1 配对接口由 P2 实现。
+协议包：0.6.3；Worker 线路：修订 1。只实现 `remote-hub.v2.yaml` 的 26 个 HTTP 操作与 `/ws/v2/worker`。D44 的本机配对路由由 P2 实现；本版填充 D45 的快照待处理审批。
 
 ## 启动与配置
 
@@ -35,6 +35,8 @@ $env:HQREMOTE_ORIGIN = 'https://hub.example.com'
 | `HQREMOTE_RATE_LIMIT` | `30` | 每个来源地址、操作类别每 60 秒配额；登录、设备认证、配对和浏览器写入受限 |
 
 Linux 数据目录应仅服务账号可读写（目录 0700，密钥 0600）；Windows 自定义数据目录需设置仅运行账号可访问的 ACL。备份数据库和 `server.key` 时同样保护；恢复同一实例需要原服务端密钥，否则原认证验证值和会话无法使用。密钥不可随镜像提交或生成在只读安装目录。
+
+配置 H5 目录后，真实静态文件正常返回；不存在、最后一段无扩展名的 GET 路径（例如 `/remote/chat`）回退到 `index.html`，支持 history 路由刷新。`/api/`、`/ws/` 命名空间不参与回退，未知 API 保持 ApiEnvelope 404；缺失的 `.js`、`.css` 等资源仍返回 404。
 
 `python -m server` 内部启动 uvicorn，并禁用传输层访问日志；应用只记录固定操作名、HTTP 状态或固定错误码，不输出请求体、头、URL 查询或异常输入。不要启用 HTTP/WS 调试日志。反向代理也不要记录认证头、Cookie、请求体或带凭据的查询参数。所有认证和配对响应有 `Cache-Control: no-store`。
 
@@ -109,7 +111,7 @@ python -c 'import socket; socket.create_connection(("127.0.0.1",18080)).close()'
 1. Worker 本地生成至少 32 字节随机 secret（推荐 `secrets.token_urlsafe(32)`），自行安全持久保存。服务端不下发 secret。
 2. 使用 `Authorization: Bearer <device-secret>` 和 `Idempotency-Key` 调用 `POST /api/v2/worker/pairing-requests`，JSON 为 `deviceName/workerStoreId/platform/architecture`。201 的 `RemotePairingChallenge` 给出五分钟有效的 8 位 `pairCode`。
 3. 用户在已登录浏览器输入短码，先 `POST /api/v2/pairings/preview`，核对设备，再 `POST /api/v2/pairings/{pairRequestId}/confirm`。两个正文均只有 `pairCode`。浏览器响应没有短码和设备 secret。
-4. Worker 使用原 secret 轮询 `GET /api/v2/worker/pairing-requests/{pairRequestId}`。0.6.1 的 `RemotePairingStatusView` 没有 `pairCode`。其它 secret 得到 NOT_FOUND。
+4. Worker 使用原 secret 轮询 `GET /api/v2/worker/pairing-requests/{pairRequestId}`。当前 `RemotePairingStatusView` 没有 `pairCode`。其它 secret 得到 NOT_FOUND。
 5. 配对后主动连接 `/ws/v2/worker`，只使用 Authorization 头。不得把 secret 放进 URL、Cookie 或帧。10 秒内 hello：`wireRevision=1`，`protocolVersion` 填生成包常量，仅作诊断。读 `hello_ack` 后才能处理命令。
 6. `capability.changed` 发布完整、有界的 workspace/scene 索引。创建远程对话前需至少成功发布一次目录；离线时允许根据最后索引创建对话。
 7. 每 15 秒 heartbeat，45 秒无有效流量离线。新连接 fence 旧连接。事件用持久 store 序号，重传保留 eventId、epoch、occurredAt 和原内容；普通重启不得改写旧事件 epoch。不可见本地事件只上传 omitted 范围。
@@ -129,6 +131,7 @@ Q1 裁决：短码只允许在面向发起 Worker 的挑战响应及合法同请
 - 首次读取选中对话 `/conversations/{conversationId}/snapshot`，保存同事务返回的 `serverCursor`；之后轮询 `/events?after=<cursor>&limit=100`。无 after 只返回当前尾游标与空 items。游标不透明，不能解析为 Worker seq；hasMore 时继续分页。410 重新取快照。
 - 游标为无状态签名值，绑定 owner、scope、position、expiresAt；事件游标另绑定签名中的清理世代。生成/验证不写 cursor 行，不随轮询次数增长。验签失败或 owner/作用域不符返回 REMOTE_CURSOR_INVALID；TTL 到期或其位置已裁剪返回 REMOTE_CURSOR_EXPIRED。升级前的旧随机 cursor 不迁移，客户端应重新取快照。
 - 快照最多各含 100 个 message/run/command，`hasMore` 提醒继续取对应历史页；列表用 `cursor/limit`，不能混用列表游标和 events 游标。
+- D45 快照还带 `approvals`：只含同 owner/对话下仍 pending、未确认消费、且 `expiresAt` 严格晚于快照 `observedAt` 的审批。先筛选再取最多 100 条，超出时合并设置 `hasMore`；本版没有审批分页路由，不能把截断集合显示为全部审批。高风险 pending 仍可见并允许 reject，不能 approve。浏览器应以快照替换待处理集合，再按 `serverCursor` 后的审批事件维护；202/accepted 不代表审批已消费，实际消费/终态或到期后移除。
 - 分别展示 `deliveryState`、Worker 的 `controlResult`、Run `status`。断线不改 Run 状态，`command.completed` 不必然表示开发任务成功。
 - 撤销设备立即禁止重连、断开连接并停止投递，但 `executionMayStillBeRunning=true`。未派发命令拒绝并留 skip；可能派发的保持对账状态。
 - 高风险或 Worker 禁止动作不允许远程 approve，允许 reject。服务端预检后 Worker 仍须核对真实 pending 请求及当前本机策略。
@@ -157,6 +160,21 @@ schema 1→2 为 queued 命令及未完成 Outbox 增加过滤列和索引；2�
 Inbox、命令、消息、Run/审批投影、不可变 skip 和幂等记录均不删除，保障去重及对账。浏览器错过保留期内的事件后通过快照恢复当前状态；保留期不等于删除执行事实。运维仍需监测磁盘、保留一致性备份，不能只恢复部分业务表或删除尚未对账的关键记录。
 
 ## 验证
+
+测试依赖单独声明在 `pyproject.toml` 的 `test` extra，不加入运行时 requirements。准备新的开发/集成环境时，在仓库根目录安装：
+
+```sh
+python -m pip install -r apps/server/requirements.txt -e packages/protocol -e "apps/server[test]"
+```
+
+离线环境需事先准备完整 wheelhouse 和构建工具；不允许回退到网络下载：
+
+```sh
+python -m pip install --no-index --find-links <wheelhouse> --no-build-isolation \
+  -r apps/server/requirements.txt -e packages/protocol -e "apps/server[test]"
+```
+
+pytest 8.4.2、httpx 0.28.1 与 `apps/hub/requirements.local-lock.txt` 一致。该锁文件当前没有 PyYAML 项，测试 extra 固定使用已验证环境中的 PyYAML 6.0.3；未改 Hub 锁文件。当前 worktree 已预装测试依赖，本轮仅按要求离线重装协议包，未执行上述联网安装。
 
 在本目录，测试串行执行，不启用 pytest 并行 worker：
 

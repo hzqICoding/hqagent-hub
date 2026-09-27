@@ -9,7 +9,6 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
-from starlette.staticfiles import StaticFiles
 from protocol.generated.python import ApiEnvelope, PROTOCOL_VERSION
 
 from .common import Fault, require, stamp, uid, validated
@@ -19,6 +18,7 @@ from .repository import Repository
 from .security import COOKIE, Security
 from .service import KINDS, Service
 from .worker import WorkerTransport
+from .static import SPAStaticFiles
 
 LOG = logging.getLogger("hqremote")
 MAINTENANCE_INTERVAL = 5
@@ -293,5 +293,5 @@ def create_app(settings=None):
         await transport.run(socket)
 
     if settings.static_dir:
-        app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="h5")
+        app.mount("/", SPAStaticFiles(directory=settings.static_dir, html=True), name="h5")
     return app

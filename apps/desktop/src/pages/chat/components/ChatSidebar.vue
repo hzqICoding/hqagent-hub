@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, inject } from 'vue'
+import { routerKey, type Router } from 'vue-router'
 import type { LocalConversationView, LocalSceneId, TaskStatus } from '@hqagent/protocol'
 import { useChatStore } from '@/stores/chat.store'
 import { HqButton, HqDialog, HqDropdown, HqInput, HqSelect } from '@/shared/ui'
@@ -15,9 +16,17 @@ import {
   Pencil,
   Plus,
   Search,
+  Smartphone,
 } from 'lucide-vue-next'
 
 const chatStore = useChatStore()
+const router = inject<Router | null>(routerKey, null)
+
+function navigateToRemoteLink() {
+  if (router) {
+    router.push('/remote-link')
+  }
+}
 
 const isNewConvModalOpen = ref(false)
 const newTitle = ref('')
@@ -138,6 +147,14 @@ async function restoreConversation(conversation: LocalConversationView) {
 }
 
 function taskMenuItems(conversation: LocalConversationView) {
+  if (conversation.authority === 'remote') {
+    return [{
+      id: 'remote-readonly',
+      label: '手机远程对话（只读）',
+      icon: Smartphone,
+      disabled: true,
+    }]
+  }
   if (conversation.archived) {
     return [{
       id: 'restore',
@@ -305,7 +322,15 @@ function formatTime(iso: string) {
           >
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-text truncate leading-tight">{{ conversation.title }}</p>
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <p class="text-xs font-medium text-text truncate leading-tight flex-1">{{ conversation.title }}</p>
+                  <span
+                    v-if="conversation.authority === 'remote'"
+                    class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-primary/15 text-primary border border-primary/25"
+                  >
+                    远程
+                  </span>
+                </div>
                 <div class="mt-1.5 flex items-center gap-2 text-[10px] text-text-muted">
                   <span v-if="getStatusMeta(conversation)" class="inline-flex items-center gap-1">
                     <span class="w-1.5 h-1.5 rounded-full" :class="getStatusMeta(conversation)?.dot" />
@@ -415,5 +440,19 @@ function formatTime(iso: string) {
         <HqButton size="sm" variant="danger" :disabled="chatStore.isMetadataUpdating" :loading="chatStore.isMetadataUpdating" @click="confirmArchive">确认归档</HqButton>
       </template>
     </HqDialog>
+
+    <!-- Connect Mobile entry in sidebar footer -->
+    <div class="p-2 border-t border-border bg-panel-header/40 flex items-center justify-between text-xs shrink-0">
+      <button
+        type="button"
+        class="flex items-center gap-1.5 text-text-muted hover:text-primary transition-colors py-1.5 px-2 rounded-md hover:bg-panel-hover w-full text-left"
+        title="连接手机并开启远程操作"
+        @click="navigateToRemoteLink"
+      >
+        <Smartphone class="w-3.5 h-3.5 text-primary shrink-0" />
+        <span class="text-xs font-medium text-text">连接手机</span>
+        <span class="ml-auto text-[10px] text-text-muted">远程面板</span>
+      </button>
+    </div>
   </aside>
 </template>

@@ -1,0 +1,6 @@
+{
+  "type": "conversation.deleted",
+  "serverCursor": "opaque_owner_cursor_example_001",
+  "recordedAt": "2026-09-26T12:00:00Z",
+  "conversationId": "conversation_demo"
+}

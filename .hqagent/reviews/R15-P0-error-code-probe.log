@@ -1,0 +1,4 @@
+wireRevision=1; code=REMOTE_HANDOVER_BUSY
+unchanged rev1 DTO + existing registry accepts: False
+unchanged rev1 DTO + in-memory registry addition accepts: True
+No schema, registry, fixture, generated file or VERSION was written.

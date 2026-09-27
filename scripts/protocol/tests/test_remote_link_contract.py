@@ -1,6 +1,7 @@
 """FZ-R1.1: only D42 wire versioning and D43 local-link additions."""
 import importlib.util
 import json
+from copy import deepcopy
 from pathlib import Path
 import subprocess
 
@@ -21,6 +22,10 @@ def before(path):
     return subprocess.check_output(['git', 'show', f'{BASE}:{path}'], cwd=ROOT).decode('utf-8')
 
 
+def frozen(path):
+    return subprocess.check_output(["git", "show", f"500bf1f:{path}"], cwd=ROOT).decode("utf-8")
+
+
 def value(name):
     filename = next(f for f,t in MANIFEST.items() if t == name)
     return json.loads((P / 'fixtures/contracts' / filename).read_text(encoding='utf-8'))
@@ -38,13 +43,23 @@ def test_every_new_type_has_a_fixture():
 
 
 def test_only_authorized_worker_frame_shapes_changed():
+    # Historical FZ-R1.1 shape audit; live revision compatibility is covered by test_remote_sync_contract.
+    REMOTE = json.loads(frozen("packages/protocol/schema/remote.json"))["$defs"]
     old = json.loads(before('packages/protocol/schema/remote.json'))['$defs']
     assert set(REMOTE) == set(old)
     count = 0
     for name, original in old.items():
         props = original.get('properties', {})
         if 'protocolVersion' not in props:
-            assert REMOTE[name] == original
+            current = deepcopy(REMOTE[name])
+            if name == 'RemoteConversationSnapshot':
+                # D45 permits exactly this browser-only addition, never a wire change.
+                assert current['properties'].pop('approvals') == {
+                    'type': 'array', 'items': {'$ref': 'remote.json#/$defs/RemoteApprovalView'},
+                    'maxItems': 100,
+                    'description': 'Pending, unexpired approvals for this conversation; omitted means []. Truncation sets hasMore.',
+                }
+            assert current == original
             continue
         count += 1
         current = REMOTE[name]
@@ -128,9 +143,9 @@ def test_invalid_origins_are_rejected(origin):
 
 
 def test_local_api_additions_preserve_existing_auth_and_remote_http():
-    assert (P/'openapi/remote-hub.v2.yaml').read_text(encoding='utf-8') == before('packages/protocol/openapi/remote-hub.v2.yaml')
+    assert frozen('packages/protocol/openapi/remote-hub.v2.yaml') == before('packages/protocol/openapi/remote-hub.v2.yaml')
     old=yaml.safe_load(before('packages/protocol/openapi/local-hub.v1.yaml'))
-    current=yaml.safe_load((P/'openapi/local-hub.v1.yaml').read_text(encoding='utf-8'))
+    current=yaml.safe_load(frozen('packages/protocol/openapi/local-hub.v1.yaml'))
     for path,operations in old['paths'].items():assert current['paths'][path] == operations
     assert current['security'] == old['security'] == [{'bearerAuth':[]}]
     assert current['components'] == old['components']
@@ -144,7 +159,7 @@ def test_local_api_additions_preserve_existing_auth_and_remote_http():
 
 def test_authority_is_additive_and_legacy_objects_round_trip():
     old=json.loads(before('packages/protocol/schema/local-chat.json'))
-    now=json.loads((P/'schema/local-chat.json').read_text(encoding='utf-8'))
+    now=json.loads(frozen('packages/protocol/schema/local-chat.json'))
     original=old['$defs']['LocalConversationView'];new=now['$defs']['LocalConversationView']
     assert new['required'] == original['required'] and 'authority' not in new['required']
     assert new['properties']['authority']['enum'] == ['local','remote']

@@ -2,10 +2,10 @@
 wp: R1-P1
 status: done
 scope_declared: [apps/server/**, .hqagent/handoffs/R1-P1-remote-server.md]
-scope_touched: [".hqagent/handoffs/R1-P1-remote-server.md", "apps/server/.gitignore", "apps/server/Caddyfile.example", "apps/server/Dockerfile", "apps/server/Dockerfile.dockerignore", "apps/server/README.md", "apps/server/pyproject.toml", "apps/server/requirements.txt", "apps/server/scripts/smoke.py", "apps/server/server/__init__.py", "apps/server/server/__main__.py", "apps/server/server/app.py", "apps/server/server/cli.py", "apps/server/server/common.py", "apps/server/server/config.py", "apps/server/server/events.py", "apps/server/server/repository.py", "apps/server/server/security.py", "apps/server/server/service.py", "apps/server/server/wire.py", "apps/server/server/worker.py", "apps/server/tests/conftest.py", "apps/server/tests/test_boundaries.py", "apps/server/tests/test_commands_events.py", "apps/server/tests/test_controls_storage.py", "apps/server/tests/test_core.py", "apps/server/tests/test_delivery_wakeup.py", "apps/server/tests/test_protocol.py", "apps/server/tests/test_retention.py", "apps/server/tests/test_security.py", "apps/server/tests/test_signed_cursors.py"]
+scope_touched: [".hqagent/handoffs/R1-P1-remote-server.md", "apps/server/README.md", "apps/server/pyproject.toml", "apps/server/server/app.py", "apps/server/server/repository.py", "apps/server/server/service.py", "apps/server/server/static.py", "apps/server/tests/test_snapshot_approvals.py", "apps/server/tests/test_spa_static.py", "apps/server/tests/test_test_dependencies.py"]
 build: pass
 tests: pass
-commit: aed88bb88641d88bcecd5f1291b5c1cc39494116
+commit: f48c636c1f32b6fd1049e926db785da9fbdcc5d0
 open_questions: 0
 ---
 
@@ -15,20 +15,20 @@ open_questions: 0
 
 实现位于 apps/server，覆盖 remote-hub.v2 的 26 个 HTTP 操作与 `/ws/v2/worker`。只认证、绑定、排队和转发；没有模型调用、模型凭据、模型配置下发、订阅或安装功能。执行、控制实际结果和审批实际消费仍属于 P2 Worker。
 
-头部 commit 是包含本轮 F1–F4 返修的最终应用/文档提交，本回执另作元数据提交，避免自引用哈希。初始实现为 a1979b1，本次保留原有安全边界与 68 项测试断言。最终主题提交后 `git log -1 --format=%B` 实际输出：
+头部 commit 是本轮「返修 2」的最终应用/文档提交，本回执另作元数据提交，避免自引用哈希。初始实现为 a1979b1，本次保留原有安全边界及合并基线上的 85 项测试断言。最终主题提交后 `git log -1 --format=%B` 实际输出：
 
 ```text
-docs(server): document retention and trusted proxy deployment limits
+build(server): declare optional test dependencies and setup instructions
 ```
 
-- **Q1 已关闭**：主代理明确允许短码仅在面向发起 Worker 的 RemotePairingChallenge，以及原 Worker 轮询时契约要求的字段中返回。当前 0.6.1 轮询 DTO 不含短码，所以实现仅在创建挑战及合法幂等重放中返回。浏览器、其它 Worker/owner、日志和错误均不返回。数据库只保存短码 HMAC 校验值；重放用请求再次提供的同一 secret 和 challenge ID 重建短码，数据库没有明文短码或可逆设备凭据。
+- **Q1 已关闭**：主代理明确允许短码仅在面向发起 Worker 的 RemotePairingChallenge，以及原 Worker 轮询时契约要求的字段中返回。当前 0.6.3 轮询 DTO 仍不含短码，所以实现仅在创建挑战及合法幂等重放中返回。浏览器、其它 Worker/owner、日志和错误均不返回。数据库只保存短码 HMAC 校验值；重放用请求再次提供的同一 secret 和 challenge ID 重建短码，数据库没有明文短码或可逆设备凭据。
 - **D42 已适配**：主代理合入的协议基线是 `1e588b4`（冻结协议 0.6.1）。先读取有界握手中的 wireRevision，再选对应生成 DTO 校验。首次修订支持 `[1]`；hello 的 semver 仅诊断，不比较包版本是否相等。hello_rejected 带 supportedWireRevisions。旧 0.6.0 草稿不会自动当修订 1，不改写已确认事件原内容。
 - **D43 范围**：本机 v1 配对/解绑属于 P2，没有在服务端实现；没有添加设备 Bearer 自撤销授权。
-- 先前 `0xC0000142` 是已确认的内存不足环境问题。本轮首条 Get-Location 成功，未再出现该错误；串行验证，未安装依赖、联网或部署。
+- 先前 `0xC0000142` 是已确认的内存不足环境问题。本轮按要求首先合并 integration/phase1，未出现该错误；串行验证，仅离线重装协议包，没有联网安装或部署。
 
 ## F1–F4 审核返修（2026-09-26）
 
-本轮仅在原分支 feat/remote-server 修改所需模块和新增测试；原有测试文件及断言未改。相对 0975c7f，返修涉及 10 个应用/测试/README 文件及本回执。头部 scope_touched 是整个 R1-P1 相对协议合入基线的累计范围。
+以下保留首轮审核返修记录：当时仅在 feat/remote-server 修改所需模块和新增测试，未改既有断言；相对 0975c7f 涉及 10 个应用/测试/README 文件及回执。当前头部 scope_touched 已切换为「返修 2」相对本轮合并基线 b546e47 的实际修改范围。
 
 | 项目 | 实现和对应验证 |
 | --- | --- |
@@ -39,7 +39,7 @@ docs(server): document retention and trusted proxy deployment limits
 
 迁移为 schema 1→2（候选记录过滤列/索引）→3（认证过期、browser_outbox 时间索引、owner 清理水位）。旧命令和 Inbox 正文不重写。清理水位是每 owner 的有界状态，不是每次签发游标新增一行。
 
-F2 首轮回归曾暴露 TestClient 关闭连接时的子任务取消竞态，已通过回收接收/唤醒任务修复，未修改既有断言。另补测试确保持续心跳也不延后兜底投递。最终全量结果见下节。
+F2 首轮回归曾暴露 TestClient 关闭连接时的子任务取消竞态，已通过回收接收/唤醒任务修复，未修改既有断言。另补测试确保持续心跳也不延后兜底投递。当时最终为 85 passed；下文真实命令输出现已更新为「返修 2」的完整复跑。
 
 按主题提交，每次均已执行 git log -1 --format=%B 自查；真实输出依次为：
 
@@ -51,11 +51,61 @@ F2 首轮回归曾暴露 TestClient 关闭连接时的子任务取消竞态，�
 aed88bb  docs(server): document retention and trusted proxy deployment limits
 ```
 
+## 返修 2：S1 / S2 / S3（2026-09-26）
+
+### 基线与范围
+
+先执行 `git merge --no-ff integration/phase1 -m "merge: sync integration baseline for server follow-up fixes"`，将 integration/phase1@`9d729bec348ddf70af908651da343260371710a5` 合入原分支，merge 为 `b546e4769e9c91c8bb2b6fb6705ea6522a3ab7ed`，无冲突。协议、Worker、前端等文件是这次获准合并带入，不属于本轮自行修改；scope_touched 只列相对 b546e47 的 9 个 apps/server 文件和本回执。未合回 integration/phase1。
+
+随后按指定命令离线重装协议：
+
+```powershell
+.venv/Scripts/python.exe -m pip install --no-index --no-build-isolation --force-reinstall --no-deps -e packages/protocol
+```
+
+退出码 0，实际输出末尾：
+
+```text
+Successfully built hqagent-protocol
+Successfully installed hqagent-protocol-0.2.0
+```
+
+0.2.0 是既有 Python 分发元数据；已另行导入确认生成常量为 `0.6.3`，没有改协议包元数据。Worker 线路仍是 1。D44 本机 Cookie 配对路由未在云端实现。
+
+主代理已确认前一版本通过真实 Worker 的本机 TLS 联调。本轮验收是下面记录的服务端测试与假 Worker uvicorn 冒烟，没有把前一版本的真实联调结果冒充本轮重跑。
+
+### 实现与对应测试
+
+| 项目 | 处理方式与验证 |
+| --- | --- |
+| S1 / D45 | Service.snapshot 在原事务内填 approvals，沿用其 observedAt、serverCursor 和 View Mapper。仓储按 owner/worker/store/对话及 pending 筛选，用解析后的时间严格比较 expiresAt > observedAt，再取最多 101 个有效项供服务层截断到 100，与其它数组的 hasMore 取或。已收到 Worker command.completed/approval_consumed 的项，即使 terminal approval 投影尚未到达也排除；202/accepted 不视为已消费，不伪造 Worker 事件。SQL 只在 repository.py，schema 仍为 3 |
+| S1 测试 | test_snapshot_approvals.py 共 10 项：晚打开看到 pending、高风险不可 approve 项仍可见、跨 owner/对话隔离；approve/reject 的真实消费和 approved/rejected/expired 终态后移除；expiresAt==observedAt 排除；110 条失效/过期历史在前也不遮住后面的有效记录；100/101 边界；hasMore 与消息截断取或；snapshot cursor 后可接上审批增量。所有快照经过生成 RemoteConversationSnapshot 校验 |
+| S2 | 新增 SPAStaticFiles，沿用 StaticFiles 的文件查找与文件响应。仅缺失、最后一段无扩展名的 GET 请求回退到 index.html；存在的文件/资源正常返回。api/ws 命名空间始终交父应用的 ApiEnvelope 404，不被静态 404.html 或 SPA 回退吞掉；缺失扩展名资源保持 404 |
+| S2 测试 | test_spa_static.py 共 15 项，验证深链接/尾斜杠/查询串、前段含点但最后一段无扩展名、真实资源/无扩展名文件/HEAD、API/ws 404 envelope（包括静态目录恰有同名文件）、缺失 js/css/svg/.env 以及非 GET 不回退。既有静态挂载测试未改 |
+| S3 | pyproject.toml 增加 test extra：pytest==8.4.2、httpx==0.28.1、PyYAML==6.0.3；运行时 dependencies 与 requirements.txt 不变。README 验证节给出普通环境与离线 wheelhouse 的安装方式，当前环境不额外联网安装 |
+| S3 锁文件差异 | apps/hub/requirements.local-lock.txt 确实列出 pytest 8.4.2、httpx 0.28.1，但没有 PyYAML 条目，因此不存在可直接对齐的 PyYAML 锁值。本轮使用已预装并实际验证的 6.0.3 明确固定，未越界修改 Hub 锁。test_test_dependencies.py 检查 extra、可用 Hub 锁项和运行时依赖保持不变；若集成线要求 Hub 锁也收录 PyYAML，由 Integrator 补录 |
+
+README 同步说明协议 0.6.3、D45 初始化待处理集合/截断边界和 H5 history 回退。S1 未添加审批分页路由或协议字段，S2 未改变认证与事件通道，S3 没有增加运行时依赖。
+
+### 提交
+
+每次提交（包含 merge）均已执行 `git log -1 --format=%B` 自查；主题提交依次为：
+
+```text
+b546e47  merge: sync integration baseline for server follow-up fixes
+d04bc10  feat(server): include valid pending approvals in conversation snapshots
+aee6ffa  fix(server): serve the H5 shell for history deep links
+f48c636  build(server): declare optional test dependencies and setup instructions
+```
+
+专项输出分别为 `10 passed, 1 warning in 3.92s`（S1）、`16 passed, 1 warning in 1.35s`（S2 连同既有静态测试）、`1 passed, 1 warning in 0.01s`（S3）。最终串行全量、冒烟及协议回归的真实输出见下方「真实命令和输出」。没有修改既有测试断言、开启并行测试或部署服务器；未发生 0xC0000142。
+
 ## 模块与表结构
 
 | 模块 | 实际职责 |
 | --- | --- |
 | server/app.py | 26 个显式 HTTP 绑定，生成 DTO 校验，Cookie/Origin/CSRF，统一脱敏错误，可选静态目录 |
+| server/static.py | H5 history 模式回退，保留真实静态资源和 API/ws 404 边界 |
 | server/security.py | scrypt 口令、HMAC 设备验证值、认证专用重放、持久限速、300 秒挑战及短码校验 |
 | server/repository.py | 全部 sqlite3/SQL/WAL，串行事务、schema 版本、迁移和 Backup API |
 | server/service.py | owner 业务、Conversation、原子消息/命令/序号/Outbox、审批预检、撤回/过期/撤销、cursor/快照 |
@@ -90,7 +140,7 @@ Command 保存不可变线路帧和原始 202 receipt，派发状态另存；用
 | §5 入队/期限 | Service.enqueue/send_message/deadline；原子落库再 202；submit 默认 24h/最多 7d，控制 5min/最多 15min；审批不晚于真实请求期限；重放不延长 TTL |
 | §6 序号与撤回 | 只有 submit 分配序号；reject_undispatched/withdraw/expire 保存 skip；已可能派发时独立 withdrawal 并保持 requested；WorkerTransport.deliver 写派发意图后才 socket，分批投递、gap 补传不可变记录 |
 | §7 控制结果 | Events.finish_matrix/command 按持久命令类型验证结果、引用和结构化证据；取消确认要求停止，pause/resume 可有活跃进程；unconfirmed 保持 accepted；不从 failed/paused/断线推断停止 |
-| §8 事件/cursor | Events.accept/references/project、Service.events/page/snapshot；缺口持久保存但不提前确认；连续事件/投影/浏览器 Outbox 同事务；omitted 不给浏览器；冲突不覆盖；快照和 cursor 同事务；过期 410，跨 owner/错误作用域 cursor 按契约 REMOTE_CURSOR_INVALID |
+| §8 事件/cursor | Events.accept/references/project、Service.events/page/snapshot；缺口持久保存但不提前确认；连续事件/投影/浏览器 Outbox 同事务；omitted 不给浏览器；冲突不覆盖；快照、有效待处理审批和 cursor 同事务；审批先筛选再有界截取，确认消费后排除；过期 410，跨 owner/错误作用域 cursor 按契约 REMOTE_CURSOR_INVALID |
 | §9 权威/审批 | Service.conversation/approval；持久 authority；四类高风险、Worker 禁止、不可远程批准及无法确定安全分类的 shell 拒绝 approve；允许 reject；已终态 Run 不接受批准；Worker 仍须再检 |
 | §10 DTO/大小 | HTTP 和 Worker JSON 帧均用生成模型；wire.py 检查总 UTF-8 大小；分页在仓储限量读取，目录有界；不另写边界 DTO |
 | §11 D42 | wire.py codec registry 与 test_protocol.py；包版本仅诊断，未知修订先协商拒绝；将来 N/N-1 codec 集中保留 |
@@ -112,7 +162,7 @@ Command 保存不可变线路帧和原始 202 receipt，派发状态另存；用
 ```powershell
 $env:TEMP=(Join-Path $PWD '.tmp')
 $env:TMP=$env:TEMP
-../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp=.tmp/review-final
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp=.tmp/rework2-final
 ```
 
 退出码 0。以下为真实输出末尾（进度点由工具分两次返回，此处仅列 warning 与统计）：
@@ -124,12 +174,12 @@ $env:TMP=$env:TEMP
     from starlette.testclient import TestClient as TestClient  # noqa
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-85 passed, 1 warning in 33.64s
+111 passed, 1 warning in 41.16s
 ```
 
 没有放宽/删除既有测试断言。warning 原样保留，未为去掉提示安装 httpx2。未开 pytest 并行 worker，验证串行。TEMP/TMP/--basetemp 都在 worktree 内被忽略的 .tmp；本次没有再触发默认临时目录 WinError 5，那是既知环境权限问题，不作为代码失败。
 
-覆盖：双账号设备/对话/命令/事件/审批/Run 隔离、Worker 引用越权、配对过期/重放/撤销断连、Cookie/CSRF/认证泛化和限流、Q1 及落库脱敏、离线排序和 skip/gap、两类幂等、事件区间和连续 ack、store 冻结和旧 epoch、审批分级、D41 完成矩阵、事务故障回滚、游标分页/过期、Backup 恢复、26 路由 DTO 对照、线路协商/超帧/hello timeout、静态挂载、单调时钟和分批投递。新增 F1–F3 覆盖签名游标不增长、无空转及时唤醒、保留期及迁移；测试文件逐项命名可独立复跑。
+覆盖：双账号设备/对话/命令/事件/审批/Run 隔离、Worker 引用越权、配对过期/重放/撤销断连、Cookie/CSRF/认证泛化和限流、Q1 及落库脱敏、离线排序和 skip/gap、两类幂等、事件区间和连续 ack、store 冻结和旧 epoch、审批分级、D41 完成矩阵、事务故障回滚、游标分页/过期、Backup 恢复、26 路由 DTO 对照、线路协商/超帧/hello timeout、静态挂载、单调时钟和分批投递。F1–F3 覆盖签名游标不增长、无空转及时唤醒、保留期及迁移；返修 2 新增 D45 审批快照、SPA 回退和 test extra，共 111 项。测试文件逐项命名可独立复跑。
 
 编译检查：将下列 Python 通过标准输入交给 `../../.venv/Scripts/python.exe -B -X utf8 -`，退出码 0：
 
@@ -158,7 +208,7 @@ pwsh scripts/protocol/validate.ps1 -CheckGenerated
 退出码 0：
 
 ```text
-协议校验通过：258 个类型，109 个 Contract Fixture
+协议校验通过：258 个类型，110 个 Contract Fixture
 ```
 
 脚本按既有实现重新生成并逐字节比对；`git diff --name-only -- packages/protocol apps/hub apps/desktop docs` 无输出，没有留下协议或其它包变更。
@@ -202,4 +252,4 @@ $env:HQREMOTE_ORIGIN='https://hub.example.com'
 - P3：Cookie + Origin + CSRF + Idempotency-Key；设备 catalog 创建 Conversation。202 只表示排队。先 snapshot 的 serverCursor 再轮询 /events；410 重新 snapshot，更多历史分页。传输、控制与执行分开展示，撤销不等于停止。
 - 冻结无客户端解除接口。需要重新开始时显式撤销、用新 secret 建新绑定/新对话；不能自动接管旧命令。
 
-open_questions：0。Q1、D42 及本轮 F1–F4 已落实，未添加协议字段或额外推送通道。
+open_questions：0。Q1、D42、F1–F4 和本轮 S1–S3 已落实；D45 使用既有冻结字段，未自行增加协议字段或推送通道。PyYAML 锁文件缺项及选用版本已明确记录。

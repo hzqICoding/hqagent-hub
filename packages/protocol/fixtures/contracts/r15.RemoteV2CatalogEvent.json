@@ -1,0 +1,40 @@
+{
+  "type": "capability.changed",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "payload": {
+    "workerId": "worker_demo",
+    "capabilityRevision": 1,
+    "observedAt": "2026-09-26T12:00:00Z",
+    "workspaces": [
+      {
+        "workspaceId": "workspace_demo",
+        "name": "Example",
+        "displayPath": "E:/tmp/remote-demo",
+        "vcs": "git",
+        "canWrite": false
+      }
+    ],
+    "scenes": [
+      {
+        "sceneId": "analyze",
+        "name": "Example",
+        "version": 1,
+        "readOnly": false
+      }
+    ],
+    "remotelyBlockedActions": [
+      "git_push",
+      "deploy",
+      "delete",
+      "db_migrate",
+      "shell"
+    ],
+    "workerStoreId": "store_demo"
+  },
+  "wireRevision": 2
+}
