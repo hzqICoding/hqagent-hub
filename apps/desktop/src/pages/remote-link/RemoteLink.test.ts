@@ -271,6 +271,55 @@ describe('RemoteLinkPage & RemoteLinkStore', () => {
     expect(sessionStorage.getItem('pairCode')).toBeNull()
     expect(sessionStorage.getItem('token')).toBeNull()
   })
+
+  it('B7: renders QR code with format <serverOrigin>/remote/pair#code=<pairCode> during pairing state', async () => {
+    mockLocalChatGateway.setRemoteLinkState({
+      state: 'pairing',
+      serverOrigin: 'https://hub.example.com',
+      deviceName: '我的电脑',
+      pairRequestId: 'pair_req_mock_1',
+      pairCode: 'ABCD2345',
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    })
+
+    const wrapper = mount(RemoteLinkPage, {
+      global: {
+        plugins: [router],
+        stubs: {
+          HqButton: {
+            template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
+            props: ['disabled'],
+          },
+          HqBadge: {
+            template: '<span class="badge"><slot /></span>',
+          },
+          HqDialog: {
+            template: '<div v-if="open" class="dialog"><slot /><slot name="footer" /></div>',
+            props: ['open'],
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+    // Wait for async QRCode.toDataURL
+    await new Promise((r) => setTimeout(r, 50))
+
+    const qrImg = wrapper.find('img[data-testid="pair-qrcode"]')
+    expect(qrImg.exists()).toBe(true)
+    expect(qrImg.attributes('src')).toMatch(/^data:image\/png;base64,/)
+
+    // Shortcode text and countdown preserved as fallback
+    expect(wrapper.text()).toContain('ABCD2345')
+    expect(wrapper.text()).toContain('有效剩余时间')
+
+    // Disappears when pairing is cancelled or reset to unpaired
+    const store = useRemoteLinkStore()
+    await store.cancelPairing()
+    await flushPromises()
+
+    expect(wrapper.find('img[data-testid="pair-qrcode"]').exists()).toBe(false)
+  })
 })
 
 function flushPromises() {

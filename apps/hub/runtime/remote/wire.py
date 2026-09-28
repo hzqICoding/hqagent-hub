@@ -6,12 +6,15 @@ from typing import get_args
 from pydantic import ValidationError
 
 from protocol.generated.python import (PROTOCOL_VERSION, RemoteWorkerHello,
-    RemoteServerOutboundFrame, RemoteWorkerOutboundFrame)
+    RemoteServerOutboundFrame, RemoteWorkerOutboundFrame,
+    RemoteV2ServerOutboundFrame, RemoteV2WorkerOutboundFrame)
 from core.errors import HubError
 
 # The generated Literal is the frozen schema constant (no second version source).
 WIRE_REVISION = get_args(RemoteWorkerHello.model_fields["wire_revision"].annotation)[0]
 MAX_FRAME_BYTES = 256 * 1024
+CODECS = {1: (RemoteWorkerOutboundFrame, RemoteServerOutboundFrame),
+          2: (RemoteV2WorkerOutboundFrame, RemoteV2ServerOutboundFrame)}
 
 
 def canonical(value: dict) -> str:
@@ -20,7 +23,10 @@ def canonical(value: dict) -> str:
 
 def encode(value: dict) -> str:
     try:
-        value = RemoteWorkerOutboundFrame.model_validate(value).model_dump(mode="json", by_alias=True, exclude_none=True)
+        codec = CODECS.get(value.get("wireRevision"))
+        if codec is None:
+            raise HubError("REMOTE_PROTOCOL_UNSUPPORTED", "不支持的线路修订")
+        value = codec[0].model_validate(value).model_dump(mode="json", by_alias=True, exclude_none=True)
     except ValidationError as error:
         oversized = any(e["type"] in {"string_too_long", "too_long"} for e in error.errors(include_input=False))
         raise HubError("REMOTE_FRAME_TOO_LARGE" if oversized else "REMOTE_PROTOCOL_UNSUPPORTED", "远程输出不符合线路边界") from None
@@ -30,7 +36,7 @@ def encode(value: dict) -> str:
     return content
 
 
-def decode(content: str | bytes) -> dict:
+def decode(content: str | bytes, *, revision: int = 1, negotiation: bool = False) -> dict:
     if len(content.encode("utf-8") if isinstance(content, str) else content) > MAX_FRAME_BYTES:
         raise HubError("REMOTE_FRAME_TOO_LARGE", "远程帧超过大小限制")
     try:
@@ -47,9 +53,12 @@ def decode(content: str | bytes) -> dict:
         if isinstance(value, dict) and value.get("type") == "worker.hello_rejected":
             revisions = value.get("supportedWireRevisions")
             if isinstance(revisions, list) and 1 <= len(revisions) <= 16 and all(type(v) is int and 1 <= v <= 2147483647 for v in revisions):
-                if WIRE_REVISION not in revisions:
+                if revision not in revisions and not negotiation:
                     raise HubError("REMOTE_PROTOCOL_UNSUPPORTED", "服务端不支持当前线路修订")
-        mapped = RemoteServerOutboundFrame.model_validate(value).model_dump(mode="json", by_alias=True, exclude_none=True)
+        actual = value.get("wireRevision") if isinstance(value, dict) else None
+        if actual != revision and not (negotiation and value.get("type") == "worker.hello_rejected"):
+            raise HubError("REMOTE_PROTOCOL_UNSUPPORTED", "连接线路修订不匹配")
+        mapped = CODECS[actual][1].model_validate(value).model_dump(mode="json", by_alias=True, exclude_none=True)
         if mapped != value:
             raise ValueError("wire field names must be camelCase")
         return mapped

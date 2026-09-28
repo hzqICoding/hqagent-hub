@@ -10,7 +10,7 @@ import { useChatStore } from '@/stores/chat.store'
 import { mockLocalChatGateway } from '@/shared/api/mock-local-chat-gateway'
 import { setLocalChatGatewayForTesting } from '@/shared/api/local-chat-provider'
 
-describe('Remote Conversation Read-Only Display on PC', () => {
+describe('Remote Conversation Interoperability and Cross-Endpoint Busy Lock on PC (R1.5)', () => {
   let router: any
 
   beforeEach(async () => {
@@ -33,7 +33,7 @@ describe('Remote Conversation Read-Only Display on PC', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders "远程" badge in ChatSidebar for conversations with authority === remote', async () => {
+  it('renders "来自手机" badge in ChatSidebar for conversations with authority === remote', async () => {
     const store = useChatStore()
     await store.init()
 
@@ -59,9 +59,9 @@ describe('Remote Conversation Read-Only Display on PC', () => {
     expect(remoteConv).toBeDefined()
     expect(remoteConv?.title).toBe('手机远程：排查订单超时')
 
-    // Sidebar should render the 远程 badge text
+    // Sidebar should render the "来自手机" badge text
     expect(wrapper.text()).toContain('手机远程：排查订单超时')
-    expect(wrapper.text()).toContain('远程')
+    expect(wrapper.text()).toContain('来自手机')
   })
 
   it('renders "手机远程" badge in ChatPage header when remote conversation is active', async () => {
@@ -95,13 +95,15 @@ describe('Remote Conversation Read-Only Display on PC', () => {
     expect(wrapper.text()).toContain('手机远程')
   })
 
-  it('disables input in ChatComposer and displays "这是手机远程对话，请在手机上继续"', async () => {
+  it('enforces busy lock banner and disables input when mobile run is in progress', async () => {
     const store = useChatStore()
     await store.init()
     const remoteConv = store.conversations.find((c) => c.authority === 'remote')
     await store.selectConversation(remoteConv!.id)
 
+    // Remote conversation is busy from mobile
     expect(store.isRemoteConversation).toBe(true)
+    expect(store.isConversationBusy).toBe(true)
 
     const wrapper = mount(ChatComposer, {
       global: {
@@ -113,20 +115,57 @@ describe('Remote Conversation Read-Only Display on PC', () => {
 
     await flushPromises()
 
-    // Alert banner
-    expect(wrapper.text()).toContain('这是手机远程对话，电脑端仅供只读查看，请在手机上继续操作')
+    // Alert banner for busy lock
+    expect(wrapper.text()).toContain('对话正在进行，结束后再继续')
 
     // Textarea disabled & placeholder
     const textarea = wrapper.find('textarea')
     expect(textarea.attributes('disabled')).toBeDefined()
-    expect(textarea.attributes('placeholder')).toContain('这是手机远程对话，请在手机上继续')
+    expect(textarea.attributes('placeholder')).toContain('对话正在进行，结束后再继续')
 
-    // Send button disabled
-    const sendBtn = wrapper.find('button[title*="发送目标指令"]')
-    expect(sendBtn.attributes('disabled')).toBeDefined()
+    // When running from mobile, stop button is displayed and enabled (cancel is never locked)
+    const stopBtn = wrapper.find('button[title*="中止当前执行轮次"]')
+    expect(stopBtn.exists()).toBe(true)
+    expect(stopBtn.attributes('disabled')).toBeUndefined()
   })
 
-  it('disables run controls and approvals in RunSnapshotDrawer for remote conversations', async () => {
+  it('allows typing and sending messages on remote conversations when idle/not busy', async () => {
+    const store = useChatStore()
+    await store.init()
+    const remoteConv = store.conversations.find((c) => c.authority === 'remote')
+    expect(remoteConv).toBeDefined()
+
+    // Simulate idle remote conversation (mobile run finished)
+    remoteConv!.busy = false
+    remoteConv!.activeRunId = undefined
+    remoteConv!.lastRunStatus = 'succeeded'
+    await store.selectConversation(remoteConv!.id)
+
+    expect(store.isConversationBusy).toBe(false)
+
+    const wrapper = mount(ChatComposer, {
+      global: {
+        stubs: {
+          HqButton: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    // No busy lock banner
+    expect(wrapper.text()).not.toContain('对话正在进行')
+
+    // Textarea is enabled
+    const textarea = wrapper.find('textarea')
+    expect(textarea.attributes('disabled')).toBeUndefined()
+
+    // Sending message succeeds without 409 authority mismatch
+    await expect(store.sendMessage('PC 端继续远程对话')).resolves.not.toThrow()
+    expect(store.messages.some((m) => m.text === 'PC 端继续远程对话')).toBe(true)
+  })
+
+  it('allows run controls and approvals on remote conversations without authority mismatch', async () => {
     const store = useChatStore()
     await store.init()
     const remoteConv = store.conversations.find((c) => c.authority === 'remote')
@@ -146,45 +185,39 @@ describe('Remote Conversation Read-Only Display on PC', () => {
 
     await flushPromises()
 
-    // Should display remote readonly guidance banner instead of interactive control buttons
-    expect(wrapper.text()).toContain('这是手机远程对话，运行控制请在手机上继续操作')
-    // No pause/resume buttons should be active
-    expect(wrapper.text()).not.toContain('节点间暂停')
-    expect(wrapper.text()).not.toContain('取消任务')
+    // R1.5 allows PC to control runs and approvals: NO read-only blocking banner
+    expect(wrapper.text()).not.toContain('这是手机远程对话，运行控制请在手机上继续操作')
+
+    // Cancel is NEVER locked even when busy from mobile
+    await expect(store.controlRun('run_remote_1', 'cancel')).resolves.not.toThrow()
+
+    // When idle / not busy, other control actions (e.g. pause) also succeed without 409 authority mismatch
+    const updatedConv = store.conversations.find((c) => c.id === remoteConv!.id)!
+    updatedConv.busy = false
+    await expect(store.controlRun('run_remote_1', 'pause')).resolves.not.toThrow()
   })
 
-  it('disables archive in store for remote conversations', async () => {
+  it('allows archive and rename on remote conversations in R1.5', async () => {
     const store = useChatStore()
     await store.init()
     const remoteConv = store.conversations.find((c) => c.authority === 'remote')
     expect(remoteConv).toBeDefined()
 
-    expect(store.canArchiveConversation(remoteConv!)).toBe(false)
-  })
+    // Rename succeeds without CONVERSATION_AUTHORITY_MISMATCH
+    const renamed = await store.renameConversation(remoteConv!.id, '新标题：排查订单超时已完成')
+    expect(renamed.title).toBe('新标题：排查订单超时已完成')
+    expect(store.conversations.find((c) => c.id === remoteConv!.id)?.title).toBe('新标题：排查订单超时已完成')
 
-  it('strictly rejects sending messages, controlling runs, and updating metadata with 409 CONVERSATION_AUTHORITY_MISMATCH', async () => {
-    const store = useChatStore()
-    await store.init()
-    const remoteConv = store.conversations.find((c) => c.authority === 'remote')
-    await store.selectConversation(remoteConv!.id)
+    // Archive succeeds once run is completed / cancelled and not busy
+    await store.controlRun('run_remote_1', 'cancel')
+    const targetConv = store.conversations.find((c) => c.id === remoteConv!.id)!
+    targetConv.busy = false
+    targetConv.activeRunId = undefined
+    targetConv.lastRunStatus = 'cancelled'
+    expect(store.canArchiveConversation(targetConv)).toBe(true)
 
-    // 1. Send message rejection
-    await expect(store.sendMessage('电脑试图发送消息')).rejects.toMatchObject({
-      code: 'CONVERSATION_AUTHORITY_MISMATCH',
-      status: 409,
-    })
-
-    // 2. Control run rejection
-    await expect(store.controlRun('run_remote_1', 'pause')).rejects.toMatchObject({
-      code: 'CONVERSATION_AUTHORITY_MISMATCH',
-      status: 409,
-    })
-
-    // 3. Rename rejection
-    await expect(store.renameConversation(remoteConv!.id, '新标题')).rejects.toMatchObject({
-      code: 'CONVERSATION_AUTHORITY_MISMATCH',
-      status: 409,
-    })
+    const archived = await store.setConversationArchived(targetConv.id, true)
+    expect(archived.archived).toBe(true)
   })
 
   it('ensures local conversations without authority or authority === local are completely unaffected', async () => {
@@ -197,6 +230,7 @@ describe('Remote Conversation Read-Only Display on PC', () => {
 
     await store.selectConversation(localConv!.id)
     expect(store.isRemoteConversation).toBe(false)
+    expect(store.isBusyFromOtherEnd).toBe(false)
 
     const wrapper = mount(ChatComposer, {
       global: {
@@ -212,6 +246,7 @@ describe('Remote Conversation Read-Only Display on PC', () => {
     expect(textarea.attributes('disabled')).toBeUndefined()
     expect(textarea.attributes('placeholder')).toContain('向角色团队输入任务目标')
     expect(wrapper.text()).not.toContain('这是手机远程对话')
+    expect(wrapper.text()).not.toContain('对话正在进行')
   })
 })
 

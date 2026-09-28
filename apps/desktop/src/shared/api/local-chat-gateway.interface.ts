@@ -28,10 +28,12 @@ import type {
   SessionView,
   RemoteLinkView,
   RemoteLinkPairingInput,
+  RemoteSyncSettingsView,
+  RemoteSyncSettingsInput,
 } from '@hqagent/protocol'
 
 export interface LocalChatGateway {
-  // Remote Link (D44)
+  // Remote Link (D44) & Sync Settings (R1.5)
   getRemoteLink(): Promise<RemoteLinkView>
   startRemotePairing(
     input: RemoteLinkPairingInput,
@@ -39,6 +41,11 @@ export interface LocalChatGateway {
   ): Promise<RemoteLinkView>
   cancelRemotePairing(idempotencyKey?: string): Promise<RemoteLinkView>
   unlinkRemote(idempotencyKey?: string): Promise<RemoteLinkView>
+  getRemoteSyncSettings(): Promise<RemoteSyncSettingsView>
+  setRemoteSyncSettings(
+    input: RemoteSyncSettingsInput,
+    idempotencyKey?: string
+  ): Promise<RemoteSyncSettingsView>
 
   // Auth
   getLocalAuthStatus(): Promise<LocalAuthView>
@@ -74,7 +81,10 @@ export interface LocalChatGateway {
   ): Promise<LocalRoleTemplateView>
 
   // Conversations & Messages
-  listLocalConversations(): Promise<LocalConversationView[]>
+  listLocalConversations(params?: {
+    includeHidden?: boolean
+    workspaceId?: string
+  }): Promise<LocalConversationView[]>
   createLocalConversation(
     input: CreateLocalConversationInput,
     idempotencyKey?: string

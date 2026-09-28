@@ -147,8 +147,9 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
         )
 
     @router.get("/conversations")
-    async def conversations():
-        return success_response(await service.conversations())
+    async def conversations(include_hidden: bool = Query(False, alias="includeHidden"),
+                            workspace_id: str | None = Query(None, alias="workspaceId")):
+        return success_response(await service.conversations(include_hidden=include_hidden, workspace_id=workspace_id))
 
     @router.post("/conversations")
     async def create_conversation(value: CreateLocalConversationInput,

@@ -123,11 +123,24 @@ class Replica:
         if previous and '_localId' not in previous:
             tx.retire_legacy_messages(owner, public)
         if previous and previous.get('metadataVersion', 0) >= payload['metadataVersion']:
-            if previous['metadataVersion'] == payload['metadataVersion']:
-                require(previous['_metadataHash'] == digest(payload), 'REMOTE_SYNC_CONFLICT')
+            if previous['metadataVersion'] > payload['metadataVersion']:
+                return
+            # LocalConversationView.version is a metadata CAS revision: message
+            # and run activity may advance updatedAt without incrementing it.
+            # Compare all actual metadata, not a hash that includes activity.
+            require(all(previous.get(k) == v for k, v in payload.items()
+                        if k not in {'conversationId', 'updatedAt'}), 'REMOTE_SYNC_CONFLICT')
+            if payload['updatedAt'] <= previous['updatedAt']:
+                return
+            value = dict(previous, updatedAt=payload['updatedAt'],
+                         lastActivityAt=max(previous.get('lastActivityAt', previous['updatedAt']), payload['updatedAt']),
+                         _metadataHash=digest(payload))
+            self.s.save(tx, owner, 'conversation', public, value)
+            if payload['visibility'] != 'pc_only':
+                self.s.event(tx, owner, 'conversation.updated', self.s.view(owner, 'conversation', value))
             return
         value = dict(payload, conversationId=public, targetWorkerId=event['workerId'], workerId=event['workerId'],
-                     workerStoreId=event['workerStoreId'], lastActivityAt=payload['updatedAt'], _localId=local,
+                     workerStoreId=event['workerStoreId'], lastActivityAt=max(payload['updatedAt'], (previous or {}).get('lastActivityAt', '')), _localId=local,
                      _metadataHash=digest(payload), _generation=event['syncGeneration'])
         state = self.state(tx, owner, event['workerId'], event['workerStoreId'])
         value.update(_busy=local in state['busy'], _busyConnection=state.get('busyConnection'))
@@ -229,13 +242,16 @@ class Replica:
         ids = [item for index in range(event['partCount']) for item in staged['parts'][str(index)]]
         require(len(ids) == len(set(ids)), 'REMOTE_SYNC_CONFLICT')
         require(ids or event['partCount'] == 1, 'REMOTE_SYNC_CONFLICT')
-        state.update(busy=ids, busyFresh=True, busyConnection=connection.identifier, busyObservedAt=event['capturedAt'], busySeq=event['seq'])
+        fresh = not self.s.get(tx, owner, 'device', connection.worker)['_frozen']
+        state.update(busy=ids, busyFresh=fresh, busyConnection=connection.identifier, busyObservedAt=event['capturedAt'], busySeq=event['seq'])
         self.save_state(tx, owner, state)
-        tx.after_commit(('busy', owner, connection.worker), lambda: setattr(connection, 'busy_fresh', True))
+        tx.after_commit(('busy', owner, connection.worker), lambda: setattr(connection, 'busy_fresh', fresh))
         for old in tx.list(owner, 'sync-stage', worker=connection.worker, store=connection.store):
             tx.remove_record(owner, 'sync-stage', old['id'])
         for conv in tx.list(owner, 'conversation', worker=connection.worker, store=connection.store):
             conv.update(_busy=conv.get('_localId') in ids, _busyConnection=connection.identifier, _busyObservedAt=event['capturedAt'])
             self.s.save(tx, owner, 'conversation', conv['conversationId'], conv)
             if conv.get('visibility', 'both') != 'pc_only':
-                self.s.event(tx, owner, 'conversation.updated', dict(self.s.view(owner, 'conversation', conv), busyFresh=True))
+                # The validated whole snapshot and its browser event commit
+                # together; connection.busy_fresh changes only after commit.
+                self.s.event(tx, owner, 'conversation.updated', self.s.view(owner, 'conversation', conv, busy_fresh=fresh))

@@ -1,0 +1,15 @@
+{
+  "workerId": "worker_demo",
+  "deviceName": "Office PC",
+  "platform": "windows",
+  "architecture": "x86_64",
+  "status": "online",
+  "workerStoreId": "store_demo",
+  "capabilityRevision": 1,
+  "observedAt": "2026-09-27T12:00:01Z",
+  "pairedAt": "2026-09-26T12:00:00Z",
+  "remoteAccess": "suspended",
+  "displayName": "办公室电脑",
+  "version": 2,
+  "suspendedAt": "2026-09-27T12:00:00Z"
+}

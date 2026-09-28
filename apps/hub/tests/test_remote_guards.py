@@ -86,7 +86,7 @@ def test_persisted_high_water_survives_ack_pruning_and_reopen(tmp_path):
     asyncio.run(scenario())
 
 
-def test_remote_scene_profile_and_parent_cannot_bypass_authority(tmp_path):
+def test_remote_scene_profile_and_parent_remain_usable_from_local_computer(tmp_path):
     async def scenario():
         system = System(tmp_path)
         try:
@@ -96,11 +96,12 @@ def test_remote_scene_profile_and_parent_cannot_bypass_authority(tmp_path):
                 await until(lambda: command_events(server, "remote", "command.completed"))
                 row = system.repo.inbox("remote")
                 record = system.chat.repository.run_record(row["run_id"])
-                for reference in ({"parentTaskId": record["task_id"]}, {"profileId": "local-profile:" + row["run_id"]}):
-                    response = await system.local.post("/api/v1/tasks", json={"objective": "bypass", "workspaceId": "workspace", **reference}, headers={"Idempotency-Key": "bypass"})
-                    assert response.status_code == 409, response.text
-                    assert response.json()["error"]["code"] == "CONVERSATION_AUTHORITY_MISMATCH"
-                assert len(system.adapter.started) == 1
+                for index, reference in enumerate(({"parentTaskId": record["task_id"]}, {"profileId": "local-profile:" + row["run_id"]})):
+                    response = await system.local.post("/api/v1/tasks", json={"objective": "continue locally", "workspaceId": "workspace",
+                        "profileId": "local-profile:" + row["run_id"], "workflowRoles": ["planner"], **reference}, headers={"Idempotency-Key": f"local-reference-{index}"})
+                    assert response.status_code == 200, response.text
+                    await until(lambda: str(system.tasks.repository.get(response.json()["data"]["id"]).status) == "succeeded")
+                assert len(system.adapter.started) == 3
         finally:
             await system.close()
     asyncio.run(scenario())

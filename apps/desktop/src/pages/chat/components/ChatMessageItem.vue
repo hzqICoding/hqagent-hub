@@ -51,10 +51,10 @@ async function copyText(text: string) {
 </script>
 
 <template>
-  <div class="py-2.5 px-4 transition-colors">
+  <div class="py-2.5 px-2 sm:px-4 transition-colors">
     <!-- User Message (Clean right-aligned bubble) -->
     <div v-if="message.role === 'user'" class="flex justify-end max-w-3xl mx-auto">
-      <div class="max-w-[85%] space-y-1 group">
+      <div class="max-w-[92%] sm:max-w-[85%] space-y-1 group">
         <div class="flex items-center justify-end gap-2 text-[11px] text-text-muted select-none">
           <button
             type="button"
@@ -127,7 +127,7 @@ async function copyText(text: string) {
     </div>
 
     <!-- Assistant Final Reply (Clean typography, bot avatar, markdown body, quick copy buttons) -->
-    <div v-else class="max-w-3xl mx-auto flex items-start gap-3 group">
+    <div v-else class="max-w-3xl mx-auto flex items-start gap-2 sm:gap-3 group">
       <div class="w-7 h-7 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0 mt-0.5 border border-success/30 shadow-xs">
         <Bot class="w-4 h-4" />
       </div>
@@ -142,8 +142,9 @@ async function copyText(text: string) {
 
           <button
             type="button"
-            class="p-1 px-1.5 rounded hover:bg-panel-hover border border-transparent hover:border-border/60 text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] cursor-pointer opacity-70 hover:opacity-100"
+            class="min-h-[36px] sm:min-h-0 p-1 px-1.5 rounded hover:bg-panel-hover border border-transparent hover:border-border/60 text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] cursor-pointer opacity-70 hover:opacity-100"
             title="复制回复内容"
+            aria-label="复制回复内容"
             @click="copyText(message.text)"
           >
             <Check v-if="isCopied" class="w-3 h-3 text-success" />
@@ -160,12 +161,13 @@ async function copyText(text: string) {
           :initially-expanded="false"
         />
 
-        <div class="relative group/bubble bg-panel border border-border/80 p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed shadow-sm break-words overflow-x-auto select-text">
+        <div class="relative group/bubble bg-panel border border-border/80 p-3 sm:p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed shadow-sm break-words overflow-x-auto max-w-full select-text">
           <!-- Floating quick copy icon button at top-right corner of the bubble -->
           <button
             type="button"
-            class="absolute top-3 right-3 p-1.5 px-2 rounded-lg bg-bg-app/90 hover:bg-panel-hover border border-border/70 text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] shadow-xs cursor-pointer z-10 opacity-70 hover:opacity-100"
+            class="absolute top-2 right-2 sm:top-3 sm:right-3 min-w-[32px] min-h-[32px] p-1.5 px-2 rounded-lg bg-bg-app/90 hover:bg-panel-hover border border-border/70 text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] shadow-xs cursor-pointer z-10 opacity-70 hover:opacity-100"
             :title="isCopied ? '已复制到剪贴板' : '一键复制整条消息'"
+            aria-label="一键复制整条消息"
             @click.stop="copyText(message.text)"
           >
             <Check v-if="isCopied" class="w-3 h-3 text-success" />
@@ -180,8 +182,9 @@ async function copyText(text: string) {
         <div class="flex items-center justify-between pt-0.5 px-1 text-[11px] text-text-muted select-none">
           <button
             type="button"
-            class="p-1 px-2 rounded-md hover:bg-panel border border-border/40 text-text-muted hover:text-text transition-colors flex items-center gap-1.5 text-[10px] cursor-pointer"
+            class="min-h-[36px] sm:min-h-0 p-1 px-2 rounded-md hover:bg-panel border border-border/40 text-text-muted hover:text-text transition-colors flex items-center gap-1.5 text-[10px] cursor-pointer"
             :title="isCopied ? '已复制到剪贴板' : '一键复制整条消息'"
+            aria-label="复制全文"
             @click="copyText(message.text)"
           >
             <Check v-if="isCopied" class="w-3.5 h-3.5 text-success" />

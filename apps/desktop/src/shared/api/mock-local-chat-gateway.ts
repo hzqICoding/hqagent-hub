@@ -34,6 +34,8 @@ import type {
   ErrorCode,
   RemoteLinkView,
   RemoteLinkPairingInput,
+  RemoteSyncSettingsView,
+  RemoteSyncSettingsInput,
 } from '@hqagent/protocol'
 import { PROTOCOL_VERSION } from '@hqagent/protocol'
 
@@ -85,6 +87,13 @@ export class MockLocalChatGateway implements LocalChatGateway {
     this.conversationUpdateReceipts.clear()
     this.sceneCreateReceipts.clear()
     this.roleTemplateWriteReceipts.clear()
+    this.messages.clear()
+    this.runs.clear()
+    this.syncSettings = {
+      mirrorEnabled: true,
+      version: 1,
+      syncGeneration: 1,
+    }
 
     // Seed workspaces
     this.workspaces = [
@@ -548,8 +557,25 @@ export class MockLocalChatGateway implements LocalChatGateway {
       version: 1,
       archived: false,
       authority: 'remote',
+      visibility: 'both',
+      busy: true,
+      busyObservedAt: '2026-09-26T14:10:00Z',
       lastRunStatus: 'running',
       activeRunId: remoteRunId,
+    }
+    const mobileOnlyConvId = 'conv_mobile_only_1'
+    const mobileOnlyConversation: LocalConversationView = {
+      id: mobileOnlyConvId,
+      title: '手机专用：紧急生产巡检',
+      workspaceId: this.workspaces[0].id,
+      sceneId: 'analyze',
+      createdAt: '2026-09-26T15:00:00Z',
+      updatedAt: '2026-09-26T15:10:00Z',
+      version: 1,
+      archived: false,
+      authority: 'remote',
+      visibility: 'mobile_only',
+      lastRunStatus: 'succeeded',
     }
     const remoteMessages: LocalMessageView[] = [
       {
@@ -581,11 +607,12 @@ export class MockLocalChatGateway implements LocalChatGateway {
       updatedAt: '2026-09-26T14:00:10Z',
     }
 
-    this.conversations = [conv2, conv1, remoteConversation, conv3, archivedConversation]
+    this.conversations = [conv2, conv1, remoteConversation, mobileOnlyConversation, conv3, archivedConversation]
     this.messages.set(conv1Id, conv1Messages)
     this.messages.set(conv2Id, conv2Messages)
     this.messages.set(conv3Id, conv3Messages)
     this.messages.set(remoteConvId, remoteMessages)
+    this.messages.set(mobileOnlyConvId, [])
     this.runs.set(run1Id, run1)
     this.runs.set(run2Id, run2)
     this.runs.set(run3Id, run3)
@@ -1044,8 +1071,18 @@ export class MockLocalChatGateway implements LocalChatGateway {
   }
 
   // Conversations & Messages
-  async listLocalConversations(): Promise<LocalConversationView[]> {
-    return [...this.conversations]
+  async listLocalConversations(params?: {
+    includeHidden?: boolean
+    workspaceId?: string
+  }): Promise<LocalConversationView[]> {
+    let list = [...this.conversations]
+    if (params?.workspaceId) {
+      list = list.filter((c) => c.workspaceId === params.workspaceId)
+    }
+    if (!params?.includeHidden) {
+      list = list.filter((c) => c.visibility !== 'mobile_only')
+    }
+    return list
   }
 
   async createLocalConversation(
@@ -1092,13 +1129,6 @@ export class MockLocalChatGateway implements LocalChatGateway {
     if (!conversation) {
       throw new HubApiError('对话不存在', 'NOT_FOUND' as ErrorCode, 404)
     }
-    if (conversation.authority === 'remote') {
-      throw new HubApiError(
-        '这是手机远程对话，无法在电脑上修改或归档',
-        'CONVERSATION_AUTHORITY_MISMATCH' as ErrorCode,
-        409
-      )
-    }
     const currentVersion = conversation.version ?? 1
     if (input.expectedVersion !== currentVersion) {
       throw new HubApiError(
@@ -1108,8 +1138,8 @@ export class MockLocalChatGateway implements LocalChatGateway {
         { currentVersion }
       )
     }
-    if (input.title === undefined && input.archived === undefined) {
-      throw new HubApiError('至少需要修改标题或归档状态', 'VALIDATION_FAILED' as ErrorCode, 422)
+    if (input.title === undefined && input.archived === undefined && input.visibility === undefined) {
+      throw new HubApiError('至少需要修改标题、归档状态或可见性', 'VALIDATION_FAILED' as ErrorCode, 422)
     }
     if (input.title !== undefined && !input.title.trim()) {
       throw new HubApiError('任务标题不能为空', 'VALIDATION_FAILED' as ErrorCode, 422)
@@ -1125,6 +1155,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
     }
     if (input.title !== undefined) conversation.title = input.title.trim()
     if (input.archived !== undefined) conversation.archived = input.archived
+    if (input.visibility !== undefined) conversation.visibility = input.visibility
     conversation.version = currentVersion + 1
     conversation.updatedAt = new Date().toISOString()
     const response = JSON.parse(JSON.stringify(conversation)) as LocalConversationView
@@ -1149,13 +1180,6 @@ export class MockLocalChatGateway implements LocalChatGateway {
     const conv = this.conversations.find((c) => c.id === conversationId)
     if (!conv) {
       throw new HubApiError('对话不存在', 'NOT_FOUND' as ErrorCode, 404)
-    }
-    if (conv.authority === 'remote') {
-      throw new HubApiError(
-        '这是手机远程对话，无法在电脑上发送消息，请在手机上继续',
-        'CONVERSATION_AUTHORITY_MISMATCH' as ErrorCode,
-        409
-      )
     }
     if (conv.archived) {
       throw new HubApiError('请先恢复已归档任务，再发送消息', 'CONFLICT' as ErrorCode, 409)
@@ -1390,13 +1414,6 @@ export class MockLocalChatGateway implements LocalChatGateway {
       throw new HubApiError('Run 未找到', 'NOT_FOUND' as ErrorCode, 404)
     }
     const conversation = this.conversations.find((item) => item.id === run.conversationId)
-    if (conversation?.authority === 'remote') {
-      throw new HubApiError(
-        '这是手机远程对话，无法在电脑上控制运行，请在手机上继续',
-        'CONVERSATION_AUTHORITY_MISMATCH' as ErrorCode,
-        409
-      )
-    }
     if (conversation?.archived && (input.action === 'resume' || input.action === 'retry')) {
       throw new HubApiError('请先恢复已归档任务，再继续或重试', 'CONFLICT' as ErrorCode, 409)
     }
@@ -1623,6 +1640,32 @@ export class MockLocalChatGateway implements LocalChatGateway {
       lastErrorCode,
     }
     return JSON.parse(JSON.stringify(this.remoteLink))
+  }
+
+  // Remote Sync Settings (R1.5 / 0.7.0)
+  private syncSettings: RemoteSyncSettingsView = {
+    mirrorEnabled: true,
+    version: 1,
+    syncGeneration: 1,
+  }
+
+  async getRemoteSyncSettings(): Promise<RemoteSyncSettingsView> {
+    return JSON.parse(JSON.stringify(this.syncSettings))
+  }
+
+  async setRemoteSyncSettings(
+    input: RemoteSyncSettingsInput,
+    _idempotencyKey?: string
+  ): Promise<RemoteSyncSettingsView> {
+    if (input.expectedVersion !== this.syncSettings.version) {
+      throw new HubApiError('同步设置版本冲突，请刷新后重试', 'CONFLICT' as ErrorCode, 409)
+    }
+    this.syncSettings = {
+      mirrorEnabled: input.mirrorEnabled,
+      version: this.syncSettings.version + 1,
+      syncGeneration: this.syncSettings.syncGeneration + 1,
+    }
+    return JSON.parse(JSON.stringify(this.syncSettings))
   }
 }
 

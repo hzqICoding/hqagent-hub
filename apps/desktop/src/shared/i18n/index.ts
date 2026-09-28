@@ -1,4 +1,5 @@
 import { createI18n } from 'vue-i18n'
+import { REMOTE_ERROR_MESSAGES } from './remote-errors'
 import { REMOTE_LINK_ERROR_MESSAGES } from './remote-link-errors'
 
 const zhCN = {
@@ -58,7 +59,8 @@ const zhCN = {
     deployer: '构建部署',
     integrator: '分支集成',
   },
-  remoteErrors: REMOTE_LINK_ERROR_MESSAGES,
+  remoteErrors: { ...REMOTE_LINK_ERROR_MESSAGES, ...REMOTE_ERROR_MESSAGES },
+  remoteLinkErrors: REMOTE_LINK_ERROR_MESSAGES,
 }
 
 export const i18n = createI18n({
@@ -70,4 +72,5 @@ export const i18n = createI18n({
   },
 })
 
+export { REMOTE_ERROR_MESSAGES, getRemoteErrorMessage } from './remote-errors'
 export { REMOTE_LINK_ERROR_MESSAGES, getRemoteLinkErrorMessage } from './remote-link-errors'

@@ -270,3 +270,7 @@ class WorkerTransport:
                 connection.closed = True
                 if self.s.connections.get((connection.owner, connection.worker)) is connection:
                     del self.s.connections[(connection.owner, connection.worker)]
+                    invalidate = getattr(self.s, 'invalidate_busy', None)
+                    if invalidate is not None:
+                        with self.s.repo.transaction() as tx:
+                            invalidate(tx, connection.owner, connection)
