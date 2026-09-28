@@ -114,5 +114,5 @@ def safe_text(value: str, secrets_to_hide: tuple[str, ...] = ()) -> str:
     value = re.sub(r"(?is)<(?:analysis|think|thinking)>.*?</(?:analysis|think|thinking)>", "[redacted]", value)
     value = re.sub(r"(?i)(?:authorization[ \t]*[:=][ \t]*(?:bearer[ \t]+)?|bearer[ \t]+)\S+", "[redacted]", value)
     value = re.sub(r"(?m)^[ \t]*(?:export[ \t]+)?[A-Z_][A-Z0-9_]*=.*$", "[redacted]", value)
-    value = re.sub(r"(?im)^.*(?:api[_-]?key|password|secret|token|BEGIN .*PRIVATE KEY|os\.environ|process\.env).*$", "[redacted]", value)
+    value = re.sub(r'''(?im)^.*(?:["']?(?:[\w-]*token|api[_-]?key|password|secret)["']?\s*[:=]|os\.environ|process\.env).*$''', "[redacted]", value)
     return value

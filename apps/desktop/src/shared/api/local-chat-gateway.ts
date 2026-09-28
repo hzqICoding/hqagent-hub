@@ -28,6 +28,8 @@ import type {
   SessionView,
   RemoteLinkView,
   RemoteLinkPairingInput,
+  RemoteSyncSettingsView,
+  RemoteSyncSettingsInput,
   ApiEnvelope,
   ErrorCode,
 } from '@hqagent/protocol'
@@ -261,8 +263,15 @@ export class RealLocalChatGateway implements LocalChatGateway {
   }
 
   // Conversations & Messages
-  async listLocalConversations(): Promise<LocalConversationView[]> {
-    return this.fetchApi<LocalConversationView[]>('/api/v2/conversations', {
+  async listLocalConversations(params?: {
+    includeHidden?: boolean
+    workspaceId?: string
+  }): Promise<LocalConversationView[]> {
+    const sp = new URLSearchParams()
+    if (params?.includeHidden) sp.set('includeHidden', 'true')
+    if (params?.workspaceId) sp.set('workspaceId', params.workspaceId)
+    const qs = sp.toString()
+    return this.fetchApi<LocalConversationView[]>(`/api/v2/conversations${qs ? `?${qs}` : ''}`, {
       method: 'GET',
     })
   }
@@ -427,6 +436,27 @@ export class RealLocalChatGateway implements LocalChatGateway {
         method: 'POST',
       },
       idempotencyKey || `unlink_${Date.now()}`
+    )
+  }
+
+  // Remote Sync Settings (R1.5 / 0.7.0)
+  async getRemoteSyncSettings(): Promise<RemoteSyncSettingsView> {
+    return this.fetchApi<RemoteSyncSettingsView>('/api/v2/remote/sync-settings', {
+      method: 'GET',
+    })
+  }
+
+  async setRemoteSyncSettings(
+    input: RemoteSyncSettingsInput,
+    idempotencyKey?: string
+  ): Promise<RemoteSyncSettingsView> {
+    return this.fetchApi<RemoteSyncSettingsView>(
+      '/api/v2/remote/sync-settings',
+      {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      },
+      idempotencyKey || `sync_settings_${Date.now()}`
     )
   }
 }

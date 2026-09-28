@@ -41,23 +41,23 @@ const hubStatusDotClass = computed(() => {
 </script>
 
 <template>
-  <footer class="w-full h-7 bg-panel border-t border-border-subtle px-3 flex items-center justify-between text-2xs text-content-muted select-none shrink-0 z-10 shadow-2xs">
+  <footer class="w-full h-7 bg-panel border-t border-border-subtle px-2 sm:px-3 flex items-center justify-between text-2xs text-content-muted select-none shrink-0 z-10 shadow-2xs overflow-x-auto">
     <!-- Left: Status indicators -->
-    <div class="flex items-center gap-4">
+    <div class="flex items-center gap-2 sm:gap-4 shrink-0">
       <!-- Hub Status -->
       <div class="flex items-center gap-1.5 font-mono">
         <span class="w-2 h-2 rounded-full shrink-0" :class="hubStatusDotClass" />
-        <span class="text-content-secondary">{{ hubStatusText }}</span>
+        <span class="text-content-secondary truncate max-w-[160px] sm:max-w-none">{{ hubStatusText }}</span>
       </div>
 
       <!-- Cloud Status -->
-      <div class="flex items-center gap-1 text-content-disabled">
+      <div class="hidden sm:flex items-center gap-1 text-content-disabled">
         <CloudOff class="w-3 h-3" />
         <span>Cloud: 未连接</span>
       </div>
 
       <!-- OTA Status -->
-      <div class="flex items-center gap-1">
+      <div class="hidden sm:flex items-center gap-1">
         <template v-if="appStore.bootstrap?.update?.hasUpdate">
           <Download class="w-3 h-3 text-amber-500 animate-bounce" />
           <span class="text-amber-600 dark:text-amber-400 font-medium">
@@ -72,9 +72,9 @@ const hubStatusDotClass = computed(() => {
     </div>
 
     <!-- Right: Workspace & Drawer Toggles -->
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-2 sm:gap-3 shrink-0">
       <!-- Workspace Info -->
-      <div v-if="workspaceStore.currentWorkspace" class="flex items-center gap-1 text-content-secondary font-mono">
+      <div v-if="workspaceStore.currentWorkspace" class="hidden md:flex items-center gap-1 text-content-secondary font-mono">
         <GitBranch class="w-3 h-3 text-primary-500" />
         <span>{{ workspaceStore.currentWorkspace.name }}:{{ workspaceStore.currentWorkspace.branch || 'main' }}</span>
       </div>

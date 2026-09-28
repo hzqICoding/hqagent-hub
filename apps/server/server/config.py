@@ -22,6 +22,8 @@ class Settings:
     session_ttl: int = 86400
     cursor_ttl: int = 86400
     browser_retention_seconds: int = 7 * 86400
+    sync_message_bytes: int = 16 * 1024 * 1024
+    sync_staging_bytes: int = 128 * 1024 * 1024
     rate_limit: int = 30
     rate_window: int = 60
     clock: Callable[[], float] = field(default=time.time, repr=False)
@@ -33,6 +35,8 @@ class Settings:
             raise ValueError("Invalid server security configuration")
         if type(self.browser_retention_seconds) is not int or self.browser_retention_seconds <= 0:
             raise ValueError("Browser event retention must be a positive integer")
+        if min(self.sync_message_bytes, self.sync_staging_bytes) <= 0:
+            raise ValueError('Sync resource quotas must be positive')
 
     @classmethod
     def from_env(cls):
@@ -50,4 +54,6 @@ class Settings:
                    session_ttl=int(os.environ.get("HQREMOTE_SESSION_TTL", "86400")),
                    cursor_ttl=int(os.environ.get("HQREMOTE_CURSOR_TTL", "86400")),
                    browser_retention_seconds=int(os.environ.get("HQREMOTE_BROWSER_RETENTION_SECONDS", "604800")),
+                   sync_message_bytes=int(os.environ.get('HQREMOTE_SYNC_MESSAGE_BYTES', '16777216')),
+                   sync_staging_bytes=int(os.environ.get('HQREMOTE_SYNC_STAGING_BYTES', '134217728')),
                    rate_limit=int(os.environ.get("HQREMOTE_RATE_LIMIT", "30")))

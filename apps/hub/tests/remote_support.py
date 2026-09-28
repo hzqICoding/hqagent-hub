@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import hashlib
 import logging
 import socket
 import ssl
@@ -18,6 +19,7 @@ from protocol.generated.python import (
     AgentResult, ApiEnvelope, RemotePairingChallenge, RemotePairingRequestInput,
     RemotePairingStatusView, RemoteServerOutboundFrame, RemoteWorkerOutboundFrame,
     TeamProfileView, WorkspaceView,
+    RemoteV2WorkerOutboundFrame, RemoteV2ServerOutboundFrame,
 )
 from api.app import create_application
 from core.ports import HubPorts
@@ -55,12 +57,17 @@ def dump(value):
 
 
 class FakeRemoteServer:
-    def __init__(self, *, auto_ack=True, reject_revisions=None, frozen=False):
+    def __init__(self, *, auto_ack=True, reject_revisions=None, frozen=False, revision=1):
         self.auto_ack, self.reject_revisions, self.frozen = auto_ack, reject_revisions, frozen
+        self.revision = revision
+        self.upgrade_pending = False
         self.claimed = False
         self.expires_at = later()
         self.pair_calls, self.connections = 0, 0
         self.requests, self.frames, self.hellos, self.errors = [], [], [], []
+        self.requested_revisions = []
+        self.deletions, self.segment_sets, self.replica_messages = {}, {}, {}
+        self.busy_ids, self.busy_version = set(), 0
         self.event_bytes, self.coverage, self.acks = {}, {}, {}
         self.challenge_gate = None
         self.challenge_entered = asyncio.Event()
@@ -104,21 +111,37 @@ class FakeRemoteServer:
                 assert ws.url.scheme == "wss"
                 assert ws.headers["authorization"] == "Bearer " + self.secret
                 await ws.accept()
+                raw_hello = json.loads(await ws.receive_text())
+                requested = raw_hello["wireRevision"]
+                self.requested_revisions.append(requested)
+                if requested == 2 and self.upgrade_pending:
+                    await self.send({"type": "worker.hello_rejected", "wireRevision": 1,
+                        "supportedWireRevisions": [1, 2], "error": {
+                            "code": "REMOTE_PROTOCOL_UNSUPPORTED", "message": "old commands pending", "retryable": True}}, ws)
+                    await ws.close(code=4409)
+                    return
+                if requested != self.revision and self.reject_revisions is None and not (requested == 1 and self.upgrade_pending):
+                    await self.send({"type": "worker.hello_rejected", "wireRevision": self.revision,
+                        "supportedWireRevisions": [self.revision], "error": {
+                            "code": "REMOTE_PROTOCOL_UNSUPPORTED", "message": "unsupported", "retryable": False}}, ws)
+                    await ws.close(code=4409)
+                    return
                 self.connections += 1
-                hello = RemoteWorkerOutboundFrame.model_validate_json(await ws.receive_text())
-                hello = dump(hello)
+                revision = requested
+                hello = dump((RemoteV2WorkerOutboundFrame if requested == 2 else RemoteWorkerOutboundFrame).model_validate(raw_hello))
                 assert hello["type"] == "worker.hello"
                 self.hellos.append(hello)
                 if self.reject_revisions:
-                    await self.send({"type": "worker.hello_rejected", "wireRevision": 1,
+                    await self.send({"type": "worker.hello_rejected", "wireRevision": self.revision,
                         "supportedWireRevisions": self.reject_revisions, "error": {
                             "code": "REMOTE_PROTOCOL_UNSUPPORTED", "message": "unsupported", "retryable": False}}, ws)
                     await ws.close(code=4409)
                     return
                 self.connection_id = "connection-" + str(self.connections)
+                connection_id = self.connection_id
                 store = hello["workerStoreId"]
                 ack = self.acks.get(store)
-                response = {"type": "worker.hello_ack", "wireRevision": 1,
+                response = {"type": "worker.hello_ack", "wireRevision": revision,
                     **{k: hello[k] for k in ("workerId", "workerStoreId", "workerEpoch")},
                     "connectionId": self.connection_id, "commandDelivery": "frozen" if self.frozen else "ready",
                     "lastServerAck": None if ack is None else {"workerStoreId": store, "seq": ack},
@@ -130,23 +153,64 @@ class FakeRemoteServer:
                 self.ws = ws
                 while True:
                     raw = await ws.receive_text()
-                    frame = dump(RemoteWorkerOutboundFrame.model_validate_json(raw))
+                    frame = dump((RemoteV2WorkerOutboundFrame if revision == 2 else RemoteWorkerOutboundFrame).model_validate_json(raw))
                     self.frames.append(frame)
+                    if frame["type"] == "sync.reset":
+                        self.deletions[frame["eventId"]] = frame
+                        self.segment_sets = {k: v for k, v in self.segment_sets.items() if k[0] != store}
+                        self.replica_messages = {k: v for k, v in self.replica_messages.items() if k[0] != store}
+                    if frame["type"] == "sync.message.segment" and frame["syncGeneration"] > max(
+                        (d["syncGeneration"] for d in self.deletions.values() if d["workerStoreId"] == store), default=0):
+                        p = frame["payload"]
+                        key = (store, frame["syncGeneration"], p["messageId"], p["messageRevision"])
+                        pieces = self.segment_sets.setdefault(key, {})
+                        assert pieces.get(p["segmentIndex"], p["text"]) == p["text"]
+                        pieces[p["segmentIndex"]] = p["text"]
+                        if len(pieces) == p["segmentCount"]:
+                            whole = "".join(pieces[i] for i in range(p["segmentCount"]))
+                            assert len(whole.encode("utf-8")) == p["totalUtf8Bytes"]
+                            assert hashlib.sha256(whole.encode("utf-8")).hexdigest() == p["contentSha256"]
+                            current = self.replica_messages.get((store, p["messageId"]))
+                            if current is None or current["revision"] <= p["messageRevision"]:
+                                self.replica_messages[(store, p["messageId"])] = {"text": whole, "revision": p["messageRevision"]}
                     if "eventId" in frame:
                         key = (frame["workerStoreId"], frame["seq"])
                         encoded = json.dumps(frame, sort_keys=True, ensure_ascii=False)
                         assert self.event_bytes.get(key, encoded) == encoded
                         self.event_bytes[key] = encoded
+                        self.coverage[key] = frame.get("firstSeq", frame["seq"])
+                    elif frame["type"] == "sync.content.redaction":
+                        deletion = self.deletions[frame["deletionEventId"]]
+                        assert deletion["seq"] == frame["deletionSeq"] and deletion["syncGeneration"] == frame["syncGeneration"]
+                        for slot in frame["slots"]:
+                            assert slot["seq"] < deletion["seq"]
+                            previous = self.event_bytes.get((store, slot["seq"]))
+                            if previous is not None:
+                                canonical = json.dumps(json.loads(previous), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                                assert hashlib.sha256(canonical.encode()).hexdigest() == slot["eventSha256"]
+                            self.coverage[(store, slot["seq"])] = slot["seq"]
+                    if "eventId" in frame or frame["type"] == "sync.content.redaction":
                         if self.auto_ack:
-                            self.coverage[key] = frame.get("firstSeq", frame["seq"])
                             contiguous = self.acks.get(store, 0)
                             for (item_store, end), start in sorted(self.coverage.items()):
                                 if item_store == store and start <= contiguous + 1 and end > contiguous:
                                     contiguous = end
                             self.acks[store] = contiguous
-                            await self.send({"type": "worker.events_ack", "wireRevision": 1,
-                                "connectionId": self.connection_id, "workerId": hello["workerId"],
+                            snapshots = {}
+                            for event in self.frames:
+                                if event["type"] == "sync.busy.snapshot" and event["connectionId"] == connection_id and event["workerEpoch"] == hello["workerEpoch"] and event["seq"] <= contiguous:
+                                    snapshots.setdefault(event["snapshotId"], {})[event["partIndex"]] = event
+                            for parts in snapshots.values():
+                                last = max(e["seq"] for e in parts.values())
+                                if len(parts) == next(iter(parts.values()))["partCount"] and last > self.busy_version:
+                                    self.busy_ids = {item for e in parts.values() for item in e["conversationIds"]}
+                                    self.busy_version = last
+                            await self.send({"type": "worker.events_ack", "wireRevision": revision,
+                                "connectionId": connection_id, "workerId": hello["workerId"],
                                 "position": {"workerStoreId": store, "seq": contiguous}}, ws)
+                    elif frame["type"] == "worker.heartbeat":
+                        await self.send({"type": "server.heartbeat", "wireRevision": revision,
+                            "connectionId": connection_id, "receivedAt": now()}, ws)
             except (WebSocketDisconnect, WebSocketDisconnected):
                 # Tests deliberately close a live socket while receipts/acks may
                 # be in flight. Starlette distinguishes closed-send from EOF.
@@ -159,7 +223,7 @@ class FakeRemoteServer:
                     pass
 
     async def send(self, value, ws=None):
-        value = dump(RemoteServerOutboundFrame.model_validate(value))
+        value = dump((RemoteV2ServerOutboundFrame if value["wireRevision"] == 2 else RemoteServerOutboundFrame).model_validate(value))
         await (ws or self.ws).send_json(value)
 
     async def __aenter__(self):

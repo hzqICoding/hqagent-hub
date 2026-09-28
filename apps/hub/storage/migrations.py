@@ -185,6 +185,83 @@ MIGRATIONS += (
     """),
 )
 
+MIGRATIONS += (
+    Migration(7, """
+        CREATE TABLE remote2_routes (
+            worker_id TEXT NOT NULL, store_id TEXT NOT NULL, public_id TEXT NOT NULL,
+            local_id TEXT NOT NULL, PRIMARY KEY(worker_id,store_id,public_id),
+            UNIQUE(worker_id,store_id,local_id)
+        );
+        CREATE TABLE remote2_delivery (
+            worker_id TEXT NOT NULL, store_id TEXT NOT NULL, command_id TEXT NOT NULL,
+            digest TEXT NOT NULL, command_json TEXT, kind TEXT NOT NULL,
+            public_id TEXT NOT NULL, local_id TEXT NOT NULL, conversation_seq INTEGER,
+            state TEXT NOT NULL, run_id TEXT, deliver_by TEXT NOT NULL,
+            received_json TEXT, result_json TEXT, grant_json TEXT, execution_json TEXT,
+            PRIMARY KEY(worker_id,store_id,command_id)
+        );
+        CREATE TABLE remote2_order (
+            worker_id TEXT NOT NULL, store_id TEXT NOT NULL, public_id TEXT NOT NULL,
+            sequence INTEGER NOT NULL, command_id TEXT NOT NULL, consumed INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(worker_id,store_id,public_id,sequence)
+        );
+        CREATE TABLE remote2_gates (run_id TEXT PRIMARY KEY, state TEXT NOT NULL);
+        CREATE TABLE remote_sync_changes (
+            sequence INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
+            resource_id TEXT NOT NULL, conversation_id TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE remote_sync_items (
+            item_id INTEGER PRIMARY KEY AUTOINCREMENT, backfill_id TEXT NOT NULL,
+            kind TEXT NOT NULL, resource_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL, text TEXT, revision INTEGER NOT NULL DEFAULT 1,
+            segment_index INTEGER NOT NULL DEFAULT 0, segment_count INTEGER,
+            content_hash TEXT, byte_count INTEGER, byte_offset INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX remote_sync_items_batch ON remote_sync_items(backfill_id,item_id);
+        CREATE TABLE remote_sync_versions (
+            store_id TEXT NOT NULL, generation INTEGER NOT NULL, kind TEXT NOT NULL,
+            resource_id TEXT NOT NULL, revision INTEGER NOT NULL, digest TEXT NOT NULL,
+            PRIMARY KEY(store_id,generation,kind,resource_id)
+        );
+        CREATE TABLE remote_sync_deletions (conversation_id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL);
+        CREATE TABLE remote_sync_redactions (
+            store_id TEXT NOT NULL, deletion_seq INTEGER NOT NULL, redaction_id TEXT PRIMARY KEY,
+            frame_json TEXT NOT NULL
+        );
+        CREATE TRIGGER remote_conversation_insert AFTER INSERT ON local_conversations BEGIN
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id) VALUES('conversation',NEW.conversation_id,NEW.conversation_id);
+        END;
+        CREATE TRIGGER remote_conversation_update AFTER UPDATE ON local_conversations BEGIN
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id) VALUES('conversation',NEW.conversation_id,NEW.conversation_id);
+        END;
+        CREATE TRIGGER remote_message_insert AFTER INSERT ON local_messages BEGIN
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id) VALUES('message',NEW.message_id,NEW.conversation_id);
+        END;
+        CREATE TRIGGER remote_message_update AFTER UPDATE ON local_messages BEGIN
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id) VALUES('message',NEW.message_id,NEW.conversation_id);
+        END;
+        CREATE TRIGGER remote_run_insert AFTER INSERT ON local_runs BEGIN
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id) VALUES('run',NEW.run_id,NEW.conversation_id);
+        END;
+        CREATE TRIGGER remote_run_update AFTER UPDATE ON local_runs WHEN
+            NEW.status IS NOT OLD.status OR NEW.task_id IS NOT OLD.task_id OR NEW.error IS NOT OLD.error BEGIN
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id) VALUES('run',NEW.run_id,NEW.conversation_id);
+        END;
+        CREATE TRIGGER remote_conversation_delete AFTER DELETE ON local_conversations BEGIN
+            INSERT OR IGNORE INTO remote_sync_deletions VALUES(OLD.conversation_id,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id,deleted) VALUES('conversation',OLD.conversation_id,OLD.conversation_id,1);
+        END;
+        CREATE TRIGGER remote_approval_insert AFTER INSERT ON approvals BEGIN
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id)
+            SELECT 'approval',NEW.approval_id,conversation_id FROM local_runs WHERE task_id=NEW.task_id;
+        END;
+        CREATE TRIGGER remote_approval_update AFTER UPDATE ON approvals BEGIN
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id)
+            SELECT 'approval',NEW.approval_id,conversation_id FROM local_runs WHERE task_id=NEW.task_id;
+        END;
+    """),
+)
+
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
 
 

@@ -323,7 +323,7 @@ def test_admission_transaction_rolls_back_inbox_slot_run_and_outbox(tmp_path):
     run(scenario())
 
 
-def test_remote_authority_is_persistent_and_all_execution_writes_reject(tmp_path):
+def test_remote_authority_is_persistent_but_local_execution_writes_are_allowed(tmp_path):
     async def scenario():
         system = System(tmp_path)
         try:
@@ -336,16 +336,20 @@ def test_remote_authority_is_persistent_and_all_execution_writes_reject(tmp_path
                 conversation = record["conversation_id"]
                 for action in ("pause", "resume", "retry", "cancel", "append_instruction"):
                     response = await system.local.post(f"/api/v2/runs/{row['run_id']}/commands", json={"action": action, "instruction": "x"}, headers={"Idempotency-Key": action})
-                    assert response.status_code == 409 and response.json()["error"]["code"] == "CONVERSATION_AUTHORITY_MISMATCH"
+                    assert response.status_code == 202, response.text
+                    if action in {"resume", "retry", "append_instruction"}:
+                        await until(lambda: system.chat.repository.run_record(response.json()["data"]["id"])["status"] == "succeeded")
                 direct = await system.local.post(f"/api/v1/tasks/{record['task_id']}/actions", json={"action": "retry"}, headers={"Idempotency-Key": "direct"})
-                assert direct.json()["error"]["code"] == "CONVERSATION_AUTHORITY_MISMATCH"
+                assert direct.status_code == 200, direct.text
+                await until(lambda: str(system.tasks.repository.get(direct.json()["data"]["id"]).status) == "succeeded")
                 sessions = await system.ports.sessions.list_sessions({"taskId": record["task_id"]})
                 resumed = await system.local.post(f"/api/v1/sessions/{sessions[0].id}/resume", json={"instruction": "x"})
-                assert resumed.json()["error"]["code"] == "CONVERSATION_AUTHORITY_MISMATCH"
+                assert resumed.status_code == 200, resumed.text
+                assert system.adapter.resumed[-1].session_id == sessions[0].id
                 await system.link.clear("unlink-authority", unlink=True)
                 assert system.chat.repository.conversation(conversation).authority == "remote"
                 message = await system.local.post(f"/api/v2/conversations/{conversation}/messages", json={"clientMessageId": "bad", "text": "x", "sessionMode": "new"}, headers={"Idempotency-Key": "bad"})
-                assert message.json()["error"]["code"] == "CONVERSATION_AUTHORITY_MISMATCH"
+                assert message.status_code == 202, message.text
                 local = await system.local.post("/api/v2/conversations", json={"title": "local", "workspaceId": "workspace", "sceneId": "analyze"}, headers={"Idempotency-Key": "local"})
                 local_view = LocalConversationView.model_validate(local.json()["data"])
                 assert local_view.authority == "local"
@@ -360,7 +364,7 @@ def test_unsupported_wire_revision_freezes_without_reconnect_storm(tmp_path):
     async def scenario():
         system = System(tmp_path)
         try:
-            async with FakeRemoteServer(reject_revisions=[2]) as server:
+            async with FakeRemoteServer(reject_revisions=[3]) as server:
                 await system.pair(server, start=True)
                 await until(lambda: system.repo.get("link")["view"]["state"] == "frozen")
                 await asyncio.sleep(0.2)

@@ -49,6 +49,11 @@ ERRORS = {
     "REMOTE_APPROVAL_FORBIDDEN": (403, False), "REMOTE_CURSOR_EXPIRED": (410, False),
     "REMOTE_CURSOR_INVALID": (400, False), "REMOTE_RATE_LIMITED": (429, True),
     "REMOTE_FRAME_TOO_LARGE": (413, False), "CONVERSATION_AUTHORITY_MISMATCH": (409, False),
+    "REMOTE_CONVERSATION_BUSY": (409, True), "REMOTE_STATE_NOT_READY": (409, True),
+    "REMOTE_SYNC_CONFLICT": (409, False), "REMOTE_SYNC_DISABLED": (409, False),
+    "REMOTE_DELIVERY_EXPIRED": (409, True), "REMOTE_REVISION_REQUIRED": (409, False),
+    "REMOTE_SYNC_RESOURCE_LIMIT": (413, False),
+    "FEATURE_UNAVAILABLE": (503, True),
 }
 
 
@@ -59,7 +64,8 @@ class Fault(Exception):
         super().__init__(code)
 
     def view(self):
-        return validated("RemoteError", dict(code=self.code, message=self.code, retryable=self.retryable))
+        message = '设备离线，发送失败' if self.code in {'REMOTE_DEVICE_OFFLINE', 'REMOTE_DELIVERY_EXPIRED'} else self.code
+        return validated("RemoteError", dict(code=self.code, message=message, retryable=self.retryable))
 
 
 def require(condition, code="VALIDATION_FAILED"):

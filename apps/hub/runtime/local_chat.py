@@ -56,8 +56,8 @@ class LocalChatService:
     def _conversation_lock(self, conversation_id: str) -> asyncio.Lock:
         return self._conversation_locks.setdefault(conversation_id, asyncio.Lock())
 
-    async def conversations(self):
-        return self.repository.conversations()
+    async def conversations(self, *, include_hidden=False, workspace_id=None):
+        return self.repository.conversations(include_hidden=include_hidden, workspace_id=workspace_id)
 
     async def update_conversation(self, conversation_id: str,
                                   value: UpdateLocalConversationInput, key: str):
@@ -180,7 +180,7 @@ class LocalChatService:
                         await self.ports.tasks.expire_approvals()
                     except Exception:
                         logging.getLogger(__name__).error("工具审批过期检查失败，需要检查本机任务状态", exc_info=True)
-            for conversation in self.repository.conversations():
+            for conversation in self.repository.conversations(include_hidden=True):
                 job = self._jobs.get(conversation.id)
                 if job and not job.done():
                     continue
@@ -236,7 +236,8 @@ class LocalChatService:
             raise
         except Exception as error:
             message = getattr(error, "message", None) or str(error) or type(error).__name__
-            self.repository.complete_run(run_id, "failed", f"本轮未完成：{message}", error=message)
+            self.repository.complete_run(run_id, "failed", f"本轮未完成：{message}", error=message,
+                error_code=error.code if isinstance(error, HubError) else None)
 
     async def _task_input(self, record: dict) -> CreateTaskInput:
         scene = LocalSceneView.model_validate_json(record["scene_json"])
@@ -251,6 +252,12 @@ class LocalChatService:
         await self.ports.team_profiles.save_profile(profile_id, profile)
         resume_sessions = {}
         if record["session_mode"] == "continue":
+            busy = self.repository.busy_state
+            prior = [r for r in self.repository.runs(conversation.id)
+                     if r["message_sequence"] < record["message_sequence"]]
+            if busy is not None and busy.enabled() and prior and (
+                    prior[0]["status"] not in TERMINAL or busy.observe(prior[0])["recoveryRequired"]):
+                raise HubError("SESSION_NOT_RESUMABLE", "上一轮仍需本机恢复核对，不能跳过它续接更早上下文")
             previous = [r for r in self.repository.runs(conversation.id)
                         if r["run_id"] != record["run_id"] and r["message_sequence"] < record["message_sequence"]
                         and r["status"] in TERMINAL and r["task_id"]]

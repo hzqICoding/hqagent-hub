@@ -598,7 +598,7 @@ class WorkflowRuntime:
             session = await self.sessions.finish(outcome.session.id)
             return CancellationOutcome(result, TaskStatus.RUNNING, session.status)
 
-        session = await self.sessions.close(outcome.session.id)
+        session = await self.sessions.finish_cancelled(outcome.session.id, outcome.task_id, result)
         await self._task_status_event(
             outcome,
             TaskStatus.RUNNING,
