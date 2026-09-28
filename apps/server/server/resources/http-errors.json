@@ -1,0 +1,362 @@
+{
+  "BAD_REQUEST": {
+    "status": 400,
+    "retryable": false,
+    "message": "请求格式不合法"
+  },
+  "VALIDATION_FAILED": {
+    "status": 422,
+    "retryable": false,
+    "message": "请求参数不合法"
+  },
+  "UNAUTHORIZED": {
+    "status": 401,
+    "retryable": false,
+    "message": "缺少或错误的 Bearer token"
+  },
+  "ORIGIN_NOT_ALLOWED": {
+    "status": 403,
+    "retryable": false,
+    "message": "Host 或 Origin 不在白名单"
+  },
+  "NOT_FOUND": {
+    "status": 404,
+    "retryable": false,
+    "message": "资源不存在"
+  },
+  "CONFLICT": {
+    "status": 409,
+    "retryable": false,
+    "message": "资源版本或状态已变化，请刷新后重试"
+  },
+  "IDEMPOTENCY_MISMATCH": {
+    "status": 409,
+    "retryable": false,
+    "message": "幂等键已用于不同请求"
+  },
+  "PROTOCOL_VERSION_MISMATCH": {
+    "status": 426,
+    "retryable": false,
+    "message": "客户端协议大版本与 Hub 不兼容，必须升级后再试"
+  },
+  "HUB_NOT_READY": {
+    "status": 503,
+    "retryable": true,
+    "message": "Hub 正在启动或恢复中，尚未就绪"
+  },
+  "HUB_MAINTENANCE": {
+    "status": 503,
+    "retryable": true,
+    "message": "Hub 处于维护/排空状态，拒绝创建新任务"
+  },
+  "EVENT_CURSOR_EXPIRED": {
+    "status": 410,
+    "retryable": false,
+    "message": "客户端携带的 seq 已超出事件保留窗口，无法补发"
+  },
+  "FEATURE_UNAVAILABLE": {
+    "status": 503,
+    "retryable": true,
+    "message": "依赖的工作包尚未就绪（例如 Adapter 未接入、Update Agent 未运行）"
+  },
+  "AGENT_NOT_FOUND": {
+    "status": 404,
+    "retryable": false,
+    "message": "指定的 Agent 实例不存在"
+  },
+  "AGENT_OFFLINE": {
+    "status": 409,
+    "retryable": true,
+    "message": "Agent 当前离线，可等待或走 fallback"
+  },
+  "AGENT_NOT_LOGGED_IN": {
+    "status": 409,
+    "retryable": false,
+    "message": "Agent 已安装但未登录，需要用户在对应工具里登录"
+  },
+  "AGENT_INCOMPATIBLE": {
+    "status": 409,
+    "retryable": false,
+    "message": "Agent 版本低于适配器要求的最低版本"
+  },
+  "CAPABILITY_MISSING": {
+    "status": 409,
+    "retryable": false,
+    "message": "目标角色要求的硬能力在候选 Agent 上缺失，detail 里列能力缺口"
+  },
+  "ROLE_UNRESOLVED": {
+    "status": 409,
+    "retryable": false,
+    "message": "主选和备用链都无法解析出可用 Agent，需要用户选择或暂停节点"
+  },
+  "SESSION_NOT_RESUMABLE": {
+    "status": 409,
+    "retryable": false,
+    "message": "外部会话已失效或适配器不支持恢复，只能新建会话"
+  },
+  "TASK_NOT_CANCELLABLE": {
+    "status": 409,
+    "retryable": false,
+    "message": "任务已处于终态，无法取消"
+  },
+  "TASK_ACTION_INVALID": {
+    "status": 409,
+    "retryable": false,
+    "message": "当前任务状态不支持该动作"
+  },
+  "WORKTREE_BUSY": {
+    "status": 409,
+    "retryable": true,
+    "message": "目标 worktree 被占用"
+  },
+  "PATH_NOT_ALLOWED": {
+    "status": 403,
+    "retryable": false,
+    "message": "修改路径超出任务 allowedPaths 或角色 writablePaths，detail 里列越界路径"
+  },
+  "APPROVAL_REQUIRED": {
+    "status": 409,
+    "retryable": false,
+    "message": "该动作需要审批且尚未批准"
+  },
+  "APPROVAL_EXPIRED": {
+    "status": 410,
+    "retryable": false,
+    "message": "审批已超时失效"
+  },
+  "APPROVAL_ALREADY_DECIDED": {
+    "status": 409,
+    "retryable": false,
+    "message": "该审批已被处理，不能重复决定"
+  },
+  "UPDATE_NOT_AVAILABLE": {
+    "status": 409,
+    "retryable": false,
+    "message": "当前没有可用更新"
+  },
+  "UPDATE_BUSY": {
+    "status": 409,
+    "retryable": true,
+    "message": "升级流程正在进行中，不接受新的升级动作"
+  },
+  "UPDATE_VERIFY_FAILED": {
+    "status": 422,
+    "retryable": false,
+    "message": "大小、SHA-256 或 Ed25519 签名校验失败"
+  },
+  "UPDATE_DRAIN_TIMEOUT": {
+    "status": 409,
+    "retryable": true,
+    "message": "任务排空超时，需要用户选择继续等待、取消任务或退出应用"
+  },
+  "INTERNAL": {
+    "status": 500,
+    "retryable": true,
+    "message": "服务内部错误，请稍后重试"
+  },
+  "REMOTE_AUTH_REQUIRED": {
+    "status": 401,
+    "retryable": false,
+    "message": "请先登录"
+  },
+  "REMOTE_CSRF_REJECTED": {
+    "status": 403,
+    "retryable": false,
+    "message": "请求来源或CSRF校验失败"
+  },
+  "REMOTE_DEVICE_OFFLINE": {
+    "status": 409,
+    "retryable": true,
+    "message": "设备离线，发送失败"
+  },
+  "REMOTE_DEVICE_REVOKED": {
+    "status": 403,
+    "retryable": false,
+    "message": "设备绑定已撤销"
+  },
+  "REMOTE_DEVICE_AUTH_FAILED": {
+    "status": 401,
+    "retryable": false,
+    "message": "设备凭据无效"
+  },
+  "REMOTE_PAIRING_EXPIRED": {
+    "status": 410,
+    "retryable": false,
+    "message": "一次性配对请求或配对码已过期"
+  },
+  "REMOTE_PAIRING_CONFLICT": {
+    "status": 409,
+    "retryable": false,
+    "message": "配对已消费或设备凭据已绑定"
+  },
+  "REMOTE_PAIRING_INVALID": {
+    "status": 404,
+    "retryable": false,
+    "message": "无效配对码或请求"
+  },
+  "REMOTE_COMMAND_EXPIRED": {
+    "status": 410,
+    "retryable": false,
+    "message": "命令接单前已过期，不再执行"
+  },
+  "REMOTE_COMMAND_WITHDRAWN": {
+    "status": 409,
+    "retryable": false,
+    "message": "命令在未派发时撤回或经Worker核实撤回"
+  },
+  "REMOTE_WITHDRAWAL_UNCONFIRMED": {
+    "status": 409,
+    "retryable": false,
+    "message": "已可能派发，不能仅删服务端记录宣称撤回"
+  },
+  "REMOTE_STORE_CHANGED": {
+    "status": 409,
+    "retryable": false,
+    "message": "Worker存储世代变化，冻结旧世代未决命令自动投递等待对账"
+  },
+  "REMOTE_EPOCH_STALE": {
+    "status": 409,
+    "retryable": false,
+    "message": "非当前已认证连接或旧Worker启动实例的帧被拒绝"
+  },
+  "REMOTE_PROTOCOL_UNSUPPORTED": {
+    "status": 409,
+    "retryable": false,
+    "message": "协议版本不兼容"
+  },
+  "REMOTE_EVENT_CONFLICT": {
+    "status": 409,
+    "retryable": false,
+    "message": "同事件ID或存储世代序号/覆盖区间对应不同不可变内容"
+  },
+  "REMOTE_ACK_CONFLICT": {
+    "status": 409,
+    "retryable": false,
+    "message": "确认位置错误、跨存储世代或服务端确认回退，需要对账而非裁剪Outbox"
+  },
+  "REMOTE_SEQUENCE_GAP": {
+    "status": 409,
+    "retryable": true,
+    "message": "执行对话序号存在缺口，先补命令或跳过记录，控制命令不占执行序号"
+  },
+  "REMOTE_APPROVAL_FORBIDDEN": {
+    "status": 403,
+    "retryable": false,
+    "message": "该操作不能远程批准"
+  },
+  "CONVERSATION_AUTHORITY_MISMATCH": {
+    "status": 409,
+    "retryable": false,
+    "message": "0.7起不再用于本机remote只读拦截"
+  },
+  "REMOTE_TARGET_MISMATCH": {
+    "status": 409,
+    "retryable": false,
+    "message": "命令目标、对话固定Worker或执行引用不匹配"
+  },
+  "REMOTE_SCENE_VERSION_MISMATCH": {
+    "status": 409,
+    "retryable": false,
+    "message": "Worker场景版本与已排队请求不一致，不静默换用最新角色配置"
+  },
+  "REMOTE_CURSOR_EXPIRED": {
+    "status": 410,
+    "retryable": false,
+    "message": "游标已过期，请重新加载"
+  },
+  "REMOTE_CURSOR_INVALID": {
+    "status": 400,
+    "retryable": false,
+    "message": "游标无效或不属于当前查询"
+  },
+  "REMOTE_RATE_LIMITED": {
+    "status": 429,
+    "retryable": true,
+    "message": "请求过于频繁，请稍后重试"
+  },
+  "REMOTE_FRAME_TOO_LARGE": {
+    "status": 413,
+    "retryable": false,
+    "message": "远程帧超过256KiB，拒绝而不是截断关键内容后继续"
+  },
+  "REMOTE_WITHDRAWAL_TOO_LATE": {
+    "status": 409,
+    "retryable": false,
+    "message": "原提交已形成可见Run或已执行结束，不能声称撤回从未执行"
+  },
+  "REMOTE_PAIRING_IN_PROGRESS": {
+    "status": 409,
+    "retryable": false,
+    "message": "本机已有配对请求进行中"
+  },
+  "REMOTE_SERVER_UNREACHABLE": {
+    "status": 503,
+    "retryable": true,
+    "message": "配置的远程服务无法连接或响应未确认"
+  },
+  "REMOTE_SERVER_ORIGIN_INVALID": {
+    "status": 422,
+    "retryable": false,
+    "message": "serverOrigin不是允许的HTTPS origin，或未获本机开发模式允许的localhost/127.0.0.1 HTTP origin"
+  },
+  "REMOTE_CONVERSATION_BUSY": {
+    "status": 409,
+    "retryable": true,
+    "message": "对话正在忙碌，请稍后再发送"
+  },
+  "REMOTE_STATE_NOT_READY": {
+    "status": 409,
+    "retryable": true,
+    "message": "电脑状态尚未同步完成"
+  },
+  "REMOTE_SYNC_CONFLICT": {
+    "status": 409,
+    "retryable": false,
+    "message": "同步分段/版本/快照内容冲突，不得发布部分正文"
+  },
+  "REMOTE_SYNC_DISABLED": {
+    "status": 409,
+    "retryable": false,
+    "message": "该电脑关闭内容同步，不能向已删除副本提交"
+  },
+  "REMOTE_DELIVERY_EXPIRED": {
+    "status": 409,
+    "retryable": true,
+    "message": "设备离线，发送失败"
+  },
+  "REMOTE_REVISION_REQUIRED": {
+    "status": 409,
+    "retryable": false,
+    "message": "电脑端需升级后使用此操作"
+  },
+  "REMOTE_SYNC_RESOURCE_LIMIT": {
+    "status": 413,
+    "retryable": false,
+    "message": "全文同步资源配额不足，明确失败，不截断伪装成功"
+  },
+  "REMOTE_DEVICE_SUSPENDED": {
+    "status": 409,
+    "retryable": false,
+    "message": "这台电脑的远程操作已暂停"
+  },
+  "REMOTE_API_TOKEN_INVALID": {
+    "status": 401,
+    "retryable": false,
+    "message": "API令牌无效或已吊销"
+  },
+  "REMOTE_API_TOKEN_EXPIRED": {
+    "status": 401,
+    "retryable": false,
+    "message": "API令牌已过期"
+  },
+  "REMOTE_API_TOKEN_SCOPE_INSUFFICIENT": {
+    "status": 403,
+    "retryable": false,
+    "message": "API令牌权限不足或此接口不接受令牌"
+  },
+  "REMOTE_AUTH_AMBIGUOUS": {
+    "status": 400,
+    "retryable": false,
+    "message": "请求同时提供了多种身份凭据"
+  }
+}

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .common import Fault, canonical, seconds, stamp
 from .repository_sync import SYNC_MIGRATION, SyncRepository
+from .repository_devices import DeviceRepository
 
 SCHEMA_VERSION = 4
 MIGRATIONS = {1: """
@@ -112,7 +113,7 @@ class Repository:
             self.connection.close()
 
 
-class UnitOfWork(SyncRepository):
+class UnitOfWork(DeviceRepository, SyncRepository):
     def __init__(self, connection):
         self.db = connection
         self.commit_callbacks = {}

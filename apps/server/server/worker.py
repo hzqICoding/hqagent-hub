@@ -89,7 +89,8 @@ class WorkerTransport:
 
     def fence_check(self, tx, connection):
         require(self.s.connections.get((connection.owner, connection.worker)) is connection and not connection.closed, "REMOTE_EPOCH_STALE")
-        device = self.s.get(tx, connection.owner, "device", connection.worker)
+        device = tx.get(connection.owner, "device", connection.worker)
+        require(device is not None, 'REMOTE_DEVICE_AUTH_FAILED')
         require(device["status"] != "revoked", "REMOTE_DEVICE_REVOKED")
         require(device["workerStoreId"] == connection.store and device.get("_epoch") == connection.epoch, "REMOTE_EPOCH_STALE")
         return device
@@ -137,6 +138,7 @@ class WorkerTransport:
             self.s.security.rate("device-auth:" + (socket.client.host if socket.client else "unknown"))
             require(socket.url.scheme == "wss", "REMOTE_DEVICE_AUTH_FAILED")
             require(not socket.url.query, "REMOTE_DEVICE_AUTH_FAILED")
+            require(len(socket.headers.getlist('authorization')) == 1, 'REMOTE_DEVICE_AUTH_FAILED')
             _, verifier = self.s.security.bearer(socket.headers.get("authorization"))
             with self.s.repo.transaction() as tx:
                 owner, device = self.s.security.device_identity(tx, verifier)
@@ -239,7 +241,9 @@ class WorkerTransport:
                 headers = {"Cache-Control": "no-store"}
                 if exc.code == "REMOTE_RATE_LIMITED":
                     headers["Retry-After"] = str(self.s.settings.rate_window)
-                envelope = validated("ApiEnvelope", dict(success=False, requestId=uid(), protocolVersion=PROTOCOL_VERSION, error=exc.view()))
+                identifier = uid()
+                headers['X-Request-Id'] = identifier
+                envelope = validated("ApiEnvelope", dict(success=False, requestId=identifier, protocolVersion=PROTOCOL_VERSION, error=exc.http_view()))
                 await socket.send_denial_response(JSONResponse(envelope, status_code=exc.status, headers=headers))
                 return
             if accepted and (connection is None or not connection.closed):
