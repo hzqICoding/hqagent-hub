@@ -38,19 +38,22 @@ function chat() {
 }
 
 describe('R1.5 phone repair 2', () => {
-  it('hides revoked devices by default, expands a read-only group and keeps the safety guidance', async () => {
+  it('loads revoked history on expansion and offers deletion instead of revocation', async () => {
     gateway.devices[1].status = 'revoked'
     const wrapper = mount(RemoteDevicesPage, { global: { plugins: [router], stubs: { Teleport: true } } })
     await flushPromises()
     expect(wrapper.text()).not.toContain('Home PC')
-    const group = wrapper.findAll('button').find((b) => b.text() === '已撤销（1）')!
+    const group = wrapper.findAll('button').find((b) => b.text() === '已撤销（展开查看）')!
     await group.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('已撤销（1）')
     expect(wrapper.text()).toContain('Home PC')
     expect(wrapper.findAll('main div.cursor-pointer')).toHaveLength(1)
-    await wrapper.findAll('button').find((b) => b.text() === '撤销设备')!.trigger('click')
-    expect(wrapper.text()).toContain('重新配对会作为新设备出现')
-    expect(wrapper.text()).toContain('关闭电脑上的 Hub 即可')
-    expect(wrapper.text()).toContain('撤销不是停止操作')
+    expect(wrapper.text()).not.toContain('撤销设备')
+    await wrapper.findAll('button').find((b) => b.text() === '删除')!.trigger('click')
+    expect(wrapper.text()).toContain('服务器上的对话副本会被删除')
+    expect(wrapper.text()).toContain('电脑上正在执行的任务可能仍在继续')
+    expect(wrapper.text()).toContain('只能在电脑端重新扫码')
   })
 
   it('returns to devices and clears content when selected computer is revoked by polling', async () => {
