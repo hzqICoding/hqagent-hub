@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RemoteRequestNotice from './RemoteRequestNotice.vue'
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useRemoteAuthStore } from '@/stores/remote-auth.store'
@@ -32,6 +33,7 @@ async function handleLogin() {
 
 <template>
   <div class="min-h-screen bg-bg-app flex flex-col justify-center px-4 py-8 select-none">
+    <RemoteRequestNotice />
     <div class="w-full max-w-sm mx-auto bg-panel border border-border rounded-2xl shadow-xl p-6 sm:p-8 space-y-6">
       <!-- Header -->
       <div class="text-center space-y-2">

@@ -38,7 +38,21 @@ class Service:
                 connection.wake()
         tx.after_commit((owner, worker), wake)
 
-    def save(self, tx, owner, kind, identifier, value):
+    def save(self, tx, owner, kind, identifier, value, *, management=False):
+        if kind == 'device':
+            current = tx.get(owner, kind, identifier)
+            if current and current.get('_deleted'):
+                return  # A stale transport object cannot resurrect a tombstone.
+            if current and not management:
+                value = dict(value)
+                for field in ('remoteAccess', 'version', 'displayName', 'suspendedAt'):
+                    value.pop(field, None)
+                    if field in current:
+                        value[field] = current[field]
+                if current['status'] == 'revoked':
+                    value.update(status='revoked', revokedAt=current['revokedAt'])
+            value.setdefault('remoteAccess', 'enabled')
+            value.setdefault('version', 1)
         frame = value.get("_frame", value)
         tx.put(owner, kind, identifier, value,
                worker=frame.get("targetWorkerId", frame.get("workerId", value.get("_worker", ""))),
@@ -47,12 +61,14 @@ class Service:
 
     def get(self, tx, owner, kind, identifier):
         value = tx.get(owner, kind, identifier)
-        require(value is not None, "NOT_FOUND")
+        require(value is not None and (kind != 'device' or not value.get('_deleted')), "NOT_FOUND")
         return value
 
     def view(self, owner, kind, value):
         public = {k: v for k, v in value.items() if not k.startswith("_")}
         if kind == "device":
+            public.setdefault('remoteAccess', 'enabled')
+            public.setdefault('version', 1)
             if public["status"] not in {"revoked", "reconciliation_required"}:
                 public["status"] = "online" if self.online(owner, value["workerId"]) else "offline"
             public["observedAt"] = self.now()
@@ -294,8 +310,8 @@ class Service:
         self.notify(tx, owner, worker)
         device = self.get(tx, owner, "device", worker)
         if device["status"] != "revoked":
-            device.update(status="revoked", revokedAt=self.now())
-            self.save(tx, owner, "device", worker, device)
+            device.update(status="revoked", revokedAt=self.now(), version=device.get('version', 1) + 1)
+            self.save(tx, owner, "device", worker, device, management=True)
             challenge = tx.auth_get("challenge:" + device["_challenge"])
             challenge["status"] = "revoked"
             tx.auth_put("challenge:" + device["_challenge"], challenge, owner)

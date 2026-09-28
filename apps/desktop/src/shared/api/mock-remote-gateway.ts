@@ -1,4 +1,12 @@
 import type {
+  RemoteDevicePatchInput,
+  RemoteDeviceDeletionView,
+  RemoteApiTokenView,
+  RemoteApiTokenCreateInput,
+  RemoteApiTokenPage,
+  RemoteApiTokenIssuedView,
+  RemoteApiTokenIssueReplayView,
+  RemoteApiTokenRevocationView,
   RemoteLoginInput,
   RemoteAuthenticatedSession,
   RemoteBrowserSessionView,
@@ -31,11 +39,15 @@ import type {
   RemoteBrowserEventPage,
   RemoteConversationSnapshot,
 } from '@hqagent/protocol'
-import type { IRemoteGateway } from './remote-gateway.interface'
+import type { IRemoteGateway, RemoteDeviceFilters } from './remote-gateway.interface'
 import { RemoteApiError } from './remote-gateway'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 
 export class MockRemoteGateway implements IRemoteGateway {
+  supportsDeviceManagement = true
+  public apiTokens: RemoteApiTokenView[] = []
+  private tokenIntents = new Map<string, string>()
+
   // Configurable test scenarios
   public authenticated = true
   public workerOnline = true
@@ -438,9 +450,9 @@ export class MockRemoteGateway implements IRemoteGateway {
 
   // --- Devices ---
 
-  async listDevices(): Promise<RemoteDevicePage> {
+  async listDevices(cursor?: string, limit = 50, filters: RemoteDeviceFilters = {}): Promise<RemoteDevicePage> {
     const items = this.devices.map((d) => {
-      if (d.workerId === 'worker_demo') {
+      if (d.workerId === 'worker_demo' && d.status !== 'revoked') {
         return {
           ...d,
           status: this.workerOnline ? ('online' as const) : ('offline' as const),
@@ -450,10 +462,12 @@ export class MockRemoteGateway implements IRemoteGateway {
       }
       return { ...d }
     })
-    return {
-      items,
-      hasMore: false,
-    }
+    const filtered = items.filter((d) => (filters.includeRevoked || d.status !== 'revoked') &&
+      (!filters.remoteAccess || (d.remoteAccess || 'enabled') === filters.remoteAccess) &&
+      (filters.online === undefined || (d.online ?? d.status === 'online') === filters.online))
+    const start = Number(cursor || 0)
+    return { items: filtered.slice(start, start + limit), hasMore: start + limit < filtered.length,
+      nextCursor: start + limit < filtered.length ? String(start + limit) : undefined }
   }
 
   async getDevice(workerId: string): Promise<RemoteDeviceView> {
@@ -465,7 +479,7 @@ export class MockRemoteGateway implements IRemoteGateway {
         status: 404,
       })
     }
-    if (d.workerId === 'worker_demo') {
+    if (d.workerId === 'worker_demo' && d.status !== 'revoked') {
       return {
         ...d,
         status: this.workerOnline ? 'online' : 'offline',
@@ -479,7 +493,7 @@ export class MockRemoteGateway implements IRemoteGateway {
   async revokeDevice(workerId: string, _input?: RemoteDeviceRevokeInput): Promise<RemoteDeviceRevocationView> {
     const idx = this.devices.findIndex((d) => d.workerId === workerId)
     if (idx >= 0) {
-      this.devices.splice(idx, 1)
+      this.devices[idx] = { ...this.devices[idx], status: 'revoked', online: false }
     }
     return {
       workerId,
@@ -489,8 +503,58 @@ export class MockRemoteGateway implements IRemoteGateway {
     }
   }
 
-  async getWorkerCatalog(): Promise<RemoteCatalogView> {
-    return this.catalog
+  async getWorkerCatalog(workerId: string): Promise<RemoteCatalogView> {
+    const device = this.devices.find((d) => d.workerId === workerId)
+    return { ...this.catalog, workerId, workerStoreId: device?.workerStoreId || this.catalog.workerStoreId }
+  }
+
+  async patchDevice(workerId: string, input: RemoteDevicePatchInput): Promise<RemoteDeviceView> {
+    const device = this.devices.find((d) => d.workerId === workerId)
+    if (!device) throw new RemoteApiError({ message: '设备未找到', code: 'NOT_FOUND', status: 404 })
+    if (device.status === 'revoked') throw new RemoteApiError({ message: '设备已撤销', code: 'REMOTE_DEVICE_REVOKED', status: 409 })
+    if ((device.version ?? 1) !== input.expectedVersion) throw new RemoteApiError({ message: '资源版本或状态已变化，请刷新后重试', code: 'CONFLICT', status: 409 })
+    if (input.displayName !== undefined) {
+      if (input.displayName.trim()) device.displayName = input.displayName.trim()
+      else delete device.displayName
+    }
+    if (input.remoteAccess) device.remoteAccess = input.remoteAccess
+    device.version = (device.version ?? 1) + 1
+    return this.getDevice(workerId)
+  }
+
+  async deleteDevice(workerId: string): Promise<RemoteDeviceDeletionView> {
+    await this.getDevice(workerId)
+    this.devices = this.devices.filter((d) => d.workerId !== workerId)
+    this.conversations = this.conversations.filter((c) => c.targetWorkerId !== workerId)
+    return { workerId, deletedAt: new Date().toISOString(), executionMayStillBeRunning: true }
+  }
+
+  async listApiTokens(cursor?: string, limit = 50, includeRevoked = false): Promise<RemoteApiTokenPage> {
+    const items = this.apiTokens.filter((t) => includeRevoked || t.status !== 'revoked')
+    const start = Number(cursor || 0)
+    return { items: structuredClone(items.slice(start, start + limit)), hasMore: start + limit < items.length,
+      nextCursor: start + limit < items.length ? String(start + limit) : undefined }
+  }
+
+  async issueApiToken(input: RemoteApiTokenCreateInput, idempotencyKey = crypto.randomUUID()): Promise<RemoteApiTokenIssuedView | RemoteApiTokenIssueReplayView> {
+    const existingId = this.tokenIntents.get(idempotencyKey)
+    if (existingId) return { token: { ...this.apiTokens.find((t) => t.tokenId === existingId)! }, secretAvailable: false }
+    const selector = crypto.randomUUID().replaceAll('-', '').slice(0, 24)
+    const token: RemoteApiTokenView = { tokenId: `pat_${selector}`, name: input.name, scopes: [...input.scopes],
+      tokenPrefix: `hqr_pat_${selector}`, createdAt: new Date().toISOString(),
+      expiresAt: input.expiresAt || new Date(Date.now() + 90 * 86400000).toISOString(), status: 'active' }
+    this.apiTokens.unshift(token)
+    this.tokenIntents.set(idempotencyKey, token.tokenId)
+    // Synthetic, non-authenticating example. The mock stores metadata only, never the full secret.
+    return { token: { ...token }, secretAvailable: true, secret: `${token.tokenPrefix}_${'EXAMPLE_ONLY_NOT_FOR_REAL_AUTH_'.padEnd(43, '0')}` }
+  }
+
+  async revokeApiToken(tokenId: string): Promise<RemoteApiTokenRevocationView> {
+    const token = this.apiTokens.find((t) => t.tokenId === tokenId)
+    if (!token) throw new RemoteApiError({ message: '令牌不存在', code: 'NOT_FOUND', status: 404 })
+    token.status = 'revoked'
+    token.revokedAt ||= new Date().toISOString()
+    return { tokenId, status: 'revoked', revokedAt: token.revokedAt }
   }
 
   // --- Conversations ---
@@ -525,10 +589,10 @@ export class MockRemoteGateway implements IRemoteGateway {
       title: input.title,
       workspaceId: input.workspaceId,
       sceneId: input.sceneId,
-      sceneVersion: 1,
+      sceneVersion: input.sceneVersion,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      workerStoreId: 'store_demo',
+      workerStoreId: input.workerStoreId,
       visibility: 'both',
       busy: false,
       busyFresh: true,
@@ -992,6 +1056,9 @@ export class MockRemoteGateway implements IRemoteGateway {
   }
 
   reset(): void {
+    this.apiTokens = []
+    this.tokenIntents.clear()
+    this.supportsDeviceManagement = true
     this.authenticated = true
     this.workerOnline = true
     this.rateLimited = false

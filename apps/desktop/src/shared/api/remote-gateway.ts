@@ -1,5 +1,12 @@
 import type {
   ApiEnvelope,
+  RemoteDevicePatchInput,
+  RemoteDeviceDeletionView,
+  RemoteApiTokenCreateInput,
+  RemoteApiTokenPage,
+  RemoteApiTokenIssuedView,
+  RemoteApiTokenIssueReplayView,
+  RemoteApiTokenRevocationView,
   RemoteLoginInput,
   RemoteAuthenticatedSession,
   RemoteBrowserSessionView,
@@ -30,7 +37,8 @@ import type {
   RemoteBrowserEventPage,
   RemoteConversationSnapshot,
 } from '@hqagent/protocol'
-import type { IRemoteGateway } from './remote-gateway.interface'
+import type { IRemoteGateway, RemoteDeviceFilters } from './remote-gateway.interface'
+import { recordRemoteFailure, clearRemoteFailureFor } from './remote-diagnostics'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 
 export class RemoteApiError extends Error {
@@ -59,6 +67,7 @@ export class RemoteApiError extends Error {
 }
 
 export class RemoteGateway implements IRemoteGateway {
+  supportsDeviceManagement = false
   private baseUrl: string
   // Kept in memory only. NEVER stored to localStorage/sessionStorage/IndexedDB!
   private csrfToken: string | null = null
@@ -129,9 +138,10 @@ export class RemoteGateway implements IRemoteGateway {
         // Browser authentication is via HttpOnly Secure Cookie __Host-hqremote
         credentials: 'same-origin',
       })
-    } catch (err: unknown) {
+    } catch {
+      recordRemoteFailure(endpoint, method, '网络连接失败，请检查网络设置')
       throw new RemoteApiError({
-        message: err instanceof Error ? err.message : '网络连接失败，请检查网络设置',
+        message: '网络连接失败，请检查网络设置',
         code: 'NETWORK_ERROR',
         status: 0,
       })
@@ -153,21 +163,27 @@ export class RemoteGateway implements IRemoteGateway {
       // JSON parse error
     }
 
+    const version = envelope?.protocolVersion?.match(/^(\d+)\.(\d+)(?:\.|$)/)
+    if (version) this.supportsDeviceManagement = Number(version[1]) === 0 && Number(version[2]) >= 8
+
     if (!response.ok || !envelope || !envelope.success) {
       const code = envelope?.error?.code || (response.status === 429 ? 'REMOTE_RATE_LIMITED' : 'INTERNAL')
       const rawMessage = envelope?.error?.message || response.statusText || '请求失败'
       const localizedMessage = getRemoteErrorMessage(code, rawMessage)
 
+      const requestId = response.headers.get('X-Request-Id') || envelope?.requestId
+      recordRemoteFailure(endpoint, method, localizedMessage, requestId)
       throw new RemoteApiError({
         message: localizedMessage,
         code,
         status: response.status,
         detail: envelope?.error?.detail,
         retryAfter,
-        requestId: envelope?.requestId,
+        requestId: response.headers.get('X-Request-Id') || envelope?.requestId,
       })
     }
 
+    clearRemoteFailureFor(endpoint, method)
     return envelope.data as T
   }
 
@@ -230,10 +246,10 @@ export class RemoteGateway implements IRemoteGateway {
 
   // --- Devices ---
 
-  async listDevices(cursor?: string, limit?: number): Promise<RemoteDevicePage> {
+  async listDevices(cursor?: string, limit?: number, filters: RemoteDeviceFilters = {}): Promise<RemoteDevicePage> {
     return this.fetchApi<RemoteDevicePage>('/api/v2/devices', {
       method: 'GET',
-      params: { cursor, limit },
+      params: { cursor, limit, includeRevoked: false, ...filters },
     })
   }
 
@@ -262,6 +278,27 @@ export class RemoteGateway implements IRemoteGateway {
     return this.fetchApi<RemoteCatalogView>(`/api/v2/devices/${encodeURIComponent(workerId)}/catalog`, {
       method: 'GET',
     })
+  }
+
+  async patchDevice(workerId: string, input: RemoteDevicePatchInput, idempotencyKey?: string): Promise<RemoteDeviceView> {
+    return this.fetchApi(`/api/v2/devices/${encodeURIComponent(workerId)}`, { method: 'PATCH', body: input, idempotencyKey })
+  }
+
+  async deleteDevice(workerId: string, idempotencyKey?: string): Promise<RemoteDeviceDeletionView> {
+    return this.fetchApi(`/api/v2/devices/${encodeURIComponent(workerId)}`, { method: 'DELETE', idempotencyKey })
+  }
+
+  async listApiTokens(cursor?: string, limit?: number, includeRevoked = false): Promise<RemoteApiTokenPage> {
+    return this.fetchApi('/api/v2/api-tokens', { params: { cursor, limit, includeRevoked } })
+  }
+
+  async issueApiToken(input: RemoteApiTokenCreateInput, idempotencyKey?: string): Promise<RemoteApiTokenIssuedView | RemoteApiTokenIssueReplayView> {
+    // No response caching: the one-time secret goes directly to the issuing dialog.
+    return this.fetchApi('/api/v2/api-tokens', { method: 'POST', body: input, idempotencyKey })
+  }
+
+  async revokeApiToken(tokenId: string, idempotencyKey?: string): Promise<RemoteApiTokenRevocationView> {
+    return this.fetchApi(`/api/v2/api-tokens/${encodeURIComponent(tokenId)}`, { method: 'DELETE', idempotencyKey })
   }
 
   // --- Conversations ---

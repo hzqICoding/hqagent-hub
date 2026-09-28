@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type {
   RemoteDeviceView,
+  RemoteDevicePatchInput,
   RemoteConversationView,
   RemoteMessageView,
   RemoteRunView,
@@ -95,6 +96,21 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   const isLoadingDevices = ref(false)
   const deviceError = ref<string | null>(null)
   const catalog = ref<RemoteCatalogView | null>(null)
+  const isLoadingCatalog = ref(false)
+  const catalogError = ref<string | null>(null)
+  let catalogRequest = 0
+  let deviceGeneration = 0
+  let deviceListRequest = 0
+  let revokedListRequest = 0
+  const availableDevices = computed(() => devices.value.filter((d) => d.status !== 'revoked'))
+  const revokedDevices = ref<RemoteDeviceView[]>([])
+  const revokedDevicesLoaded = ref(false)
+  const isLoadingRevokedDevices = ref(false)
+  const isDeviceActionLoading = ref(false)
+  const deviceActionError = ref<string | null>(null)
+  const deviceRemovalNotice = ref<string | null>(null)
+  const isRemoteSuspended = computed(() => activeDevice.value?.remoteAccess === 'suspended')
+  const createdConversationToFocus = ref<string | null>(null)
 
   // Conversations
   const conversations = ref<RemoteConversationView[]>([])
@@ -136,7 +152,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     if (selectedWorkerId.value) {
       return devices.value.find((d) => d.workerId === selectedWorkerId.value) || null
     }
-    return devices.value[0] || null
+    return availableDevices.value[0] || null
   })
 
   const activeDevice = computed(() => {
@@ -148,16 +164,16 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   const isWorkerOnline = computed(() => {
     const d = activeDevice.value
-    if (!d) return false
+    if (!d || d.status === 'revoked') return false
     if (typeof d.online === 'boolean') return d.online
     return d.status === 'online'
   })
 
   const isDeviceSendReady = computed(() => {
     const d = activeDevice.value
-    if (!d) return false
+    if (!d || d.status === 'revoked' || d.remoteAccess === 'suspended') return false
     if (d.online !== true && d.status !== 'online') return false
-    if (d.status === 'reconciliation_required' || d.status === 'revoked') return false
+    if (d.status === 'reconciliation_required') return false
     if (d.supportedWireRevisions && !d.supportedWireRevisions.includes(2)) return false
     if (d.busySnapshotFresh === false) return false
     return true
@@ -212,24 +228,136 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   // --- Devices & Catalog ---
 
-  async function fetchDevices(): Promise<void> {
+  async function fetchDevices(): Promise<boolean> {
+    const request = ++deviceListRequest
     isLoadingDevices.value = true
     deviceError.value = null
     try {
       const gateway = getRemoteGateway()
-      const page = await gateway.listDevices()
-      devices.value = page.items
-      if (devices.value.length > 0 && !catalog.value) {
-        try {
-          catalog.value = await gateway.getWorkerCatalog(devices.value[0].workerId)
-        } catch {
-          // catalog might be offline
-        }
-      }
+      const items: RemoteDeviceView[] = []
+      let cursor: string | undefined
+      do {
+        const page = await gateway.listDevices(cursor, 100, { includeRevoked: false })
+        items.push(...page.items)
+        if (page.hasMore && (!page.nextCursor || page.nextCursor === cursor)) throw new Error('设备分页游标无效，请重试')
+        cursor = page.hasMore ? page.nextCursor : undefined
+      } while (cursor)
+      if (request !== deviceListRequest) return false
+      const selected = selectedWorkerId.value || activeConversation.value?.targetWorkerId
+      devices.value = items
+      if (selected && !items.some((d) => d.workerId === selected)) await refreshDevice(selected)
+      if (checkSelectedDeviceRevoked() || (selected && !selectedWorkerId.value && (lastRevocationInfo.value || deviceRemovalNotice.value))) return true
+      if (selectedDevice.value && !catalog.value) await fetchCatalog()
+      return true
     } catch (err: unknown) {
       deviceError.value = err instanceof Error ? err.message : '获取设备列表失败'
+      return false
     } finally {
       isLoadingDevices.value = false
+    }
+  }
+
+  async function fetchRevokedDevices(): Promise<boolean> {
+    const request = ++revokedListRequest
+    isLoadingRevokedDevices.value = true
+    deviceError.value = null
+    try {
+      const items: RemoteDeviceView[] = []
+      let cursor: string | undefined
+      do {
+        const page = await getRemoteGateway().listDevices(cursor, 100, { includeRevoked: true })
+        items.push(...page.items.filter((d) => d.status === 'revoked'))
+        if (page.hasMore && (!page.nextCursor || page.nextCursor === cursor)) throw new Error('设备分页游标无效，请重试')
+        cursor = page.hasMore ? page.nextCursor : undefined
+      } while (cursor)
+      if (request !== revokedListRequest) return false
+      revokedDevices.value = items
+      revokedDevicesLoaded.value = true
+      return true
+    } catch (err: unknown) {
+      deviceError.value = err instanceof Error ? err.message : '读取已撤销设备失败'
+      return false
+    } finally { isLoadingRevokedDevices.value = false }
+  }
+
+  async function refreshDevice(workerId: string): Promise<void> {
+    try {
+      const updated = await getRemoteGateway().getDevice(workerId)
+      deviceListRequest++
+      const idx = devices.value.findIndex((d) => d.workerId === workerId)
+      if (idx >= 0) devices.value[idx] = updated
+      else devices.value.push(updated)
+      checkSelectedDeviceRevoked()
+    } catch (err: unknown) {
+      if (err instanceof RemoteApiError && err.status === 404 && getRemoteGateway().supportsDeviceManagement) {
+        if (selectedWorkerId.value === workerId || activeConversation.value?.targetWorkerId === workerId) {
+          clearDeviceContent()
+          selectedWorkerId.value = null
+          deviceRemovalNotice.value = '该电脑已删除'
+          stopPolling()
+          stopDevicePolling()
+        }
+      }
+      throw err
+    }
+  }
+
+  async function patchDevice(workerId: string, patch: Omit<RemoteDevicePatchInput, 'expectedVersion'>): Promise<boolean> {
+    if (isDeviceActionLoading.value) return false
+    deviceListRequest++
+    isDeviceActionLoading.value = true
+    deviceActionError.value = null
+    try {
+      const device = devices.value.find((d) => d.workerId === workerId)
+      if (!device) throw new Error('设备状态未知，请刷新后重试')
+      await getRemoteGateway().patchDevice(workerId, { ...patch, expectedVersion: device.version ?? 1 })
+      await refreshDevice(workerId)
+      return true
+    } catch (err: unknown) {
+      if (err instanceof RemoteApiError && err.code === 'CONFLICT') {
+        try { await refreshDevice(workerId) } catch { /* Keep the original conflict visible. */ }
+        deviceActionError.value = '设备状态已变化，请确认后重试'
+      } else {
+        deviceActionError.value = err instanceof Error ? err.message : '设备操作失败'
+      }
+      return false
+    } finally { isDeviceActionLoading.value = false }
+  }
+
+  async function deleteDevice(workerId: string, refreshRevoked = false): Promise<boolean> {
+    if (isDeviceActionLoading.value) return false
+    isDeviceActionLoading.value = true
+    deviceActionError.value = null
+    try {
+      try { await getRemoteGateway().deleteDevice(workerId) } catch (err: unknown) {
+        if (!(err instanceof RemoteApiError) || err.status !== 404) throw err
+        if (!getRemoteGateway().supportsDeviceManagement) throw new Error('服务端未确认支持设备删除，请升级到 0.8.0 或更新版本后重试', { cause: err })
+      }
+      if (selectedWorkerId.value === workerId || activeConversation.value?.targetWorkerId === workerId) {
+        clearDeviceContent()
+        selectedWorkerId.value = null
+        deviceRemovalNotice.value = '该电脑已删除'
+      }
+      if (!await fetchDevices()) throw new Error('删除已提交，设备列表刷新失败，请重试刷新')
+      if (refreshRevoked && !await fetchRevokedDevices()) throw new Error('删除已提交，历史记录刷新失败，请重试刷新')
+      return true
+    } catch (err: unknown) {
+      deviceActionError.value = err instanceof Error ? err.message : '删除设备失败'
+      return false
+    } finally { isDeviceActionLoading.value = false }
+  }
+
+  function assertRemoteAllowed(safeAction = false, sending = false): void {
+    if (safeAction || !isRemoteSuspended.value) return
+    const message = '这台电脑的远程操作已暂停'
+    if (sending) sendError.value = message
+    else actionError.value = message
+    throw new RemoteApiError({ message, code: 'REMOTE_DEVICE_SUSPENDED', status: 409 })
+  }
+
+  async function refreshOnSuspended(err: unknown): Promise<void> {
+    if (err instanceof RemoteApiError && err.code === 'REMOTE_DEVICE_SUSPENDED') {
+      await refreshActiveDevice()
     }
   }
 
@@ -237,7 +365,9 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     try {
       const gateway = getRemoteGateway()
       const res = await gateway.revokeDevice(workerId, { reason })
-      devices.value = devices.value.filter((d) => d.workerId !== workerId)
+      const device = devices.value.find((d) => d.workerId === workerId)
+      if (device) { device.status = 'revoked'; device.online = false }
+      checkSelectedDeviceRevoked()
       lastRevocationInfo.value = {
         workerId: res.workerId,
         executionMayStillBeRunning: res.executionMayStillBeRunning,
@@ -252,20 +382,9 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   let devicePollingTimer: ReturnType<typeof setInterval> | null = null
 
   async function refreshActiveDevice(): Promise<void> {
-    const targetWorkerId = activeConversation.value?.targetWorkerId || devices.value[0]?.workerId
+    const targetWorkerId = activeDevice.value?.workerId
     if (!targetWorkerId) return
-    try {
-      const gateway = getRemoteGateway()
-      const updated = await gateway.getDevice(targetWorkerId)
-      const idx = devices.value.findIndex((d) => d.workerId === targetWorkerId)
-      if (idx >= 0) {
-        devices.value[idx] = updated
-      } else {
-        devices.value.push(updated)
-      }
-    } catch {
-      // ignore network errors during periodic refresh
-    }
+    try { await refreshDevice(targetWorkerId) } catch { /* Retry on the next poll. */ }
   }
 
   function startDevicePolling(intervalMs = 15000): void {
@@ -284,8 +403,14 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   // --- Conversations ---
 
-  async function selectDevice(workerId: string): Promise<void> {
-    selectedWorkerId.value = workerId
+  function clearDeviceContent(): void {
+    deviceGeneration++
+    catalogRequest++
+    catalog.value = null
+    catalogError.value = null
+    isLoadingCatalog.value = false
+    clearPendingConversation()
+    createdConversationToFocus.value = null
     activeConversationId.value = null
     conversations.value = []
     messages.value = []
@@ -295,17 +420,52 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     serverCursor.value = null
     beforeCursor.value = null
     hasMoreMessages.value = false
-    await fetchConversations(workerId)
+  }
+
+  function checkSelectedDeviceRevoked(): boolean {
+    const device = devices.value.find((d) => d.workerId === (selectedWorkerId.value || activeConversation.value?.targetWorkerId))
+    if (device?.status !== 'revoked') return false
+    lastRevocationInfo.value = { workerId: device.workerId, executionMayStillBeRunning: true }
+    clearDeviceContent()
+    selectedWorkerId.value = null
+    stopPolling()
+    stopDevicePolling()
+    return true
+  }
+
+  async function fetchCatalog(): Promise<void> {
+    const device = selectedDevice.value
+    if (!device || device.status === 'revoked') return
+    const request = ++catalogRequest
+    isLoadingCatalog.value = true
+    catalogError.value = null
+    catalog.value = null
     try {
-      const gateway = getRemoteGateway()
-      catalog.value = await gateway.getWorkerCatalog(workerId)
-    } catch {
-      // ignore
+      const result = await getRemoteGateway().getWorkerCatalog(device.workerId)
+      if (request !== catalogRequest) return
+      if (result.workerId !== device.workerId || result.workerStoreId !== device.workerStoreId) {
+        throw new Error('电脑目录已变更，请重试')
+      }
+      catalog.value = result
+    } catch (err: unknown) {
+      if (request === catalogRequest) catalogError.value = err instanceof Error ? err.message : '读取电脑目录失败，请重试'
+    } finally {
+      if (request === catalogRequest) isLoadingCatalog.value = false
     }
+  }
+
+  async function selectDevice(workerId: string): Promise<void> {
+    selectedWorkerId.value = workerId
+    if (checkSelectedDeviceRevoked()) return
+    clearDeviceContent()
+    lastRevocationInfo.value = null
+    deviceRemovalNotice.value = null
+    await Promise.all([fetchConversations(workerId), fetchCatalog()])
   }
 
   async function fetchConversations(workerId?: string, workspaceId?: string): Promise<void> {
     isLoadingConversations.value = true
+    const generation = deviceGeneration
     try {
       const gateway = getRemoteGateway()
       const targetWId = workerId || selectedWorkerId.value || undefined
@@ -313,6 +473,8 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
         workerId: targetWId,
         workspaceId,
       })
+      if (generation !== deviceGeneration) return
+      if (targetWId && (selectedWorkerId.value || selectedDevice.value?.workerId) !== targetWId) return
       conversations.value = page.items
       if (!activeConversationId.value && page.items.length > 0) {
         await selectConversation(page.items[0].conversationId)
@@ -323,6 +485,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
         if (found) {
           clearPendingConversation()
           await selectConversation(found.conversationId)
+          createdConversationToFocus.value = found.conversationId
         }
       }
     } catch (err: unknown) {
@@ -333,6 +496,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   }
 
   async function createConversation(input: RemoteCreateConversationInput): Promise<string | null> {
+    assertRemoteAllowed()
     if (!isWorkerOnline.value) {
       actionError.value = '设备离线，发送失败'
       throw new RemoteApiError({
@@ -342,13 +506,27 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       })
     }
 
+    const currentCatalog = catalog.value
+    if (!currentCatalog || isLoadingCatalog.value || catalogError.value ||
+        selectedDevice.value?.workerId !== input.targetWorkerId ||
+        currentCatalog.workerId !== input.targetWorkerId ||
+        currentCatalog.workerStoreId !== input.workerStoreId ||
+        !currentCatalog.workspaces.some((w) => w.workspaceId === input.workspaceId) ||
+        !currentCatalog.scenes.some((scene) => scene.sceneId === input.sceneId && scene.version === input.sceneVersion)) {
+      actionError.value = '请先读取电脑的项目和场景列表'
+      return null
+    }
+    actionError.value = null
+    createdConversationToFocus.value = null
     try {
       const gateway = getRemoteGateway()
       const receipt = await gateway.createConversation(input)
+      if (selectedDevice.value?.workerId !== input.targetWorkerId) return null
       await fetchConversations(input.targetWorkerId)
       const found = conversations.value.find((c) => c.conversationId === receipt.conversationId)
       if (found) {
         await selectConversation(found.conversationId)
+        createdConversationToFocus.value = found.conversationId
         return receipt.conversationId
       }
 
@@ -370,6 +548,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       }
       return receipt.conversationId
     } catch (err: unknown) {
+      await refreshOnSuspended(err)
       actionError.value = err instanceof Error ? err.message : '创建对话失败'
       return null
     }
@@ -390,6 +569,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     if (!conv) return false
 
     // Offline check: immediate failure
+    assertRemoteAllowed()
     if (!isWorkerOnline.value) {
       actionError.value = '设备离线，发送失败'
       throw new RemoteApiError({
@@ -412,6 +592,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       settingsNotice.value = '等待电脑确认'
       return true
     } catch (err: unknown) {
+      await refreshOnSuspended(err)
       if (err instanceof RemoteApiError && err.code === 'REMOTE_SYNC_CONFLICT') {
         // F2: 收到 REMOTE_SYNC_CONFLICT 时重新拉取该对话，并提示「同步冲突，请刷新」
         await fetchConversations(selectedWorkerId.value || activeDevice.value?.workerId)
@@ -439,6 +620,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     try {
       const gateway = getRemoteGateway()
       const page = await gateway.listMessages(conversationId)
+      if (activeConversationId.value !== conversationId) return
       if (page && Array.isArray(page.items)) {
         messages.value = mergeRemoteMessages([], page.items)
         hasMoreMessages.value = Boolean(page.hasMore)
@@ -458,6 +640,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     try {
       const gateway = getRemoteGateway()
       const page = await gateway.listMessages(targetId, beforeCursor.value)
+      if (activeConversationId.value !== targetId) return false
       if (page && Array.isArray(page.items) && page.items.length > 0) {
         messages.value = mergeRemoteMessages(messages.value, page.items)
         hasMoreMessages.value = Boolean(page.hasMore)
@@ -481,6 +664,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     try {
       const gateway = getRemoteGateway()
       const snapshot = await gateway.getConversationSnapshot(conversationId)
+      if (activeConversationId.value !== conversationId) return
       serverCursor.value = snapshot.serverCursor
       messages.value = mergeRemoteMessages([], snapshot.messages || [])
       runs.value = snapshot.runs || []
@@ -500,6 +684,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     if (!activeConversationId.value) return null
 
     // R1.5 Offline check: immediate failure, no queuing
+    assertRemoteAllowed(false, true)
     if (!isWorkerOnline.value) {
       sendError.value = '设备离线，发送失败'
       throw new RemoteApiError({
@@ -581,6 +766,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
       return receipt
     } catch (err: unknown) {
+      await refreshOnSuspended(err)
       // Remove optimistic message on failure
       const tempIdx = messages.value.findIndex((m) => m.messageId === optimisticMsg.messageId)
       if (tempIdx >= 0) {
@@ -603,6 +789,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     runId: string,
     action: 'pause' | 'resume' | 'cancel' | 'retry'
   ): Promise<RemoteQueuedReceipt | null> {
+    assertRemoteAllowed(action === 'cancel')
     if (!isWorkerOnline.value) {
       actionError.value = '设备离线，发送失败'
       throw new RemoteApiError({
@@ -630,6 +817,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       }
       return receipt
     } catch (err: unknown) {
+      await refreshOnSuspended(err)
       if (err instanceof RemoteApiError) {
         actionError.value = err.message
       } else {
@@ -644,6 +832,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   // --- Command Withdrawal ---
 
   async function withdrawCommand(commandId: string, reason?: string): Promise<boolean> {
+    assertRemoteAllowed()
     isActionLoading.value = true
     actionError.value = null
     try {
@@ -655,6 +844,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       }
       return true
     } catch (err: unknown) {
+      await refreshOnSuspended(err)
       if (err instanceof RemoteApiError) {
         actionError.value = err.message
       } else {
@@ -680,6 +870,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     const approval = approvals.value.find((a) => a.approvalId === approvalId)
     if (!approval) return false
 
+    assertRemoteAllowed(decision === 'reject')
     if (!isWorkerOnline.value) {
       actionError.value = '设备离线，发送失败'
       throw new RemoteApiError({
@@ -703,6 +894,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       approval.status = decision === 'approve' ? 'approved' : 'rejected'
       return true
     } catch (err: unknown) {
+      await refreshOnSuspended(err)
       if (err instanceof RemoteApiError) {
         actionError.value = err.message
       } else {
@@ -785,8 +977,15 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       if (pendingConversation.value?.conversationId === conv.conversationId) {
         clearPendingConversation()
         await selectConversation(conv.conversationId)
+        createdConversationToFocus.value = conv.conversationId
       }
       return
+    }
+
+    if (event.type === 'command.updated' && event.payload.error?.code === 'REMOTE_DEVICE_SUSPENDED' &&
+        event.payload.targetWorkerId === (selectedWorkerId.value || activeDevice.value?.workerId)) {
+      actionError.value = '这台电脑的远程操作已暂停'
+      await refreshActiveDevice()
     }
 
     if (!activeId) return
@@ -1067,17 +1266,19 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   let isPollingEvents = false
 
   async function pollEvents(): Promise<void> {
-    if (isPollingEvents || !activeConversationId.value) return
+    if (isPollingEvents || (!activeConversationId.value && !pendingConversation.value)) return
     isPollingEvents = true
+    const generation = deviceGeneration
     try {
       const gateway = getRemoteGateway()
       let hasMore = true
       let pageCount = 0
       const maxPages = 50
 
-      while (hasMore && activeConversationId.value && pageCount < maxPages) {
+      while (hasMore && (activeConversationId.value || pendingConversation.value) && pageCount < maxPages) {
         pageCount++
         const page = await gateway.listEvents(serverCursor.value || undefined)
+        if (generation !== deviceGeneration) return
         if (page.nextServerCursor) {
           serverCursor.value = page.nextServerCursor
         }
@@ -1124,9 +1325,17 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   }
 
   function reset(): void {
+    deviceListRequest++
+    revokedListRequest++
     stopPolling()
     stopDevicePolling()
+    clearDeviceContent()
     devices.value = []
+    revokedDevices.value = []
+    revokedDevicesLoaded.value = false
+    isLoadingRevokedDevices.value = false
+    deviceActionError.value = null
+    deviceRemovalNotice.value = null
     selectedWorkerId.value = null
     catalog.value = null
     conversations.value = []
@@ -1150,6 +1359,22 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   return {
     devices,
+    availableDevices,
+    revokedDevices,
+    revokedDevicesLoaded,
+    isLoadingRevokedDevices,
+    isDeviceActionLoading,
+    deviceActionError,
+    deviceRemovalNotice,
+    isRemoteSuspended,
+    fetchRevokedDevices,
+    refreshDevice,
+    patchDevice,
+    deleteDevice,
+    isLoadingCatalog,
+    catalogError,
+    fetchCatalog,
+    createdConversationToFocus,
     selectedWorkerId,
     selectedDevice,
     isLoadingDevices,

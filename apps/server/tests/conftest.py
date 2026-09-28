@@ -33,10 +33,12 @@ def check_http(result, method, path, routes=None):
     if result.json()["success"]:
         for verb, route, _, _, output, _ in (routes or ROUTES):
             if method == verb and re.fullmatch("/api/v2" + re.sub(r"\{[^}]+\}", "[^/]+", route), path.split("?")[0]):
+                if output == 'RemoteApiTokenIssuedView' and result.status_code == 200:
+                    output = 'RemoteApiTokenIssueReplayView'
                 getattr(dto, output).model_validate(result.json()["data"])
                 return
         raise AssertionError("No response DTO binding")
-    dto.RemoteError.model_validate(result.json()["error"])
+    dto.RemoteHttpError.model_validate(result.json()["error"])
 
 
 class Browser:
@@ -83,7 +85,7 @@ class FakeWorker:
 
     def register(self):
         result = self.env.client.post("/api/v2/worker/pairing-requests", json=self.request_body,
-                                     headers={"Authorization": "Bearer " + self.secret, "Idempotency-Key": self.pair_key})
+                                     headers={"Authorization": "Bearer " + self.secret, "Idempotency-Key": self.pair_key, "Cookie": ""})
         check_http(result, "POST", "/api/v2/worker/pairing-requests")
         return result
 

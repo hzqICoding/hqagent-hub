@@ -45,7 +45,8 @@ describe('RemoteChat Workbench and Three-Layer Status', () => {
     expect(wrapper.text()).toContain('设备离线，发送失败')
 
     // Absolutely NEVER claim running/executing on transport layer when offline
-    const transportSection = wrapper.find('section')
+    await wrapper.get('[data-testid=run-status-toggle]').trigger('click')
+    const transportSection = wrapper.find('#remote-status-details')
     expect(transportSection.text()).toContain('电脑离线')
     expect(transportSection.text()).not.toContain('电脑在线')
   })
@@ -56,6 +57,9 @@ describe('RemoteChat Workbench and Three-Layer Status', () => {
     const wrapper = mount(RemoteChatPage)
     const store = useRemoteChatStore()
     await flushPromises()
+
+    expect(wrapper.find('#remote-status-details').exists()).toBe(false)
+    await wrapper.get('[data-testid=run-status-toggle]').trigger('click')
 
     // 1. Transport state
     expect(wrapper.text()).toContain('1. 传输状态')
@@ -77,6 +81,7 @@ describe('RemoteChat Workbench and Three-Layer Status', () => {
     const store = useRemoteChatStore()
     await flushPromises()
 
+    await wrapper.get('[data-testid=run-status-toggle]').trigger('click')
     // Test rejected control outcome
     mockRemoteGateway.controlOutcome = 'rejected'
     await store.controlRun('run_demo', 'pause')
