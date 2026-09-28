@@ -427,3 +427,15 @@ busy只由电脑queued/running/waiting_approval轮次推导，recoveryRequired�
 **决定**：批准必要的Schema/生成类型引用调整例外，保持修订1旧报文接受/拒绝行为不变。RemoteWire1ErrorCode固定为0.6.3注册表；RemoteWire1Error及RemoteWire1ApprovalView封装固定字段，rev1帧仅替换错误/审批payload引用。公共ErrorCode仍跟随registry追加，仅HTTP和rev2可用新码。原rev1 Fixture不改。
 
 **影响**：Q1已关闭，不再needs-decision。冻结测试需检查引用闭包和值域，不仅对比顶层frame文本；不得把公共ErrorCode锁死或偷偷放宽rev1。
+
+### D50 设备删除、远程暂停与标准开放接口（用户裁决，2026-09-27）
+
+**决定**：删除取代撤销的UI位置，作废凭据、删除全部副本并从列表移除；旧revocations保留deprecated。已revoked设备也可删除；删除ID不复用，再次配对生成新ID。首次DELETE返回删除回执，之后含重复DELETE统一NOT_FOUND，保留无正文最小墓碑保证副作用幂等和拒绝旧凭据。
+
+remoteAccess=enabled/suspended是持久管理状态，与online/status独立。暂停不关连接/同步/历史；受限业务写拒绝REMOTE_DEVICE_SUSPENDED，run.cancel与审批reject豁免。暂停切换使当时全部未grant窗口失败，已grant如实处理；恢复不重放失败命令。不改Worker线路，仍为1/2，P2无需业务改动。
+
+设备标准GET/PATCH/DELETE开放账号PAT：devices:read/manage/delete精确scope不互相包含。PAT仅Cookie管理，hqr_pat_前缀，默认90天最长365天；首次签发明文一次，同意图重放仅metadata，服务端只存不可逆HMAC。Cookie与Bearer同现拒绝，PAT不能用于其它资源或签发更多PAT。
+
+**规范与兼容**：协议包0.8.0，完整Hub Server OpenAPI、api-guide、错误总表、自包含公开规范及requestId贯通要求一并冻结。HTTP新增detail独立于Worker错误；rev2错误引用固定到0.7值域，保持所有原报文行为，HTTP新码不入线路。旧请求和deprecated入口保留N/N−1窗口；当前业务适配交P1/P3。
+
+**实施**：P1提供公开GET /api/v2/openapi.json，与仓库bundle一致；响应X-Request-Id与信封同值，日志只记固定operation/状态/错误码/耗时等，不记凭据/正文。P3增加管理、暂停恢复、删除与一次性令牌页。可选离线托管文档UI，不依赖外网CDN。

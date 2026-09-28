@@ -53,11 +53,10 @@ def encode(value, revision=CURRENT):
     value = dict(value, wireRevision=revision)
     if value["type"] == "worker.hello_rejected":
         value["supportedWireRevisions"] = sorted(CODECS)
-        if revision == 1:
-            try:
-                validated('RemoteWire1Error', value['error'])
-            except ValueError:
-                value['error'] = Fault('INTERNAL').view()
+        try:
+            validated(f'RemoteWire{revision}Error', value['error'])
+        except ValueError:
+            value['error'] = Fault('INTERNAL').view()
     result = validated(CODECS[revision][1], value)
     require(len(json.dumps(result, ensure_ascii=False).encode()) <= MAX_FRAME_BYTES, "REMOTE_FRAME_TOO_LARGE")
     return result

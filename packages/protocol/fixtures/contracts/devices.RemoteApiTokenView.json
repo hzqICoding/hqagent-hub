@@ -1,0 +1,12 @@
+{
+  "tokenId": "pat_0123456789abcdef01234567",
+  "name": "ops-cli",
+  "tokenPrefix": "hqr_pat_0123456789abcdef01234567",
+  "scopes": [
+    "devices:read",
+    "devices:manage"
+  ],
+  "createdAt": "2026-09-27T12:00:00Z",
+  "expiresAt": "2026-12-26T12:00:00Z",
+  "status": "active"
+}

@@ -1,0 +1,504 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "remote-devices.json",
+  "title": "HTTP device management and account API tokens; wire behavior unchanged",
+  "$defs": {
+    "RemoteDevicePatchInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "expectedVersion"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "remoteAccess": {
+          "type": "string",
+          "enum": [
+            "enabled",
+            "suspended"
+          ]
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120
+        }
+      },
+      "x-go": true,
+      "description": "At least one change required. Empty/whitespace displayName clears the server alias; null invalid. Does not rename the Worker."
+    },
+    "RemoteDeviceDeletionView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "workerId",
+        "deletedAt",
+        "executionMayStillBeRunning"
+      ],
+      "properties": {
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "deletedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "executionMayStillBeRunning": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "x-go": true,
+      "description": "Deletes server resource/copies and revokes credentials, never claims local execution stopped."
+    },
+    "RemoteApiTokenScope": {
+      "type": "string",
+      "enum": [
+        "devices:read",
+        "devices:manage",
+        "devices:delete"
+      ],
+      "x-wire-strict": true,
+      "x-go": true
+    },
+    "RemoteApiTokenCreateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "name",
+        "scopes"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "$ref": "remote-devices.json#/$defs/RemoteApiTokenScope"
+          },
+          "minItems": 1,
+          "maxItems": 3,
+          "description": "No duplicates. Independent exact scopes, no implicit inclusion or wildcard."
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "x-go": true,
+      "description": "Cookie only. Trimmed name nonempty. Omitted expiry=90 days, max365 days from first issuance; duplicate scope values rejected."
+    },
+    "RemoteApiTokenView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "tokenId",
+        "name",
+        "tokenPrefix",
+        "scopes",
+        "createdAt",
+        "expiresAt",
+        "status"
+      ],
+      "properties": {
+        "tokenId": {
+          "type": "string",
+          "pattern": "^pat_[0-9a-f]{24}$",
+          "minLength": 28,
+          "maxLength": 28
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "tokenPrefix": {
+          "type": "string",
+          "pattern": "^hqr_pat_[0-9a-f]{24}$",
+          "minLength": 32,
+          "maxLength": 32
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "$ref": "remote-devices.json#/$defs/RemoteApiTokenScope"
+          },
+          "minItems": 1,
+          "maxItems": 3,
+          "description": "No duplicates. Independent exact scopes, no implicit inclusion or wildcard."
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "lastUsedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "expired",
+            "revoked"
+          ]
+        },
+        "revokedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        }
+      },
+      "x-go": true,
+      "description": "Metadata only. Prefix is public selector, never any secret bytes. Revoked takes precedence over expired."
+    },
+    "RemoteApiTokenPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "items",
+        "hasMore"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "remote-devices.json#/$defs/RemoteApiTokenView"
+          },
+          "maxItems": 100
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048
+        }
+      },
+      "x-go": true,
+      "description": "Opaque owner/filter-scoped cursor; hasMore=true requires nextCursor."
+    },
+    "RemoteApiTokenIssuedView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "token",
+        "secretAvailable",
+        "secret"
+      ],
+      "properties": {
+        "token": {
+          "$ref": "remote-devices.json#/$defs/RemoteApiTokenView"
+        },
+        "secretAvailable": {
+          "type": "boolean",
+          "const": true
+        },
+        "secret": {
+          "type": "string",
+          "pattern": "^hqr_pat_[0-9a-f]{24}_[A-Za-z0-9_-]{43}$",
+          "minLength": 76,
+          "maxLength": 76,
+          "description": "Only first issuance response; fresh 32-byte CSPRNG secret. This is an account API token, never a model credential or Worker device secret."
+        }
+      },
+      "x-go": true,
+      "description": "201 first issuance only; never store this full response in an idempotency cache."
+    },
+    "RemoteApiTokenIssueReplayView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "token",
+        "secretAvailable"
+      ],
+      "properties": {
+        "token": {
+          "$ref": "remote-devices.json#/$defs/RemoteApiTokenView"
+        },
+        "secretAvailable": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "x-go": true,
+      "description": "200 same intent replay; no secret recovery or second token issuance. If first response was lost, revoke then create using a new key."
+    },
+    "RemoteApiTokenRevocationView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "tokenId",
+        "revokedAt",
+        "status"
+      ],
+      "properties": {
+        "tokenId": {
+          "type": "string",
+          "pattern": "^pat_[0-9a-f]{24}$",
+          "minLength": 28,
+          "maxLength": 28
+        },
+        "revokedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "status": {
+          "type": "string",
+          "const": "revoked"
+        }
+      },
+      "x-go": true
+    },
+    "RemoteHttpErrorDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [],
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 32
+        },
+        "currentVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "retryAfterSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        }
+      },
+      "x-go": true,
+      "description": "Safe HTTP-only hints. fields contains schema/header names, not input values; currentVersion only after owner/resource authorization. No raw exception, credential, owner locator or request body."
+    },
+    "RemoteHttpError": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "common.json#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "detail": {
+          "$ref": "remote-devices.json#/$defs/RemoteHttpErrorDetail"
+        }
+      },
+      "x-go": true,
+      "description": "HTTP-only error shape inside ApiEnvelope.error; detail does not extend any Worker error DTO."
+    },
+    "RemoteWire2ErrorCode": {
+      "type": "string",
+      "enum": [
+        "BAD_REQUEST",
+        "VALIDATION_FAILED",
+        "UNAUTHORIZED",
+        "ORIGIN_NOT_ALLOWED",
+        "NOT_FOUND",
+        "CONFLICT",
+        "IDEMPOTENCY_MISMATCH",
+        "PROTOCOL_VERSION_MISMATCH",
+        "HUB_NOT_READY",
+        "HUB_MAINTENANCE",
+        "EVENT_CURSOR_EXPIRED",
+        "FEATURE_UNAVAILABLE",
+        "AGENT_NOT_FOUND",
+        "AGENT_OFFLINE",
+        "AGENT_NOT_LOGGED_IN",
+        "AGENT_INCOMPATIBLE",
+        "CAPABILITY_MISSING",
+        "ROLE_UNRESOLVED",
+        "SESSION_NOT_RESUMABLE",
+        "TASK_NOT_CANCELLABLE",
+        "TASK_ACTION_INVALID",
+        "WORKTREE_BUSY",
+        "PATH_NOT_ALLOWED",
+        "APPROVAL_REQUIRED",
+        "APPROVAL_EXPIRED",
+        "APPROVAL_ALREADY_DECIDED",
+        "UPDATE_NOT_AVAILABLE",
+        "UPDATE_BUSY",
+        "UPDATE_VERIFY_FAILED",
+        "UPDATE_DRAIN_TIMEOUT",
+        "INTERNAL",
+        "REMOTE_AUTH_REQUIRED",
+        "REMOTE_CSRF_REJECTED",
+        "REMOTE_DEVICE_OFFLINE",
+        "REMOTE_DEVICE_REVOKED",
+        "REMOTE_DEVICE_AUTH_FAILED",
+        "REMOTE_PAIRING_EXPIRED",
+        "REMOTE_PAIRING_CONFLICT",
+        "REMOTE_PAIRING_INVALID",
+        "REMOTE_COMMAND_EXPIRED",
+        "REMOTE_COMMAND_WITHDRAWN",
+        "REMOTE_WITHDRAWAL_UNCONFIRMED",
+        "REMOTE_STORE_CHANGED",
+        "REMOTE_EPOCH_STALE",
+        "REMOTE_PROTOCOL_UNSUPPORTED",
+        "REMOTE_EVENT_CONFLICT",
+        "REMOTE_ACK_CONFLICT",
+        "REMOTE_SEQUENCE_GAP",
+        "REMOTE_APPROVAL_FORBIDDEN",
+        "CONVERSATION_AUTHORITY_MISMATCH",
+        "REMOTE_TARGET_MISMATCH",
+        "REMOTE_SCENE_VERSION_MISMATCH",
+        "REMOTE_CURSOR_EXPIRED",
+        "REMOTE_CURSOR_INVALID",
+        "REMOTE_RATE_LIMITED",
+        "REMOTE_FRAME_TOO_LARGE",
+        "REMOTE_WITHDRAWAL_TOO_LATE",
+        "REMOTE_PAIRING_IN_PROGRESS",
+        "REMOTE_SERVER_UNREACHABLE",
+        "REMOTE_SERVER_ORIGIN_INVALID",
+        "REMOTE_CONVERSATION_BUSY",
+        "REMOTE_STATE_NOT_READY",
+        "REMOTE_SYNC_CONFLICT",
+        "REMOTE_SYNC_DISABLED",
+        "REMOTE_DELIVERY_EXPIRED",
+        "REMOTE_REVISION_REQUIRED",
+        "REMOTE_SYNC_RESOURCE_LIMIT"
+      ],
+      "x-wire-strict": true
+    },
+    "RemoteWire2Error": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "remote-devices.json#/$defs/RemoteWire2ErrorCode"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "description": "Sanitized error. No credential, raw environment, owner locator or arbitrary detail object."
+    },
+    "RemoteWire2ApprovalView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "approvalId",
+        "resultRef",
+        "action",
+        "targetSummary",
+        "riskLevel",
+        "status",
+        "requestedAt",
+        "expiresAt",
+        "remoteApprovalAllowed",
+        "workerPolicyRevision"
+      ],
+      "properties": {
+        "approvalId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "resultRef": {
+          "$ref": "remote.json#/$defs/RemoteResultRef"
+        },
+        "action": {
+          "$ref": "common.json#/$defs/DangerousAction"
+        },
+        "targetSummary": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "riskLevel": {
+          "$ref": "common.json#/$defs/RiskLevel"
+        },
+        "status": {
+          "$ref": "common.json#/$defs/ApprovalStatus"
+        },
+        "requestedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "remoteApprovalAllowed": {
+          "type": "boolean"
+        },
+        "workerPolicyRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "denialCode": {
+          "$ref": "remote-devices.json#/$defs/RemoteWire2ErrorCode"
+        }
+      },
+      "description": "Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely."
+    }
+  }
+}

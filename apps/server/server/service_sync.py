@@ -7,9 +7,10 @@ from . import wire
 from .common import Fault, MAX_SEQ, canonical, digest, require, seconds, stamp, uid
 from .replica import Replica
 from .service import BLOCKED, Service, TERMINAL
+from .devices import DeviceManagement
 
 
-class SyncService(Service):
+class SyncService(DeviceManagement, Service):
     def __init__(self, repo, settings, security):
         super().__init__(repo, settings, security)
         self.replica = Replica(self)
@@ -48,6 +49,9 @@ class SyncService(Service):
     def browser_get(self, tx, owner, kind, identifier):
         value = self.get(tx, owner, kind, identifier)
         require(not value.get('_deleted'), 'NOT_FOUND')
+        worker = value.get('targetWorkerId', value.get('workerId', value.get('_worker')))
+        if worker:
+            self.get(tx, owner, 'device', worker)
         conv_id = identifier if kind == 'conversation' else value.get('conversationId', value.get('_conversation'))
         if conv_id:
             conv = tx.get(owner, 'conversation', conv_id)
@@ -91,6 +95,9 @@ class SyncService(Service):
         return result
 
     def invalidate_busy(self, tx, owner, connection):
+        device = tx.get(owner, 'device', connection.worker)
+        if not device or device.get('_deleted'):
+            return
         state = self.replica.state(tx, owner, connection.worker, connection.store)
         if state.get('busyConnection') != connection.identifier:
             return  # Never let an obsolete socket invalidate its replacement.
@@ -114,9 +121,10 @@ class SyncService(Service):
     def command_visible(self, tx, owner, conversation):
         return self.replica.visible(tx, owner, conversation) or (tx.get(owner, 'conversation', conversation) is None and tx.get(owner, 'create-reservation', conversation) is not None)
 
-    def ready(self, tx, owner, worker, store):
+    def ready(self, tx, owner, worker, store, *, exempt=False):
         device = self.get(tx, owner, 'device', worker)
         require(device['status'] != 'revoked', 'REMOTE_DEVICE_REVOKED')
+        require(exempt or device.get('remoteAccess', 'enabled') != 'suspended', 'REMOTE_DEVICE_SUSPENDED')
         require(self.online(owner, worker), 'REMOTE_DEVICE_OFFLINE')
         conn = self.connections[(owner, worker)]
         require(conn.revision == 2, 'REMOTE_REVISION_REQUIRED')
@@ -124,14 +132,15 @@ class SyncService(Service):
         require(self.replica.state(tx, owner, worker, store)['enabled'], 'REMOTE_SYNC_DISABLED')
         return conn
 
-    def conversation(self, tx, owner, identifier):
+    def conversation(self, tx, owner, identifier, *, exempt=False):
         conv = self.browser_get(tx, owner, 'conversation', identifier)
-        self.ready(tx, owner, conv['targetWorkerId'], conv['workerStoreId'])
+        self.ready(tx, owner, conv['targetWorkerId'], conv['workerStoreId'], exempt=exempt)
         require('_localId' in conv, 'REMOTE_STATE_NOT_READY')
         return conv
 
     def enqueue_v2(self, tx, owner, conv, kind, payload, expires=None, *, sequence=None):
-        self.ready(tx, owner, conv['targetWorkerId'], conv['workerStoreId'])
+        exempt = kind == 'run.cancel' or (kind == 'approval.decide' and payload['decision'] == 'reject')
+        self.ready(tx, owner, conv['targetWorkerId'], conv['workerStoreId'], exempt=exempt)
         now = self.settings.clock()
         end = min(now + 30, seconds(expires)) if expires else now + 30
         require(end > now, 'REMOTE_DELIVERY_EXPIRED')
@@ -196,7 +205,7 @@ class SyncService(Service):
     def control(self, tx, owner, identifier, body):
         run = tx.get(owner, 'run', identifier) or tx.get(owner, 'run-ref', identifier)
         require(run is not None, 'NOT_FOUND')
-        conv = self.conversation(tx, owner, run['conversationId'])
+        conv = self.conversation(tx, owner, run['conversationId'], exempt=body['action'] == 'cancel')
         require('nodeId' not in body or body['action'] == 'retry')
         require('_localId' in run, 'REMOTE_STATE_NOT_READY')
         payload = dict(runId=run['_localId'], **{k: v for k, v in body.items() if k in {'nodeId', 'reason'}})
@@ -204,16 +213,21 @@ class SyncService(Service):
 
     def approval(self, tx, owner, identifier, body):
         value = self.browser_get(tx, owner, 'approval', identifier)
-        conv = self.conversation(tx, owner, value['_conversation'])
+        conv = self.conversation(tx, owner, value['_conversation'], exempt=body['decision'] == 'reject')
         require(value['status'] == 'pending' and seconds(value['expiresAt']) > self.settings.clock(), 'REMOTE_COMMAND_EXPIRED')
         catalog = self.get(tx, owner, 'catalog', conv['targetWorkerId'])
         if body['decision'] == 'approve':
             require(value['remoteApprovalAllowed'] and value['action'] not in BLOCKED | {'shell'} | set(catalog['remotelyBlockedActions']) and value['riskLevel'] not in {'high','critical'}, 'REMOTE_APPROVAL_FORBIDDEN')
         old = tx.get(owner, 'approval-intent', identifier)
         if old:
-            require(old['content'] == digest(body), 'IDEMPOTENCY_MISMATCH')
             require(not old.get('_retired'), 'NOT_FOUND')
-            return old['receipt']
+            prior = self.get(tx, owner, 'command', old['receipt']['commandId'])
+            # A *new HTTP intent* may reject after suspension retired its old
+            # ungranted window. Same-key retries are handled by replay first.
+            closed_window = not prior.get('_granted') and prior.get('error', {}).get('code') == 'REMOTE_DEVICE_SUSPENDED'
+            if not closed_window:
+                require(old['content'] == digest(body), 'IDEMPOTENCY_MISMATCH')
+                return old['receipt']
         run = self.get(tx, owner, 'run', value['resultRef']['runId'])
         require(run['status'] not in {'succeeded','cancelled','failed'}, 'REMOTE_APPROVAL_FORBIDDEN')
         receipt = self.enqueue_v2(tx, owner, conv, 'approval.decide', dict(body, approvalId=value['_localId'], runId=run['_localId']), value['expiresAt'])
@@ -244,9 +258,9 @@ class SyncService(Service):
             if not value.get('_granted') and seconds(value['deliverBy']) <= self.settings.clock():
                 self.delivery_expired(tx, owner, value)
 
-    def delivery_expired(self, tx, owner, value):
+    def delivery_expired(self, tx, owner, value, code='REMOTE_DELIVERY_EXPIRED'):
         require(not value.get('_granted'), 'REMOTE_EVENT_CONFLICT')
-        value.update(status='failed', deliveryState='acknowledged', error=Fault('REMOTE_DELIVERY_EXPIRED').view(), observedAt=self.now())
+        value.update(status='failed', deliveryState='acknowledged', error=Fault(code).view(), observedAt=self.now())
         self.save(tx, owner, 'command', value['commandId'], value)
         box = tx.get(owner, 'outbox', 'command:' + value['commandId'])
         if box:
