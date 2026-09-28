@@ -95,6 +95,13 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   const isLoadingDevices = ref(false)
   const deviceError = ref<string | null>(null)
   const catalog = ref<RemoteCatalogView | null>(null)
+  const isLoadingCatalog = ref(false)
+  const catalogError = ref<string | null>(null)
+  let catalogRequest = 0
+  let deviceGeneration = 0
+  const availableDevices = computed(() => devices.value.filter((d) => d.status !== 'revoked'))
+  const revokedDevices = computed(() => devices.value.filter((d) => d.status === 'revoked'))
+  const createdConversationToFocus = ref<string | null>(null)
 
   // Conversations
   const conversations = ref<RemoteConversationView[]>([])
@@ -136,7 +143,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     if (selectedWorkerId.value) {
       return devices.value.find((d) => d.workerId === selectedWorkerId.value) || null
     }
-    return devices.value[0] || null
+    return availableDevices.value[0] || null
   })
 
   const activeDevice = computed(() => {
@@ -148,16 +155,16 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   const isWorkerOnline = computed(() => {
     const d = activeDevice.value
-    if (!d) return false
+    if (!d || d.status === 'revoked') return false
     if (typeof d.online === 'boolean') return d.online
     return d.status === 'online'
   })
 
   const isDeviceSendReady = computed(() => {
     const d = activeDevice.value
-    if (!d) return false
+    if (!d || d.status === 'revoked') return false
     if (d.online !== true && d.status !== 'online') return false
-    if (d.status === 'reconciliation_required' || d.status === 'revoked') return false
+    if (d.status === 'reconciliation_required') return false
     if (d.supportedWireRevisions && !d.supportedWireRevisions.includes(2)) return false
     if (d.busySnapshotFresh === false) return false
     return true
@@ -219,13 +226,8 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       const gateway = getRemoteGateway()
       const page = await gateway.listDevices()
       devices.value = page.items
-      if (devices.value.length > 0 && !catalog.value) {
-        try {
-          catalog.value = await gateway.getWorkerCatalog(devices.value[0].workerId)
-        } catch {
-          // catalog might be offline
-        }
-      }
+      if (checkSelectedDeviceRevoked()) return
+      if (selectedDevice.value && !catalog.value) await fetchCatalog()
     } catch (err: unknown) {
       deviceError.value = err instanceof Error ? err.message : '获取设备列表失败'
     } finally {
@@ -237,7 +239,9 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     try {
       const gateway = getRemoteGateway()
       const res = await gateway.revokeDevice(workerId, { reason })
-      devices.value = devices.value.filter((d) => d.workerId !== workerId)
+      const device = devices.value.find((d) => d.workerId === workerId)
+      if (device) { device.status = 'revoked'; device.online = false }
+      checkSelectedDeviceRevoked()
       lastRevocationInfo.value = {
         workerId: res.workerId,
         executionMayStillBeRunning: res.executionMayStillBeRunning,
@@ -252,7 +256,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   let devicePollingTimer: ReturnType<typeof setInterval> | null = null
 
   async function refreshActiveDevice(): Promise<void> {
-    const targetWorkerId = activeConversation.value?.targetWorkerId || devices.value[0]?.workerId
+    const targetWorkerId = activeDevice.value?.workerId
     if (!targetWorkerId) return
     try {
       const gateway = getRemoteGateway()
@@ -263,6 +267,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       } else {
         devices.value.push(updated)
       }
+      checkSelectedDeviceRevoked()
     } catch {
       // ignore network errors during periodic refresh
     }
@@ -284,8 +289,14 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   // --- Conversations ---
 
-  async function selectDevice(workerId: string): Promise<void> {
-    selectedWorkerId.value = workerId
+  function clearDeviceContent(): void {
+    deviceGeneration++
+    catalogRequest++
+    catalog.value = null
+    catalogError.value = null
+    isLoadingCatalog.value = false
+    clearPendingConversation()
+    createdConversationToFocus.value = null
     activeConversationId.value = null
     conversations.value = []
     messages.value = []
@@ -295,17 +306,51 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     serverCursor.value = null
     beforeCursor.value = null
     hasMoreMessages.value = false
-    await fetchConversations(workerId)
+  }
+
+  function checkSelectedDeviceRevoked(): boolean {
+    const device = devices.value.find((d) => d.workerId === (selectedWorkerId.value || activeConversation.value?.targetWorkerId))
+    if (device?.status !== 'revoked') return false
+    lastRevocationInfo.value = { workerId: device.workerId, executionMayStillBeRunning: true }
+    clearDeviceContent()
+    selectedWorkerId.value = null
+    stopPolling()
+    stopDevicePolling()
+    return true
+  }
+
+  async function fetchCatalog(): Promise<void> {
+    const device = selectedDevice.value
+    if (!device || device.status === 'revoked') return
+    const request = ++catalogRequest
+    isLoadingCatalog.value = true
+    catalogError.value = null
+    catalog.value = null
     try {
-      const gateway = getRemoteGateway()
-      catalog.value = await gateway.getWorkerCatalog(workerId)
-    } catch {
-      // ignore
+      const result = await getRemoteGateway().getWorkerCatalog(device.workerId)
+      if (request !== catalogRequest) return
+      if (result.workerId !== device.workerId || result.workerStoreId !== device.workerStoreId) {
+        throw new Error('电脑目录已变更，请重试')
+      }
+      catalog.value = result
+    } catch (err: unknown) {
+      if (request === catalogRequest) catalogError.value = err instanceof Error ? err.message : '读取电脑目录失败，请重试'
+    } finally {
+      if (request === catalogRequest) isLoadingCatalog.value = false
     }
+  }
+
+  async function selectDevice(workerId: string): Promise<void> {
+    selectedWorkerId.value = workerId
+    if (checkSelectedDeviceRevoked()) return
+    clearDeviceContent()
+    lastRevocationInfo.value = null
+    await Promise.all([fetchConversations(workerId), fetchCatalog()])
   }
 
   async function fetchConversations(workerId?: string, workspaceId?: string): Promise<void> {
     isLoadingConversations.value = true
+    const generation = deviceGeneration
     try {
       const gateway = getRemoteGateway()
       const targetWId = workerId || selectedWorkerId.value || undefined
@@ -313,6 +358,8 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
         workerId: targetWId,
         workspaceId,
       })
+      if (generation !== deviceGeneration) return
+      if (targetWId && (selectedWorkerId.value || selectedDevice.value?.workerId) !== targetWId) return
       conversations.value = page.items
       if (!activeConversationId.value && page.items.length > 0) {
         await selectConversation(page.items[0].conversationId)
@@ -323,6 +370,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
         if (found) {
           clearPendingConversation()
           await selectConversation(found.conversationId)
+          createdConversationToFocus.value = found.conversationId
         }
       }
     } catch (err: unknown) {
@@ -342,13 +390,27 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       })
     }
 
+    const currentCatalog = catalog.value
+    if (!currentCatalog || isLoadingCatalog.value || catalogError.value ||
+        selectedDevice.value?.workerId !== input.targetWorkerId ||
+        currentCatalog.workerId !== input.targetWorkerId ||
+        currentCatalog.workerStoreId !== input.workerStoreId ||
+        !currentCatalog.workspaces.some((w) => w.workspaceId === input.workspaceId) ||
+        !currentCatalog.scenes.some((scene) => scene.sceneId === input.sceneId && scene.version === input.sceneVersion)) {
+      actionError.value = '请先读取电脑的项目和场景列表'
+      return null
+    }
+    actionError.value = null
+    createdConversationToFocus.value = null
     try {
       const gateway = getRemoteGateway()
       const receipt = await gateway.createConversation(input)
+      if (selectedDevice.value?.workerId !== input.targetWorkerId) return null
       await fetchConversations(input.targetWorkerId)
       const found = conversations.value.find((c) => c.conversationId === receipt.conversationId)
       if (found) {
         await selectConversation(found.conversationId)
+        createdConversationToFocus.value = found.conversationId
         return receipt.conversationId
       }
 
@@ -439,6 +501,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     try {
       const gateway = getRemoteGateway()
       const page = await gateway.listMessages(conversationId)
+      if (activeConversationId.value !== conversationId) return
       if (page && Array.isArray(page.items)) {
         messages.value = mergeRemoteMessages([], page.items)
         hasMoreMessages.value = Boolean(page.hasMore)
@@ -458,6 +521,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     try {
       const gateway = getRemoteGateway()
       const page = await gateway.listMessages(targetId, beforeCursor.value)
+      if (activeConversationId.value !== targetId) return false
       if (page && Array.isArray(page.items) && page.items.length > 0) {
         messages.value = mergeRemoteMessages(messages.value, page.items)
         hasMoreMessages.value = Boolean(page.hasMore)
@@ -481,6 +545,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     try {
       const gateway = getRemoteGateway()
       const snapshot = await gateway.getConversationSnapshot(conversationId)
+      if (activeConversationId.value !== conversationId) return
       serverCursor.value = snapshot.serverCursor
       messages.value = mergeRemoteMessages([], snapshot.messages || [])
       runs.value = snapshot.runs || []
@@ -785,6 +850,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       if (pendingConversation.value?.conversationId === conv.conversationId) {
         clearPendingConversation()
         await selectConversation(conv.conversationId)
+        createdConversationToFocus.value = conv.conversationId
       }
       return
     }
@@ -1067,17 +1133,19 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   let isPollingEvents = false
 
   async function pollEvents(): Promise<void> {
-    if (isPollingEvents || !activeConversationId.value) return
+    if (isPollingEvents || (!activeConversationId.value && !pendingConversation.value)) return
     isPollingEvents = true
+    const generation = deviceGeneration
     try {
       const gateway = getRemoteGateway()
       let hasMore = true
       let pageCount = 0
       const maxPages = 50
 
-      while (hasMore && activeConversationId.value && pageCount < maxPages) {
+      while (hasMore && (activeConversationId.value || pendingConversation.value) && pageCount < maxPages) {
         pageCount++
         const page = await gateway.listEvents(serverCursor.value || undefined)
+        if (generation !== deviceGeneration) return
         if (page.nextServerCursor) {
           serverCursor.value = page.nextServerCursor
         }
@@ -1126,6 +1194,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   function reset(): void {
     stopPolling()
     stopDevicePolling()
+    clearDeviceContent()
     devices.value = []
     selectedWorkerId.value = null
     catalog.value = null
@@ -1150,6 +1219,12 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   return {
     devices,
+    availableDevices,
+    revokedDevices,
+    isLoadingCatalog,
+    catalogError,
+    fetchCatalog,
+    createdConversationToFocus,
     selectedWorkerId,
     selectedDevice,
     isLoadingDevices,
