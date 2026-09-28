@@ -6,7 +6,7 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.7.0"
+const Version = "0.8.0"
 
 type AdapterId = string
 
@@ -82,6 +82,11 @@ const (
 	ErrorCodeRemoteDeliveryExpired ErrorCode = "REMOTE_DELIVERY_EXPIRED"
 	ErrorCodeRemoteRevisionRequired ErrorCode = "REMOTE_REVISION_REQUIRED"
 	ErrorCodeRemoteSyncResourceLimit ErrorCode = "REMOTE_SYNC_RESOURCE_LIMIT"
+	ErrorCodeRemoteDeviceSuspended ErrorCode = "REMOTE_DEVICE_SUSPENDED"
+	ErrorCodeRemoteApiTokenInvalid ErrorCode = "REMOTE_API_TOKEN_INVALID"
+	ErrorCodeRemoteApiTokenExpired ErrorCode = "REMOTE_API_TOKEN_EXPIRED"
+	ErrorCodeRemoteApiTokenScopeInsufficient ErrorCode = "REMOTE_API_TOKEN_SCOPE_INSUFFICIENT"
+	ErrorCodeRemoteAuthAmbiguous ErrorCode = "REMOTE_AUTH_AMBIGUOUS"
 )
 
 type RoleId = string
@@ -226,6 +231,107 @@ type ReleaseInfo struct {
 	ReleaseNotes *string `json:"releaseNotes,omitempty"`
 	InstallStrategy *InstallStrategy `json:"installStrategy,omitempty"`
 	RollbackCompatible *bool `json:"rollbackCompatible,omitempty"`
+}
+
+type RemoteApiTokenScope string
+
+const (
+	RemoteApiTokenScopeDevices:read RemoteApiTokenScope = "devices:read"
+	RemoteApiTokenScopeDevices:manage RemoteApiTokenScope = "devices:manage"
+	RemoteApiTokenScopeDevices:delete RemoteApiTokenScope = "devices:delete"
+)
+
+type RemoteApiTokenCreateInput struct {
+	Name string `json:"name"`
+	Scopes []RemoteApiTokenScope `json:"scopes"`
+	ExpiresAt *string `json:"expiresAt,omitempty"`
+}
+
+type RemoteApiTokenView struct {
+	TokenId string `json:"tokenId"`
+	Name string `json:"name"`
+	TokenPrefix string `json:"tokenPrefix"`
+	Scopes []RemoteApiTokenScope `json:"scopes"`
+	CreatedAt string `json:"createdAt"`
+	LastUsedAt *string `json:"lastUsedAt,omitempty"`
+	ExpiresAt string `json:"expiresAt"`
+	Status string `json:"status"`
+	RevokedAt *string `json:"revokedAt,omitempty"`
+}
+
+type RemoteApiTokenIssueReplayView struct {
+	Token RemoteApiTokenView `json:"token"`
+	SecretAvailable bool `json:"secretAvailable"`
+}
+
+type RemoteApiTokenIssuedView struct {
+	Token RemoteApiTokenView `json:"token"`
+	SecretAvailable bool `json:"secretAvailable"`
+	Secret string `json:"secret"`
+}
+
+type RemoteApiTokenPage struct {
+	Items []RemoteApiTokenView `json:"items"`
+	HasMore bool `json:"hasMore"`
+	NextCursor *string `json:"nextCursor,omitempty"`
+}
+
+type RemoteApiTokenRevocationView struct {
+	TokenId string `json:"tokenId"`
+	RevokedAt string `json:"revokedAt"`
+	Status string `json:"status"`
+}
+
+type RemoteDeviceDeletionView struct {
+	WorkerId string `json:"workerId"`
+	DeletedAt string `json:"deletedAt"`
+	ExecutionMayStillBeRunning bool `json:"executionMayStillBeRunning"`
+}
+
+type RemoteDeviceView struct {
+	WorkerId string `json:"workerId"`
+	DeviceName string `json:"deviceName"`
+	Platform string `json:"platform"`
+	Architecture string `json:"architecture"`
+	Status string `json:"status"`
+	WorkerStoreId string `json:"workerStoreId"`
+	CapabilityRevision int64 `json:"capabilityRevision"`
+	ObservedAt string `json:"observedAt"`
+	LastSeenAt *string `json:"lastSeenAt,omitempty"`
+	PairedAt string `json:"pairedAt"`
+	RevokedAt *string `json:"revokedAt,omitempty"`
+	Online *bool `json:"online,omitempty"`
+	BusySnapshotFresh *bool `json:"busySnapshotFresh,omitempty"`
+	SupportedWireRevisions []int64 `json:"supportedWireRevisions,omitempty"`
+	RemoteAccess *string `json:"remoteAccess,omitempty"`
+	DisplayName *string `json:"displayName,omitempty"`
+	Version *int64 `json:"version,omitempty"`
+	SuspendedAt *string `json:"suspendedAt,omitempty"`
+}
+
+type RemoteDevicePage struct {
+	Items []RemoteDeviceView `json:"items"`
+	HasMore bool `json:"hasMore"`
+	NextCursor *string `json:"nextCursor,omitempty"`
+}
+
+type RemoteDevicePatchInput struct {
+	ExpectedVersion int64 `json:"expectedVersion"`
+	RemoteAccess *string `json:"remoteAccess,omitempty"`
+	DisplayName *string `json:"displayName,omitempty"`
+}
+
+type RemoteHttpErrorDetail struct {
+	Fields []string `json:"fields,omitempty"`
+	CurrentVersion *int64 `json:"currentVersion,omitempty"`
+	RetryAfterSeconds *int64 `json:"retryAfterSeconds,omitempty"`
+}
+
+type RemoteHttpError struct {
+	Code ErrorCode `json:"code"`
+	Message string `json:"message"`
+	Retryable bool `json:"retryable"`
+	Detail *RemoteHttpErrorDetail `json:"detail,omitempty"`
 }
 
 type UpdateActionInput struct {

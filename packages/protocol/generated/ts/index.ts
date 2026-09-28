@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.7.0' as const
+export const PROTOCOL_VERSION = '0.8.0' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -175,6 +175,11 @@ export type ErrorCode =
   | 'REMOTE_DELIVERY_EXPIRED'
   | 'REMOTE_REVISION_REQUIRED'
   | 'REMOTE_SYNC_RESOURCE_LIMIT'
+  | 'REMOTE_DEVICE_SUSPENDED'
+  | 'REMOTE_API_TOKEN_INVALID'
+  | 'REMOTE_API_TOKEN_EXPIRED'
+  | 'REMOTE_API_TOKEN_SCOPE_INSUFFICIENT'
+  | 'REMOTE_AUTH_AMBIGUOUS'
 
 /** 任何 Port 方法失败时的统一结构。接入失败或缺少硬能力必须走这里，不得返回成功后在事件里静默降级。 */
 export interface AdapterFailure {
@@ -1256,6 +1261,60 @@ export interface RemoteAnonymousSession {
   authenticated: false
 }
 
+export type RemoteApiTokenScope =
+  | 'devices:read'
+  | 'devices:manage'
+  | 'devices:delete'
+
+/** Cookie only. Trimmed name nonempty. Omitted expiry=90 days, max365 days from first issuance; duplicate scope values rejected. */
+export interface RemoteApiTokenCreateInput {
+  name: string
+  /** No duplicates. Independent exact scopes, no implicit inclusion or wildcard. */
+  scopes: RemoteApiTokenScope[]
+  expiresAt?: string
+}
+
+/** Metadata only. Prefix is public selector, never any secret bytes. Revoked takes precedence over expired. */
+export interface RemoteApiTokenView {
+  tokenId: string
+  name: string
+  tokenPrefix: string
+  /** No duplicates. Independent exact scopes, no implicit inclusion or wildcard. */
+  scopes: RemoteApiTokenScope[]
+  createdAt: string
+  lastUsedAt?: string
+  expiresAt: string
+  status: 'active' | 'expired' | 'revoked'
+  revokedAt?: string
+}
+
+/** 200 same intent replay; no secret recovery or second token issuance. If first response was lost, revoke then create using a new key. */
+export interface RemoteApiTokenIssueReplayView {
+  token: RemoteApiTokenView
+  secretAvailable: false
+}
+
+/** 201 first issuance only; never store this full response in an idempotency cache. */
+export interface RemoteApiTokenIssuedView {
+  token: RemoteApiTokenView
+  secretAvailable: true
+  /** Only first issuance response; fresh 32-byte CSPRNG secret. This is an account API token, never a model credential or Worker device secret. */
+  secret: string
+}
+
+/** Opaque owner/filter-scoped cursor; hasMore=true requires nextCursor. */
+export interface RemoteApiTokenPage {
+  items: RemoteApiTokenView[]
+  hasMore: boolean
+  nextCursor?: string
+}
+
+export interface RemoteApiTokenRevocationView {
+  tokenId: string
+  revokedAt: string
+  status: 'revoked'
+}
+
 /** Worker looks up current pending approval/action/policy locally. Browser and server cannot supply a lower risk/action classification. */
 export interface RemoteApprovalDecisionPayload {
   runId: string
@@ -1549,6 +1608,90 @@ export interface RemoteBrowserStoreReset {
   workerStoreId: string
 }
 
+export type RemoteWire2ErrorCode =
+  | 'BAD_REQUEST'
+  | 'VALIDATION_FAILED'
+  | 'UNAUTHORIZED'
+  | 'ORIGIN_NOT_ALLOWED'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'IDEMPOTENCY_MISMATCH'
+  | 'PROTOCOL_VERSION_MISMATCH'
+  | 'HUB_NOT_READY'
+  | 'HUB_MAINTENANCE'
+  | 'EVENT_CURSOR_EXPIRED'
+  | 'FEATURE_UNAVAILABLE'
+  | 'AGENT_NOT_FOUND'
+  | 'AGENT_OFFLINE'
+  | 'AGENT_NOT_LOGGED_IN'
+  | 'AGENT_INCOMPATIBLE'
+  | 'CAPABILITY_MISSING'
+  | 'ROLE_UNRESOLVED'
+  | 'SESSION_NOT_RESUMABLE'
+  | 'TASK_NOT_CANCELLABLE'
+  | 'TASK_ACTION_INVALID'
+  | 'WORKTREE_BUSY'
+  | 'PATH_NOT_ALLOWED'
+  | 'APPROVAL_REQUIRED'
+  | 'APPROVAL_EXPIRED'
+  | 'APPROVAL_ALREADY_DECIDED'
+  | 'UPDATE_NOT_AVAILABLE'
+  | 'UPDATE_BUSY'
+  | 'UPDATE_VERIFY_FAILED'
+  | 'UPDATE_DRAIN_TIMEOUT'
+  | 'INTERNAL'
+  | 'REMOTE_AUTH_REQUIRED'
+  | 'REMOTE_CSRF_REJECTED'
+  | 'REMOTE_DEVICE_OFFLINE'
+  | 'REMOTE_DEVICE_REVOKED'
+  | 'REMOTE_DEVICE_AUTH_FAILED'
+  | 'REMOTE_PAIRING_EXPIRED'
+  | 'REMOTE_PAIRING_CONFLICT'
+  | 'REMOTE_PAIRING_INVALID'
+  | 'REMOTE_COMMAND_EXPIRED'
+  | 'REMOTE_COMMAND_WITHDRAWN'
+  | 'REMOTE_WITHDRAWAL_UNCONFIRMED'
+  | 'REMOTE_STORE_CHANGED'
+  | 'REMOTE_EPOCH_STALE'
+  | 'REMOTE_PROTOCOL_UNSUPPORTED'
+  | 'REMOTE_EVENT_CONFLICT'
+  | 'REMOTE_ACK_CONFLICT'
+  | 'REMOTE_SEQUENCE_GAP'
+  | 'REMOTE_APPROVAL_FORBIDDEN'
+  | 'CONVERSATION_AUTHORITY_MISMATCH'
+  | 'REMOTE_TARGET_MISMATCH'
+  | 'REMOTE_SCENE_VERSION_MISMATCH'
+  | 'REMOTE_CURSOR_EXPIRED'
+  | 'REMOTE_CURSOR_INVALID'
+  | 'REMOTE_RATE_LIMITED'
+  | 'REMOTE_FRAME_TOO_LARGE'
+  | 'REMOTE_WITHDRAWAL_TOO_LATE'
+  | 'REMOTE_PAIRING_IN_PROGRESS'
+  | 'REMOTE_SERVER_UNREACHABLE'
+  | 'REMOTE_SERVER_ORIGIN_INVALID'
+  | 'REMOTE_CONVERSATION_BUSY'
+  | 'REMOTE_STATE_NOT_READY'
+  | 'REMOTE_SYNC_CONFLICT'
+  | 'REMOTE_SYNC_DISABLED'
+  | 'REMOTE_DELIVERY_EXPIRED'
+  | 'REMOTE_REVISION_REQUIRED'
+  | 'REMOTE_SYNC_RESOURCE_LIMIT'
+
+/** Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely. */
+export interface RemoteWire2ApprovalView {
+  approvalId: string
+  resultRef: RemoteResultRef
+  action: DangerousAction
+  targetSummary: string
+  riskLevel: RiskLevel
+  status: ApprovalStatus
+  requestedAt: string
+  expiresAt: string
+  remoteApprovalAllowed: boolean
+  workerPolicyRevision: number
+  denialCode?: RemoteWire2ErrorCode
+}
+
 export interface RemoteV2ApprovalEvent {
   type: 'approval.state_changed'
   /** Revision 2; select by connection codec, never by package version. */
@@ -1560,7 +1703,7 @@ export interface RemoteV2ApprovalEvent {
   seq: number
   occurredAt: string
   conversationId: string
-  payload: RemoteApprovalView
+  payload: RemoteWire2ApprovalView
 }
 
 /** Worker scene index only; model/provider credential or installation/subscription data is not relayed. */
@@ -1640,6 +1783,13 @@ export interface RemoteV2CommandCompleted {
   controlResult?: RemoteV2ControlConfirmed
 }
 
+/** Sanitized error. No credential, raw environment, owner locator or arbitrary detail object. */
+export interface RemoteWire2Error {
+  code: RemoteWire2ErrorCode
+  message: string
+  retryable: boolean
+}
+
 /** Failure after admission. A refused control is distinct from unconfirmed cancellation; do not infer that an Agent process has stopped. */
 export interface RemoteV2CommandFailed {
   type: 'command.failed'
@@ -1654,7 +1804,7 @@ export interface RemoteV2CommandFailed {
   commandId: string
   conversationId: string
   resultStatus: 'failed' | 'rejected'
-  error: RemoteError
+  error: RemoteWire2Error
   resultRef?: RemoteResultRef
   controlResult?: RemoteControlRejected
 }
@@ -1674,7 +1824,7 @@ export interface RemoteV2CommandRejected {
   conversationId: string
   receivedAt: string
   status: 'rejected'
-  error: RemoteError
+  error: RemoteWire2Error
 }
 
 /** D41: unconfirmed leaves command accepted and pending reconciliation. Run-scoped controls include resultRef/executionStatus. Before a Run exists (withdrawal reconciliation), omit both rather than invent an identity or execution state. */
@@ -2197,6 +2347,13 @@ export interface RemoteCreateConversationInput {
   workerStoreId: string
 }
 
+/** Deletes server resource/copies and revokes credentials, never claims local execution stopped. */
+export interface RemoteDeviceDeletionView {
+  workerId: string
+  deletedAt: string
+  executionMayStillBeRunning: true
+}
+
 export interface RemoteDeviceView {
   workerId: string
   deviceName: string
@@ -2212,6 +2369,14 @@ export interface RemoteDeviceView {
   online?: boolean
   busySnapshotFresh?: boolean
   supportedWireRevisions?: number[]
+  /** Optional legacy compatibility: omitted means enabled. Independent from status/online. */
+  remoteAccess?: 'enabled' | 'suspended'
+  /** Optional server-only alias; absent means use unchanged Worker deviceName. */
+  displayName?: string
+  /** Management CAS version, legacy=1. Changes only for management/lifecycle mutations, not heartbeats or snapshots. */
+  version?: number
+  /** Present only while suspended; resume clears this field. */
+  suspendedAt?: string
 }
 
 export interface RemoteDevicePage {
@@ -2219,6 +2384,13 @@ export interface RemoteDevicePage {
   hasMore: boolean
   /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
   nextCursor?: string
+}
+
+/** At least one change required. Empty/whitespace displayName clears the server alias; null invalid. Does not rename the Worker. */
+export interface RemoteDevicePatchInput {
+  expectedVersion: number
+  remoteAccess?: 'enabled' | 'suspended'
+  displayName?: string
 }
 
 /** Revokes transport rights, does not claim execution was cancelled or stopped. */
@@ -2247,6 +2419,21 @@ export interface RemoteEventAck {
   connectionId: string
   workerId: string
   position: RemoteEventPosition
+}
+
+/** Safe HTTP-only hints. fields contains schema/header names, not input values; currentVersion only after owner/resource authorization. No raw exception, credential, owner locator or request body. */
+export interface RemoteHttpErrorDetail {
+  fields?: string[]
+  currentVersion?: number
+  retryAfterSeconds?: number
+}
+
+/** HTTP-only error shape inside ApiEnvelope.error; detail does not extend any Worker error DTO. */
+export interface RemoteHttpError {
+  code: ErrorCode
+  message: string
+  retryable: boolean
+  detail?: RemoteHttpErrorDetail
 }
 
 /** Local binding view; connectionStatus is transport only. Frozen blocks command delivery pending reconciliation, even when WSS is online. */
@@ -2891,7 +3078,7 @@ export interface RemoteV2WorkerHelloAck {
   pendingCommandCursor: string
   heartbeatIntervalSeconds: 15
   offlineAfterSeconds: 45
-  reason?: RemoteError
+  reason?: RemoteWire2Error
   serverTime: string
 }
 
@@ -2899,7 +3086,7 @@ export interface RemoteV2WorkerHelloRejected {
   type: 'worker.hello_rejected'
   /** Revision 2; select by connection codec, never by package version. */
   wireRevision: 2
-  error: RemoteError
+  error: RemoteWire2Error
   /** Server supported wire revisions, mandatory on rejection (including REMOTE_PROTOCOL_UNSUPPORTED). Initially [1]; during upgrades advertise N and N-1. */
   supportedWireRevisions: number[]
 }
@@ -3500,4 +3687,9 @@ export const ERROR_CATALOG: Record<ErrorCode, { http: number; retryable: boolean
   REMOTE_DELIVERY_EXPIRED: { http: 409, retryable: true },
   REMOTE_REVISION_REQUIRED: { http: 409, retryable: false },
   REMOTE_SYNC_RESOURCE_LIMIT: { http: 413, retryable: false },
+  REMOTE_DEVICE_SUSPENDED: { http: 409, retryable: false },
+  REMOTE_API_TOKEN_INVALID: { http: 401, retryable: false },
+  REMOTE_API_TOKEN_EXPIRED: { http: 401, retryable: false },
+  REMOTE_API_TOKEN_SCOPE_INSUFFICIENT: { http: 403, retryable: false },
+  REMOTE_AUTH_AMBIGUOUS: { http: 400, retryable: false },
 }

@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer, model_validator
 
-PROTOCOL_VERSION = "0.7.0"
+PROTOCOL_VERSION = "0.8.0"
 
 
 class _Base(BaseModel):
@@ -214,6 +214,11 @@ class ErrorCode(StrEnum):
     REMOTE_DELIVERY_EXPIRED = "REMOTE_DELIVERY_EXPIRED"
     REMOTE_REVISION_REQUIRED = "REMOTE_REVISION_REQUIRED"
     REMOTE_SYNC_RESOURCE_LIMIT = "REMOTE_SYNC_RESOURCE_LIMIT"
+    REMOTE_DEVICE_SUSPENDED = "REMOTE_DEVICE_SUSPENDED"
+    REMOTE_API_TOKEN_INVALID = "REMOTE_API_TOKEN_INVALID"
+    REMOTE_API_TOKEN_EXPIRED = "REMOTE_API_TOKEN_EXPIRED"
+    REMOTE_API_TOKEN_SCOPE_INSUFFICIENT = "REMOTE_API_TOKEN_SCOPE_INSUFFICIENT"
+    REMOTE_AUTH_AMBIGUOUS = "REMOTE_AUTH_AMBIGUOUS"
 
 
 class AdapterFailure(_Base):
@@ -1205,6 +1210,71 @@ class RemoteAnonymousSession(_RemoteBase):
     authenticated: Literal[False] = Field(alias="authenticated", json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
 
 
+class RemoteApiTokenScope(StrEnum):
+    DEVICES_READ = "devices:read"
+    DEVICES_MANAGE = "devices:manage"
+    DEVICES_DELETE = "devices:delete"
+
+    @classmethod
+    def model_validate(cls, value):
+        from pydantic import TypeAdapter
+        return TypeAdapter(cls).validate_python(value)
+
+    def model_dump(self, **kwargs):
+        return self.value
+
+
+class RemoteApiTokenCreateInput(_RemoteBase):
+    """Cookie only. Trimmed name nonempty. Omitted expiry=90 days, max365 days from first issuance; duplicate scope values rejected."""
+
+    name: str = Field(alias="name", min_length=1, max_length=120, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    scopes: list[RemoteApiTokenScope] = Field(alias="scopes", min_length=1, max_length=3, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    expires_at: str | None = Field(default=None, alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteApiTokenView(_RemoteBase):
+    """Metadata only. Prefix is public selector, never any secret bytes. Revoked takes precedence over expired."""
+
+    token_id: str = Field(alias="tokenId", min_length=28, max_length=28, pattern='^pat_[0-9a-f]{24}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    name: str = Field(alias="name", min_length=1, max_length=120, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    token_prefix: str = Field(alias="tokenPrefix", min_length=32, max_length=32, pattern='^hqr_pat_[0-9a-f]{24}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    scopes: list[RemoteApiTokenScope] = Field(alias="scopes", min_length=1, max_length=3, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    last_used_at: str | None = Field(default=None, alias="lastUsedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    status: Literal["active", "expired", "revoked"] = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    revoked_at: str | None = Field(default=None, alias="revokedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteApiTokenIssueReplayView(_RemoteBase):
+    """200 same intent replay; no secret recovery or second token issuance. If first response was lost, revoke then create using a new key."""
+
+    token: RemoteApiTokenView = Field(alias="token", json_schema_extra={'wireNullable': False, 'wireType': None})
+    secret_available: Literal[False] = Field(alias="secretAvailable", json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+
+
+class RemoteApiTokenIssuedView(_RemoteBase):
+    """201 first issuance only; never store this full response in an idempotency cache."""
+
+    token: RemoteApiTokenView = Field(alias="token", json_schema_extra={'wireNullable': False, 'wireType': None})
+    secret_available: Literal[True] = Field(alias="secretAvailable", json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    secret: str = Field(alias="secret", min_length=76, max_length=76, pattern='^hqr_pat_[0-9a-f]{24}_[A-Za-z0-9_-]{43}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteApiTokenPage(_RemoteBase):
+    """Opaque owner/filter-scoped cursor; hasMore=true requires nextCursor."""
+
+    items: list[RemoteApiTokenView] = Field(alias="items", max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    has_more: bool = Field(alias="hasMore", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    next_cursor: str | None = Field(default=None, alias="nextCursor", min_length=16, max_length=2048, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteApiTokenRevocationView(_RemoteBase):
+    token_id: str = Field(alias="tokenId", min_length=28, max_length=28, pattern='^pat_[0-9a-f]{24}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    revoked_at: str = Field(alias="revokedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    status: Literal["revoked"] = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
 class RemoteApprovalDecisionPayload(_RemoteBase):
     """Worker looks up current pending approval/action/policy locally. Browser and server cannot supply a lower risk/action classification."""
 
@@ -1513,6 +1583,100 @@ class RemoteBrowserStoreReset(_RemoteBase):
     worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
 
 
+class RemoteWire2ErrorCode(StrEnum):
+    BAD_REQUEST = "BAD_REQUEST"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    ORIGIN_NOT_ALLOWED = "ORIGIN_NOT_ALLOWED"
+    NOT_FOUND = "NOT_FOUND"
+    CONFLICT = "CONFLICT"
+    IDEMPOTENCY_MISMATCH = "IDEMPOTENCY_MISMATCH"
+    PROTOCOL_VERSION_MISMATCH = "PROTOCOL_VERSION_MISMATCH"
+    HUB_NOT_READY = "HUB_NOT_READY"
+    HUB_MAINTENANCE = "HUB_MAINTENANCE"
+    EVENT_CURSOR_EXPIRED = "EVENT_CURSOR_EXPIRED"
+    FEATURE_UNAVAILABLE = "FEATURE_UNAVAILABLE"
+    AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
+    AGENT_OFFLINE = "AGENT_OFFLINE"
+    AGENT_NOT_LOGGED_IN = "AGENT_NOT_LOGGED_IN"
+    AGENT_INCOMPATIBLE = "AGENT_INCOMPATIBLE"
+    CAPABILITY_MISSING = "CAPABILITY_MISSING"
+    ROLE_UNRESOLVED = "ROLE_UNRESOLVED"
+    SESSION_NOT_RESUMABLE = "SESSION_NOT_RESUMABLE"
+    TASK_NOT_CANCELLABLE = "TASK_NOT_CANCELLABLE"
+    TASK_ACTION_INVALID = "TASK_ACTION_INVALID"
+    WORKTREE_BUSY = "WORKTREE_BUSY"
+    PATH_NOT_ALLOWED = "PATH_NOT_ALLOWED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    APPROVAL_EXPIRED = "APPROVAL_EXPIRED"
+    APPROVAL_ALREADY_DECIDED = "APPROVAL_ALREADY_DECIDED"
+    UPDATE_NOT_AVAILABLE = "UPDATE_NOT_AVAILABLE"
+    UPDATE_BUSY = "UPDATE_BUSY"
+    UPDATE_VERIFY_FAILED = "UPDATE_VERIFY_FAILED"
+    UPDATE_DRAIN_TIMEOUT = "UPDATE_DRAIN_TIMEOUT"
+    INTERNAL = "INTERNAL"
+    REMOTE_AUTH_REQUIRED = "REMOTE_AUTH_REQUIRED"
+    REMOTE_CSRF_REJECTED = "REMOTE_CSRF_REJECTED"
+    REMOTE_DEVICE_OFFLINE = "REMOTE_DEVICE_OFFLINE"
+    REMOTE_DEVICE_REVOKED = "REMOTE_DEVICE_REVOKED"
+    REMOTE_DEVICE_AUTH_FAILED = "REMOTE_DEVICE_AUTH_FAILED"
+    REMOTE_PAIRING_EXPIRED = "REMOTE_PAIRING_EXPIRED"
+    REMOTE_PAIRING_CONFLICT = "REMOTE_PAIRING_CONFLICT"
+    REMOTE_PAIRING_INVALID = "REMOTE_PAIRING_INVALID"
+    REMOTE_COMMAND_EXPIRED = "REMOTE_COMMAND_EXPIRED"
+    REMOTE_COMMAND_WITHDRAWN = "REMOTE_COMMAND_WITHDRAWN"
+    REMOTE_WITHDRAWAL_UNCONFIRMED = "REMOTE_WITHDRAWAL_UNCONFIRMED"
+    REMOTE_STORE_CHANGED = "REMOTE_STORE_CHANGED"
+    REMOTE_EPOCH_STALE = "REMOTE_EPOCH_STALE"
+    REMOTE_PROTOCOL_UNSUPPORTED = "REMOTE_PROTOCOL_UNSUPPORTED"
+    REMOTE_EVENT_CONFLICT = "REMOTE_EVENT_CONFLICT"
+    REMOTE_ACK_CONFLICT = "REMOTE_ACK_CONFLICT"
+    REMOTE_SEQUENCE_GAP = "REMOTE_SEQUENCE_GAP"
+    REMOTE_APPROVAL_FORBIDDEN = "REMOTE_APPROVAL_FORBIDDEN"
+    CONVERSATION_AUTHORITY_MISMATCH = "CONVERSATION_AUTHORITY_MISMATCH"
+    REMOTE_TARGET_MISMATCH = "REMOTE_TARGET_MISMATCH"
+    REMOTE_SCENE_VERSION_MISMATCH = "REMOTE_SCENE_VERSION_MISMATCH"
+    REMOTE_CURSOR_EXPIRED = "REMOTE_CURSOR_EXPIRED"
+    REMOTE_CURSOR_INVALID = "REMOTE_CURSOR_INVALID"
+    REMOTE_RATE_LIMITED = "REMOTE_RATE_LIMITED"
+    REMOTE_FRAME_TOO_LARGE = "REMOTE_FRAME_TOO_LARGE"
+    REMOTE_WITHDRAWAL_TOO_LATE = "REMOTE_WITHDRAWAL_TOO_LATE"
+    REMOTE_PAIRING_IN_PROGRESS = "REMOTE_PAIRING_IN_PROGRESS"
+    REMOTE_SERVER_UNREACHABLE = "REMOTE_SERVER_UNREACHABLE"
+    REMOTE_SERVER_ORIGIN_INVALID = "REMOTE_SERVER_ORIGIN_INVALID"
+    REMOTE_CONVERSATION_BUSY = "REMOTE_CONVERSATION_BUSY"
+    REMOTE_STATE_NOT_READY = "REMOTE_STATE_NOT_READY"
+    REMOTE_SYNC_CONFLICT = "REMOTE_SYNC_CONFLICT"
+    REMOTE_SYNC_DISABLED = "REMOTE_SYNC_DISABLED"
+    REMOTE_DELIVERY_EXPIRED = "REMOTE_DELIVERY_EXPIRED"
+    REMOTE_REVISION_REQUIRED = "REMOTE_REVISION_REQUIRED"
+    REMOTE_SYNC_RESOURCE_LIMIT = "REMOTE_SYNC_RESOURCE_LIMIT"
+
+    @classmethod
+    def model_validate(cls, value):
+        from pydantic import TypeAdapter
+        return TypeAdapter(cls).validate_python(value)
+
+    def model_dump(self, **kwargs):
+        return self.value
+
+
+class RemoteWire2ApprovalView(_RemoteBase):
+    """Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely."""
+
+    approval_id: str = Field(alias="approvalId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    result_ref: RemoteResultRef = Field(alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
+    action: DangerousAction = Field(alias="action", json_schema_extra={'wireNullable': False, 'wireType': None})
+    target_summary: str = Field(alias="targetSummary", max_length=2000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    risk_level: RiskLevel = Field(alias="riskLevel", json_schema_extra={'wireNullable': False, 'wireType': None})
+    status: ApprovalStatus = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': None})
+    requested_at: str = Field(alias="requestedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    remote_approval_allowed: bool = Field(alias="remoteApprovalAllowed", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    worker_policy_revision: int = Field(alias="workerPolicyRevision", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    denial_code: RemoteWire2ErrorCode | None = Field(default=None, alias="denialCode", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
 class RemoteV2ApprovalEvent(_RemoteBase):
     type: Literal["approval.state_changed"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     wire_revision: Literal[2] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
@@ -1523,7 +1687,7 @@ class RemoteV2ApprovalEvent(_RemoteBase):
     seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
     occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    payload: RemoteApprovalView = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+    payload: RemoteWire2ApprovalView = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
 class RemoteSceneSummary(_RemoteBase):
@@ -1605,6 +1769,14 @@ class RemoteV2CommandCompleted(_RemoteBase):
     control_result: RemoteV2ControlConfirmed | None = Field(default=None, alias="controlResult", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
+class RemoteWire2Error(_RemoteBase):
+    """Sanitized error. No credential, raw environment, owner locator or arbitrary detail object."""
+
+    code: RemoteWire2ErrorCode = Field(alias="code", json_schema_extra={'wireNullable': False, 'wireType': None})
+    message: str = Field(alias="message", max_length=2000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    retryable: bool = Field(alias="retryable", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+
+
 class RemoteV2CommandFailed(_RemoteBase):
     """Failure after admission. A refused control is distinct from unconfirmed cancellation; do not infer that an Agent process has stopped."""
 
@@ -1619,7 +1791,7 @@ class RemoteV2CommandFailed(_RemoteBase):
     command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     result_status: Literal["failed", "rejected"] = Field(alias="resultStatus", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    error: RemoteError = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
+    error: RemoteWire2Error = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
     result_ref: RemoteResultRef | None = Field(default=None, alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
     control_result: RemoteControlRejected | None = Field(default=None, alias="controlResult", json_schema_extra={'wireNullable': False, 'wireType': None})
 
@@ -1639,7 +1811,7 @@ class RemoteV2CommandRejected(_RemoteBase):
     conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     received_at: str = Field(alias="receivedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     status: Literal["rejected"] = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    error: RemoteError = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
+    error: RemoteWire2Error = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
 class RemoteV2ControlObserved(_RemoteBase):
@@ -2178,6 +2350,14 @@ class RemoteCreateConversationInput(_RemoteBase):
     worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
 
 
+class RemoteDeviceDeletionView(_RemoteBase):
+    """Deletes server resource/copies and revokes credentials, never claims local execution stopped."""
+
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    deleted_at: str = Field(alias="deletedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    execution_may_still_be_running: Literal[True] = Field(alias="executionMayStillBeRunning", json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+
+
 class RemoteDeviceView(_RemoteBase):
     worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     device_name: str = Field(alias="deviceName", max_length=120, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
@@ -2193,12 +2373,24 @@ class RemoteDeviceView(_RemoteBase):
     online: bool | None = Field(default=None, alias="online", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
     busy_snapshot_fresh: bool | None = Field(default=None, alias="busySnapshotFresh", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
     supported_wire_revisions: list[Annotated[int, Field(strict=True, ge=1)]] | None = Field(default=None, alias="supportedWireRevisions", max_length=16, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    remote_access: Literal["enabled", "suspended"] | None = Field(default=None, alias="remoteAccess", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    display_name: str | None = Field(default=None, alias="displayName", min_length=1, max_length=120, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    version: int | None = Field(default=None, alias="version", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    suspended_at: str | None = Field(default=None, alias="suspendedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
 
 
 class RemoteDevicePage(_RemoteBase):
     items: list[RemoteDeviceView] = Field(alias="items", max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
     has_more: bool = Field(alias="hasMore", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
     next_cursor: str | None = Field(default=None, alias="nextCursor", min_length=16, max_length=2048, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteDevicePatchInput(_RemoteBase):
+    """At least one change required. Empty/whitespace displayName clears the server alias; null invalid. Does not rename the Worker."""
+
+    expected_version: int = Field(alias="expectedVersion", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    remote_access: Literal["enabled", "suspended"] | None = Field(default=None, alias="remoteAccess", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    display_name: str | None = Field(default=None, alias="displayName", max_length=120, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
 
 
 class RemoteDeviceRevocationView(_RemoteBase):
@@ -2229,6 +2421,23 @@ class RemoteEventAck(_RemoteBase):
     connection_id: str = Field(alias="connectionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     position: RemoteEventPosition = Field(alias="position", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteHttpErrorDetail(_RemoteBase):
+    """Safe HTTP-only hints. fields contains schema/header names, not input values; currentVersion only after owner/resource authorization. No raw exception, credential, owner locator or request body."""
+
+    fields: list[Annotated[str, Field(strict=True, min_length=1, max_length=128)]] | None = Field(default=None, alias="fields", max_length=32, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    current_version: int | None = Field(default=None, alias="currentVersion", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    retry_after_seconds: int | None = Field(default=None, alias="retryAfterSeconds", ge=0, le=86400, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+
+
+class RemoteHttpError(_RemoteBase):
+    """HTTP-only error shape inside ApiEnvelope.error; detail does not extend any Worker error DTO."""
+
+    code: ErrorCode = Field(alias="code", json_schema_extra={'wireNullable': False, 'wireType': None})
+    message: str = Field(alias="message", max_length=2000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    retryable: bool = Field(alias="retryable", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    detail: RemoteHttpErrorDetail | None = Field(default=None, alias="detail", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
 class RemoteLinkFrozenView(_RemoteBase):
@@ -2888,14 +3097,14 @@ class RemoteV2WorkerHelloAck(_RemoteBase):
     pending_command_cursor: str = Field(alias="pendingCommandCursor", min_length=16, max_length=2048, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     heartbeat_interval_seconds: Literal[15] = Field(alias="heartbeatIntervalSeconds", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
     offline_after_seconds: Literal[45] = Field(alias="offlineAfterSeconds", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
-    reason: RemoteError | None = Field(default=None, alias="reason", json_schema_extra={'wireNullable': False, 'wireType': None})
+    reason: RemoteWire2Error | None = Field(default=None, alias="reason", json_schema_extra={'wireNullable': False, 'wireType': None})
     server_time: str = Field(alias="serverTime", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
 
 
 class RemoteV2WorkerHelloRejected(_RemoteBase):
     type: Literal["worker.hello_rejected"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     wire_revision: Literal[2] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
-    error: RemoteError = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
+    error: RemoteWire2Error = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
     supported_wire_revisions: list[Annotated[int, Field(strict=True, ge=1, le=2147483647)]] = Field(alias="supportedWireRevisions", min_length=1, max_length=16, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
 
 
@@ -3444,4 +3653,9 @@ ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "REMOTE_DELIVERY_EXPIRED": {"http": 409, "retryable": True},
     "REMOTE_REVISION_REQUIRED": {"http": 409, "retryable": False},
     "REMOTE_SYNC_RESOURCE_LIMIT": {"http": 413, "retryable": False},
+    "REMOTE_DEVICE_SUSPENDED": {"http": 409, "retryable": False},
+    "REMOTE_API_TOKEN_INVALID": {"http": 401, "retryable": False},
+    "REMOTE_API_TOKEN_EXPIRED": {"http": 401, "retryable": False},
+    "REMOTE_API_TOKEN_SCOPE_INSUFFICIENT": {"http": 403, "retryable": False},
+    "REMOTE_AUTH_AMBIGUOUS": {"http": 400, "retryable": False},
 }

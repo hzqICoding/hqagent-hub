@@ -1,0 +1,11 @@
+{
+  "code": "CONFLICT",
+  "message": "资源版本已变化，请刷新后重试",
+  "retryable": false,
+  "detail": {
+    "fields": [
+      "expectedVersion"
+    ],
+    "currentVersion": 3
+  }
+}

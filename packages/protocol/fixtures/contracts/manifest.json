@@ -1,6 +1,6 @@
 {
   "$comment": "原子 Contract Fixture 清单。每个文件是单个协议类型的 Golden 样本，不是完整 UI 场景（裁决 D10）。前端的组合场景放在 apps/desktop/src/shared/api/scenarios/ 下，引用这里的文件，不在这里堆 UI 状态。",
-  "protocolVersion": "0.7.0",
+  "protocolVersion": "0.8.0",
   "fixtures": {
     "bootstrap.happy.json": "BootstrapView",
     "agents.discovery-partial.json": "AgentDiscoveryResult",
@@ -174,6 +174,22 @@
     "r15.RemoteBrowserStoreReset.json": "RemoteBrowserStoreReset",
     "r15.RemoteV2ConversationCreateCommand.json": "RemoteV2ConversationCreateCommand",
     "r15.RemoteSyncRedactedSlot.json": "RemoteSyncRedactedSlot",
-    "r15.RemoteV2ContentRedaction.json": "RemoteV2ContentRedaction"
+    "r15.RemoteV2ContentRedaction.json": "RemoteV2ContentRedaction",
+    "devices.RemoteDevicePatchInput.json": "RemoteDevicePatchInput",
+    "devices.RemoteDeviceDeletionView.json": "RemoteDeviceDeletionView",
+    "devices.RemoteApiTokenScope.json": "RemoteApiTokenScope",
+    "devices.RemoteApiTokenCreateInput.json": "RemoteApiTokenCreateInput",
+    "devices.RemoteApiTokenView.json": "RemoteApiTokenView",
+    "devices.RemoteApiTokenPage.json": "RemoteApiTokenPage",
+    "devices.RemoteApiTokenIssuedView.json": "RemoteApiTokenIssuedView",
+    "devices.RemoteApiTokenIssueReplayView.json": "RemoteApiTokenIssueReplayView",
+    "devices.RemoteApiTokenRevocationView.json": "RemoteApiTokenRevocationView",
+    "devices.RemoteHttpErrorDetail.json": "RemoteHttpErrorDetail",
+    "devices.RemoteHttpError.json": "RemoteHttpError",
+    "devices.RemoteWire2ErrorCode.json": "RemoteWire2ErrorCode",
+    "devices.RemoteWire2Error.json": "RemoteWire2Error",
+    "devices.RemoteWire2ApprovalView.json": "RemoteWire2ApprovalView",
+    "devices.device-enabled.json": "RemoteDeviceView",
+    "devices.device-suspended.json": "RemoteDeviceView"
   }
 }
