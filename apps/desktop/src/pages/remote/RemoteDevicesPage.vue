@@ -28,6 +28,7 @@ const authStore = useRemoteAuthStore()
 
 const deviceToRevoke = ref<RemoteDeviceView | null>(null)
 const isRevoking = ref(false)
+const showRevoked = ref(false)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -65,7 +66,8 @@ onUnmounted(() => {
 })
 
 function selectDevice(device: RemoteDeviceView) {
-  chatStore.selectDevice(device.workerId)
+  if (device.status === 'revoked') return
+  void chatStore.selectDevice(device.workerId)
   router.push({ path: '/remote/chat', query: { workerId: device.workerId } })
 }
 
@@ -149,7 +151,7 @@ async function handleLogout() {
       >
         <p class="font-medium flex items-center gap-1.5">
           <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
-          设备已撤销
+          该电脑已撤销
         </p>
         <p class="text-[11px] opacity-90">
           注意：撤销不是停止操作，当前电脑上可能仍在继续执行任务。如需核对请回到电脑端检查。
@@ -161,7 +163,7 @@ async function handleLogout() {
         正在获取设备列表...
       </div>
 
-      <div v-else-if="chatStore.devices.length === 0" class="py-8">
+      <div v-else-if="chatStore.availableDevices.length === 0" class="py-8">
         <HqEmptyState
           title="暂无已绑定电脑"
           description="在电脑端打开 HQAgent-Hub，点击『连接手机』获取配对码"
@@ -170,7 +172,7 @@ async function handleLogout() {
 
       <div v-else class="space-y-3">
         <div
-          v-for="device in chatStore.devices"
+          v-for="device in chatStore.availableDevices"
           :key="device.workerId"
           class="p-4 rounded-xl bg-panel border border-border space-y-3 shadow-xs cursor-pointer hover:border-primary/50 transition-colors"
           @click="selectDevice(device)"
@@ -220,6 +222,16 @@ async function handleLogout() {
           </div>
         </div>
       </div>
+      <section v-if="chatStore.revokedDevices.length" class="border-t border-border pt-3">
+        <button type="button" class="text-xs text-text-muted py-2" :aria-expanded="showRevoked" @click="showRevoked = !showRevoked">
+          已撤销（{{ chatStore.revokedDevices.length }}）
+        </button>
+        <div v-if="showRevoked" class="space-y-2">
+          <div v-for="device in chatStore.revokedDevices" :key="device.workerId" class="p-3 rounded-lg bg-panel text-xs text-text-muted">
+            {{ device.deviceName }} · {{ device.platform }} · 已撤销
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- Revoke Confirmation Dialog -->
@@ -232,6 +244,8 @@ async function handleLogout() {
         <p>
           撤销后将废止该设备凭据，手机端将无法再向电脑派发任何指令。
         </p>
+        <p>撤销后这台电脑需要在电脑端重新生成二维码配对，重新配对会作为新设备出现。</p>
+        <p>只是暂时不用的话不必撤销，关闭电脑上的 Hub 即可，下次打开会自动重连。</p>
         <div class="p-3 rounded-lg bg-warning/10 border border-warning/30 text-warning space-y-1">
           <p class="font-bold flex items-center gap-1.5">
             <AlertTriangle class="w-4 h-4 shrink-0" />

@@ -440,7 +440,7 @@ export class MockRemoteGateway implements IRemoteGateway {
 
   async listDevices(): Promise<RemoteDevicePage> {
     const items = this.devices.map((d) => {
-      if (d.workerId === 'worker_demo') {
+      if (d.workerId === 'worker_demo' && d.status !== 'revoked') {
         return {
           ...d,
           status: this.workerOnline ? ('online' as const) : ('offline' as const),
@@ -465,7 +465,7 @@ export class MockRemoteGateway implements IRemoteGateway {
         status: 404,
       })
     }
-    if (d.workerId === 'worker_demo') {
+    if (d.workerId === 'worker_demo' && d.status !== 'revoked') {
       return {
         ...d,
         status: this.workerOnline ? 'online' : 'offline',
@@ -479,7 +479,7 @@ export class MockRemoteGateway implements IRemoteGateway {
   async revokeDevice(workerId: string, _input?: RemoteDeviceRevokeInput): Promise<RemoteDeviceRevocationView> {
     const idx = this.devices.findIndex((d) => d.workerId === workerId)
     if (idx >= 0) {
-      this.devices.splice(idx, 1)
+      this.devices[idx] = { ...this.devices[idx], status: 'revoked', online: false }
     }
     return {
       workerId,
@@ -489,8 +489,9 @@ export class MockRemoteGateway implements IRemoteGateway {
     }
   }
 
-  async getWorkerCatalog(): Promise<RemoteCatalogView> {
-    return this.catalog
+  async getWorkerCatalog(workerId: string): Promise<RemoteCatalogView> {
+    const device = this.devices.find((d) => d.workerId === workerId)
+    return { ...this.catalog, workerId, workerStoreId: device?.workerStoreId || this.catalog.workerStoreId }
   }
 
   // --- Conversations ---
@@ -525,10 +526,10 @@ export class MockRemoteGateway implements IRemoteGateway {
       title: input.title,
       workspaceId: input.workspaceId,
       sceneId: input.sceneId,
-      sceneVersion: 1,
+      sceneVersion: input.sceneVersion,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      workerStoreId: 'store_demo',
+      workerStoreId: input.workerStoreId,
       visibility: 'both',
       busy: false,
       busyFresh: true,

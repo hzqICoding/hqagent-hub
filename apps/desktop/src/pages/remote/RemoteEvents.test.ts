@@ -180,7 +180,9 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     await store.pollEvents()
     await flushPromises()
 
-    // UI displays "执行成功"
+    expect(wrapper.get('[data-testid=run-status-toggle]').text()).toBe('已完成')
+    await wrapper.get('[data-testid=run-status-toggle]').trigger('click')
+    // Expanded details display execution status
     expect(wrapper.text()).toContain('执行成功')
   })
 
@@ -220,6 +222,7 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     mockRemoteGateway.pendingEvents = [confirmedEv]
     await store.pollEvents()
     await flushPromises()
+    await wrapper.get('[data-testid=run-status-toggle]').trigger('click')
     expect(wrapper.text()).toContain('已确认生效')
 
     // 2. rejected
@@ -526,7 +529,8 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     expect(store.activeRun?.runId).toBe('run_seq_3')
     expect(store.activeRun?.status).toBe('running')
 
-    // 2. Status bar displays run_seq_3 info
+    await wrapper.get('[data-testid=run-status-toggle]').trigger('click')
+    // 2. Expanded status bar displays run_seq_3 info
     expect(wrapper.text()).toContain('Run: run_seq_3')
     expect(wrapper.text()).toContain('Worker 执行中')
     expect(wrapper.text()).not.toContain('Run: run_seq_1')
@@ -594,7 +598,8 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     await store.pollEvents()
     await flushPromises()
 
-    // Status bar and activeRun automatically switch to run_seq_4
+    await wrapper.get('[data-testid=run-status-toggle]').trigger('click')
+    // Expanded status bar and activeRun automatically switch to run_seq_4
     expect(store.activeRun?.runId).toBe('run_seq_4')
     expect(store.activeRun?.status).toBe('paused')
     expect(wrapper.text()).toContain('Run: run_seq_4')
