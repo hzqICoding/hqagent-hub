@@ -38,7 +38,7 @@ def test_pairing_expiration_and_poll_secret_scope(env):
     worker = FakeWorker(env, env.alice)
     path = "/api/v2/worker/pairing-requests/" + worker.challenge["pairRequestId"]
     for secret, code in ((worker.secret, 200), (secrets.token_urlsafe(32), 404)):
-        result = env.client.get(path, headers={"Authorization": "Bearer " + secret})
+        result = env.client.get(path, headers={"Authorization": "Bearer " + secret, "Cookie": ""})
         check_http(result, "GET", path)
         assert result.status_code == code
         assert worker.challenge["pairCode"] not in result.text

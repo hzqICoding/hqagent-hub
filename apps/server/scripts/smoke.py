@@ -33,7 +33,11 @@ def main():
                              input=password + "\n", text=True, capture_output=True, cwd=ROOT, env=env, timeout=15)
     assert created.returncode == 0, "CLI account initialization failed"
     print(created.stdout.strip())
-    process = subprocess.Popen([sys.executable, "-m", "server"], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    # Completion logs can exceed a Windows pipe buffer. Drain to an ignored
+    # local file rather than blocking the server until the end of the smoke.
+    log_path = data / 'server.log'
+    log_output = log_path.open('w', encoding='utf-8')
+    process = subprocess.Popen([sys.executable, "-m", "server"], cwd=ROOT, env=env, stdout=log_output, stderr=subprocess.STDOUT, text=True)
     secret, store, epoch = secrets.token_urlsafe(32), uid(), uid()
     try:
         headers = {"Origin": origin, "X-Forwarded-Proto": "https"}
@@ -41,6 +45,7 @@ def main():
             def request(method, path, body=None, model=None, extra=None):
                 result = client.request(method, "/api/v2" + path, json=body, headers={"Idempotency-Key": uid(), **(extra or {})})
                 dto.ApiEnvelope.model_validate(result.json())
+                assert result.headers['X-Request-Id'] == result.json()['requestId']
                 assert result.status_code < 300, "Smoke HTTP step failed"
                 if model:
                     getattr(dto, model).model_validate(result.json()["data"])
@@ -60,7 +65,7 @@ def main():
             cookie = SimpleCookie(login.headers["set-cookie"])["__Host-hqremote"].value
             client.headers.update({"Cookie": "__Host-hqremote=" + cookie, "X-CSRF-Token": login.json()["data"]["csrfToken"]})
             print("browser login and secure session: PASS")
-            challenge = request("POST", "/worker/pairing-requests", dict(deviceName="Smoke Worker", workerStoreId=store, platform="linux", architecture="x86_64"), "RemotePairingChallenge", {"Authorization": "Bearer " + secret}).json()["data"]
+            challenge = request("POST", "/worker/pairing-requests", dict(deviceName="Smoke Worker", workerStoreId=store, platform="linux", architecture="x86_64"), "RemotePairingChallenge", {"Authorization": "Bearer " + secret, "Cookie": ""}).json()["data"]
             request("POST", "/pairings/preview", dict(pairCode=challenge["pairCode"]), "RemotePairingPreview")
             request("POST", "/pairings/" + challenge["pairRequestId"] + "/confirm", dict(pairCode=challenge["pairCode"]), "RemoteDeviceView")
             print("pairing preview and confirmation: PASS")
@@ -125,14 +130,33 @@ def main():
             request("GET", "/conversations/" + conv + "/snapshot", model="RemoteConversationSnapshot")
             assert request("GET", "/commands/" + queued["commandId"], model="RemoteCommandView").json()["data"]["status"] == "accepted"
             print("fake Worker revision 2, create/grant/sync, offline refusal and reconnect: PASS")
+            publication = client.get('/api/v2/openapi.json')
+            assert publication.status_code == 200 and publication.json()['info']['version'] == dto.PROTOCOL_VERSION
+            assert 'X-Request-Id' in publication.headers
+            print('packaged public OpenAPI and request IDs: PASS')
+            issued = request('POST', '/api-tokens', dict(name='local smoke', scopes=['devices:read','devices:manage','devices:delete']), 'RemoteApiTokenIssuedView').json()['data']
+            pat_secret = issued['secret']
+            pat_headers = {'Authorization': 'Bearer ' + pat_secret, 'Cookie': ''}
+            device = request('GET', '/devices/' + worker, model='RemoteDeviceView', extra=pat_headers).json()['data']
+            paused = request('PATCH', '/devices/' + worker, dict(expectedVersion=device['version'], remoteAccess='suspended'), 'RemoteDeviceView', pat_headers).json()['data']
+            denied = client.post('/api/v2/conversations/' + conv + '/messages', json=dict(clientMessageId=uid(), text='Must not queue while suspended', sessionMode='new'), headers={'Idempotency-Key': uid()})
+            assert denied.json()['error']['code'] == 'REMOTE_DEVICE_SUSPENDED'
+            request('PATCH', '/devices/' + worker, dict(expectedVersion=paused['version'], remoteAccess='enabled'), 'RemoteDeviceView', pat_headers)
+            request('DELETE', '/devices/' + worker, model='RemoteDeviceDeletionView', extra=pat_headers)
+            request('DELETE', '/api-tokens/' + issued['token']['tokenId'], model='RemoteApiTokenRevocationView')
+            invalid = client.get('/api/v2/devices', headers=pat_headers)
+            assert invalid.status_code == 401 and invalid.json()['error']['code'] == 'REMOTE_API_TOKEN_INVALID'
+            print('PAT issuance, device pause/resume/delete and immediate revocation: PASS')
             backup = subprocess.run([sys.executable, "-m", "server.cli", "backup", str(data / "backup.sqlite3")], cwd=ROOT, env=env, capture_output=True, text=True, timeout=15)
             assert backup.returncode == 0
             print(backup.stdout.strip())
             assert password not in created.stdout + created.stderr + backup.stdout + backup.stderr
     finally:
         process.terminate()
-        logs, _ = process.communicate(timeout=10)
-        for sensitive in (password, secret, locals().get("cookie", "no-cookie-marker")):
+        process.wait(timeout=10)
+        log_output.close()
+        logs = log_path.read_text(encoding='utf-8')
+        for sensitive in (password, secret, locals().get("cookie", "no-cookie-marker"), locals().get('pat_secret', 'no-pat-marker')):
             assert sensitive not in logs
         if "challenge" in locals():
             assert challenge["pairCode"] not in logs
