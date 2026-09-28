@@ -22,6 +22,7 @@ from protocol.generated.python import (
     ResumeSessionInput,
     SaveTeamProfileInput,
     TaskActionInput,
+    UpdateLocalConversationInput,
     UpdateActionInput,
     WsTicketRequest,
 )
@@ -225,7 +226,7 @@ def create_application(
         allowed_origins=allowed_origins or set(DEFAULT_ALLOWED_ORIGINS),
         allowed_hosts=allowed_hosts or {"127.0.0.1", "localhost"},
     )
-    remote_router = install_remote_routes(app, remote_worker.link)
+    remote_router = install_remote_routes(app, remote_worker.link, remote_worker.sync)
     install_local_routes(app, local_chat, local_auth, resolved_ports, event_store, token,
                          remote_router=remote_router)
 
@@ -240,6 +241,16 @@ def create_application(
         maintenance,
     )
     app.state.local_bootstrap = bootstrap
+
+    @app.get("/api/v1/conversations")
+    async def local_conversations_v1(include_hidden: bool = Query(False, alias="includeHidden"),
+                                     workspace_id: str | None = Query(None, alias="workspaceId")):
+        return success_response(await local_chat.conversations(include_hidden=include_hidden, workspace_id=workspace_id))
+
+    @app.patch("/api/v1/conversations/{conversation_id}")
+    async def update_local_conversation_v1(conversation_id: str, value: UpdateLocalConversationInput,
+                                           idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+        return success_response(await local_chat.update_conversation(conversation_id, value, idempotency_key or ""))
 
     @app.exception_handler(HubError)
     async def handle_hub_error(_request: Request, exc: HubError) -> JSONResponse:

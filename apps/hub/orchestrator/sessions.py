@@ -10,6 +10,8 @@ from protocol.generated.python import (
     AdapterStreamStatus,
     AdapterFailure,
     AgentSessionHandle,
+    CancelOutcome,
+    CancelResult,
     ResumeRequest,
     SessionPurpose,
     SessionReusePolicy,
@@ -238,6 +240,33 @@ class SessionManager:
         )
         await self.repository.save(closed)
         return closed
+
+    async def finish_cancelled(self, session_id: str, task_id: str, result: CancelResult) -> SessionView:
+        """Retain native context only after a proven, fully stopped cancellation.
+
+        The production repository already exposes the durable execution state.
+        Repositories without that evidence keep the original close behavior;
+        an Adapter stop receipt alone cannot disprove unresolved side effects.
+        task_id is the current execution, not SessionView's original owner Task.
+        """
+        session = await self.repository.get(session_id)
+        if session is None:
+            raise SessionNotResumableError(session_id, "指定 Session 不存在")
+        state = getattr(self.repository, "execution_state", None)
+        spec = state.get(f"task_spec:{task_id}") if state is not None else None
+        confirmed = (
+            result.outcome in {CancelOutcome.STOPPED_GRACEFULLY, CancelOutcome.FORCE_KILLED}
+            and not result.orphan_process_ids
+            and spec is not None
+            and not spec.get("unresolvedCancellation")
+            and not spec.get("recoveryRequired")
+        )
+        # create_active derives is_valid from the Adapter handle's supportsResume
+        # AND externalSessionId. Never reopen a CLOSED/INVALID historical session.
+        if (confirmed and session.is_valid and session.external_session_id
+                and session.status in {SessionStatus.ACTIVE, SessionStatus.IDLE}):
+            return await self.finish(session_id)
+        return await self.close(session_id)
 
     async def finish(self, session_id: str) -> SessionView:
         session = await self.repository.get(session_id)
