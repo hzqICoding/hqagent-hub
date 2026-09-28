@@ -51,6 +51,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '我的电脑' },
   },
   {
+    path: '/remote/tokens',
+    name: 'remote-tokens',
+    component: () => import('@/pages/remote/RemoteTokensPage.vue'),
+    meta: { title: 'API 令牌' },
+  },
+  {
     path: '/remote/chat',
     name: 'remote-chat',
     component: () => import('@/pages/remote/RemoteChatPage.vue'),

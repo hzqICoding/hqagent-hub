@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import RemoteRequestNotice from './RemoteRequestNotice.vue'
 import { useRemoteChatStore } from '@/stores/remote-chat.store'
 import { useRemoteAuthStore } from '@/stores/remote-auth.store'
 import type { RemoteApprovalView, RemoteCommandView, RemoteConversationView } from '@hqagent/protocol'
@@ -48,7 +49,7 @@ const composerRef = ref<HTMLTextAreaElement | null>(null)
 const isCreating = ref(false)
 
 const selectedScene = computed(() => chatStore.catalog?.scenes.find((scene) => scene.sceneId === newSceneId.value))
-const canCreate = computed(() => !isCreating.value && !chatStore.isLoadingCatalog && !chatStore.catalogError &&
+const canCreate = computed(() => !chatStore.isRemoteSuspended && !isCreating.value && !chatStore.isLoadingCatalog && !chatStore.catalogError &&
   chatStore.catalog?.workerId === chatStore.selectedDevice?.workerId &&
   chatStore.catalog?.workspaces.some((ws) => ws.workspaceId === newWorkspaceId.value) && Boolean(selectedScene.value))
 const catalogHint = computed(() => chatStore.catalogError || (chatStore.isLoadingCatalog || !chatStore.catalog
@@ -63,6 +64,7 @@ function setCatalogDefaults(workspaceId?: string) {
 }
 
 async function openCreateDialog(workspaceId?: string) {
+  if (chatStore.isRemoteSuspended) return
   newTitle.value = ''
   isNewConversationDialogOpen.value = true
   if (!chatStore.catalog && !chatStore.isLoadingCatalog) await chatStore.fetchCatalog()
@@ -77,6 +79,10 @@ async function retryCatalog() {
 
 watch(() => chatStore.catalog, () => {
   if (isNewConversationDialogOpen.value) setCatalogDefaults(newWorkspaceId.value)
+})
+
+watch(() => chatStore.deviceRemovalNotice, (notice) => {
+  if (notice && !chatStore.selectedWorkerId) void router?.replace('/remote/devices')
 })
 
 watch(() => chatStore.lastRevocationInfo, (info) => {
@@ -286,6 +292,7 @@ function canWithdraw(cmd: RemoteCommandView): boolean {
 }
 
 async function handleSendMessage() {
+  if (chatStore.isRemoteSuspended) { chatStore.sendError = '这台电脑的远程操作已暂停'; return }
   const text = inputText.value.trim()
   if (!text || chatStore.isSending) return
 
@@ -308,6 +315,7 @@ async function handleSendMessage() {
 }
 
 async function handleCreateConversation() {
+  if (chatStore.isRemoteSuspended) { chatStore.actionError = '这台电脑的远程操作已暂停'; return }
   if (!chatStore.isWorkerOnline) {
     chatStore.actionError = '设备离线，发送失败'
     return
@@ -452,7 +460,7 @@ function getExecutionStatusLabel(status?: string): string {
             title="切换电脑"
             @click="router.push('/remote/devices')"
           >
-            <span>{{ chatStore.selectedDevice?.deviceName || '我的电脑' }}</span>
+            <span>{{ chatStore.selectedDevice?.displayName || chatStore.selectedDevice?.deviceName || '我的电脑' }}</span>
             <span class="text-xs text-text-muted font-normal truncate">/ {{ chatStore.activeConversation?.title || '对话' }}</span>
           </button>
 
@@ -493,6 +501,7 @@ function getExecutionStatusLabel(status?: string): string {
         </button>
       </div>
     </header>
+    <RemoteRequestNotice />
 
     <!-- Main Container with Mobile Drawer -->
     <div class="flex-1 flex overflow-hidden relative">
@@ -517,6 +526,7 @@ function getExecutionStatusLabel(status?: string): string {
             variant="primary"
             size="sm"
             class="text-xs py-1 px-2"
+            :disabled="chatStore.isRemoteSuspended"
             @click="openCreateDialog()"
           >
             <Plus class="w-3.5 h-3.5 mr-1" />
@@ -575,7 +585,7 @@ function getExecutionStatusLabel(status?: string): string {
               <span class="truncate">{{ group.workspaceName }}</span>
               <div class="flex items-center gap-2">
                 <span class="text-[10px] tabular-nums">{{ group.conversations.length }}</span>
-                <button type="button" class="p-1 text-primary" :aria-label="`在${group.workspaceName}新建任务`" @click="openCreateDialog(group.workspaceId)">
+                <button type="button" class="p-1 text-primary" :disabled="chatStore.isRemoteSuspended" :aria-label="`在${group.workspaceName}新建任务`" @click="openCreateDialog(group.workspaceId)">
                   <Plus class="w-4 h-4" />
                 </button>
               </div>
@@ -627,6 +637,7 @@ function getExecutionStatusLabel(status?: string): string {
               <button
                 type="button"
                 class="p-1 rounded text-text-muted hover:text-text hover:bg-panel opacity-60 group-hover:opacity-100 transition-opacity shrink-0"
+                :disabled="chatStore.isRemoteSuspended"
                 title="对话设置"
                 @click.stop="openConversationSettings(conv)"
               >
@@ -658,6 +669,14 @@ function getExecutionStatusLabel(status?: string): string {
 
       <!-- Center Chat Column -->
       <main class="flex-1 flex flex-col h-full min-w-0 bg-bg-app overflow-hidden">
+        <div v-if="chatStore.isRemoteSuspended" class="p-3 shrink-0 bg-warning/10 border-b border-warning/30 text-xs text-warning space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span>这台电脑的远程操作已暂停</span>
+            <HqButton size="sm" :loading="chatStore.isDeviceActionLoading" @click="chatStore.activeDevice && chatStore.patchDevice(chatStore.activeDevice.workerId, { remoteAccess: 'enabled' })">恢复远程</HqButton>
+          </div>
+          <p class="text-[11px]">历史与同步仍可用；取消运行和拒绝审批仍可操作。</p>
+          <p v-if="chatStore.deviceActionError" role="alert" class="text-danger">{{ chatStore.deviceActionError }}</p>
+        </div>
         <!-- Global Error Bar if any -->
         <div
           v-if="chatStore.actionError || chatStore.sendError"
@@ -756,6 +775,7 @@ function getExecutionStatusLabel(status?: string): string {
                 size="sm"
                 class="text-[11px] py-1 px-2"
                 :loading="chatStore.isActionLoading"
+                :disabled="chatStore.isRemoteSuspended"
                 @click="handleControl('pause')"
               >
                 <Pause class="w-3 h-3 mr-1" />
@@ -768,6 +788,7 @@ function getExecutionStatusLabel(status?: string): string {
                 size="sm"
                 class="text-[11px] py-1 px-2"
                 :loading="chatStore.isActionLoading"
+                :disabled="chatStore.isRemoteSuspended"
                 @click="handleControl('resume')"
               >
                 <Play class="w-3 h-3 mr-1" />
@@ -792,6 +813,7 @@ function getExecutionStatusLabel(status?: string): string {
                 size="sm"
                 class="text-[11px] py-1 px-2"
                 :loading="chatStore.isActionLoading"
+                :disabled="chatStore.isRemoteSuspended"
                 @click="handleControl('retry')"
               >
                 <RotateCcw class="w-3 h-3 mr-1" />
@@ -854,6 +876,7 @@ function getExecutionStatusLabel(status?: string): string {
                 size="sm"
                 class="text-xs"
                 :loading="chatStore.isActionLoading"
+                :disabled="chatStore.isRemoteSuspended"
                 @click="handleApproval(approval, 'approve')"
               >
                 批准执行
@@ -948,6 +971,7 @@ function getExecutionStatusLabel(status?: string): string {
                 v-if="canWithdraw(cmd)"
                 type="button"
                 class="text-danger hover:underline font-medium cursor-pointer flex items-center gap-1"
+                :disabled="chatStore.isRemoteSuspended"
                 @click="openWithdrawDialog(cmd)"
               >
                 <Undo2 class="w-3 h-3" />
@@ -1004,7 +1028,7 @@ function getExecutionStatusLabel(status?: string): string {
             </div>
 
             <span class="text-[10px]">
-              {{ chatStore.isWorkerOnline ? '电脑在线就绪' : '电脑离线' }}
+              {{ chatStore.isWorkerOnline ? (chatStore.isRemoteSuspended ? '电脑在线 · 已暂停' : '电脑在线就绪') : '电脑离线' }}
             </span>
           </div>
 
@@ -1016,7 +1040,7 @@ function getExecutionStatusLabel(status?: string): string {
               rows="1"
               placeholder="输入给电脑上 Agent 的指令..."
               class="flex-1 py-2 px-3 text-xs sm:text-sm bg-bg-app border border-border rounded-xl text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors resize-none max-h-24"
-              :disabled="chatStore.isSending || chatStore.isConversationBusy"
+              :disabled="chatStore.isRemoteSuspended || chatStore.isSending || chatStore.isConversationBusy"
               @keydown.enter.exact.prevent="handleSendMessage"
             />
 
@@ -1024,7 +1048,7 @@ function getExecutionStatusLabel(status?: string): string {
               variant="primary"
               class="h-9 px-3.5 rounded-xl shrink-0"
               :loading="chatStore.isSending"
-              :disabled="!inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
+              :disabled="chatStore.isRemoteSuspended || !inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
               @click="handleSendMessage"
             >
               <Send class="w-4 h-4" />
@@ -1138,6 +1162,7 @@ function getExecutionStatusLabel(status?: string): string {
             variant="danger"
             size="sm"
             :loading="isWithdrawing"
+            :disabled="chatStore.isRemoteSuspended"
             @click="confirmWithdraw"
           >
             确认撤回
@@ -1207,6 +1232,7 @@ function getExecutionStatusLabel(status?: string): string {
             variant="primary"
             size="sm"
             :loading="isSavingSettings"
+            :disabled="chatStore.isRemoteSuspended"
             @click="handleSaveSettings"
           >
             保存
@@ -1241,6 +1267,7 @@ function getExecutionStatusLabel(status?: string): string {
             variant="danger"
             size="sm"
             :loading="isSavingSettings"
+            :disabled="chatStore.isRemoteSuspended"
             @click="executeSaveSettings"
           >
             确认设置
