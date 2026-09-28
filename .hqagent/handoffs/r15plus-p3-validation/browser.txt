@@ -1,0 +1,6 @@
+suspended chat overflow: False
+dialog close and storage cleanup: PASS
+token page overflow: False
+60-token scrolling and pagination: PASS
+page errors: 0
+Screenshots: 4 captured at 375x812; token is a non-authenticating example
