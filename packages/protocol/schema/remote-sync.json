@@ -142,7 +142,7 @@
           "maxLength": 160
         },
         "payload": {
-          "$ref": "remote.json#/$defs/RemoteApprovalView"
+          "$ref": "remote-devices.json#/$defs/RemoteWire2ApprovalView"
         }
       }
     },
@@ -564,7 +564,7 @@
           ]
         },
         "error": {
-          "$ref": "remote.json#/$defs/RemoteError"
+          "$ref": "remote-devices.json#/$defs/RemoteWire2Error"
         },
         "resultRef": {
           "$ref": "remote.json#/$defs/RemoteResultRef"
@@ -666,7 +666,7 @@
           "const": "rejected"
         },
         "error": {
-          "$ref": "remote.json#/$defs/RemoteError"
+          "$ref": "remote-devices.json#/$defs/RemoteWire2Error"
         }
       },
       "description": "Pre-admission rejection only. An expired sequenced submit consumes its ordered slot without execution."
@@ -2010,7 +2010,7 @@
           "const": 45
         },
         "reason": {
-          "$ref": "remote.json#/$defs/RemoteError"
+          "$ref": "remote-devices.json#/$defs/RemoteWire2Error"
         },
         "serverTime": {
           "type": "string",
@@ -2042,7 +2042,7 @@
           "description": "Revision 2; select by connection codec, never by package version."
         },
         "error": {
-          "$ref": "remote.json#/$defs/RemoteError"
+          "$ref": "remote-devices.json#/$defs/RemoteWire2Error"
         },
         "supportedWireRevisions": {
           "type": "array",

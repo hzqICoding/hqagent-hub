@@ -303,3 +303,35 @@ errors:
     http: 413
     retryable: false
     description: 全文同步资源配额不足，明确失败，不截断伪装成功
+
+  # HTTP only; neither Worker revision may emit these codes.
+  - code: REMOTE_DEVICE_SUSPENDED
+    http: 409
+    retryable: false
+    description: 这台电脑的远程操作已暂停
+    message: 这台电脑的远程操作已暂停
+    surface: http
+  - code: REMOTE_API_TOKEN_INVALID
+    http: 401
+    retryable: false
+    description: API令牌无效或已吊销
+    message: API令牌无效或已吊销
+    surface: http
+  - code: REMOTE_API_TOKEN_EXPIRED
+    http: 401
+    retryable: false
+    description: API令牌已过期
+    message: API令牌已过期
+    surface: http
+  - code: REMOTE_API_TOKEN_SCOPE_INSUFFICIENT
+    http: 403
+    retryable: false
+    description: API令牌权限不足或此接口不接受令牌
+    message: API令牌权限不足或此接口不接受令牌
+    surface: http
+  - code: REMOTE_AUTH_AMBIGUOUS
+    http: 400
+    retryable: false
+    description: 请求同时提供了多种身份凭据
+    message: 请求同时提供了多种身份凭据
+    surface: http

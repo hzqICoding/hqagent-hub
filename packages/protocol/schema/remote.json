@@ -419,8 +419,36 @@
             "minimum": 1
           },
           "maxItems": 16
+        },
+        "remoteAccess": {
+          "type": "string",
+          "enum": [
+            "enabled",
+            "suspended"
+          ],
+          "description": "Optional legacy compatibility: omitted means enabled. Independent from status/online."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Optional server-only alias; absent means use unchanged Worker deviceName."
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "description": "Management CAS version, legacy=1. Changes only for management/lifecycle mutations, not heartbeats or snapshots."
+        },
+        "suspendedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$",
+          "description": "Present only while suspended; resume clears this field."
         }
-      }
+      },
+      "x-go": true
     },
     "RemoteDevicePage": {
       "type": "object",
@@ -447,7 +475,8 @@
           "maxLength": 2048,
           "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
         }
-      }
+      },
+      "x-go": true
     },
     "RemoteDeviceRevokeInput": {
       "type": "object",
