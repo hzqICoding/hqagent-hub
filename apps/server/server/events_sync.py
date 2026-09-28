@@ -162,7 +162,7 @@ class SyncEvents(Events):
                 if field in value['resultRef']:
                     require(event['resultRef'].get(field) == value['resultRef'][field], 'REMOTE_TARGET_MISMATCH')
         if value['status'] in TERMINAL:
-            require(value.get('error', {}).get('code') == 'REMOTE_DELIVERY_EXPIRED' and kind == 'command.rejected', 'REMOTE_EVENT_CONFLICT')
+            require(value.get('error', {}).get('code') in {'REMOTE_DELIVERY_EXPIRED', 'REMOTE_DEVICE_SUSPENDED'} and kind == 'command.rejected', 'REMOTE_EVENT_CONFLICT')
             return
         if kind in {'command.accepted', 'command.completed', 'command.failed', 'command.control_result'}:
             require(value.get('_granted'), 'REMOTE_EVENT_CONFLICT')

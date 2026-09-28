@@ -9,7 +9,6 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
-from protocol.generated.python import ApiEnvelope, PROTOCOL_VERSION
 
 from .common import Fault, require, stamp, uid, validated
 from .config import Settings
@@ -20,6 +19,8 @@ from .service import KINDS
 from .service_sync import SyncService
 from .worker import WorkerTransport
 from .static import SPAStaticFiles
+from .http import RequestAudit, response
+from .public_contract import OPENAPI
 
 LOG = logging.getLogger("hqremote")
 MAINTENANCE_INTERVAL = 5
@@ -42,20 +43,6 @@ def protect_transport_logs():
             logger.addFilter(TransportLogFilter())
 
 
-def response(data=None, *, model=None, fault=None, status=200):
-    envelope = dict(success=fault is None, requestId=uid(), protocolVersion=PROTOCOL_VERSION)
-    headers = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
-    if fault:
-        envelope["error"] = fault.view()
-        status = fault.status
-        if fault.code == "REMOTE_RATE_LIMITED":
-            headers["Retry-After"] = "60"
-    else:
-        envelope["data"] = validated(model, data)
-    ApiEnvelope.model_validate(envelope)
-    return JSONResponse(envelope, status_code=status, headers=headers)
-
-
 # Explicit HTTP bindings; boundary validation exclusively uses generated DTOs.
 ROUTES = [
     ("POST", "/auth/login", "login", "RemoteLoginInput", "RemoteAuthenticatedSession", 200),
@@ -67,6 +54,8 @@ ROUTES = [
     ("POST", "/pairings/{pairRequestId}/confirm", "confirm", "RemotePairingConfirmInput", "RemoteDeviceView", 200),
     ("GET", "/devices", "devices", None, "RemoteDevicePage", 200),
     ("GET", "/devices/{workerId}", "device", None, "RemoteDeviceView", 200),
+    ("PATCH", "/devices/{workerId}", "patch_device", "RemoteDevicePatchInput", "RemoteDeviceView", 200),
+    ("DELETE", "/devices/{workerId}", "delete_device", None, "RemoteDeviceDeletionView", 200),
     ("POST", "/devices/{workerId}/revocations", "revoke", "RemoteDeviceRevokeInput", "RemoteDeviceRevocationView", 200),
     ("GET", "/devices/{workerId}/catalog", "catalog", None, "RemoteCatalogView", 200),
     ("GET", "/conversations", "conversations", None, "RemoteConversationPage", 200),
@@ -85,6 +74,10 @@ ROUTES = [
     ("POST", "/approvals/{approvalId}/decisions", "decide", "RemoteApprovalDecisionInput", "RemoteQueuedReceipt", 202),
     ("GET", "/events", "events", None, "RemoteBrowserEventPage", 200),
     ("GET", "/conversations/{conversationId}/snapshot", "snapshot", None, "RemoteConversationSnapshot", 200),
+    ("POST", "/api-tokens", "issue_token", "RemoteApiTokenCreateInput", "RemoteApiTokenIssuedView", 201),
+    ("GET", "/api-tokens", "tokens", None, "RemoteApiTokenPage", 200),
+    ("DELETE", "/api-tokens/{tokenId}", "revoke_token", None, "RemoteApiTokenRevocationView", 200),
+    ("GET", "/openapi.json", "openapi", None, None, 200),
 ]
 
 
@@ -119,6 +112,7 @@ def create_app(settings=None):
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.service = service
     app.state.transport = transport
+    app.add_middleware(RequestAudit, security=security, settings=settings, static=bool(settings.static_dir))
 
     @app.exception_handler(RequestValidationError)
     @app.exception_handler(ValidationError)
@@ -133,12 +127,21 @@ def create_app(settings=None):
         try:
             body = {}
             key = request.headers.get("idempotency-key", "")
-            write = request.method in {"POST", "PATCH"}
+            write = request.method in {"POST", "PATCH", "DELETE"}
             peer = request.client.host if request.client else "unknown"
             require(request.url.scheme == "https", "REMOTE_AUTH_REQUIRED")
+            authorization = request.headers.get('authorization')
+            pat = authorization is not None and operation not in {'pair_request', 'pair_status'}
+            if pat:
+                # Persist lastUsedAt even when a subsequently authorized business
+                # operation fails. Revalidate in its write transaction below.
+                with repo.transaction() as tx:
+                    security.authenticate_pat(tx, authorization, operation, touch=True)
+            if write and operation not in {'login', 'pair_request'} and not pat:
+                security.rate('write:' + peer)
             if write:
                 require(1 <= len(key) <= 200)
-            if operation not in {"pair_request", "pair_status"} and write:
+            if operation not in {"pair_request", "pair_status"} and write and not pat:
                 require(request.headers.get("origin") == settings.origin, "REMOTE_CSRF_REJECTED")
             if operation in {"login", "pair_request", "pair_status"}:
                 security.rate(operation + ":" + peer)
@@ -148,12 +151,21 @@ def create_app(settings=None):
                     raw.extend(chunk)
                     require(len(raw) <= 262144, "REMOTE_FRAME_TOO_LARGE")
                 if raw:
-                    body = json.loads(raw)
+                    try:
+                        body = json.loads(raw)
+                    except (ValueError, RecursionError):
+                        raise Fault('BAD_REQUEST') from None
                 require(isinstance(body, dict))
                 if input_model:
                     validated(input_model, body)  # no injected defaults in request hash
                 else:
                     require(not body)
+            contract = request.state.contract_operation
+            allowed_query = {p['name'] for p in contract.get('parameters', []) if p['in'] == 'query'} if contract else set()
+            require(set(request.query_params) <= allowed_query)
+            require(len(request.query_params.multi_items()) == len(request.query_params))
+            if operation == 'openapi':
+                return JSONResponse(OPENAPI, headers={'Cache-Control': 'no-store'})
             cookie = request.cookies.get(COOKIE)
             new_cookie, disconnect = None, None
             with repo.transaction() as tx:
@@ -182,9 +194,15 @@ def create_app(settings=None):
                         old = tx.auth_get("session:" + sid)
                         if old and hmac.compare_digest(security.token(sid), cookie) and old["expires"] > settings.clock() and old.get("logoutKey") == security.mac("logout", key):
                             session = old
-                    require(session is not None, "REMOTE_AUTH_REQUIRED")
-                    owner = session["owner"]
-                    if write:
+                    if pat:
+                        identity = security.authenticate_pat(tx, authorization, operation)
+                        owner = identity['owner']
+                        request.state.audience = identity['tokenId']
+                    else:
+                        require(session is not None, "REMOTE_AUTH_REQUIRED")
+                        owner = session['owner']
+                        request.state.audience = 'cookie'
+                    if write and not pat:
                         require(hmac.compare_digest(request.headers.get("x-csrf-token", ""), security.csrf(session["id"])), "REMOTE_CSRF_REJECTED")
                     if operation == "logout":
                         session.update(revoked=True, logoutKey=security.mac("logout", key))
@@ -192,8 +210,10 @@ def create_app(settings=None):
                         data = dict(authenticated=False)
                     else:
                         data = browser(tx, owner, operation, request, body, key)
-                    if operation == "revoke":
+                    if operation in {"revoke", 'delete_device'}:
                         disconnect = service.connections.get((owner, request.path_params["workerId"]))
+                if operation == 'issue_token' and not data['secretAvailable']:
+                    output_model, status = 'RemoteApiTokenIssueReplayView', 200
                 result = response(data, model=output_model, status=status)  # validate before commit
             if new_cookie:
                 result.set_cookie(COOKIE, new_cookie, max_age=settings.session_ttl, path="/", secure=True, httponly=True, samesite="strict")
@@ -201,7 +221,6 @@ def create_app(settings=None):
                 result.delete_cookie(COOKIE, path="/", secure=True, httponly=True, samesite="strict")
             if disconnect:
                 await disconnect.close(4403)
-            LOG.info("operation=%s status=%d", operation, status)
             return result
         except Fault as exc:
             result = response(fault=exc)
@@ -211,7 +230,6 @@ def create_app(settings=None):
         except (ValidationError, ValueError, TypeError, RecursionError):
             return response(fault=Fault("VALIDATION_FAILED"))
         except Exception:
-            LOG.error("operation=%s error=INTERNAL", operation)
             return response(fault=Fault("INTERNAL"))
 
     def browser(tx, owner, operation, request, body, key):
@@ -230,6 +248,23 @@ def create_app(settings=None):
         for worker in workers:
             if worker:
                 service.expire(tx, owner, worker)
+        if operation in {'create_conversation', 'update_conversation', 'send', 'control', 'withdraw', 'decide'}:
+            if operation == 'create_conversation':
+                workers.add(body['targetWorkerId'])
+            exempt = (operation == 'control' and body['action'] == 'cancel') or (operation == 'decide' and body['decision'] == 'reject')
+            for worker in workers:
+                if worker:
+                    device = service.get(tx, owner, 'device', worker)
+                    require(device['status'] != 'revoked', 'REMOTE_DEVICE_REVOKED')
+                    require(exempt or device.get('remoteAccess', 'enabled') != 'suspended', 'REMOTE_DEVICE_SUSPENDED')
+        if operation == 'patch_device':
+            require(value['status'] != 'revoked', 'REMOTE_DEVICE_REVOKED')
+        if operation == 'revoke_token':
+            require(tx.get(owner, 'api-token', path['tokenId']) is not None, 'NOT_FOUND')
+        if operation == 'issue_token':
+            return security.issue_pat(tx, owner, body, key)
+        if operation == 'delete_device':
+            return service.delete_device(tx, owner, path['workerId'])
         if operation == "confirm":
             challenge = tx.auth_get("challenge:" + path["pairRequestId"])
             require(challenge is not None and challenge.get("owner", owner) == owner, "NOT_FOUND")
@@ -237,7 +272,7 @@ def create_app(settings=None):
             lookup = tx.auth_get("code:" + security.mac("pair-code", body["pairCode"]))
             challenge = tx.auth_get("challenge:" + lookup["id"]) if lookup else None
             require(challenge is None or challenge.get("owner", owner) == owner, "NOT_FOUND")
-        if request.method in {"POST", "PATCH"}:
+        if request.method in {"POST", "PATCH", "DELETE"}:
             def action():
                 if operation == "preview":
                     lookup = tx.auth_get("code:" + security.mac("pair-code", body["pairCode"]))
@@ -249,6 +284,10 @@ def create_app(settings=None):
                     return service.confirm(tx, owner, path["pairRequestId"], body)
                 if operation == "revoke":
                     return service.revoke(tx, owner, path["workerId"])
+                if operation == 'patch_device':
+                    return service.patch_device(tx, owner, path['workerId'], body)
+                if operation == 'revoke_token':
+                    return security.revoke_pat(tx, owner, path['tokenId'])
                 if operation == "create_conversation":
                     return service.create_conversation(tx, owner, body)
                 if operation == "update_conversation":
@@ -262,7 +301,11 @@ def create_app(settings=None):
                 if operation == "decide":
                     return service.approval(tx, owner, path["approvalId"], body)
                 raise Fault("NOT_FOUND")
-            return service.replay(tx, owner, operation + ":" + json.dumps(path, sort_keys=True), key, body, action)
+            audience = request.state.audience
+            scope = operation + ':' + json.dumps(path, sort_keys=True)
+            if audience != 'cookie':
+                scope += ':pat:' + audience
+            return service.replay(tx, owner, scope, key, body, action)
         if operation == "catalog":
             catalog = tx.get(owner, 'catalog', path['workerId'])
             require(catalog is not None, 'FEATURE_UNAVAILABLE' if service.online(owner, path['workerId']) else 'REMOTE_DEVICE_OFFLINE')
@@ -275,9 +318,25 @@ def create_app(settings=None):
             allowed = {'before', 'limit'}
         if operation == 'conversations':
             allowed |= {'workerId', 'workspaceId'}
+        if operation == 'devices':
+            allowed |= {'remoteAccess', 'online', 'includeRevoked'}
+        if operation == 'tokens':
+            allowed = {'cursor', 'limit', 'includeRevoked'}
         require(set(query.keys()) <= allowed)
         limit = int(query.get("limit", "100" if operation == "events" else "50"))
         require(1 <= limit <= (200 if operation == "events" else 100))
+        def boolean(name, default=None):
+            if name not in query:
+                return default
+            require(query[name] in {'true', 'false'})
+            return query[name] == 'true'
+        if operation == 'devices' and hasattr(service, 'devices'):
+            access = query.get('remoteAccess')
+            require(access is None or access in {'enabled', 'suspended'})
+            filters = dict(remoteAccess=access, online=boolean('online'), includeRevoked=boolean('includeRevoked', False))
+            return service.devices(tx, owner, query.get('cursor'), limit, filters, request.state.audience)
+        if operation == 'tokens':
+            return security.list_pats(tx, service, owner, query.get('cursor'), limit, boolean('includeRevoked', False))
         if operation == "events":
             return service.events(tx, owner, query.get("after"), limit)
         if operation == 'messages':
@@ -292,13 +351,6 @@ def create_app(settings=None):
     for method, path, operation, input_model, output_model, status in ROUTES:
         def endpoint_factory(op, im, om, sc):
             async def endpoint(request: Request):
-                if request.method in {"POST", "PATCH"} and op not in {"login", "pair_request"}:
-                    try:
-                        security.rate("write:" + (request.client.host if request.client else "unknown"))
-                    except Fault as exc:
-                        result = response(fault=exc)
-                        result.headers["Retry-After"] = str(settings.rate_window)
-                        return result
                 return await handle(request, op, im, om, sc)
             return endpoint
         app.add_api_route("/api/v2" + path, endpoint_factory(operation, input_model, output_model, status), methods=[method], name=operation)
