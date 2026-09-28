@@ -1,8 +1,8 @@
-# R1.5 Hub Server
+# R1.5+ Hub Server
 
 账号认证、设备配对、电脑对话的完整副本、在线命令转发和浏览器轮询。电脑是唯一写入和执行方；服务端不调用模型，不保存模型凭据，不管理 AI 订阅或安装。
 
-协议包：0.7.0；Worker 线路支持修订 1、2。实现 `remote-hub.v2.yaml` 的 27 个 HTTP 操作与 `/ws/v2/worker`。修订 1 保留历史对账，新浏览器写入要求修订 2：离线立即失败，在线命令通过 30 秒收件/grant 门闩送达。D44 本机路由仍属于 P2，D45 待处理审批快照保留。
+协议包：0.8.0；Worker 线路仍支持修订 1、2。实现 `remote-hub.v2.yaml` 的全部 33 个 HTTP 操作与 `/ws/v2/worker`。修订 1 保留历史对账，新浏览器写入要求修订 2：离线立即失败，在线命令通过 30 秒收件/grant 门闩送达。D50 增加设备管理、账号 PAT、公开规范及请求追踪；不增加 Worker 帧。
 
 ## 启动与配置
 
@@ -40,7 +40,26 @@ Linux 数据目录应仅服务账号可读写（目录 0700，密钥 0600）；W
 
 配置 H5 目录后，真实静态文件正常返回；不存在、最后一段无扩展名的 GET 路径（例如 `/remote/chat`）回退到 `index.html`，支持 history 路由刷新。`/api/`、`/ws/` 命名空间不参与回退，未知 API 保持 ApiEnvelope 404；缺失的 `.js`、`.css` 等资源仍返回 404。
 
-`python -m server` 内部启动 uvicorn，并禁用传输层访问日志；应用只记录固定操作名、HTTP 状态或固定错误码，不输出请求体、头、URL 查询或异常输入。不要启用 HTTP/WS 调试日志。反向代理也不要记录认证头、Cookie、请求体或带凭据的查询参数。所有认证和配对响应有 `Cache-Control: no-store`。
+`python -m server` 内部启动 uvicorn，并禁用传输层访问日志。每个 HTTP 请求恰有一条 JSON 完成记录：requestId、规范 operationId（或 static/unmatched）、status、errorCode、elapsedMs，可选严格小写 UUIDv4 的 clientRequestId。所有响应带 `X-Request-Id`，API 信封与之同值；不采信客户端 `X-Request-Id`。非法 `X-Client-Request-Id` 返回 BAD_REQUEST，不回显原值。不输出凭据、请求/响应体、URL 查询或原始异常。不要启用 HTTP/WS 调试日志；反向代理同样不能记录这些内容。所有 API 响应使用 `Cache-Control: no-store`。
+
+## 设备管理与 PAT（D50）
+
+- 列表支持 remoteAccess、online、includeRevoked（默认 false）、cursor/limit。分页沿创建顺序，管理修改和心跳不重排；签名游标绑定 owner、Cookie/PAT 身份及规范化过滤，旧版本的有效设备游标返回 CURSOR_EXPIRED。已删除设备永不返回。
+- PATCH `/devices/{workerId}` 带 expectedVersion 和至少一项 remoteAccess/displayName。旧记录按 enabled/version=1 初始化；首次实际管理变更或撤销增版本，心跳/同步不增。空白别名清除，原 deviceName 不变。CAS 冲突返回 CONFLICT 与授权后的 currentVersion；同意图重试返回原快照，需再 GET 刷新。revoked 不能恢复。
+- 暂停保持 Worker 在线、内容/目录/busy 同步和历史读取。普通远程业务写返回 REMOTE_DEVICE_SUSPENDED，优先于离线/状态未就绪/旧线路。run.cancel、approval.decide(reject) 贯穿所有门禁豁免暂停，仍需在线和真实权限；withdraw 不豁免。暂停与 grant 同事务竞争，暂停时所有未 grant 的窗口失败（含既有 cancel/reject）；新 cancel/reject 可另开窗口。已 grant 永不伪造撤回，恢复不重放失败意图。
+- DELETE `/devices/{workerId}` 首次 200，之后所有直接访问及重复 DELETE 均 404，不重放首次回执。清理全部 store、副本、busy、暂存、可重放正文及显示元数据，凭据留下不可逆拒绝标记。只保留必要身份/摘要/许可/水位墓碑。返回 executionMayStillBeRunning=true，不承诺已停止本机任务。旧 revocations 仍保持撤销记录可读的语义。
+- `/api-tokens` 的签发、列表、DELETE 吊销只接受 Cookie；POST 首次 201 的 secret 只出现一次，同 key/body 重放 200 只有 metadata 与 secretAvailable=false。丢失首次响应时吊销并以新 key 重签。名称修剪非空，scope 不重复；默认 90 天，最多 365 天。
+- PAT 为 `hqr_pat_<24位小写hex selector>_<43位base64url secret>`。secret 独立生成 32 随机字节；数据库仅存域隔离 HMAC、公开元数据及永久意图摘要/tokenId，列表不含秘密片段。有效性和 scope 每次检查，写事务内重检；无正向认证缓存。lastUsedAt 表示通过认证与 scope，即使之后业务失败也更新。
+- 精确白名单：GET devices/详情/catalog 需 devices:read；PATCH 需 devices:manage；DELETE/旧 revocations 需 devices:delete。scope 互不包含。PAT 不接受其它 API；Cookie 与 Authorization 同时存在、重复 Authorization/同名会话 Cookie 均拒绝。PAT 跳过 Origin/CSRF 的前提是白名单、校验及 scope 全通过，写入仍必须有 Idempotency-Key；PAT 的幂等域还含 tokenId。Cookie 的 DELETE 同样要求 Origin、CSRF、幂等键。
+- PAT 所有请求（含 GET、无效凭据及错误 scope）受来源地址桶限速，换 selector 不改变配额。429 的 Retry-After 指向当前配置窗口。
+
+PAT HMAC 与会话使用已有稳定 `server.key`，用途以独立域隔离。不要自动轮换或回退密钥；主动换 key 会使已有 PAT、会话与设备验证值失效，需按停服、吊销旧令牌、重新配对/签发的计划操作。密钥回滚也不能覆盖当前吊销记录；恢复历史数据库会恢复当时的认证状态，属于需要重新核对的灾难恢复操作。
+
+## 公开规范与发行包
+
+`GET /api/v2/openapi.json` 无需登录，返回原始自包含 OpenAPI JSON，不套信封。`server/resources/remote-hub.v2.bundle.json` 随发行包/镜像携带，内容由测试与协议 bundle 比对；错误中文映射同样随包，不依赖部署机的源码目录或运行时 PyYAML。
+
+升级冻结协议时，在仓库根运行 `.venv/Scripts/python.exe -B apps/server/scripts/package_contract.py` 更新两份发布资源，再跑测试验证一致性。该脚本只向 apps/server 写文件，不修改协议。`pyproject.toml` 的 package-data 包含 JSON，Docker 已复制整个 server 目录。部署到 `/opt/hqremote/app` 时必须一起发布 `server/resources/*.json`（或安装完整服务端 wheel），不能只复制 `.py`；无需在该机器保留 `packages/protocol/openapi` 源码。实际启动仍需安装匹配的生成 DTO 协议包。独立 ZIP 包测试从仓库外加载发布资源，验证没有源码路径依赖。
 
 ## TLS、自部署与 Docker
 
@@ -203,7 +222,7 @@ $env:TMP = $env:TEMP
 
 TEMP/TMP/`--basetemp` 必须指向 worktree 内被忽略的 `.tmp`，避免该 Windows 沙箱默认临时目录的 WinError 5。已有 Starlette 对 httpx TestClient 的弃用 warning 保留，不为消除警告安装清单外依赖。
 
-`scripts/smoke.py` 串行创建临时账号，启动真实 loopback uvicorn，使用可信本机代理协议头模拟 TLS 终结后的后端连接，走登录、配对、修订 2 假 Worker、create/received/grant/upsert、完整回复同步、离线立即失败、重连 busyFresh 重建及在线备份。不访问远端服务器，也不证明真实 Worker/Caddy 证书或公网部署已验收。数据仅在 `.tmp`，退出时检查输出脱敏。
+`scripts/smoke.py` 串行创建临时账号，启动真实 loopback uvicorn，使用可信本机代理协议头模拟 TLS 终结后的后端连接，走登录、配对、修订 2 假 Worker、create/received/grant/upsert、完整回复同步、离线立即失败、重连 busyFresh 重建、公开规范/requestId、PAT 签发、设备暂停/恢复/删除、PAT 吊销及在线备份。不访问远端服务器，也不证明真实 Worker/Caddy 证书或公网部署已验收。数据及临时服务日志仅在 `.tmp`，退出时检查输出脱敏。
 
 历史测试的 `env` 夹具仅在测试构造期间装入原 R1 Service 和旧响应绑定，保留旧离线排队、201 创建等历史语义断言；它不是可由配置打开的生产模式。`r15_env` 和全部 test_r15_* 使用正式 create_app/SyncService，验证新 HTTP 准入、映射、grant、复制和删除。正式应用不接受新 rev1 浏览器命令。版本协商旧测试中“不支持的修订 2”改为 3，拒绝支持列表更新为 [1,2]，另有真实 rev1 历史对账/升级栅栏用例。
 
