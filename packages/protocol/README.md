@@ -71,6 +71,21 @@ FZ-1 冻结时三端均实测通过，不是"应该能用"：
 | Go | `go build ./...` + `go vet ./...` | 0 / 0 |
 
 
-## R1远程通信（0.6.0）
+## Hub Server 对外规范（0.8.0）
+
+当前对外调用入口见 [api-guide.md](remote/api-guide.md)，覆盖全部HTTP操作、PAT/设备管理、错误总表、requestId排查和Worker WSS索引。OpenAPI事实源为 [remote-hub.v2.yaml](openapi/remote-hub.v2.yaml)，公开JSON发布物为 [remote-hub.v2.bundle.json](openapi/remote-hub.v2.bundle.json)。业务实现与公开端点由P1适配，不能把文档冻结当作部署完成。
+
+使用仓库虚拟环境运行：
+
+```powershell
+python packages/protocol/remote/api-contract.py --write  # 更新bundle、接口索引和错误表
+python packages/protocol/remote/api-contract.py          # 检查路由/示例/鉴权/错误表/生成文档漂移
+pwsh scripts/protocol/validate.ps1 -CheckGenerated       # 既有DTO/Fixture/三端生成物校验
+python -m pytest packages/protocol/tests/test_devices_api.py -q -p no:cacheprovider
+```
+
+HTTP包版本0.8.0与Worker线路修订1/2分离。新HTTP码不进入旧Worker错误值域；详细兼容与交接见 [R1.5-contract.md](remote/R1.5-contract.md) §9。
+
+### R1历史基线
 
 结构：`schema/remote.json`；HTTP：`openapi/remote-hub.v2.yaml`；连接帧、owner隔离、控制结果与事务规则：[R1-contract.md](remote/R1-contract.md)。D40/D41沿用现有执行内核，不引入Attempt或新TaskStatus，不改变本地接口。
