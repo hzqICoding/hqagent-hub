@@ -3330,16 +3330,6 @@ paths:
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
-                REMOTE_CURSOR_INVALID:
-                  summary: 游标无效或不属于当前查询
-                  value:
-                    success: false
-                    error:
-                      code: REMOTE_CURSOR_INVALID
-                      message: 游标无效或不属于当前查询
-                      retryable: false
-                    requestId: req_0123456789abcdef01234567
-                    protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
         '401':
@@ -3453,38 +3443,6 @@ paths:
                     error:
                       code: NOT_FOUND
                       message: 资源不存在
-                      retryable: false
-                    requestId: req_0123456789abcdef01234567
-                    protocolVersion: 0.8.0
-          x-errorSchema:
-            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
-        '410':
-          description: 按error.code处理，不解析中文message。
-          headers:
-            X-Request-Id:
-              description: 服务端为该请求生成；与信封requestId相同。
-              schema:
-                type: string
-                minLength: 16
-                maxLength: 128
-                pattern: ^[A-Za-z0-9_-]+$
-              example: req_0123456789abcdef01234567
-            Cache-Control:
-              schema:
-                type: string
-                const: no-store
-          content:
-            application/json:
-              schema:
-                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
-              examples:
-                REMOTE_CURSOR_EXPIRED:
-                  summary: 游标已过期，请重新加载
-                  value:
-                    success: false
-                    error:
-                      code: REMOTE_CURSOR_EXPIRED
-                      message: 游标已过期，请重新加载
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
@@ -3622,8 +3580,6 @@ paths:
       - REMOTE_API_TOKEN_SCOPE_INSUFFICIENT
       - REMOTE_AUTH_AMBIGUOUS
       - REMOTE_AUTH_REQUIRED
-      - REMOTE_CURSOR_EXPIRED
-      - REMOTE_CURSOR_INVALID
       - REMOTE_RATE_LIMITED
       - VALIDATION_FAILED
       x-request-example:
@@ -5155,16 +5111,6 @@ paths:
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
-                REMOTE_CURSOR_INVALID:
-                  summary: 游标无效或不属于当前查询
-                  value:
-                    success: false
-                    error:
-                      code: REMOTE_CURSOR_INVALID
-                      message: 游标无效或不属于当前查询
-                      retryable: false
-                    requestId: req_0123456789abcdef01234567
-                    protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
         '401':
@@ -5315,38 +5261,6 @@ paths:
                     protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
-        '410':
-          description: 按error.code处理，不解析中文message。
-          headers:
-            X-Request-Id:
-              description: 服务端为该请求生成；与信封requestId相同。
-              schema:
-                type: string
-                minLength: 16
-                maxLength: 128
-                pattern: ^[A-Za-z0-9_-]+$
-              example: req_0123456789abcdef01234567
-            Cache-Control:
-              schema:
-                type: string
-                const: no-store
-          content:
-            application/json:
-              schema:
-                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
-              examples:
-                REMOTE_CURSOR_EXPIRED:
-                  summary: 游标已过期，请重新加载
-                  value:
-                    success: false
-                    error:
-                      code: REMOTE_CURSOR_EXPIRED
-                      message: 游标已过期，请重新加载
-                      retryable: false
-                    requestId: req_0123456789abcdef01234567
-                    protocolVersion: 0.8.0
-          x-errorSchema:
-            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
         '422':
           description: 按error.code处理，不解析中文message。
           headers:
@@ -5479,8 +5393,6 @@ paths:
       - REMOTE_API_TOKEN_SCOPE_INSUFFICIENT
       - REMOTE_AUTH_AMBIGUOUS
       - REMOTE_AUTH_REQUIRED
-      - REMOTE_CURSOR_EXPIRED
-      - REMOTE_CURSOR_INVALID
       - REMOTE_RATE_LIMITED
       - REMOTE_STATE_NOT_READY
       - VALIDATION_FAILED
@@ -6116,6 +6028,26 @@ paths:
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
+                REMOTE_SCENE_VERSION_MISMATCH:
+                  summary: Worker场景版本与已排队请求不一致，不静默换用最新角色配置
+                  value:
+                    success: false
+                    error:
+                      code: REMOTE_SCENE_VERSION_MISMATCH
+                      message: Worker场景版本与已排队请求不一致，不静默换用最新角色配置
+                      retryable: false
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.8.0
+                REMOTE_DELIVERY_EXPIRED:
+                  summary: 设备离线，发送失败
+                  value:
+                    success: false
+                    error:
+                      code: REMOTE_DELIVERY_EXPIRED
+                      message: 设备离线，发送失败
+                      retryable: true
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
         '413':
@@ -6252,6 +6184,38 @@ paths:
                     protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '404':
+          description: 按error.code处理，不解析中文message。
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                NOT_FOUND:
+                  summary: 资源不存在
+                  value:
+                    success: false
+                    error:
+                      code: NOT_FOUND
+                      message: 资源不存在
+                      retryable: false
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.8.0
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
       requestBody:
         required: true
         content:
@@ -6314,16 +6278,19 @@ paths:
       - CONFLICT
       - IDEMPOTENCY_MISMATCH
       - INTERNAL
+      - NOT_FOUND
       - REMOTE_API_TOKEN_SCOPE_INSUFFICIENT
       - REMOTE_AUTH_AMBIGUOUS
       - REMOTE_AUTH_REQUIRED
       - REMOTE_CSRF_REJECTED
+      - REMOTE_DELIVERY_EXPIRED
       - REMOTE_DEVICE_OFFLINE
       - REMOTE_DEVICE_REVOKED
       - REMOTE_DEVICE_SUSPENDED
       - REMOTE_FRAME_TOO_LARGE
       - REMOTE_RATE_LIMITED
       - REMOTE_REVISION_REQUIRED
+      - REMOTE_SCENE_VERSION_MISMATCH
       - REMOTE_STATE_NOT_READY
       - REMOTE_STORE_CHANGED
       - REMOTE_SYNC_DISABLED
@@ -6440,16 +6407,6 @@ paths:
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
-                REMOTE_CURSOR_INVALID:
-                  summary: 游标无效或不属于当前查询
-                  value:
-                    success: false
-                    error:
-                      code: REMOTE_CURSOR_INVALID
-                      message: 游标无效或不属于当前查询
-                      retryable: false
-                    requestId: req_0123456789abcdef01234567
-                    protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
         '401':
@@ -6543,38 +6500,6 @@ paths:
                     error:
                       code: NOT_FOUND
                       message: 资源不存在
-                      retryable: false
-                    requestId: req_0123456789abcdef01234567
-                    protocolVersion: 0.8.0
-          x-errorSchema:
-            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
-        '410':
-          description: 按error.code处理，不解析中文message。
-          headers:
-            X-Request-Id:
-              description: 服务端为该请求生成；与信封requestId相同。
-              schema:
-                type: string
-                minLength: 16
-                maxLength: 128
-                pattern: ^[A-Za-z0-9_-]+$
-              example: req_0123456789abcdef01234567
-            Cache-Control:
-              schema:
-                type: string
-                const: no-store
-          content:
-            application/json:
-              schema:
-                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
-              examples:
-                REMOTE_CURSOR_EXPIRED:
-                  summary: 游标已过期，请重新加载
-                  value:
-                    success: false
-                    error:
-                      code: REMOTE_CURSOR_EXPIRED
-                      message: 游标已过期，请重新加载
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
@@ -6708,8 +6633,6 @@ paths:
       - REMOTE_API_TOKEN_SCOPE_INSUFFICIENT
       - REMOTE_AUTH_AMBIGUOUS
       - REMOTE_AUTH_REQUIRED
-      - REMOTE_CURSOR_EXPIRED
-      - REMOTE_CURSOR_INVALID
       - REMOTE_RATE_LIMITED
       - VALIDATION_FAILED
       x-request-example:
@@ -7025,6 +6948,16 @@ paths:
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
+                REMOTE_DELIVERY_EXPIRED:
+                  summary: 设备离线，发送失败
+                  value:
+                    success: false
+                    error:
+                      code: REMOTE_DELIVERY_EXPIRED
+                      message: 设备离线，发送失败
+                      retryable: true
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
         '413':
@@ -7230,6 +7163,7 @@ paths:
       - REMOTE_AUTH_AMBIGUOUS
       - REMOTE_AUTH_REQUIRED
       - REMOTE_CSRF_REJECTED
+      - REMOTE_DELIVERY_EXPIRED
       - REMOTE_DEVICE_OFFLINE
       - REMOTE_DEVICE_REVOKED
       - REMOTE_DEVICE_SUSPENDED
@@ -7568,6 +7502,16 @@ paths:
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
+                REMOTE_DELIVERY_EXPIRED:
+                  summary: 设备离线，发送失败
+                  value:
+                    success: false
+                    error:
+                      code: REMOTE_DELIVERY_EXPIRED
+                      message: 设备离线，发送失败
+                      retryable: true
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
         '413':
@@ -7597,6 +7541,16 @@ paths:
                     error:
                       code: REMOTE_FRAME_TOO_LARGE
                       message: 远程帧超过256KiB，拒绝而不是截断关键内容后继续
+                      retryable: false
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.8.0
+                REMOTE_SYNC_RESOURCE_LIMIT:
+                  summary: 全文同步资源配额不足，明确失败，不截断伪装成功
+                  value:
+                    success: false
+                    error:
+                      code: REMOTE_SYNC_RESOURCE_LIMIT
+                      message: 全文同步资源配额不足，明确失败，不截断伪装成功
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
@@ -7775,6 +7729,7 @@ paths:
       - REMOTE_AUTH_REQUIRED
       - REMOTE_CONVERSATION_BUSY
       - REMOTE_CSRF_REJECTED
+      - REMOTE_DELIVERY_EXPIRED
       - REMOTE_DEVICE_OFFLINE
       - REMOTE_DEVICE_REVOKED
       - REMOTE_DEVICE_SUSPENDED
@@ -7784,6 +7739,7 @@ paths:
       - REMOTE_STATE_NOT_READY
       - REMOTE_STORE_CHANGED
       - REMOTE_SYNC_DISABLED
+      - REMOTE_SYNC_RESOURCE_LIMIT
       - VALIDATION_FAILED
       x-request-example:
         method: POST
@@ -9560,6 +9516,16 @@ paths:
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
+                REMOTE_DELIVERY_EXPIRED:
+                  summary: 设备离线，发送失败
+                  value:
+                    success: false
+                    error:
+                      code: REMOTE_DELIVERY_EXPIRED
+                      message: 设备离线，发送失败
+                      retryable: true
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
         '413':
@@ -9764,6 +9730,7 @@ paths:
       - REMOTE_AUTH_AMBIGUOUS
       - REMOTE_AUTH_REQUIRED
       - REMOTE_CSRF_REJECTED
+      - REMOTE_DELIVERY_EXPIRED
       - REMOTE_DEVICE_OFFLINE
       - REMOTE_DEVICE_REVOKED
       - REMOTE_DEVICE_SUSPENDED
@@ -11340,6 +11307,16 @@ paths:
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
+                REMOTE_DELIVERY_EXPIRED:
+                  summary: 设备离线，发送失败
+                  value:
+                    success: false
+                    error:
+                      code: REMOTE_DELIVERY_EXPIRED
+                      message: 设备离线，发送失败
+                      retryable: true
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
         '410':
@@ -11578,6 +11555,7 @@ paths:
       - REMOTE_AUTH_REQUIRED
       - REMOTE_COMMAND_EXPIRED
       - REMOTE_CSRF_REJECTED
+      - REMOTE_DELIVERY_EXPIRED
       - REMOTE_DEVICE_OFFLINE
       - REMOTE_DEVICE_REVOKED
       - REMOTE_DEVICE_SUSPENDED
@@ -12062,16 +12040,6 @@ paths:
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
-                REMOTE_CURSOR_INVALID:
-                  summary: 游标无效或不属于当前查询
-                  value:
-                    success: false
-                    error:
-                      code: REMOTE_CURSOR_INVALID
-                      message: 游标无效或不属于当前查询
-                      retryable: false
-                    requestId: req_0123456789abcdef01234567
-                    protocolVersion: 0.8.0
           x-errorSchema:
             $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
         '401':
@@ -12165,38 +12133,6 @@ paths:
                     error:
                       code: NOT_FOUND
                       message: 资源不存在
-                      retryable: false
-                    requestId: req_0123456789abcdef01234567
-                    protocolVersion: 0.8.0
-          x-errorSchema:
-            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
-        '410':
-          description: 按error.code处理，不解析中文message。
-          headers:
-            X-Request-Id:
-              description: 服务端为该请求生成；与信封requestId相同。
-              schema:
-                type: string
-                minLength: 16
-                maxLength: 128
-                pattern: ^[A-Za-z0-9_-]+$
-              example: req_0123456789abcdef01234567
-            Cache-Control:
-              schema:
-                type: string
-                const: no-store
-          content:
-            application/json:
-              schema:
-                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
-              examples:
-                REMOTE_CURSOR_EXPIRED:
-                  summary: 游标已过期，请重新加载
-                  value:
-                    success: false
-                    error:
-                      code: REMOTE_CURSOR_EXPIRED
-                      message: 游标已过期，请重新加载
                       retryable: false
                     requestId: req_0123456789abcdef01234567
                     protocolVersion: 0.8.0
@@ -12330,8 +12266,6 @@ paths:
       - REMOTE_API_TOKEN_SCOPE_INSUFFICIENT
       - REMOTE_AUTH_AMBIGUOUS
       - REMOTE_AUTH_REQUIRED
-      - REMOTE_CURSOR_EXPIRED
-      - REMOTE_CURSOR_INVALID
       - REMOTE_RATE_LIMITED
       - VALIDATION_FAILED
       x-request-example:

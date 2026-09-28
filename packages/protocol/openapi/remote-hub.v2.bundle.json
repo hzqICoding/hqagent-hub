@@ -11941,6 +11941,19 @@
                       "success": false
                     }
                   },
+                  "REMOTE_DELIVERY_EXPIRED": {
+                    "summary": "设备离线，发送失败",
+                    "value": {
+                      "error": {
+                        "code": "REMOTE_DELIVERY_EXPIRED",
+                        "message": "设备离线，发送失败",
+                        "retryable": true
+                      },
+                      "protocolVersion": "0.8.0",
+                      "requestId": "req_0123456789abcdef01234567",
+                      "success": false
+                    }
+                  },
                   "REMOTE_DEVICE_OFFLINE": {
                     "summary": "设备离线，发送失败",
                     "value": {
@@ -12430,6 +12443,7 @@
           "REMOTE_AUTH_REQUIRED",
           "REMOTE_COMMAND_EXPIRED",
           "REMOTE_CSRF_REJECTED",
+          "REMOTE_DELIVERY_EXPIRED",
           "REMOTE_DEVICE_OFFLINE",
           "REMOTE_DEVICE_REVOKED",
           "REMOTE_DEVICE_SUSPENDED",
@@ -17074,6 +17088,72 @@
               "$ref": "#/components/schemas/RemoteHttpError"
             }
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "资源不存在",
+                    "value": {
+                      "error": {
+                        "code": "NOT_FOUND",
+                        "message": "资源不存在",
+                        "retryable": false
+                      },
+                      "protocolVersion": "0.8.0",
+                      "requestId": "req_0123456789abcdef01234567",
+                      "success": false
+                    }
+                  }
+                },
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "data": false,
+                        "error": {
+                          "$ref": "#/components/schemas/RemoteHttpError"
+                        },
+                        "success": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "success",
+                        "error"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "按error.code处理，不解析中文message。",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store",
+                  "type": "string"
+                }
+              },
+              "X-Request-Id": {
+                "description": "服务端为该请求生成；与信封requestId相同。",
+                "example": "req_0123456789abcdef01234567",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 16,
+                  "pattern": "^[A-Za-z0-9_-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "x-errorSchema": {
+              "$ref": "#/components/schemas/RemoteHttpError"
+            }
+          },
           "409": {
             "content": {
               "application/json": {
@@ -17098,6 +17178,19 @@
                         "code": "IDEMPOTENCY_MISMATCH",
                         "message": "幂等键已用于不同请求",
                         "retryable": false
+                      },
+                      "protocolVersion": "0.8.0",
+                      "requestId": "req_0123456789abcdef01234567",
+                      "success": false
+                    }
+                  },
+                  "REMOTE_DELIVERY_EXPIRED": {
+                    "summary": "设备离线，发送失败",
+                    "value": {
+                      "error": {
+                        "code": "REMOTE_DELIVERY_EXPIRED",
+                        "message": "设备离线，发送失败",
+                        "retryable": true
                       },
                       "protocolVersion": "0.8.0",
                       "requestId": "req_0123456789abcdef01234567",
@@ -17136,6 +17229,19 @@
                       "error": {
                         "code": "REMOTE_REVISION_REQUIRED",
                         "message": "电脑端需升级后使用此操作",
+                        "retryable": false
+                      },
+                      "protocolVersion": "0.8.0",
+                      "requestId": "req_0123456789abcdef01234567",
+                      "success": false
+                    }
+                  },
+                  "REMOTE_SCENE_VERSION_MISMATCH": {
+                    "summary": "Worker场景版本与已排队请求不一致，不静默换用最新角色配置",
+                    "value": {
+                      "error": {
+                        "code": "REMOTE_SCENE_VERSION_MISMATCH",
+                        "message": "Worker场景版本与已排队请求不一致，不静默换用最新角色配置",
                         "retryable": false
                       },
                       "protocolVersion": "0.8.0",
@@ -17516,16 +17622,19 @@
           "CONFLICT",
           "IDEMPOTENCY_MISMATCH",
           "INTERNAL",
+          "NOT_FOUND",
           "REMOTE_API_TOKEN_SCOPE_INSUFFICIENT",
           "REMOTE_AUTH_AMBIGUOUS",
           "REMOTE_AUTH_REQUIRED",
           "REMOTE_CSRF_REJECTED",
+          "REMOTE_DELIVERY_EXPIRED",
           "REMOTE_DEVICE_OFFLINE",
           "REMOTE_DEVICE_REVOKED",
           "REMOTE_DEVICE_SUSPENDED",
           "REMOTE_FRAME_TOO_LARGE",
           "REMOTE_RATE_LIMITED",
           "REMOTE_REVISION_REQUIRED",
+          "REMOTE_SCENE_VERSION_MISMATCH",
           "REMOTE_STATE_NOT_READY",
           "REMOTE_STORE_CHANGED",
           "REMOTE_SYNC_DISABLED",
@@ -17686,19 +17795,6 @@
                       "error": {
                         "code": "REMOTE_AUTH_AMBIGUOUS",
                         "message": "请求同时提供了多种身份凭据",
-                        "retryable": false
-                      },
-                      "protocolVersion": "0.8.0",
-                      "requestId": "req_0123456789abcdef01234567",
-                      "success": false
-                    }
-                  },
-                  "REMOTE_CURSOR_INVALID": {
-                    "summary": "游标无效或不属于当前查询",
-                    "value": {
-                      "error": {
-                        "code": "REMOTE_CURSOR_INVALID",
-                        "message": "游标无效或不属于当前查询",
                         "retryable": false
                       },
                       "protocolVersion": "0.8.0",
@@ -17897,72 +17993,6 @@
                       "error": {
                         "code": "NOT_FOUND",
                         "message": "资源不存在",
-                        "retryable": false
-                      },
-                      "protocolVersion": "0.8.0",
-                      "requestId": "req_0123456789abcdef01234567",
-                      "success": false
-                    }
-                  }
-                },
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ApiEnvelope"
-                    },
-                    {
-                      "properties": {
-                        "data": false,
-                        "error": {
-                          "$ref": "#/components/schemas/RemoteHttpError"
-                        },
-                        "success": {
-                          "const": false
-                        }
-                      },
-                      "required": [
-                        "success",
-                        "error"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                }
-              }
-            },
-            "description": "按error.code处理，不解析中文message。",
-            "headers": {
-              "Cache-Control": {
-                "schema": {
-                  "const": "no-store",
-                  "type": "string"
-                }
-              },
-              "X-Request-Id": {
-                "description": "服务端为该请求生成；与信封requestId相同。",
-                "example": "req_0123456789abcdef01234567",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 16,
-                  "pattern": "^[A-Za-z0-9_-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "x-errorSchema": {
-              "$ref": "#/components/schemas/RemoteHttpError"
-            }
-          },
-          "410": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "REMOTE_CURSOR_EXPIRED": {
-                    "summary": "游标已过期，请重新加载",
-                    "value": {
-                      "error": {
-                        "code": "REMOTE_CURSOR_EXPIRED",
-                        "message": "游标已过期，请重新加载",
                         "retryable": false
                       },
                       "protocolVersion": "0.8.0",
@@ -18240,8 +18270,6 @@
           "REMOTE_API_TOKEN_SCOPE_INSUFFICIENT",
           "REMOTE_AUTH_AMBIGUOUS",
           "REMOTE_AUTH_REQUIRED",
-          "REMOTE_CURSOR_EXPIRED",
-          "REMOTE_CURSOR_INVALID",
           "REMOTE_RATE_LIMITED",
           "VALIDATION_FAILED"
         ],
@@ -18750,6 +18778,19 @@
                       "success": false
                     }
                   },
+                  "REMOTE_DELIVERY_EXPIRED": {
+                    "summary": "设备离线，发送失败",
+                    "value": {
+                      "error": {
+                        "code": "REMOTE_DELIVERY_EXPIRED",
+                        "message": "设备离线，发送失败",
+                        "retryable": true
+                      },
+                      "protocolVersion": "0.8.0",
+                      "requestId": "req_0123456789abcdef01234567",
+                      "success": false
+                    }
+                  },
                   "REMOTE_DEVICE_OFFLINE": {
                     "summary": "设备离线，发送失败",
                     "value": {
@@ -19167,6 +19208,7 @@
           "REMOTE_AUTH_AMBIGUOUS",
           "REMOTE_AUTH_REQUIRED",
           "REMOTE_CSRF_REJECTED",
+          "REMOTE_DELIVERY_EXPIRED",
           "REMOTE_DEVICE_OFFLINE",
           "REMOTE_DEVICE_REVOKED",
           "REMOTE_DEVICE_SUSPENDED",
@@ -21132,6 +21174,19 @@
                       "success": false
                     }
                   },
+                  "REMOTE_DELIVERY_EXPIRED": {
+                    "summary": "设备离线，发送失败",
+                    "value": {
+                      "error": {
+                        "code": "REMOTE_DELIVERY_EXPIRED",
+                        "message": "设备离线，发送失败",
+                        "retryable": true
+                      },
+                      "protocolVersion": "0.8.0",
+                      "requestId": "req_0123456789abcdef01234567",
+                      "success": false
+                    }
+                  },
                   "REMOTE_DEVICE_OFFLINE": {
                     "summary": "设备离线，发送失败",
                     "value": {
@@ -21269,6 +21324,19 @@
                       "error": {
                         "code": "REMOTE_FRAME_TOO_LARGE",
                         "message": "远程帧超过256KiB，拒绝而不是截断关键内容后继续",
+                        "retryable": false
+                      },
+                      "protocolVersion": "0.8.0",
+                      "requestId": "req_0123456789abcdef01234567",
+                      "success": false
+                    }
+                  },
+                  "REMOTE_SYNC_RESOURCE_LIMIT": {
+                    "summary": "全文同步资源配额不足，明确失败，不截断伪装成功",
+                    "value": {
+                      "error": {
+                        "code": "REMOTE_SYNC_RESOURCE_LIMIT",
+                        "message": "全文同步资源配额不足，明确失败，不截断伪装成功",
                         "retryable": false
                       },
                       "protocolVersion": "0.8.0",
@@ -21550,6 +21618,7 @@
           "REMOTE_AUTH_REQUIRED",
           "REMOTE_CONVERSATION_BUSY",
           "REMOTE_CSRF_REJECTED",
+          "REMOTE_DELIVERY_EXPIRED",
           "REMOTE_DEVICE_OFFLINE",
           "REMOTE_DEVICE_REVOKED",
           "REMOTE_DEVICE_SUSPENDED",
@@ -21559,6 +21628,7 @@
           "REMOTE_STATE_NOT_READY",
           "REMOTE_STORE_CHANGED",
           "REMOTE_SYNC_DISABLED",
+          "REMOTE_SYNC_RESOURCE_LIMIT",
           "VALIDATION_FAILED"
         ],
         "x-request-example": {
@@ -22464,19 +22534,6 @@
                       "requestId": "req_0123456789abcdef01234567",
                       "success": false
                     }
-                  },
-                  "REMOTE_CURSOR_INVALID": {
-                    "summary": "游标无效或不属于当前查询",
-                    "value": {
-                      "error": {
-                        "code": "REMOTE_CURSOR_INVALID",
-                        "message": "游标无效或不属于当前查询",
-                        "retryable": false
-                      },
-                      "protocolVersion": "0.8.0",
-                      "requestId": "req_0123456789abcdef01234567",
-                      "success": false
-                    }
                   }
                 },
                 "schema": {
@@ -22669,72 +22726,6 @@
                       "error": {
                         "code": "NOT_FOUND",
                         "message": "资源不存在",
-                        "retryable": false
-                      },
-                      "protocolVersion": "0.8.0",
-                      "requestId": "req_0123456789abcdef01234567",
-                      "success": false
-                    }
-                  }
-                },
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ApiEnvelope"
-                    },
-                    {
-                      "properties": {
-                        "data": false,
-                        "error": {
-                          "$ref": "#/components/schemas/RemoteHttpError"
-                        },
-                        "success": {
-                          "const": false
-                        }
-                      },
-                      "required": [
-                        "success",
-                        "error"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                }
-              }
-            },
-            "description": "按error.code处理，不解析中文message。",
-            "headers": {
-              "Cache-Control": {
-                "schema": {
-                  "const": "no-store",
-                  "type": "string"
-                }
-              },
-              "X-Request-Id": {
-                "description": "服务端为该请求生成；与信封requestId相同。",
-                "example": "req_0123456789abcdef01234567",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 16,
-                  "pattern": "^[A-Za-z0-9_-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "x-errorSchema": {
-              "$ref": "#/components/schemas/RemoteHttpError"
-            }
-          },
-          "410": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "REMOTE_CURSOR_EXPIRED": {
-                    "summary": "游标已过期，请重新加载",
-                    "value": {
-                      "error": {
-                        "code": "REMOTE_CURSOR_EXPIRED",
-                        "message": "游标已过期，请重新加载",
                         "retryable": false
                       },
                       "protocolVersion": "0.8.0",
@@ -23012,8 +23003,6 @@
           "REMOTE_API_TOKEN_SCOPE_INSUFFICIENT",
           "REMOTE_AUTH_AMBIGUOUS",
           "REMOTE_AUTH_REQUIRED",
-          "REMOTE_CURSOR_EXPIRED",
-          "REMOTE_CURSOR_INVALID",
           "REMOTE_RATE_LIMITED",
           "VALIDATION_FAILED"
         ],
@@ -24708,19 +24697,6 @@
                       "requestId": "req_0123456789abcdef01234567",
                       "success": false
                     }
-                  },
-                  "REMOTE_CURSOR_INVALID": {
-                    "summary": "游标无效或不属于当前查询",
-                    "value": {
-                      "error": {
-                        "code": "REMOTE_CURSOR_INVALID",
-                        "message": "游标无效或不属于当前查询",
-                        "retryable": false
-                      },
-                      "protocolVersion": "0.8.0",
-                      "requestId": "req_0123456789abcdef01234567",
-                      "success": false
-                    }
                   }
                 },
                 "schema": {
@@ -24939,72 +24915,6 @@
                       "error": {
                         "code": "NOT_FOUND",
                         "message": "资源不存在",
-                        "retryable": false
-                      },
-                      "protocolVersion": "0.8.0",
-                      "requestId": "req_0123456789abcdef01234567",
-                      "success": false
-                    }
-                  }
-                },
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ApiEnvelope"
-                    },
-                    {
-                      "properties": {
-                        "data": false,
-                        "error": {
-                          "$ref": "#/components/schemas/RemoteHttpError"
-                        },
-                        "success": {
-                          "const": false
-                        }
-                      },
-                      "required": [
-                        "success",
-                        "error"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                }
-              }
-            },
-            "description": "按error.code处理，不解析中文message。",
-            "headers": {
-              "Cache-Control": {
-                "schema": {
-                  "const": "no-store",
-                  "type": "string"
-                }
-              },
-              "X-Request-Id": {
-                "description": "服务端为该请求生成；与信封requestId相同。",
-                "example": "req_0123456789abcdef01234567",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 16,
-                  "pattern": "^[A-Za-z0-9_-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "x-errorSchema": {
-              "$ref": "#/components/schemas/RemoteHttpError"
-            }
-          },
-          "410": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "REMOTE_CURSOR_EXPIRED": {
-                    "summary": "游标已过期，请重新加载",
-                    "value": {
-                      "error": {
-                        "code": "REMOTE_CURSOR_EXPIRED",
-                        "message": "游标已过期，请重新加载",
                         "retryable": false
                       },
                       "protocolVersion": "0.8.0",
@@ -25287,8 +25197,6 @@
           "REMOTE_API_TOKEN_SCOPE_INSUFFICIENT",
           "REMOTE_AUTH_AMBIGUOUS",
           "REMOTE_AUTH_REQUIRED",
-          "REMOTE_CURSOR_EXPIRED",
-          "REMOTE_CURSOR_INVALID",
           "REMOTE_RATE_LIMITED",
           "VALIDATION_FAILED"
         ],
@@ -26365,19 +26273,6 @@
                       "requestId": "req_0123456789abcdef01234567",
                       "success": false
                     }
-                  },
-                  "REMOTE_CURSOR_INVALID": {
-                    "summary": "游标无效或不属于当前查询",
-                    "value": {
-                      "error": {
-                        "code": "REMOTE_CURSOR_INVALID",
-                        "message": "游标无效或不属于当前查询",
-                        "retryable": false
-                      },
-                      "protocolVersion": "0.8.0",
-                      "requestId": "req_0123456789abcdef01234567",
-                      "success": false
-                    }
                   }
                 },
                 "schema": {
@@ -26718,72 +26613,6 @@
               "$ref": "#/components/schemas/RemoteHttpError"
             }
           },
-          "410": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "REMOTE_CURSOR_EXPIRED": {
-                    "summary": "游标已过期，请重新加载",
-                    "value": {
-                      "error": {
-                        "code": "REMOTE_CURSOR_EXPIRED",
-                        "message": "游标已过期，请重新加载",
-                        "retryable": false
-                      },
-                      "protocolVersion": "0.8.0",
-                      "requestId": "req_0123456789abcdef01234567",
-                      "success": false
-                    }
-                  }
-                },
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ApiEnvelope"
-                    },
-                    {
-                      "properties": {
-                        "data": false,
-                        "error": {
-                          "$ref": "#/components/schemas/RemoteHttpError"
-                        },
-                        "success": {
-                          "const": false
-                        }
-                      },
-                      "required": [
-                        "success",
-                        "error"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                }
-              }
-            },
-            "description": "按error.code处理，不解析中文message。",
-            "headers": {
-              "Cache-Control": {
-                "schema": {
-                  "const": "no-store",
-                  "type": "string"
-                }
-              },
-              "X-Request-Id": {
-                "description": "服务端为该请求生成；与信封requestId相同。",
-                "example": "req_0123456789abcdef01234567",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 16,
-                  "pattern": "^[A-Za-z0-9_-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "x-errorSchema": {
-              "$ref": "#/components/schemas/RemoteHttpError"
-            }
-          },
           "422": {
             "content": {
               "application/json": {
@@ -27010,8 +26839,6 @@
           "REMOTE_API_TOKEN_SCOPE_INSUFFICIENT",
           "REMOTE_AUTH_AMBIGUOUS",
           "REMOTE_AUTH_REQUIRED",
-          "REMOTE_CURSOR_EXPIRED",
-          "REMOTE_CURSOR_INVALID",
           "REMOTE_RATE_LIMITED",
           "REMOTE_STATE_NOT_READY",
           "VALIDATION_FAILED"
@@ -31794,6 +31621,19 @@
                       "success": false
                     }
                   },
+                  "REMOTE_DELIVERY_EXPIRED": {
+                    "summary": "设备离线，发送失败",
+                    "value": {
+                      "error": {
+                        "code": "REMOTE_DELIVERY_EXPIRED",
+                        "message": "设备离线，发送失败",
+                        "retryable": true
+                      },
+                      "protocolVersion": "0.8.0",
+                      "requestId": "req_0123456789abcdef01234567",
+                      "success": false
+                    }
+                  },
                   "REMOTE_DEVICE_OFFLINE": {
                     "summary": "设备离线，发送失败",
                     "value": {
@@ -32219,6 +32059,7 @@
           "REMOTE_AUTH_AMBIGUOUS",
           "REMOTE_AUTH_REQUIRED",
           "REMOTE_CSRF_REJECTED",
+          "REMOTE_DELIVERY_EXPIRED",
           "REMOTE_DEVICE_OFFLINE",
           "REMOTE_DEVICE_REVOKED",
           "REMOTE_DEVICE_SUSPENDED",

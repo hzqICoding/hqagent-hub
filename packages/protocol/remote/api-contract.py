@@ -148,6 +148,8 @@ def check_example_semantics(api):
 
     for key, op in operations(api).items():
         request = op['x-request-example']
+        if key[0] == 'GET' and not any(p['name'] in {'cursor','before','after'} for p in op['parameters']):
+            assert not {'REMOTE_CURSOR_INVALID','REMOTE_CURSOR_EXPIRED'}.intersection(op['x-error-codes'])
         if 'requestBody' in op:
             assert request['body'] == op['requestBody']['content']['application/json']['examples']['request']['value']
         for status, response in op['responses'].items():
@@ -156,6 +158,7 @@ def check_example_semantics(api):
             for example in response['content']['application/json']['examples'].values():
                 data = example['value']['data'];walk(data)
                 if kind == 'RemoteQueuedReceipt':
+                    assert {'NOT_FOUND','REMOTE_DELIVERY_EXPIRED'} <= set(op['x-error-codes'])
                     assert data['status'] == 'queued' and data['workerOnline'] is True
                     assert data['deliveryState'] == 'queued_online'
                     assert ('conversationSeq' in data) == (key == send), 'Only a new run.submit receipt allocates a sequence'
