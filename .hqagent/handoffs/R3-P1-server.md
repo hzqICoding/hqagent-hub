@@ -1,12 +1,12 @@
 ---
 wp: R3-P1
-status: needs-decision
+status: done
 scope_declared: [apps/server/**, .hqagent/handoffs/R3-P1-server.md]
-scope_touched: [apps/server/Caddyfile.example, apps/server/README.md, apps/server/scripts/smoke.py, apps/server/scripts/smoke_native.py, apps/server/server/app.py, apps/server/server/events_sync.py, apps/server/server/http.py, apps/server/server/native.py, apps/server/server/native_events.py, apps/server/server/queries.py, apps/server/server/replica.py, apps/server/server/repository.py, apps/server/server/repository_devices.py, apps/server/server/repository_native.py, apps/server/server/repository_sync.py, apps/server/server/resources/http-errors.json, apps/server/server/resources/remote-hub.v2.bundle.json, apps/server/server/service.py, apps/server/server/service_sync.py, apps/server/server/wire.py, apps/server/server/worker.py, apps/server/tests/r3_support.py, apps/server/tests/test_devices_tokens.py, apps/server/tests/test_protocol.py, apps/server/tests/test_r15_policy.py, apps/server/tests/test_r3_guards.py, apps/server/tests/test_r3_native.py, .hqagent/handoffs/R3-P1-server.md]
+scope_touched: [apps/server/Caddyfile.example, apps/server/README.md, apps/server/scripts/smoke.py, apps/server/scripts/smoke_native.py, apps/server/server/app.py, apps/server/server/events_sync.py, apps/server/server/http.py, apps/server/server/native.py, apps/server/server/native_events.py, apps/server/server/queries.py, apps/server/server/replica.py, apps/server/server/repository.py, apps/server/server/repository_devices.py, apps/server/server/repository_native.py, apps/server/server/repository_sync.py, apps/server/server/resources/http-errors.json, apps/server/server/resources/remote-hub.v2.bundle.json, apps/server/server/service.py, apps/server/server/service_sync.py, apps/server/server/wire.py, apps/server/server/worker.py, apps/server/tests/r3_support.py, apps/server/tests/test_devices_tokens.py, apps/server/tests/test_protocol.py, apps/server/tests/test_r15_policy.py, apps/server/tests/test_r3_guards.py, apps/server/tests/test_r3_native.py, apps/server/tests/test_native_sync_disabled.py, .hqagent/handoffs/R3-P1-server.md]
 build: pass
 tests: pass
-commit: 6d8230e6d10810ff8b7fb66b609f9cadc0f87bff
-open_questions: 1
+commit: a854c27dc219178a1491a573df54c5ccaac4321b
+open_questions: 0
 ---
 
 ## 基线与范围
@@ -129,35 +129,94 @@ pwsh scripts/protocol/validate.ps1 -CheckGenerated
 
 本包要求的服务端范围已完成，无协议裁决请求。未做P2本机文件读取插件、真实路径/链接验证、模型执行、前端实现、真实CLI联调、Docker镜像构建或云端部署；这些不能由服务端的合成Worker测试替代。本回执只宣称上述本地命令已实际通过。
 
-## 返修 1（2026-09-29）：同步关闭错误清单缺失，等待 W0 补冻
+## 返修 1（2026-09-29）：已完成，适配协议0.9.2同步关闭语义
 
-本节是当前返修状态，前文为已审核的原始 R3 交付记录。头部 status/open_questions 更新为 needs-decision/1；build、tests、commit 及累计 scope_touched 保留原交付记录，不表示本轮重新通过了验收。本轮实际只修改本回执，没有修改服务端实现、测试、协议或发布资源。
+上轮因列表/详情缺少错误声明而停止，记录提交为 `cbdaad7`；W0已在0.9.2补冻，原Q1关闭。此次基线为 `4d8ed9a merge: sync integration with protocol 0.9.2`，起始工作区干净。已读R3-P0「补冻0.9.2」和R3-contract §9新规则；三条GET现均声明REMOTE_SYNC_DISABLED及HTTP409，冻结文案为“这台电脑已关闭同步”。没有修改协议，保留集成中的 `970dfbb` workspace映射修复。
 
-起始 HEAD 为 `2d06e19`，工作区干净；已确认 `970dfbb fix(server): preserve workspace identity across replica upgrades` 在当前历史中，未回滚该修复。简单环境检查真实输出 `environment-ok`，未遇到429、0xC0000142或额度错误。
+### 实现与边界
 
-主代理本轮裁决：同步关闭时，原生列表、详情、读取统一使用 REMOTE_SYNC_DISABLED；同步开启但无会话仍返回空页，设备删除仍404。裁决同时明确要求：若冻结 OpenAPI 的路由错误清单缺少该码，先写 needs-decision 并停下，由 W0 补冻，P1 不改协议。本轮按该停止条件执行。
+- `native.py::native_sync_enabled` 先按owner读取存在且未删除的设备，再检查当前workerStoreId的副本enabled状态。列表在同步关闭时返回409，不返回空页；没有同步状态记录时沿既有默认enabled语义处理。
+- 详情/读取使用 `native_get(check_sync=True)`：先通过现有 `sync_ids` 的owner/公开ID映射确认worker/store，再检查设备存在、当前store匹配、同步状态，最后读取索引及工作区可见性。未知或跨owner的ID不会被用来猜设备；删除设备/失效映射优先404。同步开启但已无索引时仍404。
+- `app.py` 的资源鉴权分支针对native_detail/native_read调用上述路径，避免通用browser_get在reset已擦除投影后提前404；认证仍发生在该分支之前。查询计划也使用同样检查，故同步关闭优先于在线查询/离线状态，不受暂停影响。
+- 没有新增表、字段或内容保留。reset后只使用既有无标题/路径/正文的ID归属映射，不重建native-index。重新开启新generation并补传后正常恢复；开启但没有会话仍空页。
+- 用现有 `scripts/package_contract.py` 更新服务端随包OpenAPI及错误映射为0.9.2；发布资源继续与协议bundle等价，运行时不依赖源码目录。README同步版本与优先级规则。
 
-### Q1：列表与详情缺少 REMOTE_SYNC_DISABLED / HTTP 409 声明
+本轮实际改动仅：`server/app.py`、`server/native.py`、`server/resources/{http-errors.json,remote-hub.v2.bundle.json}`、`tests/{test_native_sync_disabled.py,test_r3_native.py,test_devices_tokens.py}`（均位于apps/server）、README及本回执。头部scope_touched为累计交付清单；头部commit、tests与完成状态已更新为本轮结果。
 
-通过预装Python/PyYAML读取事实源 YAML 和发布 bundle，检查三条 GET 的 `x-error-codes` 与 `responses`，真实输出：
+### 测试
+
+新增 `tests/test_native_sync_disabled.py` 共5项用例：
+
+- 同步关闭后三接口均409，准确文案、retryable=false、no-store与requestId头/信封一致；同时覆盖暂停、在线及断线后的读取优先级。
+- reset直接查库：native-index清空、标题不残留，但无内容ID映射仍可用于确认归属。
+- 未登录401、跨owner/未知ID/未知设备404；不能借本账号另一台已关闭同步的设备推测未知ID归属。
+- 新generation空补传时列表空页，旧ID详情/读取404；索引补传后列表、详情和实际临时查询恢复200，暂停时也允许历史读取。
+- 已删除设备，以及设备记录缺失但残留ID映射的情况，三接口均优先404。
+
+旧reset详情测试的404断言按明确的0.9.2行为变更更新为409并精确检查REMOTE_SYNC_DISABLED；其它删除/workspace移除的404断言不变。独立发布资源测试的包版本精确更新为0.9.2，接口数39、错误码数81断言保留。未skip/xfail或删除测试。
+
+### 本轮真实命令与输出
+
+先定向验证：
 
 ```text
-packages/protocol/openapi/remote-hub.v2.yaml
-GET /api/v2/devices/{workerId}/native-sessions | REMOTE_SYNC_DISABLED=False | HTTP409=False
-GET /api/v2/native-sessions/{nativeSessionId} | REMOTE_SYNC_DISABLED=False | HTTP409=False
-GET /api/v2/native-sessions/{nativeSessionId}/messages | REMOTE_SYNC_DISABLED=True | HTTP409=True
-packages/protocol/openapi/remote-hub.v2.bundle.json
-GET /api/v2/devices/{workerId}/native-sessions | REMOTE_SYNC_DISABLED=False | HTTP409=False
-GET /api/v2/native-sessions/{nativeSessionId} | REMOTE_SYNC_DISABLED=False | HTTP409=False
-GET /api/v2/native-sessions/{nativeSessionId}/messages | REMOTE_SYNC_DISABLED=True | HTTP409=True
+15 passed, 1 warning in 4.53s
 ```
 
-`api-guide.md` 的公共错误总表包含 REMOTE_SYNC_DISABLED，但不等于每条路由都声明可返回该码。当前中文为「该电脑关闭内容同步，不能向已删除副本提交」。此外 `R3-contract.md` §9（当前第102行）仍写着：
+在apps/server设置worktree内临时目录后，串行运行：
 
-> sync关闭/设备删除/workspace移除清理索引后GET返回NOT_FOUND
+```powershell
+$env:TEMP=(Join-Path $PWD '.tmp')
+$env:TMP=$env:TEMP
+../../.venv/Scripts/python.exe -B -m pytest -q --tb=short -p no:cacheprovider --basetemp=.tmp/r3-repair1-full
+```
 
-这与本轮要求将“同步关闭”单独返回 REMOTE_SYNC_DISABLED 的裁决需要同步。请 W0 按裁决补齐列表/详情的路由错误码、409响应及示例，并同步契约、指南及生成发布物；若 HTTP message 也须精确使用「这台电脑已关闭同步」，请同步其固定文案来源。P1 不自行修改这些文件，也不另加同步状态字段。
+```text
+........................................................................ [ 31%]
+........................................................................ [ 63%]
+........................................................................ [ 94%]
+............                                                             [100%]
+=============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-server\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
 
-补冻合入后继续：在已授权的设备/本机索引公开ID映射下判断当前 store 的 enabled 状态；关闭返回既有码，重新启用并补传后恢复列表；跨 owner、未知ID、设备删除仍按既有404边界。再补三接口、重新开启、正常空页和删除优先级测试，串行运行 server 全量、冒烟及 `validate -CheckGenerated`。
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+228 passed, 1 warning in 62.81s (0:01:02)
+```
 
-本轮因协议门禁停止，未运行上述三项验收，不能引用前文 `223 passed` / `SMOKE PASS` 作为返修结果。只提交协议核对和阻塞回执，不合并回 integration。
+```powershell
+../../.venv/Scripts/python.exe -B scripts/smoke.py
+```
+
+```text
+Account created
+uvicorn listening on loopback: PASS
+browser login and secure session: PASS
+pairing preview and confirmation: PASS
+fake Worker revision 2, create/grant/sync, offline refusal and reconnect: PASS
+revision 3 index, ephemeral queries, resource grant and imported history: PASS
+ephemeral query body and selection absent from database: PASS
+packaged public OpenAPI and request IDs: PASS
+PAT issuance, device pause/resume/delete and immediate revocation: PASS
+Consistent backup created
+server output credential redaction: PASS
+SMOKE PASS
+```
+
+仓库根：
+
+```powershell
+$env:PATH=(Join-Path $PWD '.venv/Scripts')+';'+$env:PATH
+$env:TEMP=(Join-Path $PWD 'apps/server/.tmp')
+$env:TMP=$env:TEMP
+pwsh scripts/protocol/validate.ps1 -CheckGenerated
+```
+
+```text
+协议校验通过：427 个类型，289 个 Contract Fixture
+```
+
+完整输出保存在已忽略的 `.tmp/r3-repair1-{targeted,full,smoke,protocol}-output.txt`。测试没有并行worker；并发HTTP仅用于临时查询响应模拟。TEMP/TMP/--basetemp避免默认沙箱临时目录WinError 5。warning为既有Starlette/httpx弃用提示，没有新依赖。没有发生执行限流、0xC0000142或额度错误；预期的业务限速测试按原断言正常通过。
+
+实现/测试/发布物提交：`a854c27`。README及本回执另作说明提交，每次提交后执行 `git log -1 --format=%B` 自查，无署名。未合回integration，未部署；本轮必做范围无未完成项，open_questions=0。
