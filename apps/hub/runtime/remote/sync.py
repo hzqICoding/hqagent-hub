@@ -144,6 +144,9 @@ class SyncService:
 
     def capture(self, tx):
         store, generation = self.context()
+        # Staging has no allocated reliable identity. A new full snapshot
+        # supersedes it atomically; keep the immutable Outbox itself untouched.
+        tx.connection.execute("DELETE FROM remote_sync_items")
         batch = uid("backfill")
         high = tx.connection.execute("SELECT COALESCE(MAX(sequence),0) FROM remote_sync_changes").fetchone()[0]
         for kind, table, order in (("conversation", "local_conversations", "conversation_id"),
@@ -171,6 +174,11 @@ class SyncService:
                     self.reset(tx)
             elif work.get("store") != store or work.get("generation") != generation or work.get("phase") in {"pending", "synced"}:
                 self.capture(tx)
+            elif work.get('backfillId') and work.get('phase') in {'backfilling', 'waiting_complete_ack'}:
+                # Older reconnects could retain staging from a superseded
+                # snapshot. Its data is covered by this full capture; it has
+                # no reliable seq and must not strand the upgrade fence.
+                tx.connection.execute('DELETE FROM remote_sync_items WHERE backfill_id<>?', (work['backfillId'],))
             self.repo.seal(tx)
 
     def reset(self, tx):
@@ -429,7 +437,7 @@ class SyncService:
                 "AND i.status IN ('accepted','unconfirmed','completed')", (self.repo.get("identity")["store"],))]
         for item in rows:
             frame = bridge.execution_frame(item["command_id"])
-            if not frame:
+            if not frame or frame['wireRevision'] != self.repo.get('identity')['wireRevision']:
                 continue
             view = await self.chat.run(item["run_id"])
             record = self.chat.repository.run_record(view.id)
@@ -441,7 +449,13 @@ class SyncService:
                 if result["outcome"] == "confirmed" and result["evidence"] == "node_boundary_paused":
                     bridge._finish(frame, bridge.result_ref(record), result, str(view.status))
             if frame["type"] == "run.submit" and item["status"] == "accepted" and str(view.status) in {"succeeded", "failed", "cancelled"}:
-                if not observation.get("recoveryRequired") and not observation.get("unresolvedCancellation"):
+                if observation.get("recoveryRequired") or observation.get("unresolvedCancellation"):
+                    # A terminal LocalRun with uncertain native effects cannot
+                    # be reported as success, but leaving admission accepted
+                    # forever loses its final reconciliation outcome too.
+                    result = control_result({}, {**observation, 'recoveryRequired': True})
+                    bridge._finish(frame, bridge.result_ref(record), result, str(view.status))
+                else:
                     if str(view.status) == "failed":
                         bridge._failed(frame, bridge.result_ref(record), self.chat.repository.failure_code(view.id) or "TASK_ACTION_INVALID")
                     else:
