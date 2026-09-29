@@ -1,11 +1,11 @@
 """Shared local remote-link handlers; mounting determines v1/v2 authentication."""
 from fastapi import APIRouter, Header, Request
-from protocol.generated.python import RemoteLinkPairingInput, RemoteSyncSettingsInput
+from protocol.generated.python import RemoteLinkPairingInput, RemoteSyncSettingsInput, LocalAuthorizedRootsInput
 from api.envelopes import success_response
 from core.errors import HubError
 
 
-def install_remote_routes(app, link, sync=None):
+def install_remote_routes(app, link, sync=None, roots=None):
     router = APIRouter(prefix="/remote")
 
     def response(view):
@@ -16,6 +16,15 @@ def install_remote_routes(app, link, sync=None):
     @router.get("/link")
     async def get_link():
         return response(await link.view())
+
+    @router.get("/authorized-roots")
+    async def get_roots():
+        return response(roots.view())
+
+    @router.put("/authorized-roots")
+    async def replace_roots(value: LocalAuthorizedRootsInput,
+                            idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+        return response(roots.replace(value, idempotency_key))
 
     @router.get("/sync-settings")
     async def get_sync_settings():

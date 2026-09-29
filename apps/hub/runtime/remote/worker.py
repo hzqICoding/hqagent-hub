@@ -18,6 +18,7 @@ from runtime.remote.busy import BusyState
 from runtime.remote.delivery import DeliveryBridge
 from runtime.remote.sync import SyncService
 from runtime.remote.window import SendWindow
+from runtime.native.roots import AuthorizedRoots
 
 
 class Renegotiate(Exception):
@@ -37,6 +38,7 @@ class RemoteWorker:
         self.busy = BusyState(repository, bridge.chat)
         self.sync = SyncService(repository, bridge.chat, link, self.busy)
         self.delivery = DeliveryBridge(repository, bridge.chat, link, self.busy, self.sync)
+        self.roots = AuthorizedRoots(repository, bridge.chat.repository)
         bridge.chat.repository.busy_state = self.busy
         self.probe_revision2 = True
         self.peer_revision2 = None

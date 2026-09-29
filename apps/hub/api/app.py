@@ -226,7 +226,7 @@ def create_application(
         allowed_origins=allowed_origins or set(DEFAULT_ALLOWED_ORIGINS),
         allowed_hosts=allowed_hosts or {"127.0.0.1", "localhost"},
     )
-    remote_router = install_remote_routes(app, remote_worker.link, remote_worker.sync)
+    remote_router = install_remote_routes(app, remote_worker.link, remote_worker.sync, remote_worker.roots)
     install_local_routes(app, local_chat, local_auth, resolved_ports, event_store, token,
                          remote_router=remote_router)
 
