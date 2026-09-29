@@ -23,6 +23,7 @@ from storage.events import EventStore
 from storage.local_chat import LocalChatRepository, now
 from storage.remote import RemoteRepository
 from storage.migrations import LATEST_SCHEMA_VERSION
+from test_r3_native import fixture_history, setup_native
 
 
 @pytest.fixture(autouse=True)
@@ -32,9 +33,11 @@ def server_source(monkeypatch):
 
 
 class RealPair:
-    def __init__(self, path, *, hold_history=False):
+    def __init__(self, path, *, hold_history=False, revision=3, native_history=False):
         from server.config import Settings
         self.path = path
+        self.revision = revision
+        self.native_history = native_history
         self.socket = socket.socket()
         self.socket.bind(("127.0.0.1", 0))
         self.origin = f"https://127.0.0.1:{self.socket.getsockname()[1]}"
@@ -125,14 +128,40 @@ class RealPair:
         assert login.status_code == 200, login.text
         self.browser.headers["X-CSRF-Token"] = login.json()["data"]["csrfToken"]
         self.system = System(self.path)
+        # Revision 3 scans native history. Never let a joint fixture discover
+        # the account's real Runtime home directories.
+        setup_native(self.system, self.path / "empty-native")
         assert self.system.db.schema_version == LATEST_SCHEMA_VERSION
         self.system.worker.connector = self.connect
         self.system.adapter.result = self.system.adapter.result.model_copy(update={"summary": "记住了"})
+        if self.native_history:
+            root = self.path / "synthetic-native"
+            fixture_history(root / "index", self.path, text="synthetic native index only")
+            fixture_history(root / "import", self.path, text="synthetic native imported history",
+                            identifier="00000000-0000-4000-8000-000000000002")
+            native = setup_native(self.system, root)
+            items = (await native.listing()).items
+            imported = next(i for i in items if i.title == "synthetic native imported history")
+            self.native_index = next(i for i in items if i.native_session_id != imported.native_session_id)
+            response = await self.system.local.post(f"/api/v2/native-sessions/{imported.native_session_id}/imports",
+                json={"terminalClosedConfirmed": True, "expectedIndexVersion": imported.index_version,
+                      "sourceRevision": imported.source_revision},
+                headers={"Idempotency-Key": "native-import", "Origin": "http://127.0.0.1"})
+            assert response.status_code == 201, response.text
+            self.native_conversation = dto.LocalConversationView.model_validate(response.json()["data"])
+            assert self.native_conversation.conversation_kind == "native"
+            assert not self.system.adapter.started and not self.system.adapter.resumed
         await self.system.chat.start()
         await self.system.worker.start()
         await until(lambda: any(f["type"] == "worker.hello_ack" for f in self.received))
-        assert next(f for f in self.received if f["type"] == "worker.hello_ack")["wireRevision"] == 2
-        assert self.system.repo.get("identity")["wireRevision"] == 2
+        assert next(f for f in self.received if f["type"] == "worker.hello_ack")["wireRevision"] == self.revision
+        assert self.system.repo.get("identity")["wireRevision"] == self.revision
+        if self.revision == 2:
+            rejected = next(f for f in self.received if f["type"] == "worker.hello_rejected")
+            assert rejected["error"]["code"] == "REMOTE_PROTOCOL_UNSUPPORTED"
+            assert rejected["supportedWireRevisions"] == [1, 2]
+        else:
+            assert not any(f["type"] == "worker.hello_rejected" for f in self.received)
         return self
 
     @asynccontextmanager
@@ -211,10 +240,25 @@ class RealPair:
                          if f["type"] == "sync.conversation.upserted" and f["payload"]["conversationId"] == local]}
 
 
+@pytest.fixture
+def all_server_codecs(server_source):
+    from server import wire
+    return dict(wire.CODECS)
+
+
+@pytest.fixture(params=[2, 3])
+def server_revision(request, monkeypatch, all_server_codecs):
+    from server import wire
+    # Exercise the real server's negotiation/decoder with an explicit legacy
+    # capability set, rather than downgrading the Worker's advertised version.
+    monkeypatch.setattr(wire, "CODECS", {r: c for r, c in all_server_codecs.items() if r <= request.param})
+    return request.param
+
+
 @pytest.mark.parametrize("during_history", [False, True])
-def test_real_r1_upgrade_backfill_and_computer_rounds_keep_reply_and_connection(tmp_path, during_history):
+def test_real_r1_upgrade_backfill_and_computer_rounds_keep_reply_and_connection(tmp_path, during_history, server_revision):
     async def scenario():
-        async with RealPair(tmp_path, hold_history=during_history) as pair:
+        async with RealPair(tmp_path, hold_history=during_history, revision=server_revision) as pair:
             if during_history:
                 await asyncio.wait_for(pair.history_held.wait(), 5)
                 assert pair.system.repo.get("sync-work")["phase"] == "backfilling"
@@ -257,9 +301,9 @@ def test_real_r1_upgrade_backfill_and_computer_rounds_keep_reply_and_connection(
     asyncio.run(scenario())
 
 
-def test_real_server_rejection_preserves_error_instead_of_inventing_epoch_failure(tmp_path):
+def test_real_server_rejection_preserves_error_instead_of_inventing_epoch_failure(tmp_path, server_revision):
     async def scenario():
-        async with RealPair(tmp_path) as pair:
+        async with RealPair(tmp_path, revision=server_revision) as pair:
             await until(lambda: pair.system.repo.get("sync-work")["phase"] == "synced")
             original = next(f for f in pair.sent if f["type"] == "sync.conversation.upserted")
             # A genuine same-version metadata conflict, not an activity update.
@@ -278,4 +322,65 @@ def test_real_server_rejection_preserves_error_instead_of_inventing_epoch_failur
                 device = pair.service.get(tx, pair.owner, 'device', pair.worker_id)
                 assert not device['_frozen']
                 assert device['_epoch'] == pair.system.repo.get('identity')['epoch']
+    asyncio.run(scenario())
+
+
+def test_real_native_index_and_import_upload_only_after_revision3(tmp_path, server_revision, monkeypatch, all_server_codecs):
+    async def scenario():
+        from server import wire
+        async with RealPair(tmp_path, revision=server_revision, native_history=True) as pair:
+            conversation = pair.native_conversation.id
+            await until(lambda: pair.system.repo.get("sync-work")["phase"] == "synced")
+            if server_revision == 2:
+                # Local import remains complete, but neither its index nor any
+                # native body may escape through revision 2's reliable stream.
+                assert len(pair.system.chat.repository.messages(conversation)) == 2
+                assert pair.cloud_conversation(conversation) is None
+                assert not any(f["type"].startswith("native.") for f in pair.sent)
+                assert "synthetic native" not in json.dumps(pair.sent)
+                assert not any(f.get("payload", {}).get("conversationKind") == "native" for f in pair.sent)
+                with pair.service.repo.transaction() as tx:
+                    assert tx.list(pair.owner, "native-index", worker=pair.worker_id) == []
+                assert pair.system.repo.get("link")["view"]["lastErrorCode"] == "REMOTE_REVISION_REQUIRED"
+                await pair.system.worker.stop()
+                # Same real database, store and TLS service. Enabling R3 must
+                # finish the upgrade fence and then capture deferred history.
+                monkeypatch.setattr(wire, "CODECS", all_server_codecs)
+                await pair.system.worker.start()
+                await until(lambda: pair.system.repo.get("identity")["wireRevision"] == 3)
+
+            await until(lambda: len(pair.cloud_messages(conversation)) == 2)
+            await until(lambda: pair.system.repo.get("sync-work")["phase"] == "synced")
+            assert pair.system.repo.get("link")["view"]["state"] == "paired"
+            assert any(f["type"] == "worker.hello_ack" and f["wireRevision"] == 3 for f in pair.received)
+            native_frames = [f for f in pair.sent if f["type"].startswith("native.") or
+                             f.get("payload", {}).get("conversationId") == conversation]
+            assert native_frames and all(f["wireRevision"] == 3 for f in native_frames)
+            assert any(f["type"] == "native.index.upserted" and
+                       f["payload"]["nativeSessionId"] == pair.native_index.native_session_id for f in native_frames)
+            page = await pair.browser.get(f"/devices/{pair.worker_id}/native-sessions")
+            assert page.status_code == 200, page.text
+            indexes = dto.RemoteNativeSessionPage.model_validate(page.json()["data"])
+            assert len(indexes.items) == 1
+            assert indexes.items[0].title == "synthetic native index only"
+            mirrored = pair.cloud_conversation(conversation)
+            response = await pair.browser.get("/conversations/" + mirrored["conversationId"])
+            assert response.status_code == 200, response.text
+            view = dto.RemoteConversationView.model_validate(response.json()["data"])
+            assert view.conversation_kind == "native" and view.agent_type == "codex"
+            assert view.workspace_id != "workspace"
+            # Re-captured R1/R2 scenario metadata remains version 1. Its ID
+            # projection changes, but its title, version and history do not.
+            for index, legacy in enumerate(pair.legacy_ids):
+                old = pair.cloud_conversation(legacy)
+                assert old["workspaceId"] == view.workspace_id
+                assert old["metadataVersion"] == 1 and old["title"] == f"R1 synthetic {index}"
+                assert len(pair.cloud_messages(legacy)) == 12
+            page = await pair.browser.get("/conversations/" + view.conversation_id + "/messages")
+            assert page.status_code == 200, page.text
+            messages = dto.RemoteSyncMessagePage.model_validate(page.json()["data"])
+            assert [(m.role, m.text) for m in messages.items] == [
+                ("assistant", "public answer"), ("user", "synthetic native imported history")]
+            assert [m.message_sequence for m in messages.items] == [2, 1]
+            assert not pair.system.adapter.started and not pair.system.adapter.resumed
     asyncio.run(scenario())
