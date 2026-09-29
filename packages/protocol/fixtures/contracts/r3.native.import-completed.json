@@ -1,0 +1,25 @@
+{
+  "type": "command.completed",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "commandId": "command_demo",
+  "resultStatus": "confirmed",
+  "wireRevision": 3,
+  "controlResult": {
+    "outcome": "confirmed",
+    "executionMayStillBeRunning": false,
+    "orphanProcessIds": [],
+    "reason": "Worker confirmed at node boundary",
+    "evidence": "metadata_committed",
+    "observedAt": "2026-09-26T12:00:00Z"
+  },
+  "resourceRef": {
+    "workspaceId": "workspace_example",
+    "conversationId": "conversation_native",
+    "nativeSessionId": "native_local_example"
+  }
+}

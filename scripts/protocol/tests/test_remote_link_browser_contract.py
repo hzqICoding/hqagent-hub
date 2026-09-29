@@ -96,7 +96,25 @@ def test_success_and_boundary_errors_are_not_cacheable_and_refs_resolve(suffix, 
 
 
 def test_d44_does_not_change_schema_error_registry_events_v1_or_cloud():
-    files = [p for p in (PROTOCOL / 'schema').glob('*.json') if p.name != 'remote-sync.json'] + [
+    def schema_paths(revision):
+        return set(subprocess.check_output(
+            ['git', 'ls-tree', '-r', '--name-only', revision, '--', 'packages/protocol/schema'],
+            cwd=ROOT).decode('utf-8').splitlines())
+
+    old_paths = schema_paths(BASE)
+    frozen_paths = schema_paths('500bf1f')
+    assert frozen_paths == old_paths, 'D44 must neither remove nor introduce schema files'
+    frozen_names = set()
+    for path in frozen_paths:
+        frozen_names.update(json.loads(frozen(path))['$defs'])
+    live_paths = {p.relative_to(ROOT).as_posix() for p in (PROTOCOL / 'schema').glob('*.json')}
+    assert frozen_paths <= live_paths, 'Historical schema files must remain present'
+    for path in live_paths - frozen_paths:
+        assert path not in old_paths
+        added = json.loads((ROOT / path).read_text(encoding='utf-8'))
+        assert not frozen_names.intersection(added['$defs']), 'Later schemas cannot redefine frozen objects'
+
+    files = [ROOT / path for path in sorted(frozen_paths)] + [
         PROTOCOL / 'registry/error-codes.yaml',
         PROTOCOL / 'events/event-dictionary.md',
         PROTOCOL / 'openapi/local-hub.v1.yaml',

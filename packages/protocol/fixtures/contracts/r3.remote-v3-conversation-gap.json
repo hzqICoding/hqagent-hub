@@ -1,0 +1,10 @@
+{
+  "type": "conversation.gap",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "conversationId": "conversation_demo",
+  "expectedSeq": 1,
+  "receivedSeq": 3,
+  "wireRevision": 3
+}

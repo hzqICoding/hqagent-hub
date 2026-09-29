@@ -3088,8 +3088,6 @@
         "authority",
         "title",
         "workspaceId",
-        "sceneId",
-        "sceneVersion",
         "createdAt",
         "updatedAt",
         "workerStoreId"
@@ -3186,9 +3184,33 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        },
+        "conversationKind": {
+          "type": "string",
+          "enum": [
+            "scenario",
+            "native"
+          ]
+        },
+        "agentType": {
+          "$ref": "remote-native.json#/$defs/NativeAgentType"
+        },
+        "nativeSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "nativeActivity": {
+          "$ref": "remote-native.json#/$defs/NativeActivityEvidence"
+        },
+        "nativeSourceRevision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "minLength": 64,
+          "maxLength": 64
         }
       },
-      "description": "Worker is the sole writer. authority is legacy metadata, never a write gate. Omitted visibility=both, busy=false, busyFresh=false; targetWorkerId is the legacy workerId alias."
+      "description": "Worker is the sole writer. authority is legacy metadata, never a write gate. Omitted visibility=both, busy=false, busyFresh=false; targetWorkerId is the legacy workerId alias. Missing conversationKind means scenario (requires existing scene fields). Native requires agentType/nativeSessionId and omits scene fields; exact vendor session binding remains local."
     },
     "RemoteCreateConversationInput": {
       "type": "object",
@@ -3268,9 +3290,12 @@
           "minLength": 20,
           "maxLength": 40,
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "nativeConfirmation": {
+          "$ref": "remote-native.json#/$defs/NativeContinuationConfirmationInput"
         }
       },
-      "description": "Computer orders messages. Offline rejects immediately; revision 2 requires a 30-second delivery grant. Legacy expiresAt cannot extend delivery deadline."
+      "description": "Computer orders messages. Offline rejects immediately; revision 2 requires a 30-second delivery grant. Legacy expiresAt cannot extend delivery deadline. Optional explicit re-confirmation for an imported native binding only; scenario rejects it. Native always resumes exact ID with sessionMode=continue."
     },
     "RemoteRunControlInput": {
       "type": "object",
@@ -3395,7 +3420,6 @@
       "x-wire-strict": true,
       "required": [
         "commandId",
-        "conversationId",
         "targetWorkerId",
         "type",
         "status",
@@ -3433,7 +3457,9 @@
             "approval.decide",
             "command.withdraw",
             "conversation.update",
-            "conversation.create"
+            "conversation.create",
+            "native.import",
+            "workspace.register"
           ]
         },
         "conversationSeq": {
@@ -3525,9 +3551,12 @@
           "minLength": 20,
           "maxLength": 40,
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "resourceRef": {
+          "$ref": "remote-native.json#/$defs/RemoteResourceResultRef"
         }
       },
-      "description": "Three layers must be displayed separately: transport/delivery, Worker controlResult, execution status from RemoteRunView. No inference from disconnected transport or command.completed to task success."
+      "description": "Three layers must be displayed separately: transport/delivery, Worker controlResult, execution status from RemoteRunView. No inference from disconnected transport or command.completed to task success. Resource commands omit conversationId; resourceRef appears after Worker commit and contains mapped public IDs. Read through existing GET commands; no fabricated run/sequence."
     },
     "RemoteConversationPage": {
       "type": "object",

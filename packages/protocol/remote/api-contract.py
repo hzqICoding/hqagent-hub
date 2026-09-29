@@ -121,7 +121,7 @@ def table_blocks(api, registry, guidance):
         g=guidance[error['code']]
         errors.append('| '+' | '.join([f'`{error["code"]}`',str(error['http']),str(error['retryable']).lower(),cell(g['message']),cell(g['cause']),cell(g['handling']),cell(g['surface'])])+' |')
     frames=['| 线路修订 | type | 类型 | 事实源 |','| --- | --- | --- | --- |']
-    for file in ['remote.json','remote-sync.json']:
+    for file in ['remote.json','remote-sync.json','remote-native.json']:
         for name,d in load(P/'schema'/file)['$defs'].items():
             props=d.get('properties',{})
             if 'wireRevision' in props and 'const' in props.get('type',{}):
@@ -164,6 +164,21 @@ def check_example_semantics(api):
                     assert ('conversationSeq' in data) == (key == send), 'Only a new run.submit receipt allocates a sequence'
                     ttl = datetime.fromisoformat(data['expiresAt']) - datetime.fromisoformat(example['x-observed-at'])
                     assert 0 < ttl.total_seconds() <= 30
+                if kind == 'RemoteResourceQueuedReceipt':
+                    assert key[0] == 'POST'
+                    assert 'conversationSeq' not in data and 'conversationId' not in data and 'runId' not in data
+                    assert data['status'] == 'queued' and data['deliveryState'] == 'queued_online' and data['workerOnline'] is True
+                    expected_type = 'native.import' if key[1].endswith('/imports') else 'workspace.register'
+                    assert data['type'] == expected_type
+                    ttl = datetime.fromisoformat(data['expiresAt']) - datetime.fromisoformat(example['x-observed-at'])
+                    assert 0 < ttl.total_seconds() <= 30
+                if kind in {'NativeMessagePage', 'DirectoryListingPage'}:
+                    assert op.get('x-ephemeral-result') is True and op.get('x-persist-response') is False
+                    assert op['security'] == [{'remoteSession': []}]
+                    assert 'REMOTE_QUERY_TIMEOUT' in op['x-error-codes']
+                    assert len(json.dumps(data, ensure_ascii=False).encode('utf-8')) <= 1048576
+                    field = 'before' if kind == 'NativeMessagePage' else 'nextCursor'
+                    assert (field in data) == data['hasMore']
                 if key == patch:
                     change = request['body'];prior = example['x-before']
                     assert data['version'] == change['expectedVersion'] + 1 == prior['version'] + 1
@@ -194,7 +209,13 @@ def check(api, registry, guidance, bundle):
     tree=ast.parse((ROOT/'apps/server/server/app.py').read_text(encoding='utf-8'))
     routes=next(ast.literal_eval(n.value) for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='ROUTES' for t in n.targets))
     runtime={(row[0],'/api/v2'+row[1]) for row in routes}
-    planned={('PATCH','/api/v2/devices/{workerId}'),('DELETE','/api/v2/devices/{workerId}'),('GET','/api/v2/api-tokens'),('POST','/api/v2/api-tokens'),('DELETE','/api/v2/api-tokens/{tokenId}'),('GET','/api/v2/openapi.json')}
+    planned={('PATCH','/api/v2/devices/{workerId}'),('DELETE','/api/v2/devices/{workerId}'),('GET','/api/v2/api-tokens'),('POST','/api/v2/api-tokens'),('DELETE','/api/v2/api-tokens/{tokenId}'),('GET','/api/v2/openapi.json'),
+             ('GET','/api/v2/devices/{workerId}/native-sessions'),
+             ('GET','/api/v2/native-sessions/{nativeSessionId}'),
+             ('GET','/api/v2/native-sessions/{nativeSessionId}/messages'),
+             ('POST','/api/v2/native-sessions/{nativeSessionId}/imports'),
+             ('POST','/api/v2/devices/{workerId}/directory-listings'),
+             ('POST','/api/v2/devices/{workerId}/workspaces')}
     assert set(ops) == runtime | planned, 'Missing current/planned route or unexpected implementation scope'
     pat={('GET','/api/v2/devices'):'devices:read',('GET','/api/v2/devices/{workerId}'):'devices:read',('GET','/api/v2/devices/{workerId}/catalog'):'devices:read',('PATCH','/api/v2/devices/{workerId}'):'devices:manage',('DELETE','/api/v2/devices/{workerId}'):'devices:delete',('POST','/api/v2/devices/{workerId}/revocations'):'devices:delete'}
     ids=[]

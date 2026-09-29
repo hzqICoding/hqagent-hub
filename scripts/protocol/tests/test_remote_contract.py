@@ -149,14 +149,32 @@ def test_rest_scope_and_references():
                 assert 'Idempotency-Key' in params
                 if operation.get('security') == [{'remoteSession': []}]:
                     assert 'X-CSRF-Token' in params
-    def refs(node):
+    documents = {(PROTOCOL / 'openapi/remote-hub.v2.yaml').resolve(): api}
+    visited = set()
+
+    def refs(node, source):
         if isinstance(node,dict):
             if '$ref' in node:
-                assert node['$ref'].split('/')[-1] in index
-            for child in node.values():refs(child)
+                file, pointer = node['$ref'].split('#', 1)
+                target = (source.parent / file).resolve() if file else source
+                assert pointer.startswith('/'), node['$ref']
+                if target != (PROTOCOL / 'openapi/remote-hub.v2.yaml').resolve():
+                    assert target.parent == (PROTOCOL / 'schema').resolve(), target
+                    assert pointer.startswith('/$defs/'), pointer
+                    assert pointer.split('/')[-1] in index
+                if target not in documents:
+                    documents[target] = json.loads(target.read_text(encoding='utf-8'))
+                resolved = documents[target]
+                for part in pointer[1:].split('/'):
+                    resolved = resolved[part.replace('~1', '/').replace('~0', '~')]
+                identity = (target, pointer)
+                if identity not in visited:
+                    visited.add(identity)
+                    refs(resolved, target)
+            for child in node.values():refs(child, source)
         elif isinstance(node,list):
-            for child in node:refs(child)
-    refs(api)
+            for child in node:refs(child, source)
+    refs(api, (PROTOCOL / 'openapi/remote-hub.v2.yaml').resolve())
     assert api['x-worker-websocket']['security'] == [{'workerDevice': []}]
     assert api['x-worker-websocket']['maxFrameBytes'] == 262144
     # An account password input is never a response or a reachable nested response type.

@@ -6,7 +6,7 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.8.0"
+const Version = "0.9.0"
 
 type AdapterId = string
 
@@ -87,6 +87,15 @@ const (
 	ErrorCodeRemoteApiTokenExpired ErrorCode = "REMOTE_API_TOKEN_EXPIRED"
 	ErrorCodeRemoteApiTokenScopeInsufficient ErrorCode = "REMOTE_API_TOKEN_SCOPE_INSUFFICIENT"
 	ErrorCodeRemoteAuthAmbiguous ErrorCode = "REMOTE_AUTH_AMBIGUOUS"
+	ErrorCodeRemoteQueryTimeout ErrorCode = "REMOTE_QUERY_TIMEOUT"
+	ErrorCodeRemoteQueryTooLarge ErrorCode = "REMOTE_QUERY_TOO_LARGE"
+	ErrorCodeNativeSessionActive ErrorCode = "NATIVE_SESSION_ACTIVE"
+	ErrorCodeNativeSessionUnsupported ErrorCode = "NATIVE_SESSION_UNSUPPORTED"
+	ErrorCodeNativeSessionChanged ErrorCode = "NATIVE_SESSION_CHANGED"
+	ErrorCodeNativeSessionWriterConflict ErrorCode = "NATIVE_SESSION_WRITER_CONFLICT"
+	ErrorCodeRemoteRootNotAuthorized ErrorCode = "REMOTE_ROOT_NOT_AUTHORIZED"
+	ErrorCodeRemotePathOutsideRoot ErrorCode = "REMOTE_PATH_OUTSIDE_ROOT"
+	ErrorCodeRemoteDirectoryChanged ErrorCode = "REMOTE_DIRECTORY_CHANGED"
 )
 
 type RoleId = string
@@ -209,6 +218,19 @@ const (
 	InstallStrategyLinuxDeb InstallStrategy = "linux-deb"
 )
 
+type LocalAuthorizedRoot struct {
+	RootId string `json:"rootId"`
+	DisplayName string `json:"displayName"`
+	Path string `json:"path"`
+	Version int64 `json:"version"`
+}
+
+type LocalAuthorizedRootInput struct {
+	RootId *string `json:"rootId,omitempty"`
+	DisplayName string `json:"displayName"`
+	Path string `json:"path"`
+}
+
 type UpdateChannel string
 
 const (
@@ -280,6 +302,12 @@ type RemoteApiTokenRevocationView struct {
 	TokenId string `json:"tokenId"`
 	RevokedAt string `json:"revokedAt"`
 	Status string `json:"status"`
+}
+
+type RemoteAuthorizedRoot struct {
+	RootId string `json:"rootId"`
+	DisplayName string `json:"displayName"`
+	Version int64 `json:"version"`
 }
 
 type RemoteDeviceDeletionView struct {

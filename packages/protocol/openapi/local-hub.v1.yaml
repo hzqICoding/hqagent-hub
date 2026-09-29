@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HQAgent-Hub Local Hub API
-  version: 0.7.0
+  version: 0.9.0
   description: |
     Vue 与 Tauri 桌面壳的**唯一**网络契约（裁决 D1）。Update Agent 的内部 API 见
     `update-agent.internal.v1.yaml`，它不向 Vue 暴露第二个 Base URL、第二个 Token
@@ -43,6 +43,112 @@ tags:
   - name: internal
 
 paths:
+  /api/v1/remote/authorized-roots:
+    get:
+      operationId: getLocalAuthorizedRootsV1
+      security:
+      - bearerAuth: []
+      description: 仅电脑本机可配置，默认空。GET读取；PUT使用expectedVersion原子替换，重算真实路径与根ID/版本，立即撤销旧选择令牌并更新catalog。保持现有本机Host/Origin与鉴权边界，不接受云端Cookie/PAT。已登记workspace不受根移除影响。
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      version: 1
+                      roots: []
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.9.0
+          x-dataSchema:
+            $ref: ../schema/remote-native.json#/$defs/LocalAuthorizedRootsView
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+      parameters: []
+    put:
+      operationId: putLocalAuthorizedRootsV1
+      security:
+      - bearerAuth: []
+      description: 仅电脑本机可配置，默认空。GET读取；PUT使用expectedVersion原子替换，重算真实路径与根ID/版本，立即撤销旧选择令牌并更新catalog。保持现有本机Host/Origin与鉴权边界，不接受云端Cookie/PAT。已登记workspace不受根移除影响。
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      version: 2
+                      roots:
+                      - rootId: root_example
+                        displayName: synthetic_displayName
+                        path: E:/tmp/r3-example
+                        version: 1
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.9.0
+          x-dataSchema:
+            $ref: ../schema/remote-native.json#/$defs/LocalAuthorizedRootsView
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '409':
+          description: 'CONFLICT: expectedVersion不一致；ApiEnvelope.error'
+        '422':
+          description: 'VALIDATION_FAILED: 根路径不合法；ApiEnvelope.error'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote-native.json#/$defs/LocalAuthorizedRootsInput
+            example:
+              expectedVersion: 1
+              roots:
+              - displayName: synthetic_displayName
+                path: E:/tmp/r3-example
   /api/v1/conversations/{conversationId}:
     patch:
       operationId: updateLocalConversationV1
