@@ -286,8 +286,19 @@ class FileHistory:
                 if key not in values and key not in required:
                     continue
                 actual = values.get(key)
-                if key == "cwd" and isinstance(actual, str) and Path(actual).is_absolute():
-                    actual = Path(actual).resolve()
+                if key == "cwd":
+                    # The initial envelope owns the canonical workspace and
+                    # import binding. Later working directories are context,
+                    # not a request to rebind this native identity.
+                    if not isinstance(actual, str) or not Path(actual).is_absolute():
+                        raise HistoryStructureError(f"第{index + 1}条记录的cwd缺失或不是绝对目录")
+                    continue
+                if key in {"version", "cli_version"}:
+                    if not isinstance(actual, str) or not self.verified_version(actual):
+                        raise HistoryStructureError(f"第{index + 1}条记录的{key}：该 CLI 版本尚未验证")
+                    if len(self.observed_versions) < 32:
+                        self.observed_versions.add(actual)
+                    continue
                 if actual != expected:
                     raise HistoryStructureError(f"第{index + 1}条记录的{key}缺失或与会话信封不一致")
 
@@ -329,7 +340,7 @@ class FileHistory:
                     raise ValueError()
                 if row.get("isMeta"):
                     continue
-                if row.get("sessionId") != source.vendor_id or Path(row["cwd"]).resolve() != source.cwd or row.get("version") != source.version:
+                if row.get("sessionId") != source.vendor_id:
                     raise ValueError()
                 mid, parent = row["uuid"], row.get("parentUuid")
                 if mid in seen:
