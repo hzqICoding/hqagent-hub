@@ -160,6 +160,10 @@ def test_http_binding_completeness():
     assert actual.keys() == expected.keys()
     for route, (im, om, status) in actual.items():
         op = expected[route]
+        if route == ('GET', '/api/v2/openapi.json'):
+            assert om is None and im is None and status == '200'
+            assert op['responses'][status]['content']['application/json']['schema']['$ref'] == '#/components/schemas/PublishedOpenApiDocument'
+            continue
         assert op["responses"][status]["x-dataSchema"]["$ref"].endswith("/" + om)
         if im:
             assert op["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/" + im)

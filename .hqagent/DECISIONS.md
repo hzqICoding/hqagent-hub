@@ -427,3 +427,27 @@ busy只由电脑queued/running/waiting_approval轮次推导，recoveryRequired�
 **决定**：批准必要的Schema/生成类型引用调整例外，保持修订1旧报文接受/拒绝行为不变。RemoteWire1ErrorCode固定为0.6.3注册表；RemoteWire1Error及RemoteWire1ApprovalView封装固定字段，rev1帧仅替换错误/审批payload引用。公共ErrorCode仍跟随registry追加，仅HTTP和rev2可用新码。原rev1 Fixture不改。
 
 **影响**：Q1已关闭，不再needs-decision。冻结测试需检查引用闭包和值域，不仅对比顶层frame文本；不得把公共ErrorCode锁死或偷偷放宽rev1。
+
+### D50 设备删除、远程暂停与标准开放接口（用户裁决，2026-09-27）
+
+**决定**：删除取代撤销的UI位置，作废凭据、删除全部副本并从列表移除；旧revocations保留deprecated。已revoked设备也可删除；删除ID不复用，再次配对生成新ID。首次DELETE返回删除回执，之后含重复DELETE统一NOT_FOUND，保留无正文最小墓碑保证副作用幂等和拒绝旧凭据。
+
+remoteAccess=enabled/suspended是持久管理状态，与online/status独立。暂停不关连接/同步/历史；受限业务写拒绝REMOTE_DEVICE_SUSPENDED，run.cancel与审批reject豁免。暂停切换使当时全部未grant窗口失败，已grant如实处理；恢复不重放失败命令。不改Worker线路，仍为1/2，P2无需业务改动。
+
+设备标准GET/PATCH/DELETE开放账号PAT：devices:read/manage/delete精确scope不互相包含。PAT仅Cookie管理，hqr_pat_前缀，默认90天最长365天；首次签发明文一次，同意图重放仅metadata，服务端只存不可逆HMAC。Cookie与Bearer同现拒绝，PAT不能用于其它资源或签发更多PAT。
+
+**规范与兼容**：协议包0.8.0，完整Hub Server OpenAPI、api-guide、错误总表、自包含公开规范及requestId贯通要求一并冻结。HTTP新增detail独立于Worker错误；rev2错误引用固定到0.7值域，保持所有原报文行为，HTTP新码不入线路。旧请求和deprecated入口保留N/N−1窗口；当前业务适配交P1/P3。
+
+**实施**：P1提供公开GET /api/v2/openapi.json，与仓库bundle一致；响应X-Request-Id与信封同值，日志只记固定operation/状态/错误码/耗时等，不记凭据/正文。P3增加管理、暂停恢复、删除与一次性令牌页。可选离线托管文档UI，不依赖外网CDN。
+
+### D51 原生会话与授权根目录项目登记（用户裁决，2026-09-28）
+
+**决定**：协议包0.9.0、新增独立wireRevision 3，服务端支持[1,2,3]。修订1/2及其错误域保持原样；3沿双向升级栅栏启用，不能改旧报文版本/hash重放。电脑终端直接创建且cwd在已登记workspace内的原生会话，未导入前只同步索引，正文在线临时读取不落云端数据库/事件流/缓存；导入后成为单Agent Hub对话并同步完整脱敏终端历史，适用R1.5。
+
+unknown按活跃只读；明确确认终端关闭并留审计后才可接续，电脑再检查正向活跃证据、版本及同一精确原生ID写互斥。导入提交不启动模型，后续run.submit必须continue，不准latest/模糊匹配/新会话回退。对话与轮次新增可选来源字段，native不填虚假场景；旧scenario字段要求仍保留。续接被外部变化打断时允许在消息入口显式重新确认，不自动确认。
+
+授权根目录仅电脑本机GET/PUT管理，默认空、最多32根、CAS；手机catalog只见rootId/显示名/版本，不见绝对根路径。只用电脑签发的短期不透明目录引用逐层浏览，最多100个文件夹；登记前再次解析真实路径与链接，防目录替换，拒绝越界/UNC/设备路径/其它盘符，沿本机注册规则接受非Git只读项目。根移除立即撤销引用，不注销既有项目。
+
+**实现取舍**：临时query有queryId/requestId/连接世代/10秒期限及有界分段，不分配seq，不落可靠事件流；结果≤1MiB，每设备4个/每账号16个在途。索引upsert/delete继续可靠seq/ACK，重置/设备删除/workspace移除清理索引。导入/项目登记沿30秒命令与grant，资源命令不虚构conversationId/runId/执行序号。六个新云端HTTP路由仅Cookie，PAT scope不增加；暂停禁止浏览目录和登记/导入，仍可读原生历史。
+
+**范围与事实**：已只读抽查本机两类CLI记录的结构，未保存真实内容；观察版本不是读取器验收。未知格式必须unsupported和原因，插件负责来源/版本/活跃探测。详见packages/protocol/remote/R3-contract.md；P1服务端、P2读取插件/Hub、P3界面分别实施。旧目标文档“导入仅索引”由用户v0.5 §8.3a覆盖，Attempt仍依D40映射；本轮不改业务代码或docs/。

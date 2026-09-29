@@ -298,8 +298,78 @@ errors:
   - code: REMOTE_REVISION_REQUIRED
     http: 409
     retryable: false
-    description: 该操作要求线路修订2，不能降级执行
+    description: 该操作要求较新的线路修订（R1.5为2，R3为3），不能降级执行
   - code: REMOTE_SYNC_RESOURCE_LIMIT
     http: 413
     retryable: false
     description: 全文同步资源配额不足，明确失败，不截断伪装成功
+
+  # HTTP only; neither Worker revision may emit these codes.
+  - code: REMOTE_DEVICE_SUSPENDED
+    http: 409
+    retryable: false
+    description: 这台电脑的远程操作已暂停
+    message: 这台电脑的远程操作已暂停
+    surface: http
+  - code: REMOTE_API_TOKEN_INVALID
+    http: 401
+    retryable: false
+    description: API令牌无效或已吊销
+    message: API令牌无效或已吊销
+    surface: http
+  - code: REMOTE_API_TOKEN_EXPIRED
+    http: 401
+    retryable: false
+    description: API令牌已过期
+    message: API令牌已过期
+    surface: http
+  - code: REMOTE_API_TOKEN_SCOPE_INSUFFICIENT
+    http: 403
+    retryable: false
+    description: API令牌权限不足或此接口不接受令牌
+    message: API令牌权限不足或此接口不接受令牌
+    surface: http
+  - code: REMOTE_AUTH_AMBIGUOUS
+    http: 400
+    retryable: false
+    description: 请求同时提供了多种身份凭据
+    message: 请求同时提供了多种身份凭据
+    surface: http
+
+  # R3 HTTP and revision 3 only; old wire error domains remain frozen.
+  - code: REMOTE_QUERY_TIMEOUT
+    http: 504
+    retryable: true
+    description: 电脑在线查询超时
+  - code: REMOTE_QUERY_TOO_LARGE
+    http: 413
+    retryable: false
+    description: 在线查询结果超过大小上限
+  - code: NATIVE_SESSION_ACTIVE
+    http: 409
+    retryable: false
+    description: 原生会话可能仍在终端运行
+  - code: NATIVE_SESSION_UNSUPPORTED
+    http: 422
+    retryable: false
+    description: 无法读取该版本的原生会话
+  - code: NATIVE_SESSION_CHANGED
+    http: 409
+    retryable: false
+    description: 原生会话已变化，请刷新后确认
+  - code: NATIVE_SESSION_WRITER_CONFLICT
+    http: 409
+    retryable: false
+    description: 该原生会话已有写进程
+  - code: REMOTE_ROOT_NOT_AUTHORIZED
+    http: 403
+    retryable: false
+    description: 电脑未授权该根目录
+  - code: REMOTE_PATH_OUTSIDE_ROOT
+    http: 403
+    retryable: false
+    description: 所选目录不在授权范围内
+  - code: REMOTE_DIRECTORY_CHANGED
+    http: 409
+    retryable: false
+    description: 目录授权或目录内容已变化

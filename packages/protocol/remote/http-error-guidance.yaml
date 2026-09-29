@@ -1,0 +1,407 @@
+errors:
+  BAD_REQUEST:
+    message: 请求格式不合法
+    cause: 请求格式或参数不合法
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  VALIDATION_FAILED:
+    message: 请求参数不合法
+    cause: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  UNAUTHORIZED:
+    message: 缺少或错误的 Bearer token
+    cause: 缺少或错误的 Bearer token；token 只能来自 hub.json
+    handling: 重新登录或更换正确凭据；不要盲目重试
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  ORIGIN_NOT_ALLOWED:
+    message: Host 或 Origin 不在白名单
+    cause: Host 或 Origin 不在白名单。与 UNAUTHORIZED 区分开：那条是「没带对 token」， 这条是「token 对但来源不对」。混用会让排障时分不清是凭据问题还是来源问题。
+      HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
+    handling: 检查授权范围和允许的操作
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  NOT_FOUND:
+    message: 资源不存在
+    cause: 目标资源不存在
+    handling: 确认资源和账号；设备删除场景可视为已不存在
+    surface: Hub Server HTTP
+  CONFLICT:
+    message: 资源版本或状态已变化，请刷新后重试
+    cause: 资源状态与请求冲突
+    handling: GET最新version，核对修改意图后以新expectedVersion和新幂等键提交
+    surface: Hub Server HTTP
+  IDEMPOTENCY_MISMATCH:
+    message: 幂等键已用于不同请求
+    cause: 相同 Idempotency-Key 复用于不同请求体
+    handling: 不要更改重试请求体；新意图使用新幂等键
+    surface: Hub Server HTTP
+  PROTOCOL_VERSION_MISMATCH:
+    message: 客户端协议大版本与 Hub 不兼容，必须升级后再试
+    cause: 客户端协议大版本与 Hub 不兼容，必须升级后再试
+    handling: 保留requestId，按retryable退避或联系管理员
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  HUB_NOT_READY:
+    message: Hub 正在启动或恢复中，尚未就绪
+    cause: Hub 正在启动或恢复中，尚未就绪
+    handling: 保留requestId，按retryable退避或联系管理员
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  HUB_MAINTENANCE:
+    message: Hub 处于维护/排空状态，拒绝创建新任务
+    cause: Hub 处于维护/排空状态，拒绝创建新任务；前端据此显示全局 Gate
+    handling: 保留requestId，按retryable退避或联系管理员
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  EVENT_CURSOR_EXPIRED:
+    message: 客户端携带的 seq 已超出事件保留窗口，无法补发
+    cause: 客户端携带的 seq 已超出事件保留窗口，无法补发。必须重新 bootstrap 拉取 Snapshot 后再订阅，不允许静默丢事件继续跑
+    handling: 重建快照或发起新请求
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  FEATURE_UNAVAILABLE:
+    message: 依赖的工作包尚未就绪（例如 Adapter 未接入、Update Agent 未运行）
+    cause: 依赖的工作包尚未就绪（例如 Adapter 未接入、Update Agent 未运行）。 必须返回明确原因，不允许用空成功伪装成功能可用
+    handling: 保留requestId，按retryable退避或联系管理员
+    surface: Hub Server HTTP
+  AGENT_NOT_FOUND:
+    message: 指定的 Agent 实例不存在
+    cause: 指定的 Agent 实例不存在
+    handling: 确认资源和账号；设备删除场景可视为已不存在
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  AGENT_OFFLINE:
+    message: Agent 当前离线，可等待或走 fallback
+    cause: Agent 当前离线，可等待或走 fallback
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  AGENT_NOT_LOGGED_IN:
+    message: Agent 已安装但未登录，需要用户在对应工具里登录
+    cause: Agent 已安装但未登录，需要用户在对应工具里登录
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  AGENT_INCOMPATIBLE:
+    message: Agent 版本低于适配器要求的最低版本
+    cause: Agent 版本低于适配器要求的最低版本
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  CAPABILITY_MISSING:
+    message: 目标角色要求的硬能力在候选 Agent 上缺失，detail 里列能力缺口
+    cause: 目标角色要求的硬能力在候选 Agent 上缺失，detail 里列能力缺口
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  ROLE_UNRESOLVED:
+    message: 主选和备用链都无法解析出可用 Agent，需要用户选择或暂停节点
+    cause: 主选和备用链都无法解析出可用 Agent，需要用户选择或暂停节点
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  SESSION_NOT_RESUMABLE:
+    message: 外部会话已失效或适配器不支持恢复，只能新建会话
+    cause: 外部会话已失效或适配器不支持恢复，只能新建会话
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  TASK_NOT_CANCELLABLE:
+    message: 任务已处于终态，无法取消
+    cause: 任务已处于终态，无法取消
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  TASK_ACTION_INVALID:
+    message: 当前任务状态不支持该动作
+    cause: 当前任务状态不支持该动作
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  WORKTREE_BUSY:
+    message: 目标 worktree 被占用
+    cause: 目标 worktree 被占用
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  PATH_NOT_ALLOWED:
+    message: 修改路径超出任务 allowedPaths 或角色 writablePaths，detail 里列越界路径
+    cause: 修改路径超出任务 allowedPaths 或角色 writablePaths，detail 里列越界路径
+    handling: 检查授权范围和允许的操作
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  APPROVAL_REQUIRED:
+    message: 该动作需要审批且尚未批准
+    cause: 该动作需要审批且尚未批准
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  APPROVAL_EXPIRED:
+    message: 审批已超时失效
+    cause: 审批已超时失效
+    handling: 重建快照或发起新请求
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  APPROVAL_ALREADY_DECIDED:
+    message: 该审批已被处理，不能重复决定
+    cause: 该审批已被处理，不能重复决定
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  UPDATE_NOT_AVAILABLE:
+    message: 当前没有可用更新
+    cause: 当前没有可用更新
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  UPDATE_BUSY:
+    message: 升级流程正在进行中，不接受新的升级动作
+    cause: 升级流程正在进行中，不接受新的升级动作
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  UPDATE_VERIFY_FAILED:
+    message: 大小、SHA-256 或 Ed25519 签名校验失败
+    cause: 大小、SHA-256 或 Ed25519 签名校验失败；没有忽略并继续的入口
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  UPDATE_DRAIN_TIMEOUT:
+    message: 任务排空超时，需要用户选择继续等待、取消任务或退出应用
+    cause: 任务排空超时，需要用户选择继续等待、取消任务或退出应用
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  INTERNAL:
+    message: 服务内部错误，请稍后重试
+    cause: 未分类的内部错误，detail 里带 requestId 供查日志
+    handling: 保留requestId，按retryable退避或联系管理员
+    surface: Hub Server HTTP
+  REMOTE_AUTH_REQUIRED:
+    message: 请先登录
+    cause: 远程账号会话缺失或失效；与本机Hub Token鉴权分离
+    handling: 重新登录或更换正确凭据；不要盲目重试
+    surface: Hub Server HTTP
+  REMOTE_CSRF_REJECTED:
+    message: 请求来源或CSRF校验失败
+    cause: 远程浏览器写请求的Origin或会话CSRF校验失败
+    handling: 检查授权范围和允许的操作
+    surface: Hub Server HTTP
+  REMOTE_DEVICE_OFFLINE:
+    message: 设备离线，发送失败
+    cause: 目标设备离线；R1.5浏览器提交立即失败，不排队；修订1历史记录只读保留
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_DEVICE_REVOKED:
+    message: 设备绑定已撤销
+    cause: 设备配对已撤销，禁止新连接与后续命令；不宣称已停止本机执行
+    handling: 检查授权范围和允许的操作
+    surface: Hub Server HTTP
+  REMOTE_DEVICE_AUTH_FAILED:
+    message: 设备凭据无效
+    cause: 设备凭据验证失败；响应不区分其他所有者设备的存在性
+    handling: 重新登录或更换正确凭据；不要盲目重试
+    surface: Hub Server HTTP
+  REMOTE_PAIRING_EXPIRED:
+    message: 一次性配对请求或配对码已过期
+    cause: 一次性配对请求或配对码已过期
+    handling: 重建快照或发起新请求
+    surface: Hub Server HTTP
+  REMOTE_PAIRING_CONFLICT:
+    message: 配对已消费或设备凭据已绑定
+    cause: 配对已消费或设备凭据已绑定；不得重新归属另一用户
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_PAIRING_INVALID:
+    message: 无效配对码或请求
+    cause: 无效配对码或请求；不泄露已绑定账号信息
+    handling: 确认资源和账号；设备删除场景可视为已不存在
+    surface: Hub Server HTTP
+  REMOTE_COMMAND_EXPIRED:
+    message: 命令接单前已过期，不再执行
+    cause: 命令接单前已过期，不再执行；已分配执行序号须留跳过记录
+    handling: 重建快照或发起新请求
+    surface: Hub Server HTTP
+  REMOTE_COMMAND_WITHDRAWN:
+    message: 命令在未派发时撤回或经Worker核实撤回
+    cause: 命令在未派发时撤回或经Worker核实撤回；拒绝迟到重复执行
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_WITHDRAWAL_UNCONFIRMED:
+    message: 已可能派发，不能仅删服务端记录宣称撤回
+    cause: 已可能派发，不能仅删服务端记录宣称撤回；须Worker核实
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  REMOTE_STORE_CHANGED:
+    message: Worker存储世代变化，冻结旧世代未决命令自动投递等待对账
+    cause: Worker存储世代变化，冻结旧世代未决命令自动投递等待对账
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_EPOCH_STALE:
+    message: 非当前已认证连接或旧Worker启动实例的帧被拒绝
+    cause: 非当前已认证连接或旧Worker启动实例的帧被拒绝
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_PROTOCOL_UNSUPPORTED:
+    message: 协议版本不兼容
+    cause: 协议版本不兼容；不静默降级远程命令语义
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_EVENT_CONFLICT:
+    message: 同事件ID或存储世代序号/覆盖区间对应不同不可变内容
+    cause: 同事件ID或存储世代序号/覆盖区间对应不同不可变内容
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_ACK_CONFLICT:
+    message: 确认位置错误、跨存储世代或服务端确认回退，需要对账而非裁剪Outbox
+    cause: 确认位置错误、跨存储世代或服务端确认回退，需要对账而非裁剪Outbox
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_SEQUENCE_GAP:
+    message: 执行对话序号存在缺口，先补命令或跳过记录，控制命令不占执行序号
+    cause: 执行对话序号存在缺口，先补命令或跳过记录，控制命令不占执行序号
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_APPROVAL_FORBIDDEN:
+    message: 该操作不能远程批准
+    cause: R1禁止远程批准此高风险或Worker策略禁止的动作；本机可处理
+    handling: 检查授权范围和允许的操作
+    surface: Hub Server HTTP
+  CONVERSATION_AUTHORITY_MISMATCH:
+    message: 0.7起不再用于本机remote只读拦截
+    cause: 0.7起不再用于本机remote只读拦截；保留历史/真实归属冲突。原语义：本地写接口不能写remote对话，必须走权威服务端；旧local对话不自动转换
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_TARGET_MISMATCH:
+    message: 命令目标、对话固定Worker或执行引用不匹配
+    cause: 命令目标、对话固定Worker或执行引用不匹配；跨owner资源统一NOT_FOUND
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_SCENE_VERSION_MISMATCH:
+    message: Worker场景版本与已排队请求不一致，不静默换用最新角色配置
+    cause: Worker场景版本与已排队请求不一致，不静默换用最新角色配置
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_CURSOR_EXPIRED:
+    message: 游标已过期，请重新加载
+    cause: 浏览器opaque游标已失效，需重新获取owner范围快照
+    handling: 重建快照或发起新请求
+    surface: Hub Server HTTP
+  REMOTE_CURSOR_INVALID:
+    message: 游标无效或不属于当前查询
+    cause: 游标无效或与当前资源/认证范围不符，不泄露游标归属
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_RATE_LIMITED:
+    message: 请求过于频繁，请稍后重试
+    cause: 远程登录/配对/提交限流，按Retry-After重试，不能绕过单次码或幂等规则
+    handling: 遵循Retry-After退避，复用原幂等键
+    surface: Hub Server HTTP
+  REMOTE_FRAME_TOO_LARGE:
+    message: 远程帧超过256KiB，拒绝而不是截断关键内容后继续
+    cause: 远程帧超过256KiB，拒绝而不是截断关键内容后继续
+    handling: 减小请求或检查资源配额；不得截断后伪装成功
+    surface: Hub Server HTTP
+  REMOTE_WITHDRAWAL_TOO_LATE:
+    message: 原提交已形成可见Run或已执行结束，不能声称撤回从未执行
+    cause: 原提交已形成可见Run或已执行结束，不能声称撤回从未执行；已知Run应按runId控制
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_PAIRING_IN_PROGRESS:
+    message: 本机已有配对请求进行中
+    cause: 本机已有配对请求进行中；同幂等请求可重放，新请求须先取消旧配对
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  REMOTE_SERVER_UNREACHABLE:
+    message: 配置的远程服务无法连接或响应未确认
+    cause: 配置的远程服务无法连接或响应未确认；不得伪造配对或服务端撤销成功
+    handling: 保留requestId，按retryable退避或联系管理员
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  REMOTE_SERVER_ORIGIN_INVALID:
+    message: serverOrigin不是允许的HTTPS origin，或未获本机开发模式允许的localhost/127.0.0.1 HTTP origin
+    cause: serverOrigin不是允许的HTTPS origin，或未获本机开发模式允许的localhost/127.0.0.1 HTTP origin
+    handling: 刷新或修正请求后使用新幂等键
+    surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
+  REMOTE_CONVERSATION_BUSY:
+    message: 对话正在忙碌，请稍后再发送
+    cause: 电脑已有queued/running/waiting_approval轮次；保留输入，取消不受此限制
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_STATE_NOT_READY:
+    message: 电脑状态尚未同步完成
+    cause: 等待当前连接的完整忙碌快照；不是持久锁
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_SYNC_CONFLICT:
+    message: 同步分段/版本/快照内容冲突，不得发布部分正文
+    cause: 同步分段/版本/快照内容冲突，不得发布部分正文
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_SYNC_DISABLED:
+    message: 该电脑关闭内容同步，不能向已删除副本提交
+    cause: 该电脑关闭内容同步，不能向已删除副本提交
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_DELIVERY_EXPIRED:
+    message: 设备离线，发送失败
+    cause: 送达期限已过且未获执行许可；设备离线，发送失败
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_REVISION_REQUIRED:
+    message: 电脑端需升级后使用此操作
+    cause: 该操作要求较新的线路修订（R1.5为2，R3为3），不能降级执行
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_SYNC_RESOURCE_LIMIT:
+    message: 全文同步资源配额不足，明确失败，不截断伪装成功
+    cause: 全文同步资源配额不足，明确失败，不截断伪装成功
+    handling: 减小请求或检查资源配额；不得截断后伪装成功
+    surface: Hub Server HTTP
+  REMOTE_DEVICE_SUSPENDED:
+    message: 这台电脑的远程操作已暂停
+    cause: 这台电脑的远程操作已暂停
+    handling: 先明确恢复远程操作；取消运行/拒绝审批仍可尝试
+    surface: Hub Server HTTP
+  REMOTE_API_TOKEN_INVALID:
+    message: API令牌无效或已吊销
+    cause: API令牌无效或已吊销
+    handling: 核对令牌有效期、吊销状态和精确scope；Cookie管理页重签或调整调用路由
+    surface: Hub Server HTTP
+  REMOTE_API_TOKEN_EXPIRED:
+    message: API令牌已过期
+    cause: API令牌已过期
+    handling: 核对令牌有效期、吊销状态和精确scope；Cookie管理页重签或调整调用路由
+    surface: Hub Server HTTP
+  REMOTE_API_TOKEN_SCOPE_INSUFFICIENT:
+    message: API令牌权限不足或此接口不接受令牌
+    cause: API令牌权限不足或此接口不接受令牌
+    handling: 核对令牌有效期、吊销状态和精确scope；Cookie管理页重签或调整调用路由
+    surface: Hub Server HTTP
+  REMOTE_AUTH_AMBIGUOUS:
+    message: 请求同时提供了多种身份凭据
+    cause: 请求同时提供了多种身份凭据
+    handling: 刷新或修正请求后使用新幂等键
+    surface: Hub Server HTTP
+  REMOTE_QUERY_TIMEOUT:
+    message: 电脑在线查询超时
+    cause: 电脑未在查询期限内返回完整结果
+    handling: 保持输入并用新查询重试
+    surface: R3 HTTP / Worker wireRevision 3 only
+  REMOTE_QUERY_TOO_LARGE:
+    message: 在线查询结果超过大小上限
+    cause: 完整页超过1MiB或分段超限
+    handling: 减小limit；不得显示不完整消息
+    surface: R3 HTTP / Worker wireRevision 3 only
+  NATIVE_SESSION_ACTIVE:
+    message: 原生会话可能仍在终端运行
+    cause: 存在活跃证据或未确认终端关闭
+    handling: 关闭终端并重新确认；只读历史仍可用
+    surface: R3 HTTP / Worker wireRevision 3 only
+  NATIVE_SESSION_UNSUPPORTED:
+    message: 无法读取该版本的原生会话
+    cause: 无已验证读取插件或结构不符
+    handling: 在电脑升级读取插件，不猜测解析
+    surface: R3 HTTP / Worker wireRevision 3 only
+  NATIVE_SESSION_CHANGED:
+    message: 原生会话已变化，请刷新后确认
+    cause: 文件身份或sourceRevision与确认不一致
+    handling: 重新获取索引和历史后显式确认
+    surface: R3 HTTP / Worker wireRevision 3 only
+  NATIVE_SESSION_WRITER_CONFLICT:
+    message: 该原生会话已有写进程
+    cause: 本工具精确会话写互斥已被占用
+    handling: 等待原写进程结束，不另开会话冒充续接
+    surface: R3 HTTP / Worker wireRevision 3 only
+  REMOTE_ROOT_NOT_AUTHORIZED:
+    message: 电脑未授权该根目录
+    cause: 根目录为空或已移除
+    handling: 在电脑本机配置根目录后刷新
+    surface: R3 HTTP / Worker wireRevision 3 only
+  REMOTE_PATH_OUTSIDE_ROOT:
+    message: 所选目录不在授权范围内
+    cause: 真实路径越界或含不安全路径形式
+    handling: 选择授权根目录内的真实子目录
+    surface: R3 HTTP / Worker wireRevision 3 only
+  REMOTE_DIRECTORY_CHANGED:
+    message: 目录授权或目录内容已变化
+    cause: 选择令牌已过期或目录身份改变
+    handling: 重新逐级浏览并选择目标目录
+    surface: R3 HTTP / Worker wireRevision 3 only

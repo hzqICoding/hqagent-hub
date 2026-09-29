@@ -4,12 +4,13 @@ import hmac
 import secrets
 
 from .common import Fault, canonical, require, stamp, uid
+from .tokens import ApiTokens
 
 COOKIE = "__Host-hqremote"
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
-class Security:
+class Security(ApiTokens):
     def __init__(self, repo, settings):
         self.repo, self.settings = repo, settings
         self.dummy = self.password_hash("invalid-account-placeholder")
@@ -47,6 +48,7 @@ class Security:
     def bearer(self, header):
         require(bool(header) and header.startswith("Bearer "), "REMOTE_DEVICE_AUTH_FAILED")
         token = header[7:]
+        require(not token.startswith('hqr_pat_'), 'REMOTE_DEVICE_AUTH_FAILED')
         try:
             raw = base64.b64decode(token + "=" * (-len(token) % 4), altchars=b"-_", validate=True)
             require(len(raw) >= 32 and len(token) <= 256, "REMOTE_DEVICE_AUTH_FAILED")

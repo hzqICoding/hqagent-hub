@@ -1,4 +1,11 @@
 import type {
+  RemoteDevicePatchInput,
+  RemoteDeviceDeletionView,
+  RemoteApiTokenCreateInput,
+  RemoteApiTokenPage,
+  RemoteApiTokenIssuedView,
+  RemoteApiTokenIssueReplayView,
+  RemoteApiTokenRevocationView,
   RemoteLoginInput,
   RemoteAuthenticatedSession,
   RemoteBrowserSessionView,
@@ -30,7 +37,15 @@ import type {
   RemoteConversationSnapshot,
 } from '@hqagent/protocol'
 
+export type RemoteDeviceFilters = Pick<RemoteDeviceView, 'remoteAccess' | 'online'> & { includeRevoked?: boolean }
+
 export interface IRemoteGateway {
+  readonly supportsDeviceManagement: boolean
+  patchDevice(workerId: string, input: RemoteDevicePatchInput, idempotencyKey?: string): Promise<RemoteDeviceView>
+  deleteDevice(workerId: string, idempotencyKey?: string): Promise<RemoteDeviceDeletionView>
+  listApiTokens(cursor?: string, limit?: number, includeRevoked?: boolean): Promise<RemoteApiTokenPage>
+  issueApiToken(input: RemoteApiTokenCreateInput, idempotencyKey?: string): Promise<RemoteApiTokenIssuedView | RemoteApiTokenIssueReplayView>
+  revokeApiToken(tokenId: string, idempotencyKey?: string): Promise<RemoteApiTokenRevocationView>
   // Session & Auth
   login(input: RemoteLoginInput, idempotencyKey?: string): Promise<RemoteAuthenticatedSession>
   getSession(): Promise<RemoteBrowserSessionView>
@@ -41,7 +56,7 @@ export interface IRemoteGateway {
   confirmPairing(pairRequestId: string, input: RemotePairingConfirmInput, idempotencyKey?: string): Promise<RemoteDeviceView>
 
   // Devices
-  listDevices(cursor?: string, limit?: number): Promise<RemoteDevicePage>
+  listDevices(cursor?: string, limit?: number, filters?: RemoteDeviceFilters): Promise<RemoteDevicePage>
   getDevice(workerId: string): Promise<RemoteDeviceView>
   revokeDevice(workerId: string, input: RemoteDeviceRevokeInput, idempotencyKey?: string): Promise<RemoteDeviceRevocationView>
   getWorkerCatalog(workerId: string): Promise<RemoteCatalogView>

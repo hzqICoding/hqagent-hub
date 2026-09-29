@@ -1,0 +1,16 @@
+{
+  "type": "query.directory.list",
+  "wireRevision": 3,
+  "queryId": "synthetic_queryId",
+  "requestId": "synthetic_requestId",
+  "connectionId": "synthetic_connectionId",
+  "targetWorkerId": "synthetic_targetWorkerId",
+  "expectedWorkerStoreId": "synthetic_expectedWorkerStoreId",
+  "workerEpoch": "synthetic_workerEpoch",
+  "expiresAt": "2026-09-28T12:00:10Z",
+  "payload": {
+    "rootId": "root_example",
+    "rootVersion": 1,
+    "limit": 50
+  }
+}

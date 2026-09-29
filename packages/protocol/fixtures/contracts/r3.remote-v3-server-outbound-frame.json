@@ -1,0 +1,14 @@
+{
+  "type": "worker.hello_ack",
+  "connectionId": "connection_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "commandDelivery": "ready",
+  "lastServerAck": null,
+  "pendingCommandCursor": "opaque_delivery_cursor_example_001",
+  "heartbeatIntervalSeconds": 15,
+  "offlineAfterSeconds": 45,
+  "serverTime": "2026-09-26T12:00:00Z",
+  "wireRevision": 3
+}

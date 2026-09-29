@@ -188,3 +188,28 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 - 全文分段拼齐才发布；关闭/删除通过无正文覆盖记录及栅栏避免复活并维持连续ACK。30秒送达要求使用provisional→持久grant→正式接单门闩，ACK不作许可。服务端不持有对话锁，忙碌以电脑最新完整集合覆盖。
 - 协议304 passed；Hub285 passed/4 warnings；Server110 passed/1 failed/1 warning，唯一失败是P1尚未适配新HTTP绑定，详见回执。前端测试依分工由主代理运行，未启动Vitest。
 - [当前契约](../packages/protocol/remote/R1.5-contract.md)、[覆盖后的回执](handoffs/R15-P0-remote-protocol.md)、[复核与失败证据](reviews/R15-P0-v04-review.md)。冻结的是协议，尚未实现新同步/门闩/分页/忙碌业务，不能把既有测试通过当作新功能已部署。
+
+
+## 设备管理与Hub Server开放接口 / 0.8.0 — 已冻结（2026-09-28）
+
+冻结SHA：`739756f423dff891963925f75ae24534497e0d6c`，基线`ea63a7293db4097d2a0be5084f29bbbd2dc5c8d2`。D50已登记；P1服务端/P3前端可按此适配，P2 Worker无需业务改动。仍在feat/remote-protocol，未合回integration。
+
+- 标准设备GET/PATCH/DELETE、暂停/恢复、服务端别名与version CAS；旧revocations deprecated。删除后从列表移除且统一NOT_FOUND，最小墓碑不对外；暂停保持连接同步，取消运行/拒绝审批豁免。
+- 账号PAT仅Cookie管理，明文首次201返回一次，同键重放200仅metadata；六个设备操作开放精确devices:read/manage/delete，不包含其它资源。Cookie与Bearer歧义拒绝。
+- 完整规范覆盖27个已有＋6个新增HTTP操作，72个错误码，公开OpenAPI bundle与源码可校验一致；requestId/header/日志贯通纳入P1实现要求。Worker修订仍[1,2]，两个旧错误值域不受HTTP新码扩展。
+- 本轮完整验证：335类型/189Fixture，API规范检查通过，43专项测试通过；173份旧Fixture不变。未运行应用/前端测试，未宣称新功能已部署。
+- [接口指南](../packages/protocol/remote/api-guide.md)、[协议增量](../packages/protocol/remote/R1.5-contract.md)、[交接回执](handoffs/R15-P0-devices.md)。
+
+
+## R3 / 0.9.0 — 原生会话与授权项目登记已冻结（2026-09-29）
+
+冻结SHA：`77e505348c518fed72a463820bbd0fb50eb0f94d`。R3协议0.9.0已冻结，P1服务端 / P2 Worker与Hub / P3前端可按契约开工，等待主代理审核；未合回integration。D51已登记。
+
+独立线路3，支持[1,2,3]；旧线路及189份Fixture不变。91个新类型、48个具体帧；索引可靠同步，历史/目录查询临时不落盘；完整导入、精确续接、关闭确认与单写进程、电脑本机授权根和受限逐层登记。
+
+本轮复跑validate通过（426类型/288Fixture）、API通过（33现有+6新增HTTP，81错误码）、专项191 passed。额外旧集301 passed/3 failed，三项在2b3377c基线均复现，不是本次回归；具体证据及P1/P2/P3实施要求见[回执](handoffs/R3-P0-protocol.md)。冻结的是协议，不代表R3业务已实现。
+
+
+### R3返修1验收更新（2026-09-29）
+
+三个历史测试前提已修正，未改协议冻结SHA、未删除/skip/xfail测试。全量packages/protocol/tests与scripts/protocol/tests：**495 passed in 28.98s**；validate（426类型/288Fixture）和api-contract均通过。原301/3记录仅为历史证据，不再是当前失败状态，详见R3-P0回执“返修1”。
