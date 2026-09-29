@@ -1,8 +1,37 @@
-# R1.5+ Hub Server
+# R3 Hub Server
 
 账号认证、设备配对、电脑对话的完整副本、在线命令转发和浏览器轮询。电脑是唯一写入和执行方；服务端不调用模型，不保存模型凭据，不管理 AI 订阅或安装。
 
-协议包：0.8.0；Worker 线路仍支持修订 1、2。实现 `remote-hub.v2.yaml` 的全部 33 个 HTTP 操作与 `/ws/v2/worker`。修订 1 保留历史对账，新浏览器写入要求修订 2：离线立即失败，在线命令通过 30 秒收件/grant 门闩送达。D50 增加设备管理、账号 PAT、公开规范及请求追踪；不增加 Worker 帧。
+协议包：0.9.1；Worker 线路支持修订 1、2、3。实现 `remote-hub.v2.yaml` 的全部 39 个 HTTP 操作与 `/ws/v2/worker`。修订 1 保留历史对账，既有浏览器写入要求至少修订 2；R3 原生会话及授权目录操作要求修订 3。D50 的设备管理、PAT 和请求追踪保持原行为。
+
+## R3 原生会话与授权目录
+
+- 六个新云端接口全部只接受 Cookie。`GET /devices/{workerId}/native-sessions` 按 workspaceId/agentType/cursor/limit 查索引；`GET /native-sessions/{id}` 查详情；`GET /native-sessions/{id}/messages` 在线临时读取；`POST /native-sessions/{id}/imports` 返回202导入回执；`POST /devices/{workerId}/directory-listings` 等待一次临时目录结果；`POST /devices/{workerId}/workspaces` 返回202登记回执。POST 均要求 Origin、CSRF、Idempotency-Key，PAT 不扩权。
+- 原生索引、workspace、native 对话 ID 按 owner/worker/store/本机ID映射。修订3 catalog 对外 workspaceId 与原生索引里的 workspaceId 一致；发回电脑时映射回本机ID。HTTP 不接收供应商 CLI 会话 ID 或路径。索引按 updatedAt/公开ID稳定分页，过滤和 store 绑定游标；离线或暂停仍可读已有索引。
+- 仅索引元数据持久化，短标题属于上传内容。电脑负责源格式/来源辨别和过滤。删除设备、sync.reset、workspace 移除清理索引投影和待应用日志正文；删除栅栏和 hash/seq 保留，native.index.deleted(reason=imported) 只移除未导入索引，不删除导入后的对话。ContentRedaction 的索引范围与对话范围严格分开，不能覆盖 grant 或确认审计。
+- 临时查询总期限10秒，从 HTTP 入口受理计时（包含组装）；每设备最多4个、每账号最多16个。结果最多1MiB、128片，每片最多16000码点/64000字节，整帧最多256KiB；全部关联身份、段元数据、重复片、总字节与 SHA256、生成 DTO 和资源身份均通过后才返回。超时 REMOTE_QUERY_TIMEOUT，超限 REMOTE_QUERY_TOO_LARGE，断线 REMOTE_DEVICE_OFFLINE；迟到/未知/旧连接结果丢弃。断线、reset、删除、根/workspace 移除及取消 HTTP 等待会销毁内存关联。
+- 查询正文不进入 SQLite、可靠 Inbox/Outbox、浏览器事件、日志或幂等缓存。目录 POST 只持久化域隔离请求摘要；同键同体重新检查并重新查询，异体冲突。查询消息公开ID采用域隔离 HMAC 映射，无需把正文或消息ID表落库。所有结果使用 no-store；返回前重新验证当前会话、设备、连接、同步开关、索引/workspace 或根授权。
+- `before`/snapshotCursor 是 Worker 签发的源快照引用，服务器原样转发，不向旧页注入最新索引 sourceRevision。云端当前 OpenAPI 的读取参数为 before/limit；本机接口额外 sourceRevision 参数属于 P2。长消息可能跨页分段，手机按 messageId/hash/段号收齐再显示，不能把半页当完整回答。
+- 导入需要显式 terminalClosedConfirmed=true、expectedIndexVersion、sourceRevision。服务端生成 confirmationId/confirmedAt/requestId，Worker 核验真实源和活跃证据后记录审计。检测到 likely_active/processMatch=present 不可由确认覆盖；unknown 只有显式确认才可尝试导入，最终权威在电脑。导入不启动模型。
+- 导入和项目登记是 resource 命令，无伪造 conversationId/runId/conversationSeq；沿30秒 received→持久 grant→accepted→completed/failed，用既有 `/commands/{id}` 对账。grant 一旦持久化，30秒送达期限不再是导入计算超时。成功 resourceRef 来自 Worker，workspace 由 catalog 更新，导入对话/全文由修订3 R1.5同步更新，202不等于操作成功。
+- native 对话不填假 scene，保留 conversationKind/agentType/nativeSessionId。发送只能 sessionMode=continue，映射到精确本机绑定；需要新确认时 nativeConfirmation 由服务端重新签发，Worker 再检。busy、可见性、高风险审批和结构化取消规则继续生效。
+- 原生历史读取允许暂停；目录浏览、导入和登记受暂停门禁。暂停关闭当时全部未grant窗口（含修订3资源命令），已grant如实对账。根授权只由电脑设置，云端只见 rootId/displayName/version；只转交电脑签发的短期目录引用，绝不拼接路径或替电脑判断真实文件系统安全。根移除/版本变化在服务端预检和返回前检查，Worker 在查询和grant后的登记处继续复核。
+- 修订2↔3切换先持久化目标栅栏，停止创建旧线路的新命令；旧连接可继续对账。未决/副作用不明命令、未完成 Outbox、未应用事件或双方 ACK 水位不一致都会拒绝切换；通过后保存双方水位并重建 busyFresh。旧帧的修订、epoch、seq、摘要不重写，旧 epoch 的持久事件可在当前认证连接重放；临时查询必须匹配当前 epoch/connection。
+
+本机 `/api/v1`、`/api/v2` 原生会话与授权根配置属于 P2，不在云端提供；本机导入为201同步提交，与本服务202资源命令不同。电脑没有配对、同步关闭或尚未完成升级栅栏时的本机操作也不由服务端执行。
+
+### 临时查询部署约束
+
+发行包必须包含更新的 `server/resources/*.json`，公开 `/api/v2/openapi.json` 与0.9.1 bundle等价；部署目录 `/opt/hqremote/app` 无需保留协议源码树。Caddy 示例显式流式转发且不配置磁盘响应缓存。若使用 Nginx，在代理 location 中加入：
+
+```nginx
+proxy_buffering off;
+proxy_request_buffering off;
+proxy_max_temp_file_size 0;
+proxy_cache off;
+```
+
+关闭 APM、网关或自定义中间件的请求/响应体采集，禁用落盘 buffer/cache 插件。`Cache-Control: no-store` 不能替代这些设置。服务端审计仅含 requestId、operation、状态、错误码、耗时；不写目录名、选择token、查询内容或原始异常。本包只提供配置与本机验证，没有修改线上部署。
 
 ## 启动与配置
 
@@ -222,8 +251,8 @@ $env:TMP = $env:TEMP
 
 TEMP/TMP/`--basetemp` 必须指向 worktree 内被忽略的 `.tmp`，避免该 Windows 沙箱默认临时目录的 WinError 5。已有 Starlette 对 httpx TestClient 的弃用 warning 保留，不为消除警告安装清单外依赖。
 
-`scripts/smoke.py` 串行创建临时账号，启动真实 loopback uvicorn，使用可信本机代理协议头模拟 TLS 终结后的后端连接，走登录、配对、修订 2 假 Worker、create/received/grant/upsert、完整回复同步、离线立即失败、重连 busyFresh 重建、公开规范/requestId、PAT 签发、设备暂停/恢复/删除、PAT 吊销及在线备份。不访问远端服务器，也不证明真实 Worker/Caddy 证书或公网部署已验收。数据及临时服务日志仅在 `.tmp`，退出时检查输出脱敏。
+`scripts/smoke.py` 串行创建临时账号，启动真实 loopback uvicorn，使用可信本机代理协议头模拟 TLS 终结后的后端连接，走登录、配对、修订 2 假 Worker、create/received/grant/upsert、完整回复同步、离线立即失败、重连 busyFresh 重建、公开规范/requestId、PAT 签发、设备暂停/恢复/删除、PAT 吊销及在线备份。`smoke_native.py` 在同一进程冒烟中增加修订3、原生索引、两种临时查询、导入许可/全文同步，以及查询正文和选择引用零落库检查。不访问远端服务器，也不证明真实 Worker/Caddy 证书或公网部署已验收。数据及临时服务日志仅在 `.tmp`，退出时检查输出脱敏。
 
-历史测试的 `env` 夹具仅在测试构造期间装入原 R1 Service 和旧响应绑定，保留旧离线排队、201 创建等历史语义断言；它不是可由配置打开的生产模式。`r15_env` 和全部 test_r15_* 使用正式 create_app/SyncService，验证新 HTTP 准入、映射、grant、复制和删除。正式应用不接受新 rev1 浏览器命令。版本协商旧测试中“不支持的修订 2”改为 3，拒绝支持列表更新为 [1,2]，另有真实 rev1 历史对账/升级栅栏用例。
+历史测试的 `env` 夹具仅在测试构造期间装入原 R1 Service 和旧响应绑定，保留旧离线排队、201 创建等历史语义断言；它不是可由配置打开的生产模式。`r15_env`、test_r15_* 和 test_r3_* 使用正式 create_app/SyncService。正式应用不接受新 rev1 浏览器命令。R3 将协商测试中“不支持的修订”更新为4、拒绝支持列表更新为[1,2,3]；旧1/2报文严格校验和业务断言保留，增加2↔3双向栅栏、并发查询及正文清理测试。
 
 协议回归在仓库根目录运行 `pwsh scripts/protocol/validate.ps1 -CheckGenerated`。根 CI/workspace 未接线，Integrator 可后续将上述串行命令纳入 CI；本工作包不改共享配置。
