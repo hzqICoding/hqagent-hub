@@ -1,135 +1,149 @@
 ---
 wp: R3-P2
-status: needs-decision
+status: done
 scope_declared: [apps/hub/**, .hqagent/handoffs/R3-P2-hub.md]
-scope_touched: [apps/hub/api/app.py, apps/hub/runtime/remote/api.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/native/__init__.py, apps/hub/runtime/native/paths.py, apps/hub/runtime/native/roots.py, apps/hub/tests/test_contracts.py, apps/hub/tests/test_r3_roots.py, .hqagent/handoffs/R3-P2-hub.md]
+scope_touched: [apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md]
 build: pass
 tests: pass
-commit: 8687d159a30ee492b8e9c8ad6a6910c77711f263
-open_questions: 1
+commit: 809cc5f402fe9d0530ec7f32a07a406bb21cfce6
+open_questions: 0
 ---
 
-# R3-P2 阶段回执：授权根目录基础已提交，原生本机接口待裁决
+# R3-P2 Hub / Worker 完成回执（协议 0.9.1）
 
-**本工作包没有完成，不能据此合入并宣称 R3 可用。** build/tests 仅表示当前已提交部分的校验结果，不能替代原生会话、线路 3、E10/E11 和项目登记的验收。
+工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。本次续作相对主代理合入的 `f3b86f5`，头部 scope_touched 也是此范围；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
 
-工作区 `E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`，分支 `feat/remote-worker`；开工基线 `6fb2340f91f7c32b191eb5f5cf32ca67af6c8e80`。已读 R3-P0 的冻结内容/P2 要点、R3-contract、remote-native Schema 与 api-guide 对应接口/线路/错误说明，以及方案 §8/§8.3a/§13 和 E10/E11。未再合并分支，未修改 packages/protocol、apps/server、apps/desktop 或 docs，未安装依赖。
+## Q1 已由 0.9.1 关闭
 
-## Q1：任务要求的本机原生接口未出现在冻结协议中
+按 R3-contract §11 和 R3-P0「补冻 0.9.1」实现，不再沿用上一版回执的 needs-decision：
 
-任务第 8 项要求“本机 API 按契约暴露原生会话列表和导入，供桌面前端使用”。核对当前 **0.9.0** 后，结果是：
+- v1 Bearer、v2 本机 Cookie 各提供列表、详情、messages、imports 四条路由；共用 `runtime/native/api.py` / NativeService。列表返回生成的 LocalNativeSessionPage，不填假的 workerId。
+- 导入是本机同步事务，返回 **201 LocalConversationView（conversationKind=native）**，不经过远程 provisional/grant。Hub 签发 NativeClosureConfirmation 并原子留审计；重放只保存对话引用，不另存一份历史正文。
+- 云端导入继续检查 Server 签发的确认和显式 grant；两条路径共用源再检查、精确绑定唯一约束、确认失效与写锁。
+- 本机操作独立于配对、网络、远程暂停、同步开关及线路。所有成功、失败、幂等响应 no-store；POST 沿用 Origin / Idempotency-Key；不记录正文。
+- wire2 / 2→3 栅栏内仍可本机导入，但不上传 native 索引、对话或其消息/运行/审批，也不借旧 seq 分配不可发送记录；wire3 确认后捕获水位并补传。
 
-```text
-local-hub.v1.yaml
-  /api/v1/remote/authorized-roots GET,PUT
-local-chat.v2.yaml
-  /api/v2/remote/authorized-roots GET,PUT
-remote-hub.v2.yaml
-  /api/v2/devices/{workerId}/native-sessions GET
-  /api/v2/native-sessions/{nativeSessionId} GET
-  /api/v2/native-sessions/{nativeSessionId}/messages GET
-  /api/v2/native-sessions/{nativeSessionId}/imports POST
-```
+## 模块与存储
 
-上面是按 paths 中 native-sessions / authorized-roots 过滤的实际结果。**两个本机 OpenAPI 没有原生列表、详情、读取或导入绑定；上面的四个原生路径属于云端服务，不是本机 Cookie 路由。** R3-contract §7 只冻结了本机授权根接口，api-guide §13 也明确自己面向远程服务器。
+| 文件 | 责任 |
+| --- | --- |
+| adapters/history.py | Runtime 插件层的版本化 FileHistory、能力信息、终端来源证明、完整脱敏历史和源快照；Worker 不解析厂商文件 |
+| runtime/native/activity.py | 精确原生 ID 的进程证据探测；无法判断时 unknown |
+| runtime/native/service.py | 索引、本机分页、读取快照、原子导入、确认审计、精确 Session 绑定、持久写锁与恢复 |
+| runtime/native/api.py | 生成 DTO 的八个本机操作和鉴权组接线 |
+| runtime/native/paths.py、roots.py | 已有授权根 CAS、目录身份/句柄、逐层快照、短期选择引用；本轮补线程锁、取消检查、登记审计 |
+| runtime/remote/wire.py、worker.py | 1/2/3 编解码、协商栅栏、连接生命周期、资源及查询接线 |
+| runtime/remote/queries.py | 临时查询通道，期限/大小/并发限制及断线取消 |
+| runtime/remote/resources.py | native.import / workspace.register 的 provisional、显式 grant、幂等和资源结果 |
+| runtime/remote/sync.py、window.py、projection.py、busy.py | 修订隔离、可靠 native 索引、完整历史补传、删除/擦除、native 忙碌投影 |
+| storage/migrations.py | **只追加 migration 8**；1–7 未改 |
 
-类型同样不能直接互换：
+migration 8：
 
-- `NativeSessionIndex` 可表示一个本机索引，但没有冻结的本机索引分页/列表接口及其响应绑定。
-- `RemoteNativeSessionPage.items` 是 `RemoteNativeSessionView`，每个元素必须有云端 workerId / workerOnline。未配对电脑不能靠虚构 workerId 来套用它。
-- `RemoteResourceQueuedReceipt` 必须有 targetWorkerId、queued_online、workerOnline=true 和传输 expiresAt，是云端在线传输回执，不是本机导入提交结果。
-- `NativeClosureConfirmation` 的 description 和 R3-contract §3 规定由服务端根据显式确认生成 confirmationId / confirmedAt / requestId；尚未规定桌面直接导入时由谁签发、如何接入同一审计语义。
+- `native_sources`：opaque 索引 ID，唯一精确 binding，workspace/runtime/Agent，source/index JSON，导入后的唯一 conversation/session 引用，确认及 removed 标记。
+- `native_writers`：binding_key 主键，session、owner、state、source_revision、started_at、当前输入摘要；锁的是精确外部会话，不能靠换 conversationId 绕过。
+- `native_commands`：store/worker/command 唯一键，规范化摘要、帧、状态、收件回执、grant、结果；不改变已有 run 命令表。
+- native_sources 的增改触发器写入既有 remote_sync_changes。授权根仍使用既有 remote_state；未增加协议字段。
 
-仓库 AGENTS.md §4 要求“三端协议边界 DTO 一律从生成物导入，不许再手写一份”；本包也明确不能修改 packages/protocol。因而没有自行添加一个未登记的本机 HTTP 接口、手写本机分页 DTO 或借用云端在线回执。已向主代理异步提出问题，当前未收到裁决。
+## 逐条实现与取舍
 
-### 建议交给 P0/主代理的具体补冻清单
+### 修订与可靠同步
 
-以下是**提案，不是已实现或已经冻结的接口**：
+CODECS 使用三个独立的生成联合类型。初次优先 3，服务端仅支持 2 时按其 supportedWireRevisions 回退；link 如实带 REMOTE_REVISION_REQUIRED 能力事实。升级等待旧可靠流水位、未完成命令和暂存内容收敛，持久化双方栅栏后才发布 wire3 事件。已提交 wire3 的 store 不强行降成 wire2；重传保留原帧 epoch、hash、版本。
 
-| 本机路径提案 | 输入 / 输出建议 | 需明确内容 |
-| --- | --- | --- |
-| GET /api/v2/native-sessions | workspaceId / agentType / cursor / limit；本机分页元素复用 NativeSessionIndex | 本机分页 DTO、缺省 limit、诊断能力缺口如何暴露 |
-| GET /api/v2/native-sessions/{nativeSessionId} | NativeSessionIndex | 未配对/离线本机读取是否独立可用 |
-| GET /api/v2/native-sessions/{nativeSessionId}/messages | NativeReadInput 对应查询参数；NativeMessagePage | before/sourceRevision 与本机响应 no-store |
-| POST /api/v2/native-sessions/{nativeSessionId}/imports | 可复用 RemoteNativeImportInput；本机成功结果使用 LocalConversationView | 同步提交 201，还是有本机命令对账的 202；本机确认签发/幂等/取消语义 |
+修订 3 的 catalog 只增加 rootId/displayName/version，不发路径。未导入会话仅发脱敏后最多 120 码点标题及索引；导入后从未导入索引移除，完整历史按既有分段/有界窗口补传。同步关闭、撤销、workspace 移除处理 native 索引删除或 reset，并对已有待发送索引做原生索引专用擦除证明，不把路径/正文塞进删除事件。关闭同步不删本机会话源、不禁止本机导入。wire2 的 native 本机变更保留为待捕获状态，不伪造 scenario 或 scene。
 
-同时明确是否增加等价 v1 Bearer 路由，以及未配对/尚未完成 2→3 栅栏的桌面导入与“不得创建需同步的 R3 对象”的关系。推荐协议线冻结后与 P3 对齐；若主代理允许 P2 定义本机绑定，也需明确上述公开响应和成功语义，避免电脑前端与 Hub 分别猜测。
+### 读取插件与能力边界
 
-此问题不阻止所有内部实施；等待裁决期间已先完成下述根目录基础。其余原生/线路实施仍未完成，不把接口缺口描述成其它内部代码已实现的替代证明。
+当前 Adapter 端口没有官方 history 方法，因此实现明确的**文件回退插件**，没有宣称调用不存在的官方历史 API。能力信息来自配置目录和支持的解析 profile。
 
-## 当前已落盘并接线的部分
+支持并以合成文件验证的 profile：
 
-### 本机授权根目录配置
+- Claude Code：2.1.261、2.1.272、2.1.283。
+- Codex：0.153.4。
 
-- `runtime/native/roots.py::AuthorizedRoots` 使用已有 remote_state 保存 `authorized-roots`，默认 `version=1, roots=[]`，严格复用 LocalAuthorizedRootsInput/View；Schema 限制最多 32 根。
-- PUT 全量替换和 expectedVersion 在同一 SQLite 事务内比较；新增 rootId 由电脑生成，已有 rootId 必须来自当前配置、不能重复，已删除 ID 不能由调用方重新指定复活。
-- 真实目录身份去重，根路径/身份/名称变化递增根版本，全局配置版本递增；原幂等仓储确保同键同内容重放，不能用相同 key 换内容。
-- 配置和 `authorized-roots-catalog-pending` 意图原子保存。**这个意图尚没有接入修订 3 可靠 catalog 消费器**，不宣称手机已收到根列表。
-- `api/app.py`、`runtime/remote/api.py`、`runtime/remote/worker.py` 作最小接线：同一服务挂载冻结的 v1/v2 GET/PUT authorized-roots，保留本机 Bearer / Cookie / Origin / Idempotency-Key / Cache-Control:no-store。
-- 本机响应可以包含本机根路径；`catalog()` 只返回 rootId/displayName/version，不返回绝对路径。它目前仅是内部待接入投影方法。
+未知版本、记录形状或内容块返回 unsupported/原因；无法识别到有效索引且存在诊断时，本机列表返回 NATIVE_SESSION_UNSUPPORTED，不用空列表伪装无记录。默认扫描对应 Runtime 的 .claude / .codex 数据根，可注入合成根测试。没有读取、打印或提交用户真实会话。
 
-### 内部目录选择服务（尚未暴露远程查询）
+Codex 必须有 session_meta.source=cli、精确 UUID、绝对 cwd；Claude 必须由交互 history.jsonl 中 sessionId/project/display/timestamp 与会话信封相互印证，不能凭文件名推断终端来源。排除 sidechain、已知非终端来源、已有 Hub Session 的精确 externalSessionId 和已导入绑定；cwd 真实路径必须落在已登记 workspace 中，源文件不能通过符号链接越出 Runtime 数据根。
 
-- `runtime/native/paths.py` 先检查绝对路径语法，拒绝 UNC、设备路径、驱动器相对路径、`..`、ADS、NUL、尾部点/空格，随后 resolve 真实路径并做目录包含关系检查。
-- Windows 通过 CreateFileW 打开目标及已解析祖先目录，使用 GENERIC_READ、READ/WRITE 共享而不共享 DELETE，读取卷序号和文件 ID；根内目标必须同卷。实际测试证明持有期间重命名被拒。首次仅 FILE_READ_ATTRIBUTES 的实现没有阻止重命名，已由失败测试发现并修正，没有保留错误的安全声明。
-- symlink/junction 按真实目标检查，越界返回 REMOTE_PATH_OUTSIDE_ROOT；`.lnk` 文件不执行、不当目录列出。
-- 目录选择 token 是内存中的 256-bit 随机引用，绑定 store/rootId/rootVersion/真实目录身份，15 分钟过期；进程重启全部失效，引用上限 4096。根移除/版本改变立即使消费校验失败，不等待 catalog 更新。
-- 逐层结果最多 100 个目录，默认 50；不返回普通文件或 `.lnk`；游标绑定目录快照摘要与位置，变更返回 REMOTE_DIRECTORY_CHANGED。扫描目录超过 10000 个子目录时显式限额失败，不静默截断。
-- `selected()` 提供消费时再次校验和持有目录句柄的内部上下文；**尚未接入 WorkspaceService 登记事务**，因此“非 Git 登记只读”等登记验收未完成。
-- `remote.directory.audited` 是本机内部审计，字段只有 requestId / operation / rootId / resultCode；不含目录 token、名称、路径或正文。没有新增协议事件类型声明或把该内部事件直接当作 Worker 公共帧。
-- POSIX 使用目录 fd 和稳定身份复查；本轮在 Windows 执行，没有宣称 POSIX 竞态/真机验收完成。
+先脱敏后截标题/分段：仅公开 user/assistant 文本及安全工具名摘要；不包含原始工具参数、输出、系统/开发者注入、analysis/thinking/encrypted 内容、已知 Hub/设备/环境模型凭据或常见密钥形态。时间归一 UTC，使用文件时间回退时保存 timeBasis。单源上限 64MiB、发现文件上限 10000，明确报能力/大小限制；发现阶段只保留元数据，不同时缓存全部全文。未完成的最后一行不作为完整消息解析。
 
-### 0.9.0 夹具测试兼容
+### 按需读取
 
-未改生产代码前跑全量，出现：
+QueryChannel 不分配可靠 seq，不写 Outbox 或查询正文到数据库。最多 4 个当前查询、保守 10 秒期限、总 1MiB；编码按生成 DTO 校验。分页保持源完整记录切点、文件身份与前缀摘要；新增尾部不改变旧游标，旧前缀被改或替换则失效。正文分段有数量/字符/字节限制，不能截断后冒充完整。
 
-```text
-FAILED tests/test_contracts.py::test_all_frozen_contract_fixtures_validate_and_round_trip
-AttributeError: type object 'NativeAgentType' has no attribute 'model_validate'
-1 failed, 355 passed, 4 warnings in 187.79s (0:03:07)
-```
+查询体和游标仅存内存，断线/reset/解绑/撤销取消后台读取，线程读循环检查取消标记；远程 scope 绑定 store/syncGeneration，本机读取 scope 独立。查询错误不回显历史/凭据。测试验证超时、过大、断线、源变化都不写可靠正文或改变 Outbox 上界。
 
-原因是 manifest 新增了枚举型夹具，测试原来假设所有生成类型都是 Pydantic model。`tests/test_contracts.py` 改为 TypeAdapter.validate_python / dump_python，与协议包自身的测试方式相同；依旧遍历完整 manifest 并逐项断言 JSON 往返完全等于原值，没有跳过枚举、放宽字段或删除断言。除此以外未修改既有测试。
+### 导入、续接与 E10/E11
 
-## 未完成范围（必须继续，不能作为交付遗漏隐藏）
+导入前重查 workspace、源版本和活动证据；likely_active 不能被勾选覆盖，unknown 不能直接启动写进程，必须取得与当前 sourceRevision 绑定的显式关闭确认。确认、完整脱敏历史、native 对话、唯一绑定、审计和幂等引用一次事务提交；失败没有半个对话，导入不调用模型。真正开始轮次后，使用真实 Task/Node ID 建立 Hub Session，不在导入时虚构执行 Task。
 
-1. 修订 3 CODECS、3/2 升级栅栏与能力回退；当前 Worker 仍为之前的修订 1/2 实现。
-2. 两家 Runtime 的版本化 history.list/read/adopt 和实际能力探测；未读取任何用户真实会话文件，也未创建原生 reader profile。
-3. 可靠原生索引、删除证明、workspace 移除/同步关闭/设备删除清理。
-4. 10 秒/1MiB 的临时查询通道、按页读取、断线/取消 buffer 清理；当前内部目录 listing 还不是远程 query 服务。
-5. 导入历史的原子发布、精确原生绑定、活动证据/确认审计、跨桌面/手机/重试的原生 ID 写互斥与崩溃恢复。
-6. 原生无场景对话的本机 API/显示 Mapper 与原生 resume 接线；待 Q1 统一本机公开边界后继续。
-7. WorkspaceService 的授权事务/登记接线及 catalog 可靠同步；没有偷偷 init-git / mkdir / clone。
-8. R3 全部新帧、E10/E11、真实 CLI 与目录登记的完整验收。
+每次 resume 都重新核对源与活动证据，并在 SessionManager 层获取持久精确 binding 锁；桌面、手机、重试、直接 Session 路径共享。Adapter 收到原 exact externalSessionId 的 resume；不找最近历史、不退回新建外部会话。取消确认沿用原规则释放写者；不确认或恢复证据不足保留 recovery/禁止续接，不改变 D41 控制三态。重启将旧写者标为待核对，**不把不可检查的遗留进程自动视为已退出，也没有强制解锁接口**。
 
-本轮没有追加迁移，也没有更改既有迁移；只使用现有 remote_state 保存根配置。未动取消后续接、D41 证据、场景执行或 Task 模型。
+自己的已完成轮次可在完整前缀不变、唯一新用户输入摘要匹配、没有外部进程证据时更新 owned_revision；审计中的用户确认不被伪造刷新。其它外部修改必须重新确认。视图按当前来源更新活动/源版本；源不可用时退为 unknown 提醒，不让整个对话列表失败。
 
-## 已执行测试与真实输出
+执行策略仍使用既有单 Agent、只读 ad-hoc 路径及内部 analyst 权限角色；**不新建 LocalScene，不填场景快照，不扩展文件写权限**。native 对话/轮次公开 Mapper 不暴露场景角色。未进行真实终端进程/真实模型的端到端续接验收；精确请求、互斥、恢复和取消由 FakeAdapter 与合成文件验证。
 
-新增 `tests/test_r3_roots.py` 共 15 项：根 CAS/幂等/Cookie/Bearer、缺 Origin、移除失效、目录分页与快照变化、10 种非法路径、junction/symlink 越界、目录身份替换/令牌过期、Windows deny-delete 句柄。全部使用 worktree 内 pytest 合成目录，不涉及用户真实原生会话。
+### 授权目录与登记
 
-所有命令串行，没有 pytest 并行 worker、没有 vitest、没有安装依赖。TEMP/TMP/basetemp 显式位于 worktree 内 `.tmp`，绕过沙箱默认临时目录 WinError 5。
+保留默认空、最多 32 根的持久 CAS。引用绑定根 ID/版本/真实目录身份，根移除立即失效。目录每页最多 100 个，只含一层目录元数据，不含文件；不执行快捷方式。拒绝 UNC、设备路径、驱动器相对路径、..、ADS 等，真实路径检查处理 symlink/junction、Windows 大小写和卷身份。
 
-### Hub 全量
+Windows 保持目标及祖先目录句柄，拒绝 DELETE 共享以阻止替换；消费前和提交时重查身份及根 CAS。POSIX 用 fd/身份检查，本轮没有 POSIX 真机竞态验收。内存引用最多 4096、15 分钟有效，重启失效。目录快照变化拒绝旧游标。
 
-cwd：`apps/hub`。
+登记复用 WorkspaceService，非 Git 目录只能 read_only，不做 init/mkdir/clone；持有目录 lease、workspace 保存及 remote 完成回执在同一事务。审计仅 requestId/operation/rootId/resultCode，任意未知 rootId 归为固定标记，不把用户输入路径写进审计。
+
+## 既有内核的最小改动
+
+- runtime/local_chat.py / storage/local_chat.py：native 输入委派与视图字段、隐藏内部标记、不造 sceneSnapshot；后台监督不反复做昂贵原生扫描，HTTP 视图才更新观察。scenario 路径保留。
+- runtime/tasks.py：在真实 Task/Node 建立后准备 native session；retry 保留精确原生绑定，避免已取消父节点重试误开新会话。
+- orchestrator/sessions.py：resume/finish/close 增加绑定守卫与释放/恢复钩子。原取消执行、暂停/恢复、reviewer 隔离、develop worktree 不改语义。
+- runtime/workspaces.py / storage/workspaces.py：增加可选提交回调与外部事务接入，沿用已有登记校验；使目录授权检查和资源回执能原子提交。
+- api/app.py / api/local_chat.py：挂同一原生路由实现、统一 no-store；使用原 v1/v2 鉴权。
+- storage/remote.py：check_continuity 在同一 DB 锁内读取 identity 和外部 witness。后台目录审计引入的并发场景暴露了旧读窗口：旧 identity 与新 witness 会误判回滚。新测试以线程屏障稳定复现，修复后 store 不误轮换；真正回滚的原测试仍通过。这是连续性读取修正，不改反回滚规则。
+
+## 测试映射及既有断言调整
+
+新增 27 项（含参数化），加之前根目录 15 项；Hub 总数由续作基线 371 到 398：
+
+| 模块 | 验证 |
+| --- | --- |
+| test_r3_native.py | 两种合成格式、离线导入/精确 resume、作用域/来源/版本、凭据过滤、活动与修改失效、未知块、工具摘要/时间依据、能力缺口不回显 |
+| test_r3_guards.py | 幂等/原子回滚、跨管理器原生 ID 锁及重启、源切点、取消/retry、归属水位、连续性并发、查询故障 |
+| test_r3_wire.py | 真实本机 TLS 假 WS 的修订 3 索引/临时读取/grant 导入及远程 run、仅 2 回退与升级补传、目录浏览和只读登记 |
+| test_r3_api_sync.py | v1/v2 八路由/401/Origin/no-store/关闭同步本机使用、reset/撤销/workspace 索引清理、删除根后 grant 拒绝 |
+| test_r3_roots.py（保留） | 根 CAS/幂等、分页/变化、危险路径、junction/symlink 越界、身份替换/过期、Windows 句柄保护 |
+
+既有测试改动逐项说明：
+
+1. remote_support.py：假服务端支持生成的 1/2/3 DTO；未减少已有校验。
+2. test_remote_worker.py：无共同修订号测试的 reject_revisions 从 [3] 改为 [4]，因为 3 现在可用；原冻结和无重连风暴断言保留。**不是用它替代旧服务端回退测试**；新增 test_revision2_defers_native_history_then_revision3_backfills 真正先只支持 2。
+3. test_r15_recovery.py：首选探测序列 [2,1] 改 [3,1]；延迟升级的序列改 [3,2,1]。旧 R1 回退、栅栏和不重复执行断言保留。
+4. test_r15_joint_server.py：Hub 迁移到固定 7 的断言改为 LATEST_SCHEMA_VERSION（新增 8）；帧严格按实际线路 DTO 校验；从第一个接收帧改查第一个成功 hello_ack，允许本次新增的首个不支持 3 探测。真正元数据冲突仍断言失败及错误码，未改 server。
+5. 前一阶段 test_contracts.py 的 TypeAdapter 修正留在基线：枚举与 model 均严格完整 round-trip，没有跳过夹具。
+
+## 最终验证（真实输出）
+
+所有测试串行。TEMP/TMP/basetemp 均位于 worktree 忽略的 .tmp，避开默认临时目录 WinError 5。未并行 pytest，未运行 Vitest。本轮未出现 0xC0000142 或额度错误。
+
+Hub，cwd apps/hub：
 
 ```powershell
-$env:TEMP = 'E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
-$env:TMP = $env:TEMP
-$env:PYTHONIOENCODING = 'utf-8'
-../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-p2-roots-full 2>&1 | Tee-Object -FilePath ../../.tmp/r3-p2-roots-full.log
+$env:TEMP='E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-final-delivery --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-final-delivery.log
 exit $LASTEXITCODE
 ```
 
 ```text
-........................................................................ [ 19%]
-........................................................................ [ 38%]
-........................................................................ [ 58%]
-........................................................................ [ 77%]
-........................................................................ [ 97%]
+........................................................................ [ 18%]
+........................................................................ [ 36%]
+........................................................................ [ 54%]
+........................................................................ [ 72%]
+........................................................................ [ 90%]
 远程送达预留清理暂未完成，将重试
-...........                                                              [100%]
+远程送达预留清理暂未完成，将重试
+......................................                                   [100%]
 ============================== warnings summary ===============================
 ..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
   E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
@@ -142,41 +156,39 @@ tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_441
     warnings.warn(  # deprecated in 13.1 - 2024-09-21
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-371 passed, 4 warnings in 185.09s (0:03:05)
+398 passed, 4 warnings in 219.50s (0:03:39)
 ```
 
-退出码 0。该全量运行期间又补了目标目录与根目录的 Windows 卷序号显式比较；随后对最后落盘代码重跑整个根目录测试模块，不能把之前启动的全量进程说成一定加载了这项末次修改：
+协议，cwd worktree 根：
 
 ```powershell
-../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider tests/test_r3_roots.py --basetemp ../../.tmp/r3-p2-roots-final --tb=short
-```
-
-```text
-15 passed, 1 warning in 1.32s
-```
-
-退出码 0。4 个 warning 为依赖弃用提示；通用预留清理重试日志是之前 R1.5 回执已记录的未归因日志，本轮没有宣称解决它。
-
-### 协议
-
-cwd：worktree 根目录，TEMP/TMP/PYTHONIOENCODING 同上。
-
-```powershell
-$env:PATH = (Join-Path (Get-Location) '.venv/Scripts') + ';' + $env:PATH
-pwsh scripts/protocol/validate.ps1 -CheckGenerated 2>&1 | Tee-Object -FilePath .tmp/r3-p2-protocol.log
+$env:TEMP='E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+$env:PATH=(Join-Path (Get-Location) '.venv/Scripts')+';'+$env:PATH
+pwsh scripts/protocol/validate.ps1 -CheckGenerated 2>&1 | Tee-Object -FilePath .tmp/r3-protocol-delivery.log
 exit $LASTEXITCODE
 ```
 
 ```text
-协议校验通过：426 个类型，288 个 Contract Fixture
+协议校验通过：427 个类型，289 个 Contract Fixture
 ```
 
-退出码 0。`git diff --check` 无输出。完整日志在忽略目录 `.tmp/r3-p2-*.log`；未提交临时目录、证据数据、凭据或真实会话内容。本轮没有 0xC0000142 或额度错误。
+协议退出码 0。git diff --check 通过；Git 的 CRLF→LF 提示不是校验失败。Hub 四个 warning 为依赖弃用提示。全量还出现两条既有“远程送达预留清理暂未完成，将重试”：**没有把它们归因到本次修好的 witness 竞态，也没有宣称通用重试日志已全部消除**；测试没有失败。
 
-## 提交与继续入口
+## 验证边界与下游事项
 
-- `be82fd58f991e981958b08ffea1a4b95956108f1`：枚举夹具通用校验，保留严格往返断言。
-- `8687d159a30ee492b8e9c8ad6a6910c77711f263`：本机授权根配置及目录引用内部基础，含 15 项合成测试。
-- 本阶段回执另提交。每次提交后均 `git log -1 --format=%B` 自查，无署名/生成标记；未合回 integration。
+- 本轮没有真实 CLI 启动/用户会话读取，没有真实 P1 修订 3 联调；测试使用合成文件、FakeAdapter、假 WS。既有 R1.5 真实 P1 集成用例仍在全量内。
+- 只声明上述已识别 profile。真实 Runtime 升级到未知格式要显式 unsupported，需补 profile 与合成回归，不能自动猜测解析。
+- Native 执行当前继承只读单 Agent 权限策略；不能据此声称已提供任意原生 CLI 权限配置。
+- 桌面用本机 Cookie 八操作、显式终端关闭确认、native 分类；不要混用云端公开 ID。待支持 3 时依据 link/同步设置显示未同步，不凭协议包版本显示已同步。
+- P1 接线需支持 wire3 栅栏、可靠索引及删除证明、临时 query/chunk/error、资源 receipt/grant/result；资源 metadata 提交不会自动调用模型。读请求为临时流，不能作为可靠 ACK 放行命令。
+- 无法核实的遗留原生写者保守保持恢复待核对；外部进程无法可靠探测时不能用勾选越过正向活动证据。这里没有承诺外部工具与 Hub 共享一把可强制执行的操作系统锁。
 
-请主代理对 Q1 给出冻结补充或明确本机绑定裁决；随后从上述真实磁盘状态继续剩余范围，不回滚已完成基础，也不能以本回执的 tests:pass 认定 R3-P2 完成。
+## 提交
+
+- f0f324eb48df7dcb0b29af6e5965289fa709449f：版本化历史、原生导入及执行守卫。
+- e07a6d66eb1956c166eeb39bec8596a816b43d12：修订 3 查询、资源和同步接线。
+- 864e9130ea0115c6494010b688d7e09e845963fc：原生隔离、恢复、延迟同步等测试及连续性修正。
+- 809cc5f402fe9d0530ec7f32a07a406bb21cfce6：不可识别历史的结构化能力错误及回归。
+- 本回执另提交。每次提交后均执行 git log -1 --format=%B 检查，无署名或生成标记；未合回 integration。
