@@ -51,3 +51,13 @@ R3-P2（电脑端 Hub：原生会话读取插件、导入续接、授权根目�
   - 抽查 `server/queries.py`：临时结果只存放在内存中的 future 里，没有日志、落库或 Outbox 写入；10 秒超时和 1MiB 上限都生效。
   - 结论：通过，已合入 integration，合入后仍是 223 passed。
 - **过程问题**：P2 与 P1 并行跑两个 high 会话时，P2 触发 API `429 Too Many Requests` 退出（不是额度耗尽）。用户确定：以后 codex 一次只跑一条，遇到 429 等 5 分钟再重试。P2 已单独续作。
+
+## 追加：R3-P2 电脑端 Hub 审核（2026-09-30）
+
+- 交付：`f0f324e`、`e07a6d6`、`864e913`、`809cc5f`、`208f985`；回执 `.hqagent/handoffs/R3-P2-hub.md`；执行会话 `01a0de45…`（high）。Q1 已按 0.9.1 接线。
+- 主代理复跑：Hub 全量 **398 passed**。合入 integration 后再跑一次，结果见后续记录。
+- 代码审查：
+  - **目录安全**（`runtime/native/paths.py`、`roots.py`）：先把路径完全解析（跟随 symlink / junction）再做根目录包含判断；拒绝 UNC、设备路径、`..`、`:`（包括 ADS）、结尾的 `.` 和空格；打开目录句柄校验身份，发布前再核一次，防 TOCTOU；跳过 `.lnk`；单层最多 10000 项，分页用摘要游标。**通过。**
+  - **活跃检测**（`runtime/native/activity.py`）：进程命令行中出现精确的 vendor 会话 ID，或文件 5 秒内被修改过，判定为 likely_active；其余一律 unknown，按只读处理。**已知限制**：终端里直接以 `claude` 启动的会话，命令行中没有会话 ID，只能判定为 unknown。这符合契约（unknown 只读，续接要求用户显式确认关闭），但前端的确认文案必须清楚，已写进 R3-P3 任务书。
+- 结论：通过，已合入 integration。真实 CLI 读取插件的实测放到 R3 联调。
+- 下一步：R3-P3 前端已派给 `01a0e638…`（medium），任务书 `r15-web/.hqagent/handoffs/R3-P3-frontend.md`。
