@@ -42,7 +42,7 @@ def test_new_patch_still_requires_consistent_record_identity_and_shapes(tmp_path
             target=extra['payload']; field={'id':'id','cwd':'cwd','version':'cli_version'}[broken]
         else:
             target=rows[1]; field={'id':'sessionId','cwd':'cwd','version':'version'}[broken]
-        target[field]={'id':'00000000-0000-4000-8000-000000000003','cwd':str(tmp_path/'other'),'version':'2.1.285' if agent=='claude' else '0.153.6'}[broken]
+        target[field]={'id':'00000000-0000-4000-8000-000000000003','cwd':'relative-invalid-cwd','version':'2.2.0' if agent=='claude' else '0.154.0'}[broken]
     if broken=='block':
         target=rows[1]['payload'] if agent=='codex' else rows[1]['message']
         target['content']=[{'type':'unrecognized','text':'PRIVATE_BROKEN_BODY'}]

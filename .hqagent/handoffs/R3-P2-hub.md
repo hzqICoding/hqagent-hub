@@ -2,16 +2,16 @@
 wp: R3-P2
 status: done
 scope_declared: [apps/hub/**, apps/server/server/replica.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, .hqagent/handoffs/R3-P2-hub.md]
-scope_touched: [apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, apps/hub/tests/test_r3_upgrade_fences.py, apps/hub/tests/test_r3_upgrade_history.py, apps/hub/tests/test_r3_version_series.py, apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md]
+scope_touched: [apps/hub/tests/test_r3_directory_mixed.py, apps/hub/tests/test_r3_long_history.py, apps/hub/tests/test_r3_roots.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, apps/hub/tests/test_r3_upgrade_fences.py, apps/hub/tests/test_r3_upgrade_history.py, apps/hub/tests/test_r3_version_series.py, apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md]
 build: pass
 tests: pass
-commit: 7f73ce5dc40250cf72b2595cdfbb91728d32fe74
+commit: 1335cd74cdc82730f0e5a5fe7731e82e88c62acd
 open_questions: 0
 ---
 
 # R3-P2 Hub / Worker 完成回执（协议 0.9.1）
 
-工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1 / 2 的修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
+工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1 / 2 / 3 的修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
 
 ## Q1 已由 0.9.1 关闭
 
@@ -447,3 +447,115 @@ exit $LASTEXITCODE
 - `68b83c8`：按已验证版本系列与结构判定原生历史。
 - `7f73ce5`：旧投递结果核对、Worker/Server 升级栅栏收敛及回归。
 - 本回执另提交。每次提交后均 `git log -1 --format=%B` 自查，无署名或生成标记；未合回 integration。
+
+## 返修 3：混合目录浏览与长期原生会话读取
+
+开工分支为 feat/remote-worker，HEAD=a4f3137，工作区干净。按本次要求未再合并 integration。本轮只修改 Hub 原生目录/历史读取及相关测试，没有修改协议、Server、执行内核或活跃检测。
+
+### 目录浏览
+
+根因是 _listing 对每个子项沿用目标级异常语义，一个越界联接点会中止整个页面。
+
+runtime/native/roots.py 现在在**单个子项**的 stat/目录租约边界内处理失败：根外 symlink/junction、无权限、无法作为目录打开或身份失效的子项静默跳过。只有租约退出时的最终身份复查也通过后才加入响应及分页摘要，不先加入再吞掉退出异常。查询取消、资源配额以及其它错误不在这个吞掉范围中。
+
+请求目标和授权根本身仍在外层租约中严格核验；直接访问越界目标返回 REMOTE_PATH_OUTSIDE_ROOT，失效/无权限目标返回 REMOTE_DIRECTORY_CHANGED。登记继续复用 selected 的身份与边界检查，没有因为 listing 跳过机制放宽登记。普通文件与快捷方式仍不返回。
+
+成功 listing 如有跳过，在原本机 remote.directory.audited 审计中增加一个 skippedCount；只增加数量，保留既有 requestId/operation/rootId/resultCode，不保存子项名称、路径、联接目标或每个错误详情。没有跳过时保留原审计形状。
+
+新增 test_r3_directory_mixed.py：在 Windows 创建真实越界 junction，混入普通目录、带 .git 标记的目录，以及通过目录打开层注入的 PermissionError / NotADirectoryError。验证：
+
+- 远程查询只返回 gitproj/plain，响应中没有三种被跳过子项或根外目标的名称；
+- 审计 skippedCount=3，字段集合不含路径/名称；
+- 对此前合法签发、后来被替换为越界 junction 的引用，目标读取及 workspace.register 仍拒绝；
+- 正常 plain 经收件/grant 登记成功，非 Git 保持只读。
+
+无权限错误采用合成 OS 打开失败注入，未修改主机 ACL；.git 标记只用于目录元数据测试，未声称测试了 Git 仓库创建或执行 git init。
+
+### 长会话读取
+
+根因是 _validate_identity 和 _messages 两处都将所有记录的 cwd/version 与首信封严格相等作为读取前提。
+
+adapters/history.py 改为：
+
+- **规范 cwd 不漂移**：仍由初始信封确定，workspace 过滤、索引、source_json 导入绑定都使用它；后续 cwd 是上下文，只检查所需字段存在且是绝对目录，不再要求等于规范 cwd，也不为了读取上下文去打开后续目录。
+- **逐条验证版本系列**：每个声明的 version/cli_version 均独立使用返修 2 的已验证系列和最低补丁规则，允许同一系列内补丁变化；未验证系列明确返回带记录位置和字段的 unsupported 原因。
+- **精确会话身份不放松**：sessionId/id/session_id 声明必须一致，Claude 消息仍必有 sessionId；消息块、角色、消息链及来源验证不变。移除 _messages 中重复的 cwd/version 相等判断，保留 sessionId 校验。
+- capabilities.observedVersions 收集会话中观察到的已验证版本；索引 cliVersion 仍是源信封版本，不伪装成只使用最新版本。凭据过滤、私有推理过滤、分段、源快照哈希机制未改。
+
+新增 test_r3_long_history.py（两种 Agent 的合成格式）：中途 cwd 改变、版本从 2.1.261→2.1.284 / 0.153.4→0.153.5，完整读取长正文并分段；分段拼接和导入后的全文均精确等于脱敏源结果。验证凭据和私有推理不出现；仅登记后续 cwd 不会错误收录，登记规范 cwd 才收录；导入仍绑定规范 cwd，且不调用模型。
+
+### 旧测试调整清单
+
+1. test_r3_roots.py::test_junction_or_symlink_cannot_escape_authorized_root：原断言“浏览父目录抛 REMOTE_PATH_OUTSIDE_ROOT”按本次明确要求改为“父目录成功，越界子项不出现，响应无名称/指向”；直接打开越界项仍严格断言原错误码，没有取消边界检查。
+2. test_r3_version_series.py::test_new_patch_still_requires_consistent_record_identity_and_shapes：cwd 损坏样本从合法的另一个绝对目录改为非法相对路径；版本损坏样本从合法的新补丁改为未验证主次系列（2.2.0 / 0.154.0）。原 unsupported、无正文、原因不泄露内容及字段原因断言保留；新的成功测试专门覆盖本轮准许的跨 cwd/补丁情况。
+3. 其它原有断言未修改，包括目录审计字段、分页快照、根移除失效、Windows 句柄保护，以及消息结构/身份损坏/未知系列拒绝。
+
+### 活跃检测限制（本轮不改）
+
+直接以 CLI 启动且命令行没有精确会话 ID、最后写入又已超过 5 秒时，当前探测可能为 unknown 而不是 likely_active。这不表示确认已关闭；unknown 仍只读，写入需明确关闭确认并通过后续再检查，正向活跃证据不能被勾选覆盖。runtime/native/activity.py 无改动。本轮没有读取真实用户会话、启动真实 CLI，不能据合成测试宣称改进了这种活跃探测。
+
+### 最终验证
+
+所有测试串行、未运行 Vitest。TEMP/TMP 和 --basetemp 均指向 worktree/.tmp，避开默认临时目录的 WinError 5。没有改协议或运行生成命令。
+
+Hub，cwd apps/hub：
+
+```powershell
+$env:TEMP='E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair3-hub-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair3-hub-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 16%]
+........................................................................ [ 33%]
+........................................................................ [ 49%]
+........................................................................ [ 66%]
+........................................................................ [ 82%]
+........................................................................ [ 99%]
+远程送达预留清理暂未完成，将重试
+..                                                                       [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+434 passed, 4 warnings in 263.47s (0:04:23)
+```
+
+Server，cwd apps/server，TEMP/TMP/PYTHONIOENCODING 同上：
+
+```powershell
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair3-server-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair3-server-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 31%]
+........................................................................ [ 62%]
+........................................................................ [ 93%]
+...............                                                          [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+231 passed, 1 warning in 73.17s (0:01:13)
+```
+
+两条命令退出码均 0；git diff --check 通过，范围检查未发现本轮修改 Server/协议/桌面文件。Hub 新增 3 项，既有损坏/越界拒绝断言按前述清单维护。依赖弃用 warning 未修改；Hub 仍有一条此前记录的通用预留清理重试日志，不宣称是本轮已解决的问题。没有 429、0xC0000142 或额度错误。
+
+本次提交：
+- `1e90790`：授权目录浏览跳过不安全/不可访问子项、计数审计及登记守卫测试。
+- `1335cd7`：规范会话绑定不随 cwd/补丁变化，逐条系列验证及完整历史测试。
+- 回执另提交。每次提交后均执行 git log -1 --format=%B 自查；未合回 integration。
