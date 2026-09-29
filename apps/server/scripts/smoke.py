@@ -17,6 +17,7 @@ from protocol.generated import python as dto
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from server.common import digest, stamp, uid
+from smoke_native import native_smoke
 
 
 def main():
@@ -27,7 +28,7 @@ def main():
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
     env = dict(os.environ, HQREMOTE_DATA_DIR=str(data), HQREMOTE_ORIGIN=origin,
-               HQREMOTE_HOST="127.0.0.1", HQREMOTE_PORT=str(port), PYTHONDONTWRITEBYTECODE="1")
+               HQREMOTE_HOST="127.0.0.1", HQREMOTE_PORT=str(port), HQREMOTE_RATE_LIMIT='1000', PYTHONDONTWRITEBYTECODE="1")
     password = secrets.token_urlsafe(32)
     created = subprocess.run([sys.executable, "-m", "server.cli", "create-account", "--login", "smoke", "--display-name", "Smoke", "--password-stdin"],
                              input=password + "\n", text=True, capture_output=True, cwd=ROOT, env=env, timeout=15)
@@ -130,6 +131,13 @@ def main():
             request("GET", "/conversations/" + conv + "/snapshot", model="RemoteConversationSnapshot")
             assert request("GET", "/commands/" + queued["commandId"], model="RemoteCommandView").json()["data"]["status"] == "accepted"
             print("fake Worker revision 2, create/grant/sync, offline refusal and reconnect: PASS")
+            native_sensitive = native_smoke(client, port, request)
+            import sqlite3
+            with sqlite3.connect(data / 'hub.sqlite3') as database:
+                tables = [r[0] for r in database.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+                stored = '\n'.join(str(v) for table in tables for row in database.execute('SELECT * FROM "'+table+'"') for v in row)
+            assert native_sensitive[2] not in stored and native_sensitive[3] not in stored
+            print('ephemeral query body and selection absent from database: PASS')
             publication = client.get('/api/v2/openapi.json')
             assert publication.status_code == 200 and publication.json()['info']['version'] == dto.PROTOCOL_VERSION
             assert 'X-Request-Id' in publication.headers
@@ -160,6 +168,8 @@ def main():
             assert sensitive not in logs
         if "challenge" in locals():
             assert challenge["pairCode"] not in logs
+        for private in locals().get('native_sensitive', []):
+            assert private not in logs
     print("server output credential redaction: PASS")
     print("SMOKE PASS")
 

@@ -117,6 +117,8 @@ class Replica:
                 self.s.event(tx, owner, 'conversation.updated', self.s.view(owner, 'conversation', conv))
 
     def conversation(self, tx, owner, event):
+        if event['wireRevision'] == 3:
+            event = self.s.native_events.conversation(tx, owner, event)
         payload = event['payload']; local = payload['conversationId']
         public = self.bind(tx, owner, event['workerId'], event['workerStoreId'], 'conversation', local, local)
         previous = tx.get(owner, 'conversation', public)

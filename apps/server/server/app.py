@@ -21,6 +21,8 @@ from .worker import WorkerTransport
 from .static import SPAStaticFiles
 from .http import RequestAudit, response
 from .public_contract import OPENAPI
+from .queries import QueryPlan
+from .http import CONTEXT
 
 LOG = logging.getLogger("hqremote")
 MAINTENANCE_INTERVAL = 5
@@ -57,7 +59,7 @@ ROUTES = [
     ("PATCH", "/devices/{workerId}", "patch_device", "RemoteDevicePatchInput", "RemoteDeviceView", 200),
     ("DELETE", "/devices/{workerId}", "delete_device", None, "RemoteDeviceDeletionView", 200),
     ("POST", "/devices/{workerId}/revocations", "revoke", "RemoteDeviceRevokeInput", "RemoteDeviceRevocationView", 200),
-    ("GET", "/devices/{workerId}/catalog", "catalog", None, "RemoteCatalogView", 200),
+    ("GET", "/devices/{workerId}/catalog", "catalog", None, "RemoteV3CatalogView", 200),
     ("GET", "/conversations", "conversations", None, "RemoteConversationPage", 200),
     ("POST", "/conversations", "create_conversation", "RemoteCreateConversationInput", "RemoteQueuedReceipt", 202),
     ("GET", "/conversations/{conversationId}", "conversation", None, "RemoteConversationView", 200),
@@ -78,6 +80,12 @@ ROUTES = [
     ("GET", "/api-tokens", "tokens", None, "RemoteApiTokenPage", 200),
     ("DELETE", "/api-tokens/{tokenId}", "revoke_token", None, "RemoteApiTokenRevocationView", 200),
     ("GET", "/openapi.json", "openapi", None, None, 200),
+    ('GET', '/devices/{workerId}/native-sessions', 'native_list', None, 'RemoteNativeSessionPage', 200),
+    ('GET', '/native-sessions/{nativeSessionId}', 'native_detail', None, 'RemoteNativeSessionView', 200),
+    ('GET', '/native-sessions/{nativeSessionId}/messages', 'native_read', None, 'NativeMessagePage', 200),
+    ('POST', '/native-sessions/{nativeSessionId}/imports', 'native_import', 'RemoteNativeImportInput', 'RemoteResourceQueuedReceipt', 202),
+    ('POST', '/devices/{workerId}/directory-listings', 'directory_list', 'DirectoryListingInput', 'DirectoryListingPage', 200),
+    ('POST', '/devices/{workerId}/workspaces', 'workspace_register', 'RemoteWorkspaceRegisterInput', 'RemoteResourceQueuedReceipt', 202),
 ]
 
 
@@ -214,7 +222,10 @@ def create_app(settings=None):
                         disconnect = service.connections.get((owner, request.path_params["workerId"]))
                 if operation == 'issue_token' and not data['secretAvailable']:
                     output_model, status = 'RemoteApiTokenIssueReplayView', 200
-                result = response(data, model=output_model, status=status)  # validate before commit
+                result = None if isinstance(data, QueryPlan) else response(data, model=output_model, status=status)
+            if isinstance(data, QueryPlan):
+                value = await service.queries.execute(data, request)
+                return response(value, model=output_model, status=status)
             if new_cookie:
                 result.set_cookie(COOKIE, new_cookie, max_age=settings.session_ttl, path="/", secure=True, httponly=True, samesite="strict")
             if operation == "logout":
@@ -234,7 +245,7 @@ def create_app(settings=None):
 
     def browser(tx, owner, operation, request, body, key):
         path = request.path_params
-        resources = {"workerId": "device", "conversationId": "conversation", "runId": "run", "commandId": "command", "approvalId": "approval"}
+        resources = {"workerId": "device", "conversationId": "conversation", "runId": "run", "commandId": "command", "approvalId": "approval", 'nativeSessionId':'native-index'}
         workers = set()
         for name, kind in resources.items():
             if name in path:
@@ -265,6 +276,15 @@ def create_app(settings=None):
             return security.issue_pat(tx, owner, body, key)
         if operation == 'delete_device':
             return service.delete_device(tx, owner, path['workerId'])
+        if operation in {'native_read','directory_list'}:
+            return service.query_plan(tx, owner, operation, path, body, request.query_params, key, CONTEXT.get()['requestId'])
+        if operation == 'native_list':
+            return service.native_page(tx, owner, path['workerId'], request.query_params)
+        if operation == 'native_detail':
+            return service.native_view(owner, service.native_get(tx, owner, path['nativeSessionId']))
+        if operation in {'native_import','workspace_register'}:
+            worker = value['workerId']
+            service.r3_ready(tx, owner, worker)
         if operation == "confirm":
             challenge = tx.auth_get("challenge:" + path["pairRequestId"])
             require(challenge is not None and challenge.get("owner", owner) == owner, "NOT_FOUND")
@@ -288,6 +308,10 @@ def create_app(settings=None):
                     return service.patch_device(tx, owner, path['workerId'], body)
                 if operation == 'revoke_token':
                     return security.revoke_pat(tx, owner, path['tokenId'])
+                if operation == 'native_import':
+                    return service.import_native(tx, owner, path['nativeSessionId'], body, CONTEXT.get()['requestId'])
+                if operation == 'workspace_register':
+                    return service.register_workspace(tx, owner, path['workerId'], body, CONTEXT.get()['requestId'])
                 if operation == "create_conversation":
                     return service.create_conversation(tx, owner, body)
                 if operation == "update_conversation":
