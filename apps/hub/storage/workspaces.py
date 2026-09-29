@@ -78,8 +78,8 @@ class WorkspaceRepository:
             ).fetchone()
         return _row(tuple(row)) if row else None
 
-    def save(self, record: WorkspaceRecord) -> WorkspaceRecord:
-        with self.database.transaction() as transaction:
+    def save(self, record: WorkspaceRecord, transaction=None) -> WorkspaceRecord:
+        def persist(transaction):
             transaction.connection.execute(
                 "INSERT INTO workspaces(workspace_id,path,name,vcs,default_profile_id,last_opened_at) "
                 "VALUES(?,?,?,?,?,?) "
@@ -96,6 +96,11 @@ class WorkspaceRepository:
                     record.last_opened_at,
                 ),
             )
+        if transaction is None:
+            with self.database.transaction() as current:
+                persist(current)
+        else:
+            persist(transaction)
         return record
 
     def delete(self, workspace_id: str) -> None:

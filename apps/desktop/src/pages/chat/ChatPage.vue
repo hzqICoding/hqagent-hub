@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import NativeSyncNotice from '@/pages/native/NativeSyncNotice.vue'
+import { agentLabel } from '@/pages/native/native-utils'
 import { ref, onMounted, onUnmounted, watch, nextTick, computed, inject } from 'vue'
 import { routeLocationKey, type RouteLocationNormalizedLoaded } from 'vue-router'
 import { useChatStore } from '@/stores/chat.store'
@@ -270,7 +272,7 @@ async function restoreActiveConversation() {
               </h1>
 
               <HqBadge size="sm" variant="info" class="text-[10px] shrink-0">
-                {{ getSceneLabel(chatStore.activeConversation.sceneId) }}
+                {{ chatStore.activeConversation.conversationKind === 'native' ? agentLabel(chatStore.activeConversation.agentType) : getSceneLabel(chatStore.activeConversation.sceneId) }}
               </HqBadge>
 
               <HqBadge v-if="chatStore.activeConversation.authority === 'remote'" size="sm" variant="primary" class="text-[10px] shrink-0 font-medium">
@@ -354,6 +356,7 @@ async function restoreActiveConversation() {
             class="flex-1 min-h-0 overflow-y-auto divide-y divide-border/20 py-2"
             @scroll="handleScroll"
           >
+            <NativeSyncNotice v-if="chatStore.activeConversation?.conversationKind === 'native'" :key="chatStore.activeConversationId || undefined" />
             <!-- Empty state with starter prompts -->
             <div
               v-if="chatStore.messages.length === 0"
@@ -365,7 +368,7 @@ async function restoreActiveConversation() {
               <h3 class="text-sm font-semibold text-text mb-1">
                 对话已就绪，等待下发目标
               </h3>
-              <p class="text-xs text-text-muted leading-relaxed mb-6">
+              <p v-if="chatStore.activeConversation.conversationKind !== 'native'" class="text-xs text-text-muted leading-relaxed mb-6">
                 场景「{{ getSceneLabel(chatStore.activeConversation.sceneId) }}」已锁定角色配置。您可以直接在下方输入目标，或选择以下常用方向：
               </p>
 

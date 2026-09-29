@@ -1,4 +1,13 @@
 export const REMOTE_ERROR_MESSAGES: Record<string, string> = {
+  REMOTE_QUERY_TIMEOUT: "电脑在线查询超时",
+  REMOTE_QUERY_TOO_LARGE: "在线查询结果超过大小上限",
+  NATIVE_SESSION_ACTIVE: "原生会话可能仍在终端运行",
+  NATIVE_SESSION_UNSUPPORTED: "无法读取该版本的原生会话",
+  NATIVE_SESSION_CHANGED: "原生会话已变化，请刷新后确认",
+  NATIVE_SESSION_WRITER_CONFLICT: "该原生会话已有写进程",
+  REMOTE_ROOT_NOT_AUTHORIZED: "电脑未授权该根目录",
+  REMOTE_PATH_OUTSIDE_ROOT: "所选目录不在授权范围内",
+  REMOTE_DIRECTORY_CHANGED: "目录授权或目录内容已变化",
   BAD_REQUEST: "请求格式不合法",
   VALIDATION_FAILED: "请求参数不合法",
   UNAUTHORIZED: "缺少或错误的 Bearer token",

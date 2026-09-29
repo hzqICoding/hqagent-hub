@@ -38,6 +38,7 @@ class LocalChatRepository:
     def __init__(self, database: Database) -> None:
         self.database = database
         self.busy_state = None
+        self.native = None
         self.role_templates = LocalRoleTemplateRepository(database)
         self._role_catalog = BuiltinCatalog.load()
         self._seed_scenes()
@@ -272,7 +273,7 @@ class LocalChatRepository:
             (conversation_id,),
         ).fetchone()
 
-    def conversations(self, *, include_hidden: bool = False, workspace_id: str | None = None) -> list[LocalConversationView]:
+    def conversations(self, *, include_hidden: bool = False, workspace_id: str | None = None, observe_native: bool = True) -> list[LocalConversationView]:
         with self.database.locked_connection() as db:
             rows = db.execute(
                 "SELECT c.payload_json,r.run_id,COALESCE(t.status,r.status) FROM local_conversations c "
@@ -283,6 +284,8 @@ class LocalChatRepository:
                 "ORDER BY c.updated_at DESC"
             ).fetchall()
         values = [self._conversation_view(row[0], row[1], row[2]) for row in rows]
+        if self.native is not None and observe_native:
+            values = [self.native.decorate(v) if str(v.conversation_kind) == "native" else v for v in values]
         return [self.busy_state.decorate(v) if self.busy_state else v for v in values
                 if (include_hidden or str(v.visibility) != "mobile_only")
                 and (workspace_id is None or v.workspace_id == workspace_id)]
@@ -293,6 +296,8 @@ class LocalChatRepository:
         if row is None:
             raise HubError("NOT_FOUND", "对话不存在")
         view = self._conversation_view(row[0], row[1], row[2])
+        if self.native is not None and str(view.conversation_kind) == "native":
+            view = self.native.decorate(view)
         return self.busy_state.decorate(view) if self.busy_state else view
 
     def create_conversation(self, value: CreateLocalConversationInput, key: str) -> LocalConversationView:
@@ -337,7 +342,7 @@ class LocalChatRepository:
                 raise HubError("CONFLICT", "对话已更新，请刷新后重试",
                                detail={"currentVersion": current.version})
             if value.archived is True:
-                active = (conversation_id in self.busy_state.ids(tx)) if self.busy_state and self.busy_state.enabled() else tx.connection.execute(
+                active = (conversation_id in self.busy_state.ids(tx)) if self.busy_state and (self.busy_state.enabled() or str(current.conversation_kind) == "native") else tx.connection.execute(
                     "SELECT COALESCE(t.status,r.status) FROM local_runs r "
                     "LEFT JOIN tasks t ON t.task_id=r.task_id WHERE r.conversation_id=? "
                     "AND COALESCE(t.status,r.status) "
@@ -443,8 +448,13 @@ class LocalChatRepository:
                 if prior[0] != digest:
                     raise HubError("IDEMPOTENCY_MISMATCH", "相同clientMessageId不能用于不同内容")
                 return {**json.loads(prior[1]), "duplicate": True}
+            native = str(conversation.conversation_kind) == "native"
             if self.busy_state is not None and not legacy:
-                self.busy_state.require_idle(tx, conversation_id)
+                self.busy_state.require_idle(tx, conversation_id, force=native)
+            if native:
+                self.native.authorize_send(tx, conversation_id, value)
+            elif value.native_confirmation is not None:
+                raise HubError("VALIDATION_FAILED", "场景对话不接受原生关闭确认")
             queued = tx.connection.execute("SELECT COUNT(*) FROM local_runs WHERE conversation_id=? AND status='queued'", (conversation_id,)).fetchone()[0]
             if queued >= 20:
                 raise HubError("TASK_ACTION_INVALID", "排队消息过多，请等待当前任务完成")
@@ -452,7 +462,8 @@ class LocalChatRepository:
             run_id, message_id, stamp = uid("run"), uid("message"), now()
             seq = tx.connection.execute("SELECT COALESCE(MAX(sequence),0)+1 FROM local_messages WHERE conversation_id=?", (conversation_id,)).fetchone()[0]
             tx.connection.execute("INSERT INTO local_messages VALUES(?,?,?,?,?,?,?)", (message_id, conversation_id, seq, "user", value.text, run_id, stamp))
-            tx.connection.execute("INSERT INTO local_runs VALUES(?,?,?,?,?,?,?,?,?,?)", (run_id, conversation_id, message_id, None, row[0], str(value.session_mode), "queued", None, stamp, stamp))
+            tx.connection.execute("INSERT INTO local_runs VALUES(?,?,?,?,?,?,?,?,?,?)", (run_id, conversation_id, message_id, None,
+                json.dumps({"conversationKind": "native", "agentType": str(conversation.agent_type)}) if native else row[0], str(value.session_mode), "queued", None, stamp, stamp))
             updated = conversation.model_copy(update={"last_run_id": run_id, "updated_at": stamp})
             persisted = updated.model_copy(update={"last_run_status": None})
             tx.connection.execute("UPDATE local_conversations SET payload_json=?,updated_at=? WHERE conversation_id=?",
@@ -491,7 +502,9 @@ class LocalChatRepository:
         return [dict(row) for row in rows]
 
     def next_run(self, conversation_id: str) -> dict | None:
-        if self.busy_state is not None and self.busy_state.enabled():
+        with self.database.locked_connection() as db:
+            native = db.execute("SELECT 1 FROM local_conversations WHERE conversation_id=? AND json_extract(payload_json,'$.conversationKind')='native'", (conversation_id,)).fetchone() is not None
+        if self.busy_state is not None and (self.busy_state.enabled() or native):
             with self.database.locked_connection() as db:
                 rows = db.execute("SELECT r.*,m.sequence AS message_sequence FROM local_runs r "
                     "JOIN local_messages m ON m.message_id=r.message_id WHERE r.conversation_id=? "
@@ -576,7 +589,9 @@ class LocalChatRepository:
 
     @staticmethod
     def view(record: dict, task: Any = None) -> LocalRunView:
+        snapshot = json.loads(record["scene_json"])
+        fields = snapshot if snapshot.get("conversationKind") == "native" else {"sceneSnapshot": snapshot}
         return LocalRunView.model_validate({"id": record["run_id"], "conversationId": record["conversation_id"],
             "messageId": record["message_id"], "taskId": record["task_id"] or "",
-            "sceneSnapshot": json.loads(record["scene_json"]), "status": record["status"],
+            **fields, "status": record["status"],
             "createdAt": record["created_at"], "updatedAt": record["updated_at"], "error": record["error"], "task": task})

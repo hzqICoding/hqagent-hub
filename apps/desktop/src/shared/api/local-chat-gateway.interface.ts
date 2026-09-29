@@ -1,4 +1,5 @@
 import type {
+  LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
   LocalAuthInput,
   AgentView,
@@ -33,6 +34,12 @@ import type {
 } from '@hqagent/protocol'
 
 export interface LocalChatGateway {
+  listNativeSessions(cursor?: string): Promise<LocalNativeSessionPage>
+  getNativeSession(id: string): Promise<NativeSessionIndex>
+  readNativeMessages(id: string, before?: string): Promise<NativeMessagePage>
+  importNativeSession(id: string, input: RemoteNativeImportInput, key?: string): Promise<LocalConversationView>
+  getAuthorizedRoots(): Promise<LocalAuthorizedRootsView>
+  setAuthorizedRoots(input: LocalAuthorizedRootsInput): Promise<LocalAuthorizedRootsView>
   // Remote Link (D44) & Sync Settings (R1.5)
   getRemoteLink(): Promise<RemoteLinkView>
   startRemotePairing(

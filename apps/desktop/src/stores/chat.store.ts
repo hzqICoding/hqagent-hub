@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type {
+  NativeContinuationConfirmationInput,
   LocalConversationView,
   CreateLocalConversationInput,
   UpdateLocalConversationInput,
@@ -16,7 +17,7 @@ import type {
   TaskStatus,
 } from '@hqagent/protocol'
 import { getLocalChatGateway, HubApiError } from '@/shared/api'
-import { pendingOperation, completeOperation, definiteRejection } from '@/shared/api/local-pending-operation'
+import { pendingOperation, completeOperation, definiteRejection, clearVolatileOperations } from '@/shared/api/local-pending-operation'
 
 export interface ActivityItem {
   id: string
@@ -200,13 +201,14 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   const canResetContext = computed(() => Boolean(activeConversationId.value)
+    && activeConversation.value?.conversationKind !== 'native'
     && !isActiveConversationArchived.value
     && !isSending.value && !isActionLoading.value
     && !isLoadingMessages.value && !isLoadingRun.value
     && !isCurrentRunActive.value && queuedMessages.value.length === 0
     && !conversationRuns.value.some(run => ['running', 'queued', 'waiting_approval', 'paused'].includes(run.status)))
 
-  const effectiveSessionMode = computed(() => sessionMode.value)
+  const effectiveSessionMode = computed(() => activeConversation.value?.conversationKind === 'native' ? 'continue' : sessionMode.value)
 
   function requestContextReset(): boolean {
     if (!canResetContext.value) return false
@@ -449,7 +451,7 @@ export const useChatStore = defineStore('chat', () => {
       ...patch,
     }
     const identity = `conversation-metadata:${conversationId}:${JSON.stringify(input)}`
-    const operation = pendingOperation(identity, input)
+    const operation = pendingOperation(identity, input, conversation.conversationKind === 'native')
     isMetadataUpdating.value = true
     metadataError.value = null
     try {
@@ -527,7 +529,8 @@ export const useChatStore = defineStore('chat', () => {
 
   async function sendMessage(
     text: string,
-    modeOverride?: 'new' | 'continue'
+    modeOverride?: 'new' | 'continue',
+    nativeConfirmation?: NativeContinuationConfirmationInput
   ): Promise<void> {
     const convId = activeConversationId.value
     if (!convId || !text.trim() || sendingConversationIds.value.includes(convId)) return
@@ -540,13 +543,13 @@ export const useChatStore = defineStore('chat', () => {
       throw new HubApiError('请先恢复已归档任务，再发送消息', 'CONFLICT', 409)
     }
 
-    const mode = modeOverride || sessionMode.value
+    const mode = conversation?.conversationKind === 'native' ? 'continue' : modeOverride || sessionMode.value
     if (mode === 'continue' && resumptionError.value) {
       throw new HubApiError(resumptionError.value, 'SESSION_NOT_RESUMABLE', 409)
     }
     const wasRunActive = isCurrentRunActive.value
-    const identity = `send:${convId}:${text.trim()}`
-    const operation = pendingOperation(identity, { text: text.trim(), sessionMode: mode })
+    const identity = `send:${convId}:${text.trim()}${conversation?.conversationKind === 'native' ? `:${nativeConfirmation?.sourceRevision || 'confirmed'}` : ''}`
+    const operation = pendingOperation(identity, { text: text.trim(), sessionMode: mode, ...(nativeConfirmation ? { nativeConfirmation } : {}) }, conversation?.conversationKind === 'native')
     const clientMessageId = operation.id
     const idempotencyKey = operation.id
 
@@ -594,6 +597,7 @@ export const useChatStore = defineStore('chat', () => {
       if (isPolling.value) scheduleNextPoll(0)
       return
     } catch (err: unknown) {
+      if (conversation?.conversationKind === 'native' && err instanceof HubApiError && err.code === 'NATIVE_SESSION_CHANGED') await fetchConversations()
       if (definiteRejection(err)) completeOperation(identity)
       removeQueuedMessage(clientMessageId)
       if (activeConversationId.value === convId && err instanceof HubApiError) {
@@ -644,7 +648,7 @@ export const useChatStore = defineStore('chat', () => {
     isActionLoading.value = true
     actionError.value = null
     const identity = `control:${runId}:${action}:${instruction || ''}`
-    const operation = pendingOperation(identity, { action, instruction })
+    const operation = pendingOperation(identity, { action, instruction }, activeConversation.value?.conversationKind === 'native')
     const idempotencyKey = operation.id
     try {
       const gateway = getLocalChatGateway()
@@ -1166,6 +1170,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function reset(): void {
+    clearVolatileOperations()
     stopPolling()
     viewGeneration++
     pinnedRunId = null

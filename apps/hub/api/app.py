@@ -89,7 +89,7 @@ class LocalBoundaryMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        if scope["path"].startswith(("/api/v1/remote/", "/api/v2/remote/")):
+        if scope["path"].startswith(("/api/v1/remote/", "/api/v2/remote/", "/api/v1/native-sessions", "/api/v2/native-sessions")):
             original_send = send
             async def send_no_store(message: dict[str, Any]) -> None:
                 if message["type"] == "http.response.start":
@@ -226,7 +226,9 @@ def create_application(
         allowed_origins=allowed_origins or set(DEFAULT_ALLOWED_ORIGINS),
         allowed_hosts=allowed_hosts or {"127.0.0.1", "localhost"},
     )
-    remote_router = install_remote_routes(app, remote_worker.link, remote_worker.sync)
+    remote_router = install_remote_routes(app, remote_worker.link, remote_worker.sync, remote_worker.roots)
+    from runtime.native.api import native_router
+    app.include_router(native_router(remote_worker.native), prefix="/api/v1")
     install_local_routes(app, local_chat, local_auth, resolved_ports, event_store, token,
                          remote_router=remote_router)
 
