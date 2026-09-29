@@ -1,6 +1,6 @@
 {
   "$comment": "原子 Contract Fixture 清单。每个文件是单个协议类型的 Golden 样本，不是完整 UI 场景（裁决 D10）。前端的组合场景放在 apps/desktop/src/shared/api/scenarios/ 下，引用这里的文件，不在这里堆 UI 状态。",
-  "protocolVersion": "0.9.0",
+  "protocolVersion": "0.9.1",
   "fixtures": {
     "bootstrap.happy.json": "BootstrapView",
     "agents.discovery-partial.json": "AgentDiscoveryResult",
@@ -289,6 +289,7 @@
     "r3.active-native-evidence.json": "NativeActivityEvidence",
     "r3.confirmed-native-evidence.json": "NativeActivityEvidence",
     "r3.native.import-completed.json": "RemoteV3CommandCompleted",
-    "r3.workspace.register-completed.json": "RemoteV3CommandCompleted"
+    "r3.workspace.register-completed.json": "RemoteV3CommandCompleted",
+    "local-native.page.json": "LocalNativeSessionPage"
   }
 }

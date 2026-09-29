@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.9.0' as const
+export const PROTOCOL_VERSION = '0.9.1' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -1144,6 +1144,39 @@ export interface LocalMessageView {
   createdAt: Timestamp
 }
 
+export type NativeFormatStatus =
+  | 'readable'
+  | 'unsupported'
+
+/** readable requires a tested version/profile readerId. unsupported requires sanitized reason; never guess a format. */
+export interface NativeFormatView {
+  status: NativeFormatStatus
+  readerId?: string
+  cliVersion?: string
+  reason?: string
+}
+
+/** Worker-local opaque index ID, not a path or fuzzy CLI ID. Exact vendor ID is kept in the local binding. Redact before title truncation. No body, tool arguments or process IDs in index. */
+export interface NativeSessionIndex {
+  nativeSessionId: string
+  workspaceId: string
+  agentType: NativeAgentType
+  title: string
+  createdAt: string
+  updatedAt: string
+  indexVersion: number
+  sourceRevision: string
+  format: NativeFormatView
+  activity: NativeActivityEvidence
+}
+
+/** Local index page; default limit 50, max 100. hasMore requires nextCursor, otherwise omit. No pairing or cloud identity needed. */
+export interface LocalNativeSessionPage {
+  items: NativeSessionIndex[]
+  hasMore: boolean
+  nextCursor?: string
+}
+
 export interface LocalRoleTemplateView {
   id: string
   name: string
@@ -1294,18 +1327,6 @@ export interface NativeContinuationConfirmationInput {
   sourceRevision: string
 }
 
-export type NativeFormatStatus =
-  | 'readable'
-  | 'unsupported'
-
-/** readable requires a tested version/profile readerId. unsupported requires sanitized reason; never guess a format. */
-export interface NativeFormatView {
-  status: NativeFormatStatus
-  readerId?: string
-  cliVersion?: string
-  reason?: string
-}
-
 export interface NativeImportPayload {
   nativeSessionId: string
   expectedIndexVersion: number
@@ -1341,20 +1362,6 @@ export interface NativeReadInput {
   sourceRevision?: string
   limit: number
   before?: string
-}
-
-/** Worker-local opaque index ID, not a path or fuzzy CLI ID. Exact vendor ID is kept in the local binding. Redact before title truncation. No body, tool arguments or process IDs in index. */
-export interface NativeSessionIndex {
-  nativeSessionId: string
-  workspaceId: string
-  agentType: NativeAgentType
-  title: string
-  createdAt: string
-  updatedAt: string
-  indexVersion: number
-  sourceRevision: string
-  format: NativeFormatView
-  activity: NativeActivityEvidence
 }
 
 export interface NodeResolvedPayload {

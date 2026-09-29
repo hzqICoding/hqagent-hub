@@ -101,10 +101,36 @@ DirectoryListingInput只收rootId/rootVersion/directoryToken/cursor/limit，不�
 
 索引GET可离线且可在暂停时读取。sync关闭/设备删除/workspace移除清理索引后GET返回NOT_FOUND；已知路由的在线查询仍先执行不泄露资源的认证/归属校验。Server使用索引缓存不代表电脑已授权某次读，Worker必须复查。
 
-HTTP包N/N−1保留0.8字段/请求/旧撤销/PAT；0.9增加可选来源字段、原生专用操作和场景字段按类型可选。旧客户端不能展示无场景native时应提示升级或将它作为只读未知类别，不能合成场景；新客户端对旧scenario缺conversationKind按scenario。旧线路不能承载native元数据；双向栅栏完成前不得创建需同步的R3对象。0.8的注册表测试升级包版本断言不等于放宽旧线路兼容验收。
+HTTP包N/N−1保留0.8字段/请求/旧撤销/PAT；0.9增加可选来源字段、原生专用操作和场景字段按类型可选。旧客户端不能展示无场景native时应提示升级或将它作为只读未知类别，不能合成场景；新客户端对旧scenario缺conversationKind按scenario。旧线路不能承载native元数据；双向栅栏完成前不得把R3对象编码上传；本机创建/导入不受配对或栅栏限制，先保存在电脑，修订3可用且同步开启后再补传（0.9.1裁决，见§11）。0.8的注册表测试升级包版本断言不等于放宽旧线路兼容验收。
 
 ## 10. 下游验收边界
 
 协议测试验证严格形状、旧引用闭包、合成Fixture、错误域、完整HTTP索引与示例及大小/身份约束。**不代表**读插件已经能安全读取任意CLI版本，不代表目录TOCTOU或外部进程识别已实测。P2必须以合成记录/临时目录/符号链接与真CLI终端做E10/E11和§13.4验收，失败按能力缺口报告；P1必须验证临时正文零落库、并发上限、断线超时、删除在途读、升级栅栏；P3验证长消息跨页、显式确认、离线只读索引和暂停浏览门禁。
 
 旧vNext接口文档“导入只创建索引”由本次用户§8.3a的完整历史导入要求明确替代；E09旧离线排队由D48替代；E10中的Attempt按D40现有执行身份映射。本工作包不改docs/，主代理负责同步旧目标文档。
+
+
+## 11. 本机原生会话接口（0.9.1补冻）
+
+本节补齐P2 Q1；包版本0.9.1，wireRevision仍为3，旧线路和全部帧形状不变。电脑本机API与云端相同/api/v2前缀不是同一个服务，Cookie不互换。
+
+| 方法与本机路径（同时提供/api/v1及/api/v2前缀） | 参数/请求 | ApiEnvelope.data |
+| --- | --- | --- |
+| GET /native-sessions | workspaceId、agentType、cursor、limit | LocalNativeSessionPage，items为NativeSessionIndex |
+| GET /native-sessions/{nativeSessionId} | 精确本机索引ID | NativeSessionIndex |
+| GET /native-sessions/{nativeSessionId}/messages | ID取路径；sourceRevision、before、limit对应NativeReadInput | NativeMessagePage |
+| POST /native-sessions/{nativeSessionId}/imports | RemoteNativeImportInput | **201 LocalConversationView，conversationKind=native** |
+
+v1使用本机Bearer Hub Token；v2使用本机浏览器Cookie(localSession)，沿现有Host/Origin保护，POST必带Origin及Idempotency-Key，不引入云端CSRF令牌或PAT。手机/云端公开nativeSessionId不能直接用于本机接口，必须走已有映射；本机索引页不填假的workerId/workerOnline。
+
+列表及读取默认limit=50、最大100；列表updatedAt倒序和ID稳定次序，cursor绑定workspaceId/agentType过滤和快照，hasMore=true须给nextCursor，false省略。过滤变化复用游标报REMOTE_CURSOR_INVALID。读取的before是独占源快照游标；sourceRevision可选，带before时不得用最新索引版本替换其旧切点，二者同时传必须一致；分段/完整消息拼装、脱敏、1MiB页上限沿§6。未识别格式如实返回原因，不返回空列表冒充无记录。
+
+本机导入复用RemoteNativeImportInput，因为terminalClosedConfirmed、expectedIndexVersion、sourceRevision均适用，命名中的Remote不代表必须云端调用。它是**同步本机提交**，无需commandId、送达期限、provisional或grant，不能返回RemoteResourceQueuedReceipt或202。先验证注册目录、源版本、显式确认和活跃证据，持有与云端相同的精确原生会话写锁，准备完整脱敏历史并事务发布绑定与对话后才返回201。失败不发布半个对话，不启动模型。幂等请求同键同体返回同一已提交对话；同键异体IDEMPOTENCY_MISMATCH。并发不同键也通过精确绑定唯一约束归并到已有导入，不生成双写者。崩溃恢复不能重复签发或伪造成功。
+
+本机路径由Hub生成NativeClosureConfirmation的confirmationId、confirmedAt、requestId，绑定真实sourceRevision及用户明确terminalClosedConfirmed=true；确认与导入审计持久提交。云端路径仍由Server签发、Hub复核。0.9.0类型描述中的Server-generated限定云端路径，**不改变冻结帧字段**；本机Hub是此次动作签发方。两条路径共用再检查、确认失效、写互斥与恢复逻辑，不因本机调用放过已检测到的活跃进程。未配对时也记本机审计，不能为记审计伪造远程设备/事件流身份。
+
+本机列表、读取和导入**独立于配对、网络、远程暂停、sync开关及线路修订**：没配对/离线/只支持2/升级栅栏未完成都可使用，只要本机认证、workspace与原生会话检查通过。关闭同步仅停止上传，不禁本机读取或导入。索引与native对话只能在修订3上传；2连接及2→3栅栏期间保持本机待同步状态，不能伪装scenario、补虚假scene或经旧message/run/approval事件泄漏native记录。可靠seq只为当前可发送的线路记录分配；本机待补传意图不能占旧线路不可填补的seq槽。旧线路已有内容照常对账。
+
+修订3栅栏完成且同步开启后，捕获本机水位补传未导入索引及已导入完整历史，再按R1.5增量同步。导入过的会话不重复出现在未导入索引。等待期间手机看不到尚未上传的native对话，电脑提示“已在本机导入，待连接支持修订3的服务后同步”；离线/未配对/同步关闭分别显示真实原因，不显示“同步成功”。P3可依据既有RemoteLinkView、同步设置及能力事实展示；未确认线路可用时保守提示等待，不凭包版本推断线路。
+
+所有成功、失败、幂等响应均Cache-Control:no-store；本机日志只记requestId/操作/状态/错误码等元数据，不记录历史正文、凭据或工具原始参数。no-store不禁止用户明确导入后在电脑保存完整脱敏历史；索引只读/按需读取不得被通用HTTP日志或重放缓存额外持久化正文。导入重放缓存只需绑定幂等键至已提交对话，不重复缓存历史正文。

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "local-native.json",
+  "$defs": {
+    "LocalNativeSessionPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "items",
+        "hasMore"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "remote-native.json#/$defs/NativeSessionIndex"
+          },
+          "maxItems": 100
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 4096
+        }
+      },
+      "description": "Local index page; default limit 50, max 100. hasMore requires nextCursor, otherwise omit. No pairing or cloud identity needed."
+    }
+  }
+}

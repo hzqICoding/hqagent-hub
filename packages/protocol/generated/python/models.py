@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer, model_validator
 
-PROTOCOL_VERSION = "0.9.0"
+PROTOCOL_VERSION = "0.9.1"
 
 
 class _Base(BaseModel):
@@ -1115,6 +1115,43 @@ class LocalMessageView(_Base):
     created_at: Timestamp = Field(alias="createdAt")
 
 
+class NativeFormatStatus(StrEnum):
+    READABLE = "readable"
+    UNSUPPORTED = "unsupported"
+
+
+class NativeFormatView(_RemoteBase):
+    """readable requires a tested version/profile readerId. unsupported requires sanitized reason; never guess a format."""
+
+    status: NativeFormatStatus = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': None})
+    reader_id: str | None = Field(default=None, alias="readerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    cli_version: str | None = Field(default=None, alias="cliVersion", max_length=80, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    reason: str | None = Field(default=None, alias="reason", max_length=300, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class NativeSessionIndex(_RemoteBase):
+    """Worker-local opaque index ID, not a path or fuzzy CLI ID. Exact vendor ID is kept in the local binding. Redact before title truncation. No body, tool arguments or process IDs in index."""
+
+    native_session_id: str = Field(alias="nativeSessionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    workspace_id: str = Field(alias="workspaceId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    agent_type: NativeAgentType = Field(alias="agentType", json_schema_extra={'wireNullable': False, 'wireType': None})
+    title: str = Field(alias="title", max_length=120, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    updated_at: str = Field(alias="updatedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    index_version: int = Field(alias="indexVersion", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    source_revision: str = Field(alias="sourceRevision", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    format: NativeFormatView = Field(alias="format", json_schema_extra={'wireNullable': False, 'wireType': None})
+    activity: NativeActivityEvidence = Field(alias="activity", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class LocalNativeSessionPage(_RemoteBase):
+    """Local index page; default limit 50, max 100. hasMore requires nextCursor, otherwise omit. No pairing or cloud identity needed."""
+
+    items: list[NativeSessionIndex] = Field(alias="items", max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    has_more: bool = Field(alias="hasMore", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    next_cursor: str | None = Field(default=None, alias="nextCursor", min_length=16, max_length=4096, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
 class LocalRoleTemplateView(_Base):
     id: str = Field(alias="id")
     name: str = Field(alias="name")
@@ -1260,20 +1297,6 @@ class NativeContinuationConfirmationInput(_RemoteBase):
     source_revision: str = Field(alias="sourceRevision", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
 
 
-class NativeFormatStatus(StrEnum):
-    READABLE = "readable"
-    UNSUPPORTED = "unsupported"
-
-
-class NativeFormatView(_RemoteBase):
-    """readable requires a tested version/profile readerId. unsupported requires sanitized reason; never guess a format."""
-
-    status: NativeFormatStatus = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': None})
-    reader_id: str | None = Field(default=None, alias="readerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    cli_version: str | None = Field(default=None, alias="cliVersion", max_length=80, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    reason: str | None = Field(default=None, alias="reason", max_length=300, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-
-
 class NativeImportPayload(_RemoteBase):
     native_session_id: str = Field(alias="nativeSessionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     expected_index_version: int = Field(alias="expectedIndexVersion", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
@@ -1312,21 +1335,6 @@ class NativeReadInput(_RemoteBase):
     source_revision: str | None = Field(default=None, alias="sourceRevision", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     limit: int = Field(alias="limit", ge=1, le=100, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
     before: str | None = Field(default=None, alias="before", min_length=16, max_length=4096, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-
-
-class NativeSessionIndex(_RemoteBase):
-    """Worker-local opaque index ID, not a path or fuzzy CLI ID. Exact vendor ID is kept in the local binding. Redact before title truncation. No body, tool arguments or process IDs in index."""
-
-    native_session_id: str = Field(alias="nativeSessionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    workspace_id: str = Field(alias="workspaceId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    agent_type: NativeAgentType = Field(alias="agentType", json_schema_extra={'wireNullable': False, 'wireType': None})
-    title: str = Field(alias="title", max_length=120, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    updated_at: str = Field(alias="updatedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    index_version: int = Field(alias="indexVersion", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
-    source_revision: str = Field(alias="sourceRevision", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    format: NativeFormatView = Field(alias="format", json_schema_extra={'wireNullable': False, 'wireType': None})
-    activity: NativeActivityEvidence = Field(alias="activity", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
 class NodeResolvedPayload(_Base):
