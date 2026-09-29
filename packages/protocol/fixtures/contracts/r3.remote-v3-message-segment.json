@@ -1,0 +1,25 @@
+{
+  "type": "sync.message.segment",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "wireRevision": 3,
+  "syncGeneration": 1,
+  "payload": {
+    "messageId": "message_demo",
+    "conversationId": "conversation_demo",
+    "messageSequence": 1,
+    "messageRevision": 1,
+    "role": "user",
+    "createdAt": "2026-09-26T12:00:00Z",
+    "runId": "run_demo",
+    "text": "Hello",
+    "segmentIndex": 0,
+    "segmentCount": 1,
+    "totalUtf8Bytes": 5,
+    "contentSha256": "185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969"
+  }
+}

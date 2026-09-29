@@ -1,0 +1,9 @@
+{
+  "clientMessageId": "client_native_example",
+  "workspaceId": "workspace_example",
+  "sessionMode": "continue",
+  "text": "合成追问",
+  "conversationKind": "native",
+  "agentType": "codex",
+  "nativeSessionId": "native_example"
+}

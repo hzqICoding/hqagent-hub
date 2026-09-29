@@ -184,7 +184,6 @@
         "id",
         "title",
         "workspaceId",
-        "sceneId",
         "createdAt",
         "updatedAt"
       ],
@@ -249,8 +248,33 @@
           "minLength": 20,
           "maxLength": 40,
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "conversationKind": {
+          "type": "string",
+          "enum": [
+            "scenario",
+            "native"
+          ]
+        },
+        "agentType": {
+          "$ref": "remote-native.json#/$defs/NativeAgentType"
+        },
+        "nativeSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "nativeActivity": {
+          "$ref": "remote-native.json#/$defs/NativeActivityEvidence"
+        },
+        "nativeSourceRevision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "minLength": 64,
+          "maxLength": 64
         }
-      }
+      },
+      "description": " Missing conversationKind means scenario (requires existing scene fields). Native requires agentType/nativeSessionId and omits scene fields; exact vendor session binding remains local."
     },
     "CreateLocalConversationInput": {
       "type": "object",
@@ -340,8 +364,12 @@
             "new",
             "continue"
           ]
+        },
+        "nativeConfirmation": {
+          "$ref": "remote-native.json#/$defs/NativeContinuationConfirmationInput"
         }
-      }
+      },
+      "description": " Optional explicit re-confirmation for an imported native binding only; scenario rejects it. Native always resumes exact ID with sessionMode=continue."
     },
     "LocalRunView": {
       "type": "object",
@@ -351,7 +379,6 @@
         "conversationId",
         "messageId",
         "taskId",
-        "sceneSnapshot",
         "status",
         "createdAt",
         "updatedAt"
@@ -386,8 +413,19 @@
         },
         "task": {
           "$ref": "task.json#/$defs/TaskDetailView"
+        },
+        "conversationKind": {
+          "type": "string",
+          "enum": [
+            "scenario",
+            "native"
+          ]
+        },
+        "agentType": {
+          "$ref": "remote-native.json#/$defs/NativeAgentType"
         }
-      }
+      },
+      "description": "Scenario retains sceneSnapshot. Native uses a single bound Runtime/Agent and omits sceneSnapshot; no invented scenario roles. Existing taskId remains execution Task identity."
     },
     "LocalMessageReceipt": {
       "type": "object",
