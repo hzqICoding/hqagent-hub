@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type {
+  NativeContinuationConfirmationInput,
   RemoteDeviceView,
   RemoteDevicePatchInput,
   RemoteConversationView,
@@ -8,7 +9,7 @@ import type {
   RemoteRunView,
   RemoteCommandView,
   RemoteApprovalView,
-  RemoteCatalogView,
+  RemoteV3CatalogView,
   RemoteQueuedReceipt,
   RemoteCreateConversationInput,
   RemoteBrowserEvent,
@@ -95,7 +96,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   const selectedWorkerId = ref<string | null>(null)
   const isLoadingDevices = ref(false)
   const deviceError = ref<string | null>(null)
-  const catalog = ref<RemoteCatalogView | null>(null)
+  const catalog = ref<RemoteV3CatalogView | null>(null)
   const isLoadingCatalog = ref(false)
   const catalogError = ref<string | null>(null)
   let catalogRequest = 0
@@ -174,7 +175,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     if (!d || d.status === 'revoked' || d.remoteAccess === 'suspended') return false
     if (d.online !== true && d.status !== 'online') return false
     if (d.status === 'reconciliation_required') return false
-    if (d.supportedWireRevisions && !d.supportedWireRevisions.includes(2)) return false
+    if (d.supportedWireRevisions && !d.supportedWireRevisions.some((revision) => revision === 2 || revision === 3)) return false
     if (d.busySnapshotFresh === false) return false
     return true
   })
@@ -680,7 +681,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   // --- Messaging & Queueing ---
 
-  async function sendMessage(text: string, sessionMode: 'new' | 'continue' = 'continue'): Promise<RemoteQueuedReceipt | null> {
+  async function sendMessage(text: string, sessionMode: 'new' | 'continue' = 'continue', nativeConfirmation?: NativeContinuationConfirmationInput): Promise<RemoteQueuedReceipt | null> {
     if (!activeConversationId.value) return null
 
     // R1.5 Offline check: immediate failure, no queuing
@@ -696,7 +697,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
     const d = activeDevice.value
     // F5: 电脑端版本过旧提示
-    if (d?.supportedWireRevisions && !d.supportedWireRevisions.includes(2)) {
+    if (d?.supportedWireRevisions && !(activeConversation.value?.conversationKind === 'native' ? d.supportedWireRevisions.includes(3) : d.supportedWireRevisions.some((revision) => revision === 2 || revision === 3))) {
       sendError.value = '电脑端版本过旧，请升级 HQAgent'
       throw new RemoteApiError({
         message: '电脑端版本过旧，请升级 HQAgent',
@@ -745,7 +746,8 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       const receipt = await gateway.sendMessage(convId, {
         clientMessageId,
         text,
-        sessionMode,
+        sessionMode: activeConversation.value?.conversationKind === 'native' ? 'continue' : sessionMode,
+        ...(nativeConfirmation ? { nativeConfirmation } : {}),
       })
 
       // Update command representation in memory
@@ -767,6 +769,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
       return receipt
     } catch (err: unknown) {
       await refreshOnSuspended(err)
+      if (err instanceof RemoteApiError && err.code === 'NATIVE_SESSION_CHANGED') await fetchConversations(selectedWorkerId.value || undefined)
       // Remove optimistic message on failure
       const tempIdx = messages.value.findIndex((m) => m.messageId === optimisticMsg.messageId)
       if (tempIdx >= 0) {

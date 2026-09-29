@@ -1,4 +1,5 @@
 import type {
+  LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
   LocalAuthInput,
   AgentView,
@@ -37,6 +38,7 @@ import type {
   RemoteSyncSettingsView,
   RemoteSyncSettingsInput,
 } from '@hqagent/protocol'
+import { nativeExamples, nativeExampleMessages, nativeExampleText } from './native-examples'
 import { PROTOCOL_VERSION } from '@hqagent/protocol'
 
 import type { LocalChatGateway } from './local-chat-gateway.interface'
@@ -47,6 +49,34 @@ import analyzeSceneFixture from '@hqagent/fixtures/local-scene.analyze.json'
 import agentsDiscoveryFixture from '@hqagent/fixtures/agents.discovery-partial.json'
 
 export class MockLocalChatGateway implements LocalChatGateway {
+  public authorizedRoots: LocalAuthorizedRootsView = { version: 1, roots: [] }
+  public importedNativeIds = new Set<string>()
+  async listNativeSessions(): Promise<LocalNativeSessionPage> {
+    return { items: nativeExamples(this.workspaces[0]?.id || 'workspace_example').filter((item) => !this.importedNativeIds.has(item.nativeSessionId)), hasMore: false }
+  }
+  async getNativeSession(id: string): Promise<NativeSessionIndex> {
+    const item = (await this.listNativeSessions()).items.find((item) => item.nativeSessionId === id)
+    if (!item) throw new HubApiError('会话不存在', 'NOT_FOUND', 404)
+    return item
+  }
+  readNativeMessages(id: string): Promise<NativeMessagePage> { return nativeExampleMessages(id) }
+  async importNativeSession(id: string, input: RemoteNativeImportInput): Promise<LocalConversationView> {
+    const item = await this.getNativeSession(id)
+    if (!input.terminalClosedConfirmed || item.activity.activity === 'likely_active') throw new HubApiError('电脑检测到该会话仍在运行', 'NATIVE_SESSION_ACTIVE', 409)
+    if (input.sourceRevision !== item.sourceRevision || input.expectedIndexVersion !== item.indexVersion) throw new HubApiError('终端中有新内容，请重新确认', 'NATIVE_SESSION_CHANGED', 409)
+    const conversation: LocalConversationView = { id: `imported_${id}`, title: item.title, workspaceId: item.workspaceId, conversationKind: 'native', agentType: item.agentType, nativeSessionId: id,
+      nativeSourceRevision: item.sourceRevision, nativeActivity: { ...item.activity, activity: 'closed_confirmed' }, createdAt: item.createdAt, updatedAt: item.updatedAt }
+    this.conversations.unshift(conversation)
+    this.messages.set(conversation.id, [{ id: `${conversation.id}_history`, conversationId: conversation.id, role: 'assistant', text: nativeExampleText, sequence: 1, createdAt: conversation.createdAt }])
+    this.importedNativeIds.add(id)
+    return conversation
+  }
+  async getAuthorizedRoots(): Promise<LocalAuthorizedRootsView> { return structuredClone(this.authorizedRoots) }
+  async setAuthorizedRoots(input: LocalAuthorizedRootsInput): Promise<LocalAuthorizedRootsView> {
+    if (input.expectedVersion !== this.authorizedRoots.version) throw new HubApiError('授权根目录已变化，请刷新后重试', 'CONFLICT', 409)
+    this.authorizedRoots = { version: input.expectedVersion + 1, roots: input.roots.map((root, i) => ({ ...root, rootId: root.rootId || `root_example_${i}`, version: input.expectedVersion + 1 })) }
+    return this.getAuthorizedRoots()
+  }
   public isMock = true
   private authenticated = true
   private protocolVersion = PROTOCOL_VERSION
@@ -82,6 +112,8 @@ export class MockLocalChatGateway implements LocalChatGateway {
   }
 
   reset(): void {
+    this.authorizedRoots = { version: 1, roots: [] }
+    this.importedNativeIds.clear()
     this.authenticated = true
     this.processedClientMessageIds.clear()
     this.conversationUpdateReceipts.clear()
@@ -1220,6 +1252,16 @@ export class MockLocalChatGateway implements LocalChatGateway {
     }
     list.push(userMessage)
 
+    // Native Mock runs have a bound single Agent, never a fabricated scenario snapshot.
+    if (conv.conversationKind === 'native') {
+      if (input.sessionMode !== 'continue') throw new HubApiError('原生会话必须继续原上下文', 'VALIDATION_FAILED', 422)
+      const runId = `run_native_${crypto.randomUUID()}`
+      const now = new Date().toISOString()
+      this.runs.set(runId, { id: runId, conversationId, messageId: userMessage.id, taskId: `task_${runId}`, conversationKind: 'native', agentType: conv.agentType, status: 'running', createdAt: now, updatedAt: now })
+      this.messages.set(conversationId, list)
+      conv.activeRunId = runId; conv.lastRunId = runId; conv.lastRunStatus = 'running'
+      return { commandId: `cmd_${runId}`, conversationId, messageId: userMessage.id, runId, status: 'accepted', duplicate: false }
+    }
     // Start a new run
     const scene = this.scenes.find((s) => s.id === conv.sceneId) || this.scenes[0]
     const runId = `run_${Date.now()}`

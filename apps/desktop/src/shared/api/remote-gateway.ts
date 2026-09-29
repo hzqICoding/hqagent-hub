@@ -1,4 +1,5 @@
 import type {
+  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV3CatalogView,
   ApiEnvelope,
   RemoteDevicePatchInput,
   RemoteDeviceDeletionView,
@@ -18,7 +19,6 @@ import type {
   RemoteDevicePage,
   RemoteDeviceRevokeInput,
   RemoteDeviceRevocationView,
-  RemoteCatalogView,
   RemoteConversationPage,
   RemoteCreateConversationInput,
   RemoteConversationView,
@@ -137,6 +137,7 @@ export class RemoteGateway implements IRemoteGateway {
         body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
         // Browser authentication is via HttpOnly Secure Cookie __Host-hqremote
         credentials: 'same-origin',
+        cache: 'no-store',
       })
     } catch {
       recordRemoteFailure(endpoint, method, '网络连接失败，请检查网络设置')
@@ -185,6 +186,25 @@ export class RemoteGateway implements IRemoteGateway {
 
     clearRemoteFailureFor(endpoint, method)
     return envelope.data as T
+  }
+
+  listNativeSessions(workerId: string, cursor?: string): Promise<RemoteNativeSessionPage> {
+    return this.fetchApi(`/api/v2/devices/${encodeURIComponent(workerId)}/native-sessions`, { params: { cursor, limit: 50 } })
+  }
+  getNativeSession(id: string): Promise<RemoteNativeSessionView> {
+    return this.fetchApi(`/api/v2/native-sessions/${encodeURIComponent(id)}`)
+  }
+  readNativeMessages(id: string, before?: string): Promise<NativeMessagePage> {
+    return this.fetchApi(`/api/v2/native-sessions/${encodeURIComponent(id)}/messages`, { params: { before, limit: 50 } })
+  }
+  importNativeSession(id: string, input: RemoteNativeImportInput, key?: string): Promise<RemoteResourceQueuedReceipt> {
+    return this.fetchApi(`/api/v2/native-sessions/${encodeURIComponent(id)}/imports`, { method: 'POST', body: input, idempotencyKey: key })
+  }
+  listDirectory(workerId: string, input: DirectoryListingInput): Promise<DirectoryListingPage> {
+    return this.fetchApi(`/api/v2/devices/${encodeURIComponent(workerId)}/directory-listings`, { method: 'POST', body: input })
+  }
+  registerWorkspace(workerId: string, input: RemoteWorkspaceRegisterInput, key?: string): Promise<RemoteResourceQueuedReceipt> {
+    return this.fetchApi(`/api/v2/devices/${encodeURIComponent(workerId)}/workspaces`, { method: 'POST', body: input, idempotencyKey: key })
   }
 
   // --- Auth & Session ---
@@ -274,8 +294,8 @@ export class RemoteGateway implements IRemoteGateway {
     )
   }
 
-  async getWorkerCatalog(workerId: string): Promise<RemoteCatalogView> {
-    return this.fetchApi<RemoteCatalogView>(`/api/v2/devices/${encodeURIComponent(workerId)}/catalog`, {
+  async getWorkerCatalog(workerId: string): Promise<RemoteV3CatalogView> {
+    return this.fetchApi<RemoteV3CatalogView>(`/api/v2/devices/${encodeURIComponent(workerId)}/catalog`, {
       method: 'GET',
     })
   }

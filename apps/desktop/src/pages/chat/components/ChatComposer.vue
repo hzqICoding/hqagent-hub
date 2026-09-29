@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { closureText, nativeFailure } from '@/pages/native/native-utils'
 import { ref, computed, nextTick, watch } from 'vue'
 import { useChatStore } from '@/stores/chat.store'
 import {
@@ -14,6 +15,9 @@ import {
 } from 'lucide-vue-next'
 
 const chatStore = useChatStore()
+const nativeConfirmed = ref(false)
+const nativeError = ref<ReturnType<typeof nativeFailure> | null>(null)
+watch([() => chatStore.activeConversationId, () => chatStore.activeConversation?.nativeSourceRevision], () => { nativeConfirmed.value = false; nativeError.value = null })
 const emit = defineEmits<{ (e: 'request-context-reset'): void }>()
 
 const inputText = computed({
@@ -30,6 +34,7 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const canSend = computed(() => {
   return (
+    (chatStore.activeConversation?.conversationKind !== 'native' || chatStore.activeConversation.nativeActivity?.activity === 'closed_confirmed' || (nativeConfirmed.value && Boolean(chatStore.activeConversation.nativeSourceRevision))) &&
     !chatStore.isConversationBusy &&
     inputText.value.trim().length > 0 &&
     !chatStore.isActiveConversationArchived &&
@@ -58,13 +63,16 @@ async function handleSend() {
   const text = inputText.value.trim()
   chatStore.setConversationDraft(conversationId, '')
   const clearedDraftRevision = chatStore.getConversationDraftRevision(conversationId)
-  const sendPromise = chatStore.sendMessage(text)
+  const revision = chatStore.activeConversation?.nativeSourceRevision
+  const sendPromise = chatStore.sendMessage(text, undefined, nativeConfirmed.value && revision ? { terminalClosedConfirmed: true, sourceRevision: revision } : undefined)
   await nextTick()
   if (chatStore.activeConversationId === conversationId) adjustHeight()
 
   try {
     await sendPromise
-  } catch {
+    nativeConfirmed.value = false
+  } catch (err) {
+    if (chatStore.activeConversation?.conversationKind === 'native') { nativeError.value = nativeFailure(err); nativeConfirmed.value = false }
     // Restore only the original conversation's still-empty draft. A newer draft wins.
     if (chatStore.getConversationDraftRevision(conversationId) === clearedDraftRevision) {
       chatStore.setConversationDraft(conversationId, text)
@@ -104,6 +112,13 @@ function handleStopRun() {
 <template>
   <div class="w-full shrink-0 px-2.5 sm:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-1 select-none">
     <div class="max-w-3xl mx-auto w-full space-y-2">
+      <div v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-xs p-2 space-y-1">
+        <p>固定继续原生会话</p>
+        <template v-if="chatStore.activeConversation.nativeActivity?.activity !== 'closed_confirmed' || nativeError?.code === 'NATIVE_SESSION_CHANGED'">
+          <p>{{ closureText }}</p><label class="flex gap-2"><input v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
+        </template>
+        <p v-if="nativeError" role="alert" class="text-danger">{{ nativeError.message }} <span class="select-text">{{ nativeError.requestId ? `requestId: ${nativeError.requestId}` : '' }}</span></p>
+      </div>
       <!-- 1. Floating Queued Messages Deck -->
       <div v-if="chatStore.queuedMessages.length > 0" class="space-y-1.5">
         <div

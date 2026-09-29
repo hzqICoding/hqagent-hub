@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AuthorizedRootsSettings from '@/pages/native/AuthorizedRootsSettings.vue'
 import { ref, onMounted, onUnmounted, computed, inject, watch } from 'vue'
 import { routeLocationKey, type RouteLocationNormalizedLoaded } from 'vue-router'
 import QRCode from 'qrcode'
@@ -214,6 +215,7 @@ async function copyPairCode() {
 <template>
   <div class="h-full flex flex-col bg-bg-app overflow-y-auto select-none p-4 sm:p-6 lg:p-8">
     <div class="max-w-3xl w-full mx-auto space-y-6">
+      <AuthorizedRootsSettings />
       <!-- Page Header -->
       <div class="flex items-start justify-between gap-4 border-b border-border/80 pb-5">
         <div class="space-y-1 min-w-0">

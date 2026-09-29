@@ -1,4 +1,5 @@
 import type {
+  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV3CatalogView,
   RemoteDevicePatchInput,
   RemoteDeviceDeletionView,
   RemoteApiTokenView,
@@ -18,7 +19,6 @@ import type {
   RemoteDevicePage,
   RemoteDeviceRevokeInput,
   RemoteDeviceRevocationView,
-  RemoteCatalogView,
   RemoteConversationPage,
   RemoteCreateConversationInput,
   RemoteConversationView,
@@ -39,11 +39,49 @@ import type {
   RemoteBrowserEventPage,
   RemoteConversationSnapshot,
 } from '@hqagent/protocol'
+import { nativeExamples, nativeExampleMessages, nativeExampleText } from './native-examples'
 import type { IRemoteGateway, RemoteDeviceFilters } from './remote-gateway.interface'
 import { RemoteApiError } from './remote-gateway'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 
 export class MockRemoteGateway implements IRemoteGateway {
+  public importedNativeIds = new Set<string>()
+  async listNativeSessions(workerId: string): Promise<RemoteNativeSessionPage> {
+    return { items: nativeExamples(this.catalog.workspaces[0]?.workspaceId || 'workspace_demo').filter((item) => !this.importedNativeIds.has(item.nativeSessionId)).map((item) => ({ ...item, workerId, workerOnline: this.workerOnline })), hasMore: false }
+  }
+  async getNativeSession(id: string): Promise<RemoteNativeSessionView> {
+    const item = (await this.listNativeSessions('worker_demo')).items.find((item) => item.nativeSessionId === id)
+    if (!item) throw new RemoteApiError({ message: '会话不存在', code: 'NOT_FOUND', status: 404 })
+    return item
+  }
+  async readNativeMessages(id: string): Promise<NativeMessagePage> {
+    if (!this.workerOnline) throw new RemoteApiError({ message: '电脑离线，无法读取原生会话内容', code: 'REMOTE_DEVICE_OFFLINE', status: 409 })
+    return nativeExampleMessages(id)
+  }
+  async importNativeSession(id: string, input: RemoteNativeImportInput): Promise<RemoteResourceQueuedReceipt> {
+    const item = await this.getNativeSession(id)
+    if (!input.terminalClosedConfirmed || item.activity.activity === 'likely_active') throw new RemoteApiError({ message: '电脑检测到该会话仍在运行', code: 'NATIVE_SESSION_ACTIVE', status: 409 })
+    const conversationId = `imported_${id}`
+    this.conversations.unshift({ conversationId, title: item.title, workspaceId: item.workspaceId, targetWorkerId: item.workerId, workerStoreId: this.catalog.workerStoreId, authority: 'remote', conversationKind: 'native', agentType: item.agentType, nativeSessionId: id, nativeSourceRevision: item.sourceRevision, nativeActivity: { ...item.activity, activity: 'closed_confirmed' }, createdAt: item.createdAt, updatedAt: item.updatedAt })
+    this.messages.push({ messageId: `${conversationId}_history`, conversationId, role: 'assistant', text: nativeExampleText, messageSequence: 1, messageRevision: 1, createdAt: item.createdAt })
+    this.importedNativeIds.add(id)
+    return this.resourceExample('native.import', { conversationId, nativeSessionId: id, workspaceId: item.workspaceId })
+  }
+  async listDirectory(_workerId: string, input: DirectoryListingInput): Promise<DirectoryListingPage> {
+    return { rootId: input.rootId, rootVersion: input.rootVersion, directoryToken: input.directoryToken || 'example_root_token', hasMore: false,
+      entries: input.directoryToken ? [] : [{ name: '示例代码库', isGitRepository: true, directoryToken: 'example_git_token' }, { name: '示例资料', isGitRepository: false, directoryToken: 'example_readonly_token' }] }
+  }
+  async registerWorkspace(_workerId: string, input: RemoteWorkspaceRegisterInput): Promise<RemoteResourceQueuedReceipt> {
+    const workspaceId = `workspace_registered_${this.catalog.workspaces.length}`
+    this.catalog.workspaces.push({ workspaceId, name: input.name || '示例项目', displayPath: '', vcs: input.directoryToken === 'example_git_token' ? 'git' : 'none', canWrite: input.directoryToken === 'example_git_token' })
+    return this.resourceExample('workspace.register', { workspaceId })
+  }
+  private resourceExample(type: RemoteResourceQueuedReceipt['type'], resourceRef: NonNullable<RemoteCommandView['resourceRef']>): RemoteResourceQueuedReceipt {
+    const commandId = `resource_${crypto.randomUUID()}`
+    const receipt: RemoteResourceQueuedReceipt = { commandId, type, targetWorkerId: 'worker_demo', status: 'queued', deliveryState: 'queued_online', workerOnline: true, expiresAt: new Date(Date.now() + 30000).toISOString() }
+    this.commands.push({ ...receipt, status: 'completed', resourceRef, withdrawalState: 'none', observedAt: new Date().toISOString(), createdAt: new Date().toISOString() })
+    return receipt
+  }
   supportsDeviceManagement = true
   public apiTokens: RemoteApiTokenView[] = []
   private tokenIntents = new Map<string, string>()
@@ -102,7 +140,7 @@ export class MockRemoteGateway implements IRemoteGateway {
     },
   ]
 
-  public catalog: RemoteCatalogView = {
+  public catalog: RemoteV3CatalogView = {
     workerId: 'worker_demo',
     capabilityRevision: 2,
     observedAt: '2026-09-26T12:00:00Z',
@@ -503,7 +541,7 @@ export class MockRemoteGateway implements IRemoteGateway {
     }
   }
 
-  async getWorkerCatalog(workerId: string): Promise<RemoteCatalogView> {
+  async getWorkerCatalog(workerId: string): Promise<RemoteV3CatalogView> {
     const device = this.devices.find((d) => d.workerId === workerId)
     return { ...this.catalog, workerId, workerStoreId: device?.workerStoreId || this.catalog.workerStoreId }
   }
@@ -1056,6 +1094,7 @@ export class MockRemoteGateway implements IRemoteGateway {
   }
 
   reset(): void {
+    this.importedNativeIds.clear()
     this.apiTokens = []
     this.tokenIntents.clear()
     this.supportsDeviceManagement = true
