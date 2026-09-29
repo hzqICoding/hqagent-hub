@@ -33,8 +33,20 @@ class SyncService(NativeService, DeviceManagement, Service):
         if previous >= 2 and requested == 1:
             raise Fault('REMOTE_PROTOCOL_UNSUPPORTED')
         if requested != previous:
+            def pending_command(command):
+                if command['_frame']['wireRevision'] == requested:
+                    return False
+                if previous == 2 and requested == 3 and command['_frame']['wireRevision'] == 2:
+                    # The control attempt has a durable final observation even
+                    # when its execution outcome remains unknown. Keep its
+                    # status/evidence unchanged; ACK/outbox fences still apply.
+                    observed_unknown = (command['status'] == 'accepted' and command.get('deliveryState') == 'acknowledged' and
+                        command.get('controlResult', {}).get('outcome') == 'unconfirmed')
+                    return command['status'] not in TERMINAL and not observed_unknown
+                return (command['status'] not in TERMINAL or command.get('controlResult', {}).get('outcome') == 'unconfirmed' or
+                        bool(command.get('controlResult', {}).get('orphanProcessIds')))
             pending = [c for c in tx.list(owner, 'command', worker=device['workerId']) if c['_frame']['wireRevision'] != requested and
-                       (c['status'] not in TERMINAL or c.get('controlResult', {}).get('outcome') == 'unconfirmed' or c.get('controlResult', {}).get('orphanProcessIds'))]
+                       pending_command(c)]
             pending_boxes = [b for b in tx.list(owner, 'outbox', worker=device['workerId']) if not b['done'] and b['_frame']['wireRevision'] != requested]
             position = tx.get(owner, 'event-position', device['workerId'] + ':' + frame['workerStoreId']) or dict(seq=0)
             require(not pending and not pending_boxes and not tx.legacy_pending(owner, device['workerId'], frame['workerStoreId']) and not tx.sync_unapplied(owner, device['workerId'], frame['workerStoreId']), 'REMOTE_REVISION_REQUIRED')

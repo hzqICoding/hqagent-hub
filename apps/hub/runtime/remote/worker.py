@@ -15,7 +15,7 @@ from runtime.remote.security import normalize_origin
 from runtime.remote.wire import WIRE_REVISION, MAX_FRAME_BYTES, encode, decode
 from runtime.remote.projection import Projector
 from runtime.remote.busy import BusyState
-from runtime.remote.delivery import DeliveryBridge
+from runtime.remote.delivery import DeliveryBridge, FINAL_STATES
 from runtime.remote.sync import SyncService
 from runtime.remote.window import SendWindow
 from runtime.native.roots import AuthorizedRoots
@@ -155,7 +155,7 @@ class RemoteWorker:
             return False
         if identity.get("wireRevision", 1) == 2:
             with self.repo.database.locked_connection() as db:
-                pending = db.execute("SELECT 1 FROM remote2_delivery WHERE store_id=? AND state NOT IN ('completed','failed','rejected') LIMIT 1", (identity["store"],)).fetchone()
+                pending = db.execute("SELECT 1 FROM remote2_delivery WHERE store_id=? AND state NOT IN (?,?,?,?) LIMIT 1", (identity["store"], *FINAL_STATES)).fetchone()
                 outbox = db.execute("SELECT 1 FROM remote_outbox WHERE store_id=? LIMIT 1", (identity["store"],)).fetchone()
                 staged = db.execute("SELECT 1 FROM remote_sync_items LIMIT 1").fetchone()
             work = self.repo.get("sync-work") or {}
@@ -251,6 +251,7 @@ class RemoteWorker:
             if generation != self.repo.get("link")["generation"]:
                 return
             self.repo.ack(hello["lastServerAck"])
+            self.sync.on_ack()
             if hello["commandDelivery"] == "frozen" and "reason" not in hello:
                 raise HubError("REMOTE_STORE_CHANGED", "服务端冻结响应缺少原因")
             if revision > active:
@@ -328,7 +329,7 @@ class RemoteWorker:
                             self.repo.seal(tx)
                     if revision >= 2:
                         await window.flush(send)
-                        if revision == 2 and 3 in self.server_supported and time.monotonic() >= self.next_revision2_probe and self.can_upgrade():
+                        if revision == 2 and time.monotonic() >= self.next_revision2_probe and self.can_upgrade():
                             self.preferred_revision = 3
                             raise Renegotiate()
                         await asyncio.sleep(0.2)

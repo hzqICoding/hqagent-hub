@@ -76,14 +76,19 @@ class HistorySource:
         return digest([self.identity, self.cut, self.prefix_hash, self.version, self.reader_id, FILTER_VERSION])
 
 
+class HistoryStructureError(ValueError):
+    """Only fixed field names/record offsets; never source contents."""
+
+
 class FileHistory:
     """Official history capability is absent in the current Adapter port.
 
-    This explicit fallback only accepts tested versions and terminal provenance:
+    This fallback requires a verified version series AND record validation:
     Codex session_meta.source=cli; Claude an interactive history.jsonl entry
     matching both exact sessionId and canonical project. Sidechains never qualify.
     """
-    versions = {"codex": {"0.153.4"}, "claude": {"2.1.261", "2.1.272", "2.1.283"}}
+    verified_series = {"codex": (0, 153, 4), "claude": (2, 1, 261)}
+    version_policy = "verified-series-minimum-patch-and-record-structure"
 
     def __init__(self, agent_type, data_root, *, runtime_id=None, secrets_provider=lambda: ()):
         self.agent_type = agent_type
@@ -91,12 +96,28 @@ class FileHistory:
         self.runtime_id = runtime_id or "local." + agent_type + ".default"
         self.secrets_provider = secrets_provider
         self.diagnostics = []
+        self.observed_versions = set()
+        self.version_diagnostics = []
 
     def capabilities(self):
         return {"history.list": self.root.is_dir(), "history.read": self.root.is_dir(),
                 "history.adopt": self.root.is_dir(), "provider": "versioned-file-fallback",
-                "versions": sorted(self.versions[self.agent_type]),
+                "verifiedSeries": self.series_description(), "observedVersions": sorted(self.observed_versions),
+                "versionPolicy": self.version_policy,
+                "versionDiagnostics": list(self.version_diagnostics),
                 "reason": "" if self.root.is_dir() else "Runtime历史目录不可用"}
+
+    def series_description(self):
+        major, minor, patch = self.verified_series[self.agent_type]
+        return {"series": f"{major}.{minor}.x", "minimumPatch": patch}
+
+    def verified_version(self, version):
+        match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version)
+        if match is None or len(version) > 32:
+            return False
+        major, minor, patch = map(int, match.groups())
+        verified_major, verified_minor, minimum = self.verified_series[self.agent_type]
+        return (major, minor) == (verified_major, verified_minor) and patch >= minimum
 
     def _bytes(self, path, snapshot=None):
         try:
@@ -215,18 +236,60 @@ class FileHistory:
             profile = self.agent_type + ".jsonl." + str(version)
             source = HistorySource(Path(path), identity, len(content), hashlib.sha256(content).hexdigest(),
                 vendor, cwd, str(version), profile, self.agent_type, created, stamp(st.st_mtime), st.st_mtime,
-                version in self.versions[self.agent_type] and not damaged, [])
+                self.verified_version(version) and not damaged, [])
             source.created_time_basis = "metadata" if source_time(created_raw) else "file_stat"
+            # Only numeric versions enter diagnostics; arbitrary source text is
+            # never reflected as a purported version or diagnostic detail.
+            reported = version if re.fullmatch(r"[0-9.]{1,32}", version) else "unknown"
+            if len(self.observed_versions) < 32:
+                self.observed_versions.add(reported)
+            diagnostic = f"实际版本={reported}; 已验证系列={self.series_description()}; 判定方式={self.version_policy}"
             if not source.readable:
-                source.reason = "没有经过验证的CLI版本读取器"
+                source.reason = "该 CLI 版本尚未验证" if not self.verified_version(version) else "JSONL含损坏或未识别的完整记录"
+                self.version_diagnostics = (self.version_diagnostics + [diagnostic + "; " + source.reason])[-32:]
+                self.diagnostics.append(source.reason)
                 return source
             try:
+                self._validate_identity(records, source)
                 source.messages = self._messages(records, source)
+            except HistoryStructureError as error:
+                source.readable, source.reason = False, str(error)
             except (ValueError, KeyError, TypeError):
-                source.readable, source.reason = False, "记录结构不符合已验证的读取器，不能推测正文"
+                source.readable, source.reason = False, "消息块、角色或记录链结构不符合已验证读取器"
+            self.version_diagnostics = (self.version_diagnostics + [diagnostic + "; " + ("结构校验通过" if source.readable else source.reason)])[-32:]
+            if not source.readable:
+                self.diagnostics.append(source.reason)
             return source
         except (ValueError, KeyError, TypeError):
             raise HubError("NATIVE_SESSION_UNSUPPORTED", "原生记录格式无法识别") from None
+
+    def _validate_identity(self, records, source):
+        for index, row in enumerate(records):
+            check_cancelled()
+            if self.agent_type == "claude":
+                required = {"sessionId", "cwd", "version"} if row.get("type") in {"user", "assistant"} else set()
+                fields = {"sessionId": source.vendor_id, "cwd": source.cwd, "version": source.version}
+                values = row
+            else:
+                if row.get("type") in {"session_meta", "event_msg", "turn_context", "compacted"} and not isinstance(row.get("payload"), dict):
+                    raise HistoryStructureError(f"第{index + 1}条记录的payload必须为对象")
+                if row.get("type") == "session_meta":
+                    required = {"id", "cwd", "cli_version", "source"}
+                    fields = {"id": source.vendor_id, "cwd": source.cwd, "cli_version": source.version, "source": "cli"}
+                elif row.get("type") == "turn_context":
+                    required = set()
+                    fields = {"cwd": source.cwd, "cli_version": source.version, "session_id": source.vendor_id}
+                else:
+                    continue
+                values = row["payload"]
+            for key, expected in fields.items():
+                if key not in values and key not in required:
+                    continue
+                actual = values.get(key)
+                if key == "cwd" and isinstance(actual, str) and Path(actual).is_absolute():
+                    actual = Path(actual).resolve()
+                if actual != expected:
+                    raise HistoryStructureError(f"第{index + 1}条记录的{key}缺失或与会话信封不一致")
 
     def _messages(self, records, source):
         result, chain, seen = [], None, set()
