@@ -160,6 +160,8 @@ class NativeService:
                 items = [json.loads(r[0]) for r in db.execute("SELECT index_json FROM native_sources WHERE removed=0 AND conversation_id IS NULL")]
             items = sorted([i for i in items if (workspace is None or i["workspaceId"] == workspace) and
                 (agent is None or i["agentType"] == agent)], key=lambda i: (i["updatedAt"], i["nativeSessionId"]), reverse=True)
+            if not items and any(p.diagnostics for p in self.plugins if agent is None or p.agent_type == agent):
+                raise HubError("NATIVE_SESSION_UNSUPPORTED", "原生读取能力不足：存在目录不可用、来源或格式无法确认的记录")
             start = 0
         selected = []
         for item in items[start:start + limit]:

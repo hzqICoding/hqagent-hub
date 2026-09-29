@@ -174,6 +174,7 @@ class FileHistory:
             if self.agent_type == "codex":
                 first = records[0]
                 if first.get("type") != "session_meta":
+                    self.diagnostics.append("原生记录缺少可验证的会话信封")
                     return None
                 meta = first["payload"]
                 if not isinstance(meta,dict):
@@ -182,18 +183,21 @@ class FileHistory:
                     return None
                 if not Path(meta["cwd"]).is_absolute():
                     return None
-                vendor, cwd, version = meta["id"], Path(meta["cwd"]).resolve(), meta["cli_version"]
+                vendor, cwd, version = meta["id"], Path(meta["cwd"]).resolve(), meta.get("cli_version","unknown")
                 created_raw = meta.get("timestamp")
                 created = source_time(created_raw, st.st_ctime)
             else:
-                envelope = next((r for r in records if all(k in r for k in ("sessionId", "cwd", "version"))), None)
-                if envelope is None or any(r.get("isSidechain") for r in records):
+                envelope = next((r for r in records if all(k in r for k in ("sessionId", "cwd"))), None)
+                if envelope is None:
+                    self.diagnostics.append("原生记录缺少可验证的会话信封")
+                    return None
+                if any(r.get("isSidechain") for r in records):
                     return None
                 if any(r.get("source") not in {None,"cli","terminal"} or r.get("userType") not in {None,"external"} for r in records):
                     return None
                 if not Path(envelope["cwd"]).is_absolute():
                     return None
-                vendor, cwd, version = envelope["sessionId"], Path(envelope["cwd"]).resolve(), envelope["version"]
+                vendor, cwd, version = envelope["sessionId"], Path(envelope["cwd"]).resolve(), envelope.get("version","unknown")
                 if (vendor, str(cwd)) not in (terminals if terminals is not None else self._terminal_history()):
                     self.diagnostics.append("原生来源无法证明为终端；未收录")
                     return None

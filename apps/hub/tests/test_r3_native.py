@@ -185,3 +185,20 @@ def test_tool_summaries_never_include_arguments_or_output_and_time_basis_is_expl
     assert 'PRIVATE_ANALYSIS_CHANNEL' not in str(source.messages)
     assert 'PRIVATE_ENV_PATH' not in str(source.messages)
     assert source.created_time_basis=='file_stat' and source.updated_time_basis=='file_stat'
+
+
+def test_unidentifiable_records_report_local_capability_gap_without_echoing_content(tmp_path):
+    async def scenario():
+        system=System(tmp_path)
+        try:
+            root=tmp_path/'records'; root.mkdir()
+            (root/'unknown.jsonl').write_text('UNREADABLE_PRIVATE_CONTENT\n',encoding='utf-8')
+            setup_native(system,root)
+            response=await system.local.get('/api/v2/native-sessions')
+            assert response.status_code==422
+            assert response.json()['error']['code']=='NATIVE_SESSION_UNSUPPORTED'
+            assert 'UNREADABLE_PRIVATE_CONTENT' not in response.text
+            assert response.headers['cache-control']=='no-store'
+        finally:
+            await system.close()
+    asyncio.run(scenario())
