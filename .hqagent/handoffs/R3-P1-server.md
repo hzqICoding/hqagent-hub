@@ -1,12 +1,12 @@
 ---
 wp: R3-P1
-status: done
+status: needs-decision
 scope_declared: [apps/server/**, .hqagent/handoffs/R3-P1-server.md]
 scope_touched: [apps/server/Caddyfile.example, apps/server/README.md, apps/server/scripts/smoke.py, apps/server/scripts/smoke_native.py, apps/server/server/app.py, apps/server/server/events_sync.py, apps/server/server/http.py, apps/server/server/native.py, apps/server/server/native_events.py, apps/server/server/queries.py, apps/server/server/replica.py, apps/server/server/repository.py, apps/server/server/repository_devices.py, apps/server/server/repository_native.py, apps/server/server/repository_sync.py, apps/server/server/resources/http-errors.json, apps/server/server/resources/remote-hub.v2.bundle.json, apps/server/server/service.py, apps/server/server/service_sync.py, apps/server/server/wire.py, apps/server/server/worker.py, apps/server/tests/r3_support.py, apps/server/tests/test_devices_tokens.py, apps/server/tests/test_protocol.py, apps/server/tests/test_r15_policy.py, apps/server/tests/test_r3_guards.py, apps/server/tests/test_r3_native.py, .hqagent/handoffs/R3-P1-server.md]
 build: pass
 tests: pass
 commit: 6d8230e6d10810ff8b7fb66b609f9cadc0f87bff
-open_questions: 0
+open_questions: 1
 ---
 
 ## 基线与范围
@@ -128,3 +128,36 @@ pwsh scripts/protocol/validate.ps1 -CheckGenerated
 - README、Caddy示例及本回执另作文档提交；头部commit指最后实现/测试提交。每次提交后均执行 `git log -1 --format=%B`，提交信息无署名。
 
 本包要求的服务端范围已完成，无协议裁决请求。未做P2本机文件读取插件、真实路径/链接验证、模型执行、前端实现、真实CLI联调、Docker镜像构建或云端部署；这些不能由服务端的合成Worker测试替代。本回执只宣称上述本地命令已实际通过。
+
+## 返修 1（2026-09-29）：同步关闭错误清单缺失，等待 W0 补冻
+
+本节是当前返修状态，前文为已审核的原始 R3 交付记录。头部 status/open_questions 更新为 needs-decision/1；build、tests、commit 及累计 scope_touched 保留原交付记录，不表示本轮重新通过了验收。本轮实际只修改本回执，没有修改服务端实现、测试、协议或发布资源。
+
+起始 HEAD 为 `2d06e19`，工作区干净；已确认 `970dfbb fix(server): preserve workspace identity across replica upgrades` 在当前历史中，未回滚该修复。简单环境检查真实输出 `environment-ok`，未遇到429、0xC0000142或额度错误。
+
+主代理本轮裁决：同步关闭时，原生列表、详情、读取统一使用 REMOTE_SYNC_DISABLED；同步开启但无会话仍返回空页，设备删除仍404。裁决同时明确要求：若冻结 OpenAPI 的路由错误清单缺少该码，先写 needs-decision 并停下，由 W0 补冻，P1 不改协议。本轮按该停止条件执行。
+
+### Q1：列表与详情缺少 REMOTE_SYNC_DISABLED / HTTP 409 声明
+
+通过预装Python/PyYAML读取事实源 YAML 和发布 bundle，检查三条 GET 的 `x-error-codes` 与 `responses`，真实输出：
+
+```text
+packages/protocol/openapi/remote-hub.v2.yaml
+GET /api/v2/devices/{workerId}/native-sessions | REMOTE_SYNC_DISABLED=False | HTTP409=False
+GET /api/v2/native-sessions/{nativeSessionId} | REMOTE_SYNC_DISABLED=False | HTTP409=False
+GET /api/v2/native-sessions/{nativeSessionId}/messages | REMOTE_SYNC_DISABLED=True | HTTP409=True
+packages/protocol/openapi/remote-hub.v2.bundle.json
+GET /api/v2/devices/{workerId}/native-sessions | REMOTE_SYNC_DISABLED=False | HTTP409=False
+GET /api/v2/native-sessions/{nativeSessionId} | REMOTE_SYNC_DISABLED=False | HTTP409=False
+GET /api/v2/native-sessions/{nativeSessionId}/messages | REMOTE_SYNC_DISABLED=True | HTTP409=True
+```
+
+`api-guide.md` 的公共错误总表包含 REMOTE_SYNC_DISABLED，但不等于每条路由都声明可返回该码。当前中文为「该电脑关闭内容同步，不能向已删除副本提交」。此外 `R3-contract.md` §9（当前第102行）仍写着：
+
+> sync关闭/设备删除/workspace移除清理索引后GET返回NOT_FOUND
+
+这与本轮要求将“同步关闭”单独返回 REMOTE_SYNC_DISABLED 的裁决需要同步。请 W0 按裁决补齐列表/详情的路由错误码、409响应及示例，并同步契约、指南及生成发布物；若 HTTP message 也须精确使用「这台电脑已关闭同步」，请同步其固定文案来源。P1 不自行修改这些文件，也不另加同步状态字段。
+
+补冻合入后继续：在已授权的设备/本机索引公开ID映射下判断当前 store 的 enabled 状态；关闭返回既有码，重新启用并补传后恢复列表；跨 owner、未知ID、设备删除仍按既有404边界。再补三接口、重新开启、正常空页和删除优先级测试，串行运行 server 全量、冒烟及 `validate -CheckGenerated`。
+
+本轮因协议门禁停止，未运行上述三项验收，不能引用前文 `223 passed` / `SMOKE PASS` 作为返修结果。只提交协议核对和阻塞回执，不合并回 integration。
