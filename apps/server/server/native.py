@@ -22,7 +22,20 @@ class NativeService:
         require(catalog['workerStoreId'] == store and any(w['workspaceId'] == public for w in catalog['workspaces']), 'NOT_FOUND')
         return mapping['local']
 
-    def native_get(self, tx, owner, identifier):
+    def native_sync_enabled(self, tx, owner, worker):
+        device = self.get(tx, owner, 'device', worker)
+        require(self.replica.state(tx, owner, worker, device['workerStoreId'])['enabled'], 'REMOTE_SYNC_DISABLED')
+        return device
+
+    def native_get(self, tx, owner, identifier, *, check_sync=False):
+        if check_sync:
+            # reset erases the index, but retains only its owner-scoped identity.
+            # Never guess a device for an unknown or another owner's public ID.
+            mapping = tx.sync_reverse(owner, 'native-index', identifier)
+            require(mapping is not None and not mapping['deleted'], 'NOT_FOUND')
+            device = self.get(tx, owner, 'device', mapping['worker'])
+            require(device['workerStoreId'] == mapping['store'], 'NOT_FOUND')
+            self.native_sync_enabled(tx, owner, mapping['worker'])
         value = self.browser_get(tx, owner, 'native-index', identifier)
         device = self.get(tx, owner, 'device', value['workerId'])
         require(device['workerStoreId'] == value['_store'], 'NOT_FOUND')
@@ -33,7 +46,7 @@ class NativeService:
         return dict({k: v for k, v in value.items() if not k.startswith('_')}, workerOnline=self.online(owner, value['workerId']))
 
     def native_page(self, tx, owner, worker, query):
-        device = self.get(tx, owner, 'device', worker)
+        device = self.native_sync_enabled(tx, owner, worker)
         limit = int(query.get('limit', 50)); require(1 <= limit <= 100)
         workspace, agent = query.get('workspaceId'), query.get('agentType')
         require(agent is None or agent in {'claude', 'codex'})
@@ -122,7 +135,7 @@ class NativeService:
     def query_plan(self, tx, owner, operation, path, body, query, key, request_id):
         from .queries import QueryPlan
         if operation == 'native_read':
-            value = self.native_get(tx, owner, path['nativeSessionId'])
+            value = self.native_get(tx, owner, path['nativeSessionId'], check_sync=True)
             connection = self.r3_ready(tx, owner, value['workerId'], read=True)
             require(value['format']['status'] == 'readable', 'NATIVE_SESSION_UNSUPPORTED')
             payload = dict(nativeSessionId=value['_localId'], limit=int(query.get('limit', 50)))
