@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import NativeSessionsPanel from '@/pages/native/NativeSessionsPanel.vue'
+import RemoteWorkspaceDialog from '@/pages/native/RemoteWorkspaceDialog.vue'
+import { agentLabel, closureText } from '@/pages/native/native-utils'
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import RemoteRequestNotice from './RemoteRequestNotice.vue'
@@ -42,6 +45,10 @@ const messageContainerRef = ref<HTMLElement | null>(null)
 
 // Dialog states
 const isNewConversationDialogOpen = ref(false)
+const addingWorkspace = ref(false)
+const nativeConfirmed = ref(false)
+const nativeCanSend = computed(() => chatStore.activeConversation?.conversationKind !== 'native' || chatStore.activeConversation.nativeActivity?.activity === 'closed_confirmed' || (nativeConfirmed.value && Boolean(chatStore.activeConversation.nativeSourceRevision)))
+watch(() => chatStore.activeConversation?.nativeSourceRevision, () => { nativeConfirmed.value = false })
 const newTitle = ref('')
 const newSceneId = ref('')
 const newWorkspaceId = ref('')
@@ -236,6 +243,7 @@ function updateDefaultSessionMode() {
 watch(
   () => chatStore.activeConversationId,
   () => {
+    nativeConfirmed.value = false
     isSessionModeUserSelected.value = false
     updateDefaultSessionMode()
   }
@@ -294,7 +302,7 @@ function canWithdraw(cmd: RemoteCommandView): boolean {
 async function handleSendMessage() {
   if (chatStore.isRemoteSuspended) { chatStore.sendError = '这台电脑的远程操作已暂停'; return }
   const text = inputText.value.trim()
-  if (!text || chatStore.isSending) return
+  if (!text || chatStore.isSending || !nativeCanSend.value) return
 
   if (!chatStore.isWorkerOnline) {
     chatStore.sendError = '设备离线，发送失败'
@@ -306,10 +314,12 @@ async function handleSendMessage() {
   }
 
   try {
-    await chatStore.sendMessage(text, sessionMode.value)
+    await chatStore.sendMessage(text, sessionMode.value, nativeConfirmed.value && chatStore.activeConversation?.nativeSourceRevision ? { terminalClosedConfirmed: true, sourceRevision: chatStore.activeConversation.nativeSourceRevision } : undefined)
+    nativeConfirmed.value = false
     inputText.value = ''
     scrollToBottom()
   } catch {
+    nativeConfirmed.value = false
     // Input retained on failure
   }
 }
@@ -469,7 +479,7 @@ function getExecutionStatusLabel(status?: string): string {
             :variant="chatStore.isWorkerOnline ? 'success' : 'neutral'"
             class="shrink-0 text-[10px]"
           >
-            {{ chatStore.isWorkerOnline ? '电脑在线' : '电脑离线' }}
+            {{ chatStore.activeConversation?.conversationKind === 'native' ? agentLabel(chatStore.activeConversation.agentType) : chatStore.isWorkerOnline ? '电脑在线' : '电脑离线' }}
           </HqBadge>
           <button v-if="chatStore.activeRun" type="button" data-testid="run-status-toggle"
             class="shrink-0 rounded px-1.5 py-1 text-[10px]" :class="statusNeedsAttention ? 'text-warning bg-warning/15' : 'text-text-muted bg-panel'"
@@ -628,7 +638,7 @@ function getExecutionStatusLabel(status?: string): string {
                   </span>
                 </div>
                 <div class="flex items-center gap-2 text-[10px] text-text-muted mt-0.5">
-                  <span>场景: {{ conv.sceneId }}</span>
+                  <span>{{ conv.conversationKind === 'native' ? agentLabel(conv.agentType) : `场景: ${conv.sceneId}` }}</span>
                   <span v-if="conv.archived">(已归档)</span>
                 </div>
               </div>
@@ -647,6 +657,8 @@ function getExecutionStatusLabel(status?: string): string {
           </div>
         </div>
 
+        <NativeSessionsPanel remote :worker-id="chatStore.selectedDevice?.workerId" :online="chatStore.isWorkerOnline" :suspended="chatStore.isRemoteSuspended" :revisions="chatStore.selectedDevice?.supportedWireRevisions"
+          :projects="(chatStore.catalog?.workspaces || []).map((w) => ({ id: w.workspaceId, name: w.name }))" @opened="isMobileSidebarOpen = false" />
         <div class="p-3 border-t border-border flex items-center justify-between text-xs text-text-muted">
           <button
             type="button"
@@ -1001,9 +1013,15 @@ function getExecutionStatusLabel(status?: string): string {
             <span>上一轮已中断，继续上下文可能失败</span>
           </div>
 
+          <div v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-[11px] space-y-1">
+            <p>{{ agentLabel(chatStore.activeConversation.agentType) }} · 固定继续原生会话</p>
+            <template v-if="chatStore.activeConversation.nativeActivity?.activity !== 'closed_confirmed'">
+              <p>{{ closureText }}</p><label class="flex gap-2"><input v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
+            </template>
+          </div>
           <!-- SessionMode switch -->
           <div class="flex items-center justify-between text-xs text-text-muted px-1">
-            <div class="flex items-center gap-3">
+            <div v-if="chatStore.activeConversation?.conversationKind !== 'native'" class="flex items-center gap-3">
               <label class="flex items-center gap-1 cursor-pointer">
                 <input
                   v-model="sessionMode"
@@ -1048,7 +1066,7 @@ function getExecutionStatusLabel(status?: string): string {
               variant="primary"
               class="h-9 px-3.5 rounded-xl shrink-0"
               :loading="chatStore.isSending"
-              :disabled="chatStore.isRemoteSuspended || !inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
+              :disabled="!nativeCanSend || chatStore.isRemoteSuspended || !inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
               @click="handleSendMessage"
             >
               <Send class="w-4 h-4" />
@@ -1067,7 +1085,10 @@ function getExecutionStatusLabel(status?: string): string {
       <div class="space-y-4 text-xs text-text">
         <p v-if="chatStore.actionError" role="alert" class="text-danger">{{ chatStore.actionError }}</p>
         <div class="space-y-1.5">
-          <label for="new-conv-workspace" class="block font-medium text-text-secondary">项目</label>
+          <div class="flex items-center justify-between"><label for="new-conv-workspace" class="block font-medium text-text-secondary">项目</label>
+            <HqButton size="sm" variant="ghost" :disabled="!chatStore.catalog?.authorizedRoots?.length || chatStore.isRemoteSuspended || !chatStore.isWorkerOnline" @click="addingWorkspace = true">添加项目</HqButton>
+          </div>
+          <p v-if="!chatStore.catalog?.authorizedRoots?.length" class="text-[11px] text-text-muted">电脑未开放远程添加项目</p>
           <select id="new-conv-workspace" v-model="newWorkspaceId" :disabled="!chatStore.catalog || chatStore.isLoadingCatalog"
             class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text">
             <option v-if="!chatStore.catalog?.workspaces.length" value="">{{ catalogHint }}</option>
@@ -1125,6 +1146,8 @@ function getExecutionStatusLabel(status?: string): string {
         </div>
       </template>
     </HqDialog>
+
+    <RemoteWorkspaceDialog v-if="addingWorkspace" @close="addingWorkspace = false" @selected="newWorkspaceId = $event" />
 
     <!-- Withdraw Confirmation Dialog -->
     <HqDialog

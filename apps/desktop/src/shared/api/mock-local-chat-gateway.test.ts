@@ -79,7 +79,7 @@ describe('MockLocalChatGateway', () => {
 
   it('persists review mode while keeping existing run snapshots immutable', async () => {
     const runsBefore = await gateway.listConversationRuns('conv_develop_ui')
-    expect(runsBefore[0].sceneSnapshot.reviewMode).toBe('original_planner')
+    expect(runsBefore[0].sceneSnapshot!.reviewMode).toBe('original_planner')
     const scenes = await gateway.listLocalScenes()
     const develop = scenes.find(scene => scene.id === 'develop')!
 
@@ -91,7 +91,7 @@ describe('MockLocalChatGateway', () => {
     expect(updated.reviewMode).toBe('independent')
 
     const runsAfter = await gateway.listConversationRuns('conv_develop_ui')
-    expect(runsAfter[0].sceneSnapshot.reviewMode).toBe('original_planner')
+    expect(runsAfter[0].sceneSnapshot!.reviewMode).toBe('original_planner')
   })
 
   it('rejects incomplete original planner scene saves', async () => {
