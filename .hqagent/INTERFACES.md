@@ -208,3 +208,8 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 独立线路3，支持[1,2,3]；旧线路及189份Fixture不变。91个新类型、48个具体帧；索引可靠同步，历史/目录查询临时不落盘；完整导入、精确续接、关闭确认与单写进程、电脑本机授权根和受限逐层登记。
 
 本轮复跑validate通过（426类型/288Fixture）、API通过（33现有+6新增HTTP，81错误码）、专项191 passed。额外旧集301 passed/3 failed，三项在2b3377c基线均复现，不是本次回归；具体证据及P1/P2/P3实施要求见[回执](handoffs/R3-P0-protocol.md)。冻结的是协议，不代表R3业务已实现。
+
+
+### R3返修1验收更新（2026-09-29）
+
+三个历史测试前提已修正，未改协议冻结SHA、未删除/skip/xfail测试。全量packages/protocol/tests与scripts/protocol/tests：**495 passed in 28.98s**；validate（426类型/288Fixture）和api-contract均通过。原301/3记录仅为历史证据，不再是当前失败状态，详见R3-P0回执“返修1”。
