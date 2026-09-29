@@ -1,4 +1,4 @@
-# Hub Server 对外接口规范（协议包 0.9.0）
+# Hub Server 对外接口规范（协议包 0.9.1）
 
 R3完整约束见[R3-contract.md](R3-contract.md)。新接口仅Cookie；不扩展PAT白名单。电脑是原生会话内容与目录安全的唯一权威。
 
@@ -9,7 +9,7 @@ R3完整约束见[R3-contract.md](R3-contract.md)。新接口仅Cookie；不扩�
 ## 1. 基础约定
 
 - HTTPS Base URL：`https://<部署域名>`，资源前缀`/api/v2`。示例域名`hub.example.invalid`及全部示例ID/令牌均是合成数据，不能用于真实认证。
-- `protocolVersion`是协议包版本，当前0.9.0；URI版本仍v2。Worker线路修订支持[1,2,3]，以wireRevision协商，不能拿包版本相等当接入条件。
+- `protocolVersion`是协议包版本，当前0.9.1；URI版本仍v2。Worker线路修订支持[1,2,3]，以wireRevision协商，不能拿包版本相等当接入条件。
 - 请求和响应JSON使用UTF-8、camelCase。写入通常`Content-Type: application/json`；无请求体的DELETE不要求伪造JSON。拒绝未声明的输入字段，不接受客户端传owner/账号归属字段。
 - 时间统一RFC3339 UTC `Z`，例如`2026-09-27T12:00:00.000Z`。ID是不可解析的有界字符串，按Schema长度限制，拼URL时编码路径段。安全整数上限2^53-1。
 - 成功信封：`{success:true,data,requestId,protocolVersion}`；失败：`{success:false,error,requestId,protocolVersion}`。两者互斥，不以HTTP200包装失败，不在失败时返回业务data。
@@ -19,7 +19,7 @@ R3完整约束见[R3-contract.md](R3-contract.md)。新接口仅Cookie；不扩�
 示例错误（已授权资源的CAS冲突）：
 
 ```json
-{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.9.0"}
+{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.9.1"}
 ```
 
 ## 2. 鉴权矩阵与凭据边界

@@ -451,3 +451,6 @@ unknown按活跃只读；明确确认终端关闭并留审计后才可接续，�
 **实现取舍**：临时query有queryId/requestId/连接世代/10秒期限及有界分段，不分配seq，不落可靠事件流；结果≤1MiB，每设备4个/每账号16个在途。索引upsert/delete继续可靠seq/ACK，重置/设备删除/workspace移除清理索引。导入/项目登记沿30秒命令与grant，资源命令不虚构conversationId/runId/执行序号。六个新云端HTTP路由仅Cookie，PAT scope不增加；暂停禁止浏览目录和登记/导入，仍可读原生历史。
 
 **范围与事实**：已只读抽查本机两类CLI记录的结构，未保存真实内容；观察版本不是读取器验收。未知格式必须unsupported和原因，插件负责来源/版本/活跃探测。详见packages/protocol/remote/R3-contract.md；P1服务端、P2读取插件/Hub、P3界面分别实施。旧目标文档“导入仅索引”由用户v0.5 §8.3a覆盖，Attempt仍依D40映射；本轮不改业务代码或docs/。
+
+
+**D51补充（0.9.1，主代理裁决）**：补齐本机v1 Bearer/v2 Cookie原生会话列表、详情、读取、导入四组等价操作。LocalNativeSessionPage复用NativeSessionIndex，默认50/最多100；导入复用RemoteNativeImportInput，同步201返回native LocalConversationView，不经送达/grant。Hub签发并审计本机关闭确认，与云端共享精确绑定写锁和再检查。未配对、离线或仅线路2不限制本机使用，native内容在修订3及栅栏完成前延迟上传，电脑如实提示，手机暂不可见；修改0.9.0“栅栏前不得创建”措辞为不得上传。所有响应no-store，本机日志无正文。线路帧不变。

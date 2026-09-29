@@ -74,7 +74,7 @@ def test_old_fixture_files_byte_identical():
 
 def test_each_new_type_and_every_revision3_frame_has_fixture():
     assert set(R3) <= {n for f,n in M.items() if f.startswith('r3.')}
-    assert models.PROTOCOL_VERSION==API['info']['version']=='0.9.0'
+    assert models.PROTOCOL_VERSION==API['info']['version']=='0.9.1'
     assert set(API['x-worker-websocket']['revisions'])=={1,2,3}
     assert all(v['properties']['wireRevision']['const']==3 for v in R3.values() if 'wireRevision' in v.get('properties',{}))
 
