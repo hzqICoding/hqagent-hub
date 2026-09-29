@@ -2,16 +2,16 @@
 wp: R3-P2
 status: done
 scope_declared: [apps/hub/**, apps/server/server/replica.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, .hqagent/handoffs/R3-P2-hub.md]
-scope_touched: [apps/hub/tests/test_r3_directory_mixed.py, apps/hub/tests/test_r3_long_history.py, apps/hub/tests/test_r3_roots.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, apps/hub/tests/test_r3_upgrade_fences.py, apps/hub/tests/test_r3_upgrade_history.py, apps/hub/tests/test_r3_version_series.py, apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md]
+scope_touched: [apps/hub/tests/test_r3_history_shapes.py, apps/hub/tests/test_r3_directory_mixed.py, apps/hub/tests/test_r3_long_history.py, apps/hub/tests/test_r3_roots.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, apps/hub/tests/test_r3_upgrade_fences.py, apps/hub/tests/test_r3_upgrade_history.py, apps/hub/tests/test_r3_version_series.py, apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md]
 build: pass
 tests: pass
-commit: 1335cd74cdc82730f0e5a5fe7731e82e88c62acd
+commit: 5b84af62ed61f5c3849f6d22946dbc4352632c50
 open_questions: 0
 ---
 
 # R3-P2 Hub / Worker 完成回执（协议 0.9.1）
 
-工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1 / 2 / 3 的修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
+工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1 / 2 / 3 / 4 的修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
 
 ## Q1 已由 0.9.1 关闭
 
@@ -559,3 +559,139 @@ exit $LASTEXITCODE
 - `1e90790`：授权目录浏览跳过不安全/不可访问子项、计数审计及登记守卫测试。
 - `1335cd7`：规范会话绑定不随 cwd/补丁变化，逐条系列验证及完整历史测试。
 - 回执另提交。每次提交后均执行 git log -1 --format=%B 自查；未合回 integration。
+
+## 返修 4：结构化原生历史兼容与安全降级
+
+本轮在 feat/remote-worker 继续，未合并其它分支。仅修改 adapters/history.py、runtime/native/service.py 和 Hub 相关测试；没有修改协议、Server、执行内核、活跃检测或权限规则。
+
+### 根因
+
+旧读取器将 mode/attachment/bridge-session 等辅助记录以及未来未知类型视为错误；主链还要求 parentUuid 必须等于上一条已显示消息的 uuid。隐藏消息和辅助记录可以参与父链接，多个 assistant 块也可共享更早的父节点，所以这两个条件均比实际记录结构严格。旧逻辑还会因为一个 sidechain 记录而排除整个混合文件。
+
+### 实现
+
+- **辅助记录和未知类型**：已知非消息类型不展开正文；未知记录直接忽略，未知 event/item 同样忽略。诊断只保存固定计数键，不保存未知类型的任意原值或负载。bridge-session 的账号、组织字段既不作为消息，也不成为索引属性或标题。
+- **标题**：只从明确的 ai-title.aiTitle 取候选，先走现有 public_text/凭据过滤，再截到 120 码点；优先于首条公开用户消息。无候选时原回退不变。NativeService.scan 共用此投影，未增加协议字段。
+- **消息**：user/assistant 保留合法 role、content 类型校验；user 的 str/list 都支持。text 输出经脱敏的正文，thinking/reasoning 等私有内容不输出，工具调用与结果只输出安全名称/通用摘要，不输出参数及原始结果。image 使用固定“[图片]”，未知块用固定“[不支持的内容块]”并计数，不猜测块内文本。
+- **系统和压缩**：生成的 NativeMessagePart 仅允许 user/assistant/tool_summary，不能自造 system。压缩摘要与显式 compact_boundary 显示固定“对话已压缩”，不上传压缩摘要正文；有 message 的 system 使用安全固定“[系统消息]”，不上传原始系统指令。这些标注走已有 tool_summary，导入时沿用既有 system 映射。system 若不带 message，按辅助记录处理。
+- **内部/sidechain**：isMeta/isVisibleInTranscriptOnly 不展示；压缩记录即便同时为内部记录也只显示固定提示。sidechain 按记录跳过，不参与主流身份或父链，也不压掉同文件合法主流。整个文件只有 sidechain 与辅助记录时静默排除，不能因缺少主流信封再报能力错误。
+- **链**：主流 UUID 检查覆盖已知消息和辅助/隐藏记录，父节点可指向任意已经出现的主流记录，而非只认紧邻消息。重复/非法 UUID、真正缺少父节点仍拒绝。只有 isCompactSummary=true 或 system/subtype=compact_boundary 且 compactMetadata 为对象的明确边界可以引用已退休前缀；其后的普通消息不能借边界标记绕过缺失父节点检查。未知记录的负载不作链语义猜测。
+- **仍严格拒绝**：主流会话身份冲突、已知消息缺失/非法 role、非法 content 或已知 text 块形状、损坏 JSON、未验证版本系列及真实断链继续返回 unsupported。CLI 系列规则、规范 cwd、终端来源和已登记 workspace 过滤未放宽。
+- **源指纹**：reader profile 增加 structures-v2 标识，使旧解析结果的确认/读取快照不会冒充本次规范化结果。凭据过滤函数、私有推理过滤和分段代码未改。
+
+structureCounts 为 Runtime 插件内部诊断：ignoredRecords、unknownRecords、unknownItems、unknownEvents、unknownBlocks、sidechainRecords、internalMessages。没有给 HTTP/线路 DTO 自加字段。
+
+### 结构核对与隐私边界
+
+使用内存中的 JSON 解析，仅访问类型、message 的 Python 形状、UUID/parent 关系和计数等结构字段；未使用普通正文读取器展开真实文件，未打印文件名、会话 ID、正文、账号或组织信息，未将真实正文写到临时文件、测试或仓库。
+
+实际输出摘要：
+
+```text
+claude files 2
+types: queue-operation 4, user 2, attachment 10, atis-latch 2, assistant 2, last-prompt 2
+message_shapes: user/dict 2, assistant/dict 2
+
+codex files 2
+types: session_meta 2, event_msg 161, response_item 217, unknown 2, turn_context 3
+event/item counts:
+task_started 3, message 36, item_completed 94, reasoning 67,
+custom_tool_call 38, custom_tool_call_output 38, token_count 60,
+function_call 19, function_call_output 19, task_complete 3, thread_settings_applied 1
+
+claude larger-sample records 10196
+system.message shapes {}
+compactMetadata/dict 4
+duplicate_uuid 0, parent_not_seen 0, message_without_uuid 0
+```
+
+这是有界样本的结构核对，不是读取任意版本的兼容承诺，也不是对主代理那份 11730 条记录正文的验收。所有可执行回归均使用合成数据。
+
+### 测试与原断言变更
+
+新增 test_r3_history_shapes.py 共 9 项：
+
+1. 按提供的类型数量精确构造 11730 条基础记录，版本数量也精确为 None=3959、2.1.261=3129、2.1.281=425、2.1.283=4217；含 user str/list、thinking/tool/image/text，再加入内部记录、sidechain、未知记录/块和 system 消息。断言可读、标注正确、统计计数正确；凭据、账号/组织哨兵、工具参数/结果、图片数据、压缩/内部/私有正文均不进入规范化结果或能力诊断。
+2. 两种明确 compact 边界允许退休前缀；后继普通记录 parentUuid 真正缺失仍 unsupported。
+3. 两种 Agent 的缺失消息/非法 role 共四项，继续 unsupported。
+4. Codex 的未知 record/event/item 安全忽略，未知块使用占位，压缩使用固定提示，敏感负载不外泄。
+5. 本机列表和持久索引验证 ai-title 优先、完整脱敏后截 120 码点、bridge 账号/组织信息不落索引。
+
+调整既有断言：
+
+- test_r3_native.py 的未知块用例改为精确断言“可读 + 固定占位 + unknownBlocks=1”，原 MUST_NOT_GUESS 不出现的断言保留；非对象块和损坏 JSON 的 unsupported 断言保留。
+- test_r3_version_series.py 中“block 损坏”从合法的未知块改为已知 text 块含非字符串 text，保留原 unsupported/无正文/无泄露断言；身份、版本系列等负向样本未改。
+- 给既有全 sidechain 用例增加“无能力错误诊断”断言。其终端来源与不收录断言保留。
+- 其它既有断言未放宽。
+
+定向测试真实输出：
+
+```text
+42 passed, 1 warning in 2.18s
+```
+
+### 最终验证
+
+全部串行，未跑 Vitest、未安装依赖。TEMP/TMP/--basetemp 均位于 worktree/.tmp。全量启动后补了全 sidechain 的静默排除，因此以下以最终版本重跑结果为准。
+
+Hub，cwd apps/hub：
+
+```powershell
+$env:TEMP='E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair4-hub-verified --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair4-hub-verified.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 16%]
+........................................................................ [ 32%]
+........................................................................ [ 48%]
+........................................................................ [ 65%]
+........................................................................ [ 81%]
+........................................................................ [ 97%]
+远程送达预留清理暂未完成，将重试
+远程送达预留清理暂未完成，将重试
+...........                                                              [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+443 passed, 4 warnings in 262.77s (0:04:22)
+```
+
+Server，cwd apps/server，TEMP/TMP/PYTHONIOENCODING 同上：
+
+```powershell
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair4-server-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair4-server-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 31%]
+........................................................................ [ 62%]
+........................................................................ [ 93%]
+...............                                                          [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+231 passed, 1 warning in 73.41s (0:01:13)
+```
+
+两条命令退出码均 0。git diff --check 和范围检查通过。Hub 新增 9 项；此前的依赖弃用 warning 及通用预留清理重试日志仍存在，不宣称本轮修复这些日志。未遇到 429、0xC0000142 或额度错误；没有变更或重新生成协议。
+
+本次提交：
+- `5b84af6`：原生历史结构解析、安全降级、标题投影和合成回归。
+- 本回执另提交。每次提交后执行 git log -1 --format=%B 自查，无署名或生成标记；未合回 integration。
