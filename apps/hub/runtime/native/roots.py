@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import stat
 import time
 import threading
 from contextlib import ExitStack, contextmanager
@@ -115,12 +116,13 @@ class AuthorizedRoots:
                 yield target
                 self._root(root_id, version)
 
-    def audit(self, request_id, root_id, code, *, operation="directory.list", transaction=None):
+    def audit(self, request_id, root_id, code, *, operation="directory.list", transaction=None, skipped_count=None):
         def record(tx):
             known = {r["rootId"] for r in self.repo.get("authorized-roots",tx)["roots"]}
             self.repo.events.append(tx, EventDraft(aggregate_type="system", aggregate_id="directory-audit",
                 type="remote.directory.audited", payload={"requestId": request_id, "operation": operation,
-                "rootId": root_id if root_id in known else "unrecognized-root", "resultCode": code}))
+                "rootId": root_id if root_id in known else "unrecognized-root", "resultCode": code,
+                **({"skippedCount": skipped_count} if skipped_count is not None else {})}))
             self.repo.seal(tx)
         if transaction is not None:
             record(transaction)
@@ -130,11 +132,11 @@ class AuthorizedRoots:
 
     def listing(self, value, request_id):
         try:
-            result = self._listing(value)
+            result, skipped = self._listing(value)
         except HubError as error:
             self.audit(request_id, value.root_id, error.code)
             raise
-        self.audit(request_id, value.root_id, "OK")
+        self.audit(request_id, value.root_id, "OK", skipped_count=skipped or None)
         return result
 
     def _listing(self, value):
@@ -146,14 +148,26 @@ class AuthorizedRoots:
             with directory_lease(reference["path"] if reference else root["path"], root=base,
                     identity=reference["identity"] if reference else root["_identity"]) as (directory, identity):
                 rows = []
+                skipped = 0
                 modified = directory.stat().st_mtime_ns
                 for child in directory.iterdir():
                     check_cancelled()
-                    if child.suffix.lower() == ".lnk" or not child.is_dir():
+                    if child.suffix.lower() == ".lnk":
                         continue
-                    absolute_directory(str(child))
-                    with directory_lease(str(child), root=base) as (_, child_identity):
-                        rows.append((child.name, str(child), child_identity, (child / ".git").is_dir()))
+                    try:
+                        if not stat.S_ISDIR(child.stat().st_mode):
+                            continue
+                        absolute_directory(str(child))
+                        with directory_lease(str(child), root=base) as (resolved, child_identity):
+                            entry = (child.name, str(child), child_identity, (resolved / ".git").is_dir())
+                        # Publish only after the lease's final identity check.
+                        rows.append(entry)
+                    except HubError as error:
+                        if error.code not in {"REMOTE_PATH_OUTSIDE_ROOT", "REMOTE_DIRECTORY_CHANGED"}:
+                            raise
+                        skipped += 1
+                    except OSError:
+                        skipped += 1
                     if len(rows) > 10000:
                         raise HubError("REMOTE_QUERY_TOO_LARGE", "目录规模超过当前安全浏览限额")
                 rows.sort(key=lambda row: (row[0].casefold(), row[0], row[2]))
@@ -175,4 +189,4 @@ class AuthorizedRoots:
                 self._root(value.root_id, value.root_version)
                 if directory.stat().st_mtime_ns != modified:
                     raise denied("REMOTE_DIRECTORY_CHANGED")
-                return DirectoryListingPage.model_validate(body)
+                return DirectoryListingPage.model_validate(body), skipped
