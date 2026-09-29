@@ -262,6 +262,38 @@ MIGRATIONS += (
     """),
 )
 
+MIGRATIONS += (
+    Migration(8, """
+        CREATE TABLE native_sources (
+            native_id TEXT PRIMARY KEY, binding_key TEXT NOT NULL UNIQUE,
+            workspace_id TEXT NOT NULL, runtime_id TEXT NOT NULL, agent_type TEXT NOT NULL,
+            source_json TEXT NOT NULL, index_json TEXT NOT NULL,
+            conversation_id TEXT UNIQUE, session_id TEXT UNIQUE, confirmation_json TEXT,
+            removed INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE native_writers (
+            binding_key TEXT PRIMARY KEY, session_id TEXT NOT NULL, owner TEXT NOT NULL,
+            state TEXT NOT NULL, source_revision TEXT NOT NULL, started_at TEXT NOT NULL, input_hash TEXT NOT NULL
+        );
+        CREATE TABLE native_commands (
+            worker_id TEXT NOT NULL, store_id TEXT NOT NULL, command_id TEXT NOT NULL,
+            digest TEXT NOT NULL, frame_json TEXT NOT NULL, state TEXT NOT NULL,
+            receipt_json TEXT NOT NULL, grant_json TEXT, result_json TEXT,
+            PRIMARY KEY(worker_id,store_id,command_id)
+        );
+        CREATE TRIGGER native_source_insert AFTER INSERT ON native_sources BEGIN
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id)
+            VALUES('native',NEW.native_id,'');
+        END;
+        CREATE TRIGGER native_source_update AFTER UPDATE ON native_sources WHEN
+            NEW.index_json IS NOT OLD.index_json OR NEW.removed IS NOT OLD.removed
+            OR NEW.conversation_id IS NOT OLD.conversation_id BEGIN
+            INSERT INTO remote_sync_changes(kind,resource_id,conversation_id)
+            VALUES('native',NEW.native_id,'');
+        END;
+    """),
+)
+
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
 
 

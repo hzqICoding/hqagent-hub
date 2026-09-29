@@ -16,7 +16,7 @@ class BusyState:
         self.last = None
 
     def enabled(self):
-        return self.repo.get("identity").get("wireRevision", 1) == 2
+        return self.repo.get("identity").get("wireRevision", 1) >= 2
 
     def observe(self, record):
         if record["task_id"]:
@@ -51,8 +51,8 @@ class BusyState:
         return sorted({r["conversation_id"] for r in records if r["run_id"] != exclude_run and (lambda s:
             s["status"] in ACTIVE and not s["recoveryRequired"] and s.get("reservationLive", True))(self.observe(r))})
 
-    def require_idle(self, tx, conversation):
-        if not self.enabled():
+    def require_idle(self, tx, conversation, *, force=False):
+        if not self.enabled() and not force:
             return
         if self.expire is not None:
             self.expire(tx)
@@ -86,6 +86,8 @@ class BusyState:
         if not self.enabled() or self.connection_id is None or not self.repo.get("link", tx)["view"].get("workerId"):
             return
         ids = self.ids(tx)
+        if self.repo.get("identity", tx).get("wireRevision", 1) < 3:
+            ids = [identifier for identifier in ids if str(self.chat.repository.conversation(identifier).conversation_kind) != "native"]
         identity = (self.connection_id, tuple(ids))
         if identity == self.last and not force:
             return

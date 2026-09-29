@@ -25,13 +25,13 @@ class SendWindow:
         seen = set()
         for content in candidates:
             frame = json.loads(content)
-            if frame.get("wireRevision") != 2:
+            if frame.get("wireRevision") != self.repo.get("identity").get("wireRevision"):
                 raise HubError("REMOTE_PROTOCOL_UNSUPPORTED", "禁止重写旧线路事件")
             key = frame.get("eventId") or frame["redactionId"]
             if key in seen:
                 continue
             seen.add(key)
-            privacy = frame["type"] in {"sync.reset", "sync.content.redaction"}
+            privacy = frame["type"] in {"sync.reset", "sync.content.redaction", "native.index.deleted"}
             end = frame["seq"] if "seq" in frame else max(s["seq"] for s in frame["slots"])
             if end <= ack:
                 continue
