@@ -39,7 +39,7 @@ def test_new_fixtures_round_trip(filename,kind):
 
 def test_every_new_type_has_fixture_and_version_is_http_minor_only():
     assert set(NEW)<={k for f,k in MANIFEST.items() if f.startswith('devices.')}
-    assert models.PROTOCOL_VERSION==API['info']['version']=='0.8.0'
+    assert models.PROTOCOL_VERSION==API['info']['version']=='0.9.1'
     sync=json.loads((P/'schema/remote-sync.json').read_text(encoding='utf-8'))['$defs']
     assert {d['properties']['wireRevision']['const'] for d in sync.values() if 'wireRevision' in d.get('properties',{})}=={2}
 
@@ -56,8 +56,11 @@ def test_old_fixtures_remain_unchanged_and_validate_in_new_package():
 def test_wire1_is_unchanged_wire2_only_pins_old_error_value_set():
     old=json.loads(before('schema/remote.json'))['$defs']
     current=json.loads((P/'schema/remote.json').read_text(encoding='utf-8'))['$defs']
+    # D51 changes these HTTP-only DTOs. Their exact deltas and all old wire
+    # transitive closures are independently pinned in test_native_protocol.py.
+    r3_http={'RemoteConversationView','RemoteCommandView','RemoteSendMessageInput'}
     for name,d in old.items():
-        if name not in ['RemoteDeviceView','RemoteDevicePage']:assert current[name]==d
+        if name not in {'RemoteDeviceView','RemoteDevicePage'} | r3_http:assert current[name]==d
     sync_old=json.loads(before('schema/remote-sync.json'))
     expected=deepcopy(sync_old)
     for d in expected['$defs'].values():
@@ -156,7 +159,7 @@ def test_spec_bundle_auth_examples_and_error_table_do_not_drift():
     guidance=yaml.safe_load((P/'remote/http-error-guidance.yaml').read_text(encoding='utf-8'))['errors']
     bundle=module.bundled(API,registry)
     runtime_count,total=module.check(API,registry,guidance,bundle)
-    assert total==33 and 27<=runtime_count<=33
+    assert total==39 and runtime_count==33
     assert bundle==json.loads((P/'openapi/remote-hub.v2.bundle.json').read_text(encoding='utf-8'))
     guide=(P/'remote/api-guide.md').read_text(encoding='utf-8')
     for name,block in module.table_blocks(API,registry,guidance).items():

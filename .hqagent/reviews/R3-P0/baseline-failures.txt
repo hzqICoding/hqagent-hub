@@ -1,0 +1,60 @@
+FFF                                                                      [100%]
+================================== FAILURES ===================================
+_______________________ test_rest_scope_and_references ________________________
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_contract.py:159: in test_rest_scope_and_references
+    refs(api)
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_contract.py:156: in refs
+    for child in node.values():refs(child)
+                               ^^^^^^^^^^^
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_contract.py:156: in refs
+    for child in node.values():refs(child)
+                               ^^^^^^^^^^^
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_contract.py:156: in refs
+    for child in node.values():refs(child)
+                               ^^^^^^^^^^^
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_contract.py:156: in refs
+    for child in node.values():refs(child)
+                               ^^^^^^^^^^^
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_contract.py:156: in refs
+    for child in node.values():refs(child)
+                               ^^^^^^^^^^^
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_contract.py:156: in refs
+    for child in node.values():refs(child)
+                               ^^^^^^^^^^^
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_contract.py:156: in refs
+    for child in node.values():refs(child)
+                               ^^^^^^^^^^^
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_contract.py:156: in refs
+    for child in node.values():refs(child)
+                               ^^^^^^^^^^^
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_contract.py:155: in refs
+    assert node['$ref'].split('/')[-1] in index
+E   AssertionError: assert 'PublishedOpenApiDocument' in {'AcknowledgeUpdateResultInput': {'additionalProperties': False, 'properties': {'toVersion': {'description': '要确认的结果版本...': 'common.json#/$defs/CapabilityId'}, 'type': 'array'}, ...}, 'required': ['kind', 'message', 'retryable'], ...}, ...}
+______ test_d44_does_not_change_schema_error_registry_events_v1_or_cloud ______
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_link_browser_contract.py:106: in test_d44_does_not_change_schema_error_registry_events_v1_or_cloud
+    current = frozen(path.relative_to(ROOT).as_posix())
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_link_browser_contract.py:16: in frozen
+    return subprocess.check_output(['git', 'show', f'500bf1f:{path}'], cwd=ROOT).decode('utf-8')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\subprocess.py:472: in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+E:\SoftWare\Python313\Lib\subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['git', 'show', '500bf1f:packages/protocol/schema/remote-devices.json']' returned non-zero exit status 128.
+---------------------------- Captured stderr call -----------------------------
+fatal: path 'packages/protocol/schema/remote-devices.json' exists on disk, but not in '500bf1f'
+_________________ test_new_type_fixture_coverage_and_version __________________
+.hqagent\r3-tmp\baseline\scripts\protocol\tests\test_remote_sync_contract.py:42: in test_new_type_fixture_coverage_and_version
+    assert models.PROTOCOL_VERSION == (P / 'VERSION').read_text().strip() == '0.7.0'
+E   AssertionError: assert '0.8.0' == '0.7.0'
+E
+E     - 0.7.0
+E     ?   ^
+E     + 0.8.0
+E     ?   ^
+=========================== short test summary info ===========================
+FAILED .hqagent/r3-tmp/baseline/scripts/protocol/tests/test_remote_contract.py::test_rest_scope_and_references
+FAILED .hqagent/r3-tmp/baseline/scripts/protocol/tests/test_remote_link_browser_contract.py::test_d44_does_not_change_schema_error_registry_events_v1_or_cloud
+FAILED .hqagent/r3-tmp/baseline/scripts/protocol/tests/test_remote_sync_contract.py::test_new_type_fixture_coverage_and_version
+3 failed in 2.02s

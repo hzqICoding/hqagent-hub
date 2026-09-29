@@ -20,6 +20,7 @@ from protocol.generated.python import (
     RemotePairingStatusView, RemoteServerOutboundFrame, RemoteWorkerOutboundFrame,
     TeamProfileView, WorkspaceView,
     RemoteV2WorkerOutboundFrame, RemoteV2ServerOutboundFrame,
+    RemoteV3WorkerOutboundFrame, RemoteV3ServerOutboundFrame,
 )
 from api.app import create_application
 from core.ports import HubPorts
@@ -40,6 +41,8 @@ from storage.tasks import TaskRepository
 
 TOKEN = "hub-test-" + "H" * 43
 TLS_FILES = Path(__file__).parent / "fixtures" / "remote"
+WORKER_CODECS = {1: RemoteWorkerOutboundFrame, 2: RemoteV2WorkerOutboundFrame, 3: RemoteV3WorkerOutboundFrame}
+SERVER_CODECS = {1: RemoteServerOutboundFrame, 2: RemoteV2ServerOutboundFrame, 3: RemoteV3ServerOutboundFrame}
 
 
 def later(seconds=300):
@@ -128,7 +131,7 @@ class FakeRemoteServer:
                     return
                 self.connections += 1
                 revision = requested
-                hello = dump((RemoteV2WorkerOutboundFrame if requested == 2 else RemoteWorkerOutboundFrame).model_validate(raw_hello))
+                hello = dump(WORKER_CODECS[requested].model_validate(raw_hello))
                 assert hello["type"] == "worker.hello"
                 self.hellos.append(hello)
                 if self.reject_revisions:
@@ -153,7 +156,7 @@ class FakeRemoteServer:
                 self.ws = ws
                 while True:
                     raw = await ws.receive_text()
-                    frame = dump((RemoteV2WorkerOutboundFrame if revision == 2 else RemoteWorkerOutboundFrame).model_validate_json(raw))
+                    frame = dump(WORKER_CODECS[revision].model_validate_json(raw))
                     self.frames.append(frame)
                     if frame["type"] == "sync.reset":
                         self.deletions[frame["eventId"]] = frame
@@ -223,7 +226,7 @@ class FakeRemoteServer:
                     pass
 
     async def send(self, value, ws=None):
-        value = dump((RemoteV2ServerOutboundFrame if value["wireRevision"] == 2 else RemoteServerOutboundFrame).model_validate(value))
+        value = dump(SERVER_CODECS[value["wireRevision"]].model_validate(value))
         await (ws or self.ws).send_json(value)
 
     async def __aenter__(self):

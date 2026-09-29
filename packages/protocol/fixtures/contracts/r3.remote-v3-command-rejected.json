@@ -1,0 +1,19 @@
+{
+  "type": "command.rejected",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "commandId": "command_demo",
+  "conversationId": "conversation_demo",
+  "receivedAt": "2026-09-26T12:00:00Z",
+  "status": "rejected",
+  "error": {
+    "code": "REMOTE_COMMAND_EXPIRED",
+    "message": "Request cannot be admitted",
+    "retryable": false
+  },
+  "wireRevision": 3
+}

@@ -12,7 +12,7 @@ class DeviceRepository:
     def ungranted_windows(self, owner, worker):
         return [json.loads(row[0]) for row in self.db.execute("""SELECT body FROM records
             WHERE owner=? AND worker=? AND kind='command' AND command_status='queued'
-            AND json_extract(body,'$._frame.wireRevision')=2
+            AND json_extract(body,'$._frame.wireRevision')>=2
             AND COALESCE(json_extract(body,'$._granted'),0)=0""", (owner, worker))]
 
     def delete_device_content(self, owner, worker, deleted):

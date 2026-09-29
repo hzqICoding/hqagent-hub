@@ -1,0 +1,13 @@
+{
+  "rootId": "root_example",
+  "rootVersion": 1,
+  "directoryToken": "opaque_synthetic_root_0001",
+  "entries": [
+    {
+      "name": "demo-project",
+      "isGitRepository": true,
+      "directoryToken": "opaque_synthetic_directory_0001"
+    }
+  ],
+  "hasMore": false
+}

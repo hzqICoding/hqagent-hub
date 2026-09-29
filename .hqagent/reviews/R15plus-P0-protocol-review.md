@@ -32,3 +32,17 @@ API contract verified: 27 current + 6 planned HTTP operations; 72 error codes; s
 ## 下一步
 
 R1.5+-P1 服务端已派给 `01a0ddec…`（high）。完成审核后再派 P3 前端，本机内存偏紧，所以串行执行。之后进行本机联调，并部署到 serverD。
+
+## 追加：R1.5+-P1 服务端审核（2026-09-28）
+
+- 交付：`feat/remote-server`，提交 `6a4a511`、`a36370b`、`e25d905`，回执 `.hqagent/handoffs/R15plus-P1-server.md`；执行会话为 codex `01a0ddec…`（high）。
+- 主代理复跑：server 全量 **195 passed**；冒烟通过，覆盖 PAT 签发、设备暂停 / 恢复 / 删除以及即时吊销；合入 integration 后再跑一次，仍是 195 passed。原先的 `test_http_binding_completeness` 失败已消除。
+- 安全面代码审查（`server/tokens.py`、`server/http.py`、`app.py`），结论是**通过**，已合入 integration：
+  - Cookie 与 Bearer 同时出现时拒绝；
+  - 令牌管理路由拒绝 Bearer，配对路由排除在 PAT 之外；
+  - 秘密只保存 HMAC 校验值，签发重放不返回秘密；
+  - 幂等作用域按 tokenId 隔离；
+  - Bearer 写请求仍需幂等键，并受来源限速约束；
+  - 每个 HTTP 请求都有 `X-Request-Id` 和一条结构化完成日志，不含凭据和正文；
+  - 暂停与 grant 做了真实双线程竞争测试；删除后直接扫描全部表，确认没有正文残留。
+- 下一步：R1.5+-P3 前端已派给 `01a0e638…`（medium），任务书为 `r15-web/.hqagent/handoffs/R15plus-P3-frontend.md`。

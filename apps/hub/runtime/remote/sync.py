@@ -11,7 +11,7 @@ from storage.idempotency import request_hash
 from storage.local_chat import now, uid
 from runtime.remote.wire import canonical, encode
 
-CONTENT_TYPES = frozenset({"sync.conversation.upserted", "sync.message.segment", "sync.run.state", "message.appended"})
+CONTENT_TYPES = frozenset({"sync.conversation.upserted", "sync.message.segment", "sync.run.state", "message.appended", "native.index.upserted"})
 WINDOW_BYTES = 1024 * 1024
 
 
@@ -19,6 +19,7 @@ class SyncService:
     def __init__(self, repository, chat, link, busy):
         self.repo, self.chat, self.link, self.busy = repository, chat, link, busy
         self.delivery = None
+        self.cancel_queries = lambda: None
         with self.repo.database.transaction() as tx:
             if self.repo.get("sync-settings", tx) is None:
                 self.repo.put("sync-settings", {"mirrorEnabled": True, "version": 1, "syncGeneration": 1}, tx)
@@ -28,7 +29,7 @@ class SyncService:
         return RemoteSyncSettingsView.model_validate(self.repo.get("sync-settings"))
 
     def active(self):
-        return self.repo.get("identity").get("wireRevision", 1) == 2
+        return self.repo.get("identity").get("wireRevision", 1) >= 2
 
     def context(self):
         return self.repo.get("identity")["store"], self.settings().sync_generation
@@ -45,6 +46,7 @@ class SyncService:
             changed = {"mirrorEnabled": value.mirror_enabled, "version": old["version"] + 1,
                        "syncGeneration": old["syncGeneration"] + 1}
             self.repo.put("sync-settings", changed, tx)
+            tx.after_commit(self.cancel_queries)
             tx.connection.execute("DELETE FROM remote_sync_items")
             self.repo.put("sync-work", {"phase": "pending", "resetPending": not value.mirror_enabled}, tx)
             if self.active() and self.repo.get("link", tx)["view"].get("workerId"):
@@ -60,9 +62,16 @@ class SyncService:
 
     def metadata(self, row):
         value = self.chat.repository._conversation_view(row["payload_json"])
-        scene = self.chat.repository.scene(str(value.scene_id))
+        native = str(value.conversation_kind) == "native"
+        fields = {"conversationKind": "native", "agentType": str(value.agent_type), "nativeSessionId": value.native_session_id} if native else {
+            "sceneId": str(value.scene_id), "sceneVersion": self.chat.repository.scene(str(value.scene_id)).version}
+        if native:
+            if value.native_activity:
+                fields["nativeActivity"] = value.native_activity.model_dump(mode="json",by_alias=True,exclude_none=True)
+            if value.native_source_revision:
+                fields["nativeSourceRevision"] = value.native_source_revision
         return {"conversationId": value.id, "workspaceId": value.workspace_id,
-                "sceneId": str(value.scene_id), "sceneVersion": scene.version,
+                **fields,
                 "title": self.link.sanitized(value.title), "createdAt": value.created_at,
                 "updatedAt": value.updated_at, "archived": bool(value.archived),
                 "visibility": str(value.visibility or "both"), "metadataVersion": value.version or 1,
@@ -71,7 +80,13 @@ class SyncService:
     def _stage(self, tx, batch, kind, row, *, force=False):
         store, generation = self.context()
         text = None
-        if kind == "conversation":
+        revision3 = self.repo.get("identity", tx).get("wireRevision", 1) >= 3
+        if kind == "native":
+            if not revision3 or row["removed"] or row["conversation_id"]:
+                return
+            resource = row["native_id"]
+            payload = json.loads(row["index_json"])
+        elif kind == "conversation":
             resource = row["conversation_id"]
             payload = self.metadata(row)
         elif kind == "message":
@@ -107,6 +122,10 @@ class SyncService:
                 "recoveryRequired": state["recoveryRequired"]}
             if row["task_id"]:
                 payload["executionTaskId"] = row["task_id"]
+        if kind != "native" and not revision3:
+            conv = tx.connection.execute("SELECT payload_json FROM local_conversations WHERE conversation_id=?", (row["conversation_id"],)).fetchone()
+            if conv and json.loads(conv[0]).get("conversationKind") == "native":
+                return  # No reliable seq is allocated for deferred native data.
         digest = request_hash({"payload": payload, "text": text})
         previous = tx.connection.execute("SELECT revision,digest FROM remote_sync_versions WHERE store_id=? AND generation=? AND kind=? AND resource_id=?",
                                         (store, generation, kind, resource)).fetchone()
@@ -119,7 +138,7 @@ class SyncService:
             "DO UPDATE SET revision=excluded.revision,digest=excluded.digest", (store, generation, kind, resource, revision, digest))
         body = text.encode("utf-8") if text is not None else b""
         tx.connection.execute("INSERT INTO remote_sync_items(backfill_id,kind,resource_id,conversation_id,payload_json,text,revision,segment_count,content_hash,byte_count) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (batch, kind, resource, row["conversation_id"], canonical(payload), text, revision,
+            (batch, kind, resource, row["conversation_id"] or "", canonical(payload), text, revision,
              max(1, (len(text) + 15999) // 16000) if text is not None else None,
              hashlib.sha256(body).hexdigest() if text is not None else None, len(body)))
 
@@ -136,6 +155,8 @@ class SyncService:
                 self._stage(tx, batch, kind, row, force=True)
         for row in tx.connection.execute("SELECT a.*,r.conversation_id FROM approvals a JOIN local_runs r ON r.task_id=a.task_id ORDER BY a.approval_id"):
             self._stage(tx, batch, "approval", row, force=True)
+        for row in tx.connection.execute("SELECT * FROM native_sources WHERE removed=0 AND conversation_id IS NULL ORDER BY native_id"):
+            self._stage(tx, batch, "native", row, force=True)
         self.repo.put("sync-work", {"store": store, "generation": generation, "backfillId": batch,
             "phase": "backfilling", "high": high, "cursor": high, "batch": 0, "waitAck": None}, tx)
 
@@ -164,7 +185,7 @@ class SyncService:
         store = deletion["workerStoreId"]
         pending = []
         def proof(slots):
-            frame = {"type": "sync.content.redaction", "wireRevision": 2, "redactionId": uid("redaction"),
+            frame = {"type": "sync.content.redaction", "wireRevision": deletion["wireRevision"], "redactionId": uid("redaction"),
                 **{k: deletion[k] for k in ("workerId", "workerStoreId", "workerEpoch", "syncGeneration")},
                 "deletionEventId": deletion["eventId"], "deletionSeq": deletion["seq"], "slots": slots}
             tx.connection.execute("INSERT INTO remote_sync_redactions VALUES(?,?,?,?)", (store, deletion["seq"], frame["redactionId"], encode(frame)))
@@ -201,6 +222,7 @@ class SyncService:
                 tx.connection.execute("UPDATE events SET payload_json='{}',envelope_json=? WHERE seq=?", (canonical(envelope), row["seq"]))
 
     def discard_binding(self, tx):
+        tx.after_commit(self.cancel_queries)
         if not self.active():
             return
         if self.delivery is not None and self.repo.get("link", tx)["view"].get("workerId"):
@@ -265,6 +287,8 @@ class SyncService:
             return
         row = tx.connection.execute("SELECT * FROM local_conversations WHERE conversation_id=?", (conversation,)).fetchone()
         payload = self.metadata(row)
+        if payload.get("conversationKind") == "native" and self.repo.get("identity", tx).get("wireRevision", 1) < 3:
+            return
         tx.connection.execute("DELETE FROM remote_sync_items WHERE kind='conversation' AND conversation_id=?", (conversation,))
         self.repo.emit(tx, "sync.conversation.upserted", syncGeneration=self.settings().sync_generation, payload=payload)
 
@@ -298,6 +322,8 @@ class SyncService:
                     payload.update(text=segment, segmentIndex=row["segment_index"], segmentCount=row["segment_count"],
                         totalUtf8Bytes=row["byte_count"], contentSha256=row["content_hash"])
                     kind = "sync.message.segment"
+                elif row["kind"] == "native":
+                    kind = "native.index.upserted"
                 elif row["kind"] == "approval":
                     kind = "approval.state_changed"
                 else:
@@ -331,6 +357,11 @@ class SyncService:
         changes = tx.connection.execute("SELECT * FROM remote_sync_changes WHERE sequence>? ORDER BY sequence LIMIT 100", (work["cursor"],)).fetchall()
         for change in changes:
             work["cursor"] = change["sequence"]
+            if change["kind"] == "native":
+                row = tx.connection.execute("SELECT * FROM native_sources WHERE native_id=?", (change["resource_id"],)).fetchone()
+                if row:
+                    self._stage(tx, work["backfillId"], "native", row)
+                continue
             if change["deleted"]:
                 continue  # No frozen local per-conversation deletion entry point.
             if change["kind"] == "approval":
@@ -347,7 +378,44 @@ class SyncService:
                     for approval in tx.connection.execute("SELECT a.*,r.conversation_id FROM approvals a JOIN local_runs r ON r.task_id=a.task_id WHERE a.task_id=?", (row["task_id"],)):
                         self._stage(tx, work["backfillId"], "approval", approval)
 
+    def prune_native(self):
+        if self.repo.get("identity").get("wireRevision") != 3 or not self.settings().mirror_enabled:
+            return
+        with self.repo.database.transaction() as tx:
+            store, generation = self.context()
+            for row in tx.connection.execute("SELECT * FROM native_sources WHERE removed<>0 OR conversation_id IS NOT NULL"):
+                tx.connection.execute("DELETE FROM remote_sync_items WHERE kind='native' AND resource_id=?", (row["native_id"],))
+                previous = tx.connection.execute("SELECT 1 FROM remote_sync_versions WHERE store_id=? AND generation=? AND kind='native' AND resource_id=?", (store,generation,row["native_id"])).fetchone()
+                tombstone = f"native-deleted:{store}:{generation}:" + row["native_id"]
+                if previous is None or self.repo.get(tombstone, tx):
+                    continue
+                deletion = self.repo.emit(tx, "native.index.deleted", syncGeneration=generation,
+                    nativeSessionId=row["native_id"], workspaceId=row["workspace_id"], deletedAt=now(),
+                    reason="imported" if row["conversation_id"] else "source_removed" if row["removed"] == 2 else "workspace_removed")
+                slots = []
+                for outbox in tx.connection.execute("SELECT * FROM remote_outbox WHERE store_id=? AND seq<?", (store,deletion["seq"])):
+                    old = json.loads(outbox["frame_json"])
+                    if old.get("type") == "native.index.upserted" and old["payload"]["nativeSessionId"] == row["native_id"]:
+                        slots.append({"seq":outbox["seq"],"eventId":outbox["event_id"],"eventSha256":outbox["digest"],"originalType":old["type"]})
+                        tx.connection.execute("UPDATE remote_outbox SET frame_json='{}' WHERE store_id=? AND seq=?", (store,outbox["seq"]))
+                for record in tx.connection.execute("SELECT seq,envelope_json,payload_json FROM events WHERE aggregate_id='remote-worker'"):
+                    body = json.loads(record["payload_json"])
+                    if body.get("type") == "native.index.upserted" and body.get("workerStoreId") == store and body["payload"]["nativeSessionId"] == row["native_id"]:
+                        envelope = json.loads(record["envelope_json"]); envelope["payload"] = {}
+                        tx.connection.execute("UPDATE events SET payload_json='{}',envelope_json=? WHERE seq=?", (canonical(envelope),record["seq"]))
+                for start in range(0,len(slots),100):
+                    proof = {"type":"sync.content.redaction","wireRevision":3,"redactionId":uid("redaction"),
+                        **{k:deletion[k] for k in ("workerId","workerStoreId","workerEpoch","syncGeneration","nativeSessionId")},
+                        "deletionEventId":deletion["eventId"],"deletionSeq":deletion["seq"],"slots":slots[start:start+100]}
+                    tx.connection.execute("INSERT INTO remote_sync_redactions VALUES(?,?,?,?)", (store,deletion["seq"],proof["redactionId"],encode(proof)))
+                self.repo.put(tombstone, {"seq":deletion["seq"]}, tx)
+            self.repo.seal(tx)
+
     def source_event(self, tx, row):
+        if self.repo.get("identity",tx).get("wireRevision") == 3 and row["type"] == "native.closure.confirmed":
+            payload = json.loads(row["payload_json"])
+            if payload.get("commandId") and payload.get("_storeId") == self.repo.get("identity",tx)["store"] and payload.get("_workerId") == self.repo.get("link",tx)["view"].get("workerId"):
+                return "native.closure.confirmed",{k:payload[k] for k in ("commandId","nativeSessionId","confirmation")}
         # The local kernel event log is private. Migration 7 journals durable
         # conversation/message/run/approval changes separately, in their source
         # transactions. Sync emits those after metadata, in bounded batches;

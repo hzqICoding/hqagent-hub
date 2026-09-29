@@ -1,0 +1,24 @@
+{
+  "type": "command.control_result",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "commandId": "command_demo",
+  "conversationId": "conversation_demo",
+  "resultRef": {
+    "runId": "run_demo"
+  },
+  "controlResult": {
+    "outcome": "unconfirmed",
+    "executionMayStillBeRunning": true,
+    "orphanProcessIds": [],
+    "reason": "Worker confirmed at node boundary",
+    "evidence": "missing_execution_handle",
+    "observedAt": "2026-09-26T12:00:00Z"
+  },
+  "executionStatus": "paused",
+  "wireRevision": 3
+}

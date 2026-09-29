@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import dataclass, field
 
 from starlette.websockets import WebSocketDisconnect
@@ -31,6 +32,8 @@ class Connection:
     closed: bool = False
     busy_fresh: bool = False
     replay: list = field(default_factory=list)
+    transient: list = field(default_factory=list)
+    on_close: object = None
     wakeup: asyncio.Event = field(default_factory=asyncio.Event)
     loop: object = field(default_factory=asyncio.get_running_loop, repr=False)
 
@@ -43,6 +46,8 @@ class Connection:
 
     async def close(self, code):
         self.closed = True
+        if self.on_close:
+            self.on_close()
         self.wake()
         try:
             await self.socket.close(code=code)
@@ -102,7 +107,7 @@ class WorkerTransport:
             return []
         boxes = tx.pending_outbox(connection.owner, connection.worker, connection.store)
         # Stable per-conversation slot ordering even if a skip was created later.
-        boxes.sort(key=lambda b: (b["conversationId"], b["_frame"].get("conversationSeq", 0), b["id"]))
+        boxes.sort(key=lambda b: (b.get("conversationId", ''), b["_frame"].get("conversationSeq", 0), b["id"]))
         frames = [("replay:" + f["commandId"], f) for f in connection.replay[:16]]
         del connection.replay[:16]
         for box in boxes:
@@ -123,7 +128,7 @@ class WorkerTransport:
                 if command.get('_granted'):
                     command['deliveryState'] = 'granted'
                 elif command["deliveryState"] != "reconciliation_required":
-                    command["deliveryState"] = "awaiting_receipt" if connection.revision == 2 else "sent"
+                    command["deliveryState"] = "awaiting_receipt" if connection.revision >= 2 else "sent"
                 self.s.save(tx, connection.owner, "command", command["commandId"], command)
                 self.s.command_event(tx, connection.owner, command)
             frames.append((box["id"], frame))
@@ -148,10 +153,18 @@ class WorkerTransport:
             negotiated = wire.offered(raw)
             hello = wire.decode(raw)
             identifier = uid()
+            if hello['wireRevision'] in {2,3}:
+                with self.s.repo.transaction() as tx:
+                    owner, device = self.s.security.device_identity(tx, verifier)
+                    if device.get('_wireRevision') in {2,3} and device['_wireRevision'] != hello['wireRevision']:
+                        device['_upgradeTarget'] = hello['wireRevision']
+                        self.s.save(tx, owner, 'device', device['workerId'], device)
             with self.s.repo.transaction() as tx:
                 owner, device = self.s.security.device_identity(tx, verifier)
                 response = self.hello(tx, owner, device, hello, identifier)
             connection = Connection(socket, owner, device["workerId"], hello["workerStoreId"], hello["workerEpoch"], identifier, self.s.settings.monotonic(), wire.revision(hello))
+            if hasattr(self.s, 'queries'):
+                connection.on_close = lambda: self.s.queries.invalidate(owner, connection.worker, connection.store, connection=connection)
             old = self.s.connections.get((owner, connection.worker))
             self.s.connections[(owner, connection.worker)] = connection
             if old:
@@ -168,6 +181,11 @@ class WorkerTransport:
                     next_fallback = self.s.settings.monotonic() + FALLBACK_INTERVAL
                 if connection.wakeup.is_set():
                     connection.wakeup.clear()
+                    transient = connection.transient[:4]
+                    del connection.transient[:4]
+                    for query in transient:
+                        if query['queryId'] in self.s.queries.pending:
+                            await socket.send_json(query)
                     with self.s.repo.transaction() as tx:
                         frames = self.deliver(tx, connection, sent)
                     for box_id, frame in frames:
@@ -191,6 +209,11 @@ class WorkerTransport:
                     continue
                 raw = receiving.result()
                 receiving = asyncio.create_task(socket.receive_text())
+                if connection.revision == 3 and len(raw.encode()) <= wire.MAX_FRAME_BYTES:
+                    candidate = json.loads(raw)
+                    if isinstance(candidate, dict) and candidate.get('type') in {'query.result.segment','query.failed'}:
+                        self.s.queries.receive(connection, candidate)
+                        continue
                 frame = wire.decode(raw, connection.revision)
                 freeze_fault = None
                 with self.s.repo.transaction() as tx:
@@ -223,7 +246,7 @@ class WorkerTransport:
                         answer = None
                     else:
                         require("eventId" in frame or frame['type'] == 'sync.content.redaction', "REMOTE_PROTOCOL_UNSUPPORTED")
-                        if connection.revision == 2:
+                        if connection.revision >= 2:
                             position = self.events.accept(tx, owner, frame, connection, encoded_bytes=len(raw.encode()))
                         else:
                             position = self.events.accept(tx, owner, frame)
@@ -272,6 +295,8 @@ class WorkerTransport:
                 cancel_task(receiving)
             if connection:
                 connection.closed = True
+                if connection.on_close:
+                    connection.on_close()
                 if self.s.connections.get((connection.owner, connection.worker)) is connection:
                     del self.s.connections[(connection.owner, connection.worker)]
                     invalidate = getattr(self.s, 'invalidate_busy', None)

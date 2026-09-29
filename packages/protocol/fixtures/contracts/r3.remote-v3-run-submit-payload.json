@@ -1,0 +1,8 @@
+{
+  "clientMessageId": "client_message_demo",
+  "workspaceId": "workspace_demo",
+  "sceneId": "analyze",
+  "sceneVersion": 1,
+  "sessionMode": "new",
+  "text": "只读分析已登记项目，不修改文件。"
+}

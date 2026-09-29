@@ -26,13 +26,14 @@ class SyncEvents(Events):
             if prior['redacted']:
                 require(prior['generation'] is None or event.get('syncGeneration', 0) <= prior['generation'], 'REMOTE_SYNC_CONFLICT')
                 if prior['conversation'] is not None:
-                    require(event.get('payload', {}).get('conversationId', event.get('conversationId')) == prior['conversation'], 'REMOTE_SYNC_CONFLICT')
+                    local_scope = 'native:' + event['payload']['nativeSessionId'] if event['type'] == 'native.index.upserted' else event.get('payload', {}).get('conversationId', event.get('conversationId'))
+                    require(local_scope == prior['conversation'], 'REMOTE_SYNC_CONFLICT')
             return self.advance(tx, owner, worker, store, connection)
         require(not tx.sync_overlap(owner, worker, store, first, last) and first > self.position(tx, owner, worker, store)['seq'], 'REMOTE_EVENT_CONFLICT')
         require(event['type'] != 'message.appended', 'REMOTE_SYNC_CONFLICT')
         if event['type'] == 'run.state_changed':
             require('summary' not in event['payload'], 'REMOTE_SYNC_CONFLICT')
-        deleting = event['type'] in {'sync.reset', 'sync.conversation.deleted'}
+        deleting = event['type'] in {'sync.reset', 'sync.conversation.deleted', 'native.index.deleted'}
         pending, size = tx.sync_pending_bytes(owner, worker, store)
         encoded_bytes = encoded_bytes if encoded_bytes is not None else len(canonical(event).encode())
         require(deleting or (pending < 16 and size + encoded_bytes <= 1048576), 'REMOTE_SYNC_RESOURCE_LIMIT')
@@ -41,10 +42,16 @@ class SyncEvents(Events):
             local = event['conversationId']
         if event['type'] == 'approval.state_changed':
             local = event['conversationId']
+        if event['type'] == 'native.index.upserted':
+            local = 'native:' + event['payload']['nativeSessionId']
         if event['type'] == 'sync.busy.snapshot':
             require(not tx.sync_busy_part_exists(owner, event), 'REMOTE_SYNC_CONFLICT')
         tx.sync_log_put(owner, event, local, encoded_bytes)
-        if deleting:
+        if event['type']=='native.index.upserted' and self.s.native_events.stale_index(tx,owner,event):
+            tx.sync_cover(owner,event['workerId'],event['workerStoreId'],dict(seq=event['seq'],eventId=event['eventId'],eventSha256=digest(event),originalType=event['type']),event['syncGeneration'],local)
+        if event['type'] == 'native.index.deleted':
+            self.s.native_events.delete(tx, owner, event)
+        elif deleting:
             self.s.replica.predelete(tx, owner, event)
         elif event['type'] == 'command.received':
             self.s.received(tx, owner, event)
@@ -66,6 +73,8 @@ class SyncEvents(Events):
                 event = json.loads(row['body'] or row['evidence'])
                 if event.get('_skip'):
                     pass
+                elif event['type'].startswith('native.'):
+                    self.s.native_events.apply(tx, owner, event)
                 elif event['type'].startswith('sync.'):
                     self.s.replica.apply(tx, owner, event, connection)
                 elif event['type'] not in {'command.received', 'events.omitted'}:
@@ -79,18 +88,25 @@ class SyncEvents(Events):
         worker, store = frame['workerId'], frame['workerStoreId']
         fence = tx.get(owner, 'deletion-fence', digest([worker, store, frame['deletionEventId']]))
         require(fence is not None and fence['seq'] == frame['deletionSeq'] and fence['generation'] == frame['syncGeneration'], 'REMOTE_SYNC_CONFLICT')
-        if fence['type'] == 'sync.conversation.deleted':
+        if fence['type'] == 'native.index.deleted':
+            require(frame.get('nativeSessionId') == fence['nativeSessionId'] and 'conversationId' not in frame, 'REMOTE_SYNC_CONFLICT')
+        elif fence['type'] == 'sync.conversation.deleted':
             require(frame.get('conversationId') == fence['conversation'], 'REMOTE_SYNC_CONFLICT')
+            require('nativeSessionId' not in frame, 'REMOTE_SYNC_CONFLICT')
         else:
-            require('conversationId' not in frame, 'REMOTE_SYNC_CONFLICT')
+            require('conversationId' not in frame and 'nativeSessionId' not in frame, 'REMOTE_SYNC_CONFLICT')
         key = digest([worker, store, frame['redactionId']])
         old = tx.get(owner, 'redaction-proof', key)
         require(old is None or old['hash'] == digest(frame), 'REMOTE_SYNC_CONFLICT')
         require(len({slot['seq'] for slot in frame['slots']}) == len(frame['slots']), 'REMOTE_SYNC_CONFLICT')
         for slot in frame['slots']:
-            require(slot['seq'] < fence['seq'] and slot['originalType'] in CONTENT, 'REMOTE_SYNC_CONFLICT')
+            content = CONTENT | ({'native.index.upserted'} if frame['wireRevision'] == 3 else set())
+            require(slot['seq'] < fence['seq'] and slot['originalType'] in content, 'REMOTE_SYNC_CONFLICT')
+            require(fence['type'] != 'native.index.deleted' or slot['originalType'] == 'native.index.upserted', 'REMOTE_SYNC_CONFLICT')
+            require(fence['type'] != 'sync.conversation.deleted' or slot['originalType'] != 'native.index.upserted', 'REMOTE_SYNC_CONFLICT')
             require(fence['conversation'] is None or slot['originalType'] != 'sync.backfill.progress', 'REMOTE_SYNC_CONFLICT')
-            tx.sync_cover(owner, worker, store, slot, fence['generation'], fence['conversation'])
+            scope = 'native:' + fence['nativeSessionId'] if fence['type'] == 'native.index.deleted' else fence['conversation']
+            tx.sync_cover(owner, worker, store, slot, fence['generation'], scope)
         tx.put(owner, 'redaction-proof', key, dict(hash=digest(frame)), worker=worker, store=store)
 
     def reference(self, tx, owner, event, ref, local_conversation):
@@ -106,6 +122,8 @@ class SyncEvents(Events):
             require(payload['workerId'] == worker and payload['workerStoreId'] == store, 'REMOTE_TARGET_MISMATCH')
             for group, key in [('workspaces','workspaceId'), ('scenes','sceneId')]:
                 require(len({v[key] for v in payload[group]}) == len(payload[group]), 'REMOTE_EVENT_CONFLICT')
+            if event['wireRevision'] == 3:
+                payload = self.s.native_events.catalog(tx, owner, event)
             self.s.save(tx, owner, 'catalog', worker, payload)
             device = self.s.get(tx, owner, 'device', worker)
             device['capabilityRevision'] = payload['capabilityRevision']
@@ -114,6 +132,8 @@ class SyncEvents(Events):
         value = None
         if 'commandId' in event:
             value = self.s.get(tx, owner, 'command', event['commandId'])
+            if value['type'] in {'native.import', 'workspace.register'}:
+                return self.s.native_events.resource(tx, owner, event, value)
             require(value['targetWorkerId'] == worker and value['_frame']['expectedWorkerStoreId'] == store and value['conversationId'] == event['conversationId'], 'REMOTE_TARGET_MISMATCH')
             public, local = value['conversationId'], value['_frame']['localConversationId']
         else:
@@ -154,7 +174,7 @@ class SyncEvents(Events):
 
     def command_v2(self, tx, owner, raw, event, value):
         kind = event['type']; frame = value['_frame']; payload = frame.get('payload', {})
-        require(frame['wireRevision'] == 2, 'REMOTE_PROTOCOL_UNSUPPORTED')
+        require(frame['wireRevision'] == raw['wireRevision'] and frame['wireRevision'] >= 2, 'REMOTE_PROTOCOL_UNSUPPORTED')
         if raw.get('resultRef') and 'runId' in payload and not (value['type'] == 'run.retry' and kind == 'command.completed'):
             require(raw['resultRef']['runId'] == payload['runId'], 'REMOTE_TARGET_MISMATCH')
         if event.get('resultRef') and value.get('resultRef') and not (value['type'] == 'run.retry' and kind == 'command.completed'):

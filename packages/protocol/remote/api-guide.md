@@ -1,13 +1,15 @@
-# Hub Server 对外接口规范（协议包 0.8.0）
+# Hub Server 对外接口规范（协议包 0.9.1）
 
-本文面向远程服务器调用方，覆盖所有HTTP业务接口及Worker WSS。它不是电脑上Local Hub的同名前缀接口。服务端只做认证、设备管理、指令通信和副本保存，不调用模型、不持有模型凭据。设备管理与PAT是0.8新增；落地由P1负责，本文不表示当前部署已完成升级。
+R3完整约束见[R3-contract.md](R3-contract.md)。新接口仅Cookie；不扩展PAT白名单。电脑是原生会话内容与目录安全的唯一权威。
+
+本文面向远程服务器调用方，覆盖所有HTTP业务接口及Worker WSS。它不是电脑上Local Hub的同名前缀接口。服务端只做认证、设备管理、指令通信和副本保存，不调用模型、不持有模型凭据。设备管理与PAT为0.8基线；0.9新增原生会话与授权根目录项目登记，落地由P1/P2/P3负责，本文不表示当前部署已完成R3升级。
 
 事实源：`openapi/remote-hub.v2.yaml`及其Schema引用。公开发布物为自包含的`openapi/remote-hub.v2.bundle.json`，由`remote/api-contract.py`生成；不得通过运行时反射生成另一套不一致的规范。
 
 ## 1. 基础约定
 
 - HTTPS Base URL：`https://<部署域名>`，资源前缀`/api/v2`。示例域名`hub.example.invalid`及全部示例ID/令牌均是合成数据，不能用于真实认证。
-- `protocolVersion`是协议包版本，当前0.8.0；URI版本仍v2。Worker线路修订仍[1,2]，以wireRevision协商，不能拿包版本相等当接入条件。
+- `protocolVersion`是协议包版本，当前0.9.1；URI版本仍v2。Worker线路修订支持[1,2,3]，以wireRevision协商，不能拿包版本相等当接入条件。
 - 请求和响应JSON使用UTF-8、camelCase。写入通常`Content-Type: application/json`；无请求体的DELETE不要求伪造JSON。拒绝未声明的输入字段，不接受客户端传owner/账号归属字段。
 - 时间统一RFC3339 UTC `Z`，例如`2026-09-27T12:00:00.000Z`。ID是不可解析的有界字符串，按Schema长度限制，拼URL时编码路径段。安全整数上限2^53-1。
 - 成功信封：`{success:true,data,requestId,protocolVersion}`；失败：`{success:false,error,requestId,protocolVersion}`。两者互斥，不以HTTP200包装失败，不在失败时返回业务data。
@@ -17,7 +19,7 @@
 示例错误（已授权资源的CAS冲突）：
 
 ```json
-{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.8.0"}
+{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.9.1"}
 ```
 
 ## 2. 鉴权矩阵与凭据边界
@@ -194,7 +196,7 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | `PATCH /api/v2/devices/{workerId}` | `updateRemoteDevice` | cookie_or_pat devices:manage | 200 RemoteDeviceView |
 | `DELETE /api/v2/devices/{workerId}` | `deleteRemoteDevice` | cookie_or_pat devices:delete | 200 RemoteDeviceDeletionView |
 | `POST /api/v2/devices/{workerId}/revocations` | `revokeRemoteDevice` | cookie_or_pat devices:delete | 200 RemoteDeviceRevocationView |
-| `GET /api/v2/devices/{workerId}/catalog` | `getRemoteWorkerCatalog` | cookie_or_pat devices:read | 200 RemoteCatalogView |
+| `GET /api/v2/devices/{workerId}/catalog` | `getRemoteWorkerCatalog` | cookie_or_pat devices:read | 200 RemoteV3CatalogView |
 | `GET /api/v2/conversations` | `listRemoteConversations` | cookie  | 200 RemoteConversationPage |
 | `POST /api/v2/conversations` | `createRemoteConversation` | cookie  | 202 RemoteQueuedReceipt |
 | `GET /api/v2/conversations/{conversationId}` | `getRemoteConversation` | cookie  | 200 RemoteConversationView |
@@ -215,6 +217,12 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | `GET /api/v2/api-tokens` | `listRemoteApiTokens` | cookie  | 200 RemoteApiTokenPage |
 | `DELETE /api/v2/api-tokens/{tokenId}` | `revokeRemoteApiToken` | cookie  | 200 RemoteApiTokenRevocationView |
 | `GET /api/v2/openapi.json` | `getRemoteOpenApi` | public  | 200 原始OpenAPI文档 |
+| `GET /api/v2/devices/{workerId}/native-sessions` | `listNativeSessions` | cookie  | 200 RemoteNativeSessionPage |
+| `GET /api/v2/native-sessions/{nativeSessionId}` | `getNativeSession` | cookie  | 200 RemoteNativeSessionView |
+| `GET /api/v2/native-sessions/{nativeSessionId}/messages` | `readNativeMessages` | cookie  | 200 NativeMessagePage |
+| `POST /api/v2/native-sessions/{nativeSessionId}/imports` | `importNativeSession` | cookie  | 202 RemoteResourceQueuedReceipt |
+| `POST /api/v2/devices/{workerId}/directory-listings` | `listAuthorizedDirectory` | cookie  | 200 DirectoryListingPage |
+| `POST /api/v2/devices/{workerId}/workspaces` | `registerAuthorizedWorkspace` | cookie  | 202 RemoteResourceQueuedReceipt |
 <!-- END API_INDEX -->
 
 ## 10. 错误码总表
@@ -289,18 +297,27 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | `REMOTE_SYNC_CONFLICT` | 409 | false | 同步分段/版本/快照内容冲突，不得发布部分正文 | 同步分段/版本/快照内容冲突，不得发布部分正文 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_SYNC_DISABLED` | 409 | false | 该电脑关闭内容同步，不能向已删除副本提交 | 该电脑关闭内容同步，不能向已删除副本提交 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_DELIVERY_EXPIRED` | 409 | true | 设备离线，发送失败 | 送达期限已过且未获执行许可；设备离线，发送失败 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
-| `REMOTE_REVISION_REQUIRED` | 409 | false | 电脑端需升级后使用此操作 | 该操作要求线路修订2，不能降级执行 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
+| `REMOTE_REVISION_REQUIRED` | 409 | false | 电脑端需升级后使用此操作 | 该操作要求较新的线路修订（R1.5为2，R3为3），不能降级执行 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_SYNC_RESOURCE_LIMIT` | 413 | false | 全文同步资源配额不足，明确失败，不截断伪装成功 | 全文同步资源配额不足，明确失败，不截断伪装成功 | 减小请求或检查资源配额；不得截断后伪装成功 | Hub Server HTTP |
 | `REMOTE_DEVICE_SUSPENDED` | 409 | false | 这台电脑的远程操作已暂停 | 这台电脑的远程操作已暂停 | 先明确恢复远程操作；取消运行/拒绝审批仍可尝试 | Hub Server HTTP |
 | `REMOTE_API_TOKEN_INVALID` | 401 | false | API令牌无效或已吊销 | API令牌无效或已吊销 | 核对令牌有效期、吊销状态和精确scope；Cookie管理页重签或调整调用路由 | Hub Server HTTP |
 | `REMOTE_API_TOKEN_EXPIRED` | 401 | false | API令牌已过期 | API令牌已过期 | 核对令牌有效期、吊销状态和精确scope；Cookie管理页重签或调整调用路由 | Hub Server HTTP |
 | `REMOTE_API_TOKEN_SCOPE_INSUFFICIENT` | 403 | false | API令牌权限不足或此接口不接受令牌 | API令牌权限不足或此接口不接受令牌 | 核对令牌有效期、吊销状态和精确scope；Cookie管理页重签或调整调用路由 | Hub Server HTTP |
 | `REMOTE_AUTH_AMBIGUOUS` | 400 | false | 请求同时提供了多种身份凭据 | 请求同时提供了多种身份凭据 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
+| `REMOTE_QUERY_TIMEOUT` | 504 | true | 电脑在线查询超时 | 电脑未在查询期限内返回完整结果 | 保持输入并用新查询重试 | R3 HTTP / Worker wireRevision 3 only |
+| `REMOTE_QUERY_TOO_LARGE` | 413 | false | 在线查询结果超过大小上限 | 完整页超过1MiB或分段超限 | 减小limit；不得显示不完整消息 | R3 HTTP / Worker wireRevision 3 only |
+| `NATIVE_SESSION_ACTIVE` | 409 | false | 原生会话可能仍在终端运行 | 存在活跃证据或未确认终端关闭 | 关闭终端并重新确认；只读历史仍可用 | R3 HTTP / Worker wireRevision 3 only |
+| `NATIVE_SESSION_UNSUPPORTED` | 422 | false | 无法读取该版本的原生会话 | 无已验证读取插件或结构不符 | 在电脑升级读取插件，不猜测解析 | R3 HTTP / Worker wireRevision 3 only |
+| `NATIVE_SESSION_CHANGED` | 409 | false | 原生会话已变化，请刷新后确认 | 文件身份或sourceRevision与确认不一致 | 重新获取索引和历史后显式确认 | R3 HTTP / Worker wireRevision 3 only |
+| `NATIVE_SESSION_WRITER_CONFLICT` | 409 | false | 该原生会话已有写进程 | 本工具精确会话写互斥已被占用 | 等待原写进程结束，不另开会话冒充续接 | R3 HTTP / Worker wireRevision 3 only |
+| `REMOTE_ROOT_NOT_AUTHORIZED` | 403 | false | 电脑未授权该根目录 | 根目录为空或已移除 | 在电脑本机配置根目录后刷新 | R3 HTTP / Worker wireRevision 3 only |
+| `REMOTE_PATH_OUTSIDE_ROOT` | 403 | false | 所选目录不在授权范围内 | 真实路径越界或含不安全路径形式 | 选择授权根目录内的真实子目录 | R3 HTTP / Worker wireRevision 3 only |
+| `REMOTE_DIRECTORY_CHANGED` | 409 | false | 目录授权或目录内容已变化 | 选择令牌已过期或目录身份改变 | 重新逐级浏览并选择目标目录 | R3 HTTP / Worker wireRevision 3 only |
 <!-- END ERROR_TABLE -->
 
 ## 11. Worker WebSocket（不是PAT接口）
 
-端点`/ws/v2/worker`，仅独立设备凭据Authorization Bearer。先确认已配对且未撤销/删除，10秒内首帧hello，协商整数wireRevision，当前支持1与2；15秒心跳/45秒失联，单连接fence旧连接。包版本仅诊断；最多256KiB一帧。未知修订拒绝并返回支持列表，不能按包版本猜测。
+端点`/ws/v2/worker`，仅独立设备凭据Authorization Bearer。先确认已配对且未撤销/删除，10秒内首帧hello，协商整数wireRevision，当前支持1、2与3；15秒心跳/45秒失联，单连接fence旧连接。包版本仅诊断；最多256KiB一帧。未知修订拒绝并返回支持列表，不能按包版本猜测。
 
 修订1/2分别选择原有WorkerOutboundFrame/ServerOutboundFrame，详见OpenAPI的x-worker-websocket.revisions与下表Schema索引。seq只确认连续持久事实，事件ACK不是执行grant。暂停不影响握手、同步或忙碌/目录；删除沿既有凭据失效/撤销及连接关闭处理。资源HTTP的404不代替未认证Worker的401/403/4401/4403。HTTP错误detail、API令牌和remoteAccess字段都不新增到Worker帧。
 
@@ -373,18 +390,128 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | 2 | `conversation.update` | `RemoteV2ConversationUpdateCommand` | `remote-sync.json#/$defs/RemoteV2ConversationUpdateCommand` |
 | 2 | `conversation.create` | `RemoteV2ConversationCreateCommand` | `remote-sync.json#/$defs/RemoteV2ConversationCreateCommand` |
 | 2 | `sync.content.redaction` | `RemoteV2ContentRedaction` | `remote-sync.json#/$defs/RemoteV2ContentRedaction` |
+| 3 | `approval.decide` | `RemoteV3ApprovalDecisionCommand` | `remote-native.json#/$defs/RemoteV3ApprovalDecisionCommand` |
+| 3 | `approval.state_changed` | `RemoteV3ApprovalEvent` | `remote-native.json#/$defs/RemoteV3ApprovalEvent` |
+| 3 | `run.cancel` | `RemoteV3CancelCommand` | `remote-native.json#/$defs/RemoteV3CancelCommand` |
+| 3 | `capability.changed` | `RemoteV3CatalogEvent` | `remote-native.json#/$defs/RemoteV3CatalogEvent` |
+| 3 | `command.accepted` | `RemoteV3CommandAccepted` | `remote-native.json#/$defs/RemoteV3CommandAccepted` |
+| 3 | `command.completed` | `RemoteV3CommandCompleted` | `remote-native.json#/$defs/RemoteV3CommandCompleted` |
+| 3 | `command.failed` | `RemoteV3CommandFailed` | `remote-native.json#/$defs/RemoteV3CommandFailed` |
+| 3 | `command.rejected` | `RemoteV3CommandRejected` | `remote-native.json#/$defs/RemoteV3CommandRejected` |
+| 3 | `command.withdraw` | `RemoteV3CommandWithdrawalCommand` | `remote-native.json#/$defs/RemoteV3CommandWithdrawalCommand` |
+| 3 | `command.control_result` | `RemoteV3ControlObserved` | `remote-native.json#/$defs/RemoteV3ControlObserved` |
+| 3 | `conversation.gap` | `RemoteV3ConversationGap` | `remote-native.json#/$defs/RemoteV3ConversationGap` |
+| 3 | `conversation.skip` | `RemoteV3ConversationSkip` | `remote-native.json#/$defs/RemoteV3ConversationSkip` |
+| 3 | `worker.events_ack` | `RemoteV3EventAck` | `remote-native.json#/$defs/RemoteV3EventAck` |
+| 3 | `message.appended` | `RemoteV3MessageEvent` | `remote-native.json#/$defs/RemoteV3MessageEvent` |
+| 3 | `events.omitted` | `RemoteV3OmittedEvents` | `remote-native.json#/$defs/RemoteV3OmittedEvents` |
+| 3 | `run.pause` | `RemoteV3PauseCommand` | `remote-native.json#/$defs/RemoteV3PauseCommand` |
+| 3 | `run.progress` | `RemoteV3ProgressEvent` | `remote-native.json#/$defs/RemoteV3ProgressEvent` |
+| 3 | `run.resume` | `RemoteV3ResumeCommand` | `remote-native.json#/$defs/RemoteV3ResumeCommand` |
+| 3 | `run.retry` | `RemoteV3RetryCommand` | `remote-native.json#/$defs/RemoteV3RetryCommand` |
+| 3 | `run.state_changed` | `RemoteV3RunStateEvent` | `remote-native.json#/$defs/RemoteV3RunStateEvent` |
+| 3 | `run.submit` | `RemoteV3RunSubmitCommand` | `remote-native.json#/$defs/RemoteV3RunSubmitCommand` |
+| 3 | `server.heartbeat` | `RemoteV3ServerHeartbeat` | `remote-native.json#/$defs/RemoteV3ServerHeartbeat` |
+| 3 | `conversation.skip_recorded` | `RemoteV3SkipRecorded` | `remote-native.json#/$defs/RemoteV3SkipRecorded` |
+| 3 | `worker.heartbeat` | `RemoteV3WorkerHeartbeat` | `remote-native.json#/$defs/RemoteV3WorkerHeartbeat` |
+| 3 | `worker.hello` | `RemoteV3WorkerHello` | `remote-native.json#/$defs/RemoteV3WorkerHello` |
+| 3 | `worker.hello_ack` | `RemoteV3WorkerHelloAck` | `remote-native.json#/$defs/RemoteV3WorkerHelloAck` |
+| 3 | `worker.hello_rejected` | `RemoteV3WorkerHelloRejected` | `remote-native.json#/$defs/RemoteV3WorkerHelloRejected` |
+| 3 | `sync.conversation.upserted` | `RemoteV3ConversationUpserted` | `remote-native.json#/$defs/RemoteV3ConversationUpserted` |
+| 3 | `sync.message.segment` | `RemoteV3MessageSegment` | `remote-native.json#/$defs/RemoteV3MessageSegment` |
+| 3 | `sync.run.state` | `RemoteV3SyncedRunState` | `remote-native.json#/$defs/RemoteV3SyncedRunState` |
+| 3 | `sync.conversation.deleted` | `RemoteV3ConversationDeleted` | `remote-native.json#/$defs/RemoteV3ConversationDeleted` |
+| 3 | `sync.reset` | `RemoteV3SyncReset` | `remote-native.json#/$defs/RemoteV3SyncReset` |
+| 3 | `sync.busy.snapshot` | `RemoteV3BusySnapshot` | `remote-native.json#/$defs/RemoteV3BusySnapshot` |
+| 3 | `sync.backfill.progress` | `RemoteV3BackfillProgress` | `remote-native.json#/$defs/RemoteV3BackfillProgress` |
+| 3 | `command.received` | `RemoteV3CommandReceived` | `remote-native.json#/$defs/RemoteV3CommandReceived` |
+| 3 | `command.delivery_granted` | `RemoteV3DeliveryGrant` | `remote-native.json#/$defs/RemoteV3DeliveryGrant` |
+| 3 | `conversation.update` | `RemoteV3ConversationUpdateCommand` | `remote-native.json#/$defs/RemoteV3ConversationUpdateCommand` |
+| 3 | `conversation.create` | `RemoteV3ConversationCreateCommand` | `remote-native.json#/$defs/RemoteV3ConversationCreateCommand` |
+| 3 | `sync.content.redaction` | `RemoteV3ContentRedaction` | `remote-native.json#/$defs/RemoteV3ContentRedaction` |
+| 3 | `native.index.upserted` | `RemoteV3NativeIndexUpserted` | `remote-native.json#/$defs/RemoteV3NativeIndexUpserted` |
+| 3 | `native.index.deleted` | `RemoteV3NativeIndexDeleted` | `remote-native.json#/$defs/RemoteV3NativeIndexDeleted` |
+| 3 | `native.closure.confirmed` | `RemoteV3NativeConfirmationRecorded` | `remote-native.json#/$defs/RemoteV3NativeConfirmationRecorded` |
+| 3 | `native.import` | `RemoteV3NativeImportCommand` | `remote-native.json#/$defs/RemoteV3NativeImportCommand` |
+| 3 | `workspace.register` | `RemoteV3WorkspaceRegisterCommand` | `remote-native.json#/$defs/RemoteV3WorkspaceRegisterCommand` |
+| 3 | `query.native.messages` | `RemoteV3NativeReadQuery` | `remote-native.json#/$defs/RemoteV3NativeReadQuery` |
+| 3 | `query.directory.list` | `RemoteV3DirectoryQuery` | `remote-native.json#/$defs/RemoteV3DirectoryQuery` |
+| 3 | `query.result.segment` | `RemoteV3QueryResultSegment` | `remote-native.json#/$defs/RemoteV3QueryResultSegment` |
+| 3 | `query.failed` | `RemoteV3QueryFailed` | `remote-native.json#/$defs/RemoteV3QueryFailed` |
 <!-- END WIRE_INDEX -->
 
 ## 12. 版本、弃用、发布和后续扩展
 
-HTTP `/api/v2`在包minor升级时不换路径；0.8保留N−1（0.7）既有路由/请求及旧字段语义，新设备字段可选，缺省按兼容值处理，旧撤销保留deprecated。0.8新功能不能在0.7服务上悄悄降级成撤销；旧服务返回未知路由时提示升级。0.7设备列表中新默认includeRevoked=false是本次明确的产品过滤策略。
+HTTP `/api/v2`在包minor升级时不换路径；0.9保留N−1（0.8）的已有接口与请求，原生来源字段增量兼容；0.8基线保留0.7既有路由/请求及旧字段语义，新设备字段可选，缺省按兼容值处理，旧撤销保留deprecated。0.8新功能不能在0.7服务上悄悄降级成撤销；旧服务返回未知路由时提示升级。0.7设备列表中新默认includeRevoked=false是本次明确的产品过滤策略。
 
 HTTP读取方须容忍新增响应字段、对未知错误码走通用message/requestId处理；服务器对请求仍严格验证。生成DTO是本包生产/验证边界，旧严格DTO不能假定会校验未来JSON，第三方应使用匹配版本的生成包或做兼容投影；本次不放宽Worker解析器。protocolVersion用于诊断/功能判断，不要求与客户端包字符串相等。
 
-D42的线路N/N−1策略继续为[2,1]，**不等于包0.8/0.7就是wire8/wire7**。修订2旧错误值域现也独立固定，仅类型引用调整，线上字段与接受集合不变；新错误只走HTTP。弃用先标记、保留至少N/N−1升级窗口，公告替代接口并完成调用方迁移后，另行批准破坏性移除，不随部署直接删旧路由。
+D42线路升级至少保留3/2，本次还保留1用于历史对账，支持[1,2,3]；包0.9/0.8与线路号不相等。修订1/2错误值域和帧闭包固定；R3新增错误只走HTTP及3，D50的HTTP-only错误仍不进Worker线路。弃用先标记、保留至少N/N−1升级窗口，公告替代接口并完成调用方迁移后，另行批准破坏性移除，不随部署直接删旧路由。
 
 P1须提供公开GET `/api/v2/openapi.json`，返回仓库bundle的等价JSON且由服务端测试比对；只有类型和合成示例，不注入实际设备、账号、密钥或部署数据。可选托管离线可视化文档页，建议使用随包固定版本的本地静态资源，禁止依赖外网CDN；不是本轮必做。页面也不能自动填入真实PAT或记录Try-it请求体。
 
 文档维护命令：`python packages/protocol/remote/api-contract.py --write`生成bundle和表格；不带参数检查漂移。另跑既有`pwsh scripts/protocol/validate.ps1 -CheckGenerated`检查DTO生成物。不能修改手写表格绕过注册表。
 
 以后资源使用复数名词和稳定URI，例如`/conversations`；权限用`资源:动作`精确命名。新增资源的PAT能力必须单独审批、定义scope及逐路由白名单，不因已有devices:manage而自动开放对话/审批/模型能力。新增危险动作单独scope，不用通配或“管理员”隐式包含。
+
+
+## 13. R3 原生会话与授权目录（0.9，线路3）
+
+未导入会话只上传索引（短标题属于索引内容）。正文在线按需读取，离线只看索引；import完成后是单Agent的Hub对话，完整脱敏历史同步，适用R1.5可见性、忙碌和真删除。旧scenario客户端不能把缺sceneId的native误认成默认场景。
+
+六个新接口全部Cookie；POST要求Origin、X-CSRF-Token、Idempotency-Key。PAT不能调用；预留native-sessions:read/import、directories:read、workspaces:create命名，当前不允许签发这些scope。电脑未升级到wire3返回REMOTE_REVISION_REQUIRED；同步关闭后没有旧索引可供绕过访问。
+
+| 操作 | 在线要求 / 暂停限制 | 成功语义 |
+| --- | --- | --- |
+| GET /devices/{workerId}/native-sessions | 离线可读，暂停可读 | 按workspaceId/agentType过滤的索引分页 |
+| GET /native-sessions/{nativeSessionId} | 离线可读，暂停可读 | 当前索引；不是继续许可 |
+| GET /native-sessions/{nativeSessionId}/messages | 在线；暂停可读 | 内存里的脱敏历史分页，不落盘 |
+| POST /native-sessions/{nativeSessionId}/imports | 在线；暂停禁止 | 202命令回执，电脑提交完整历史与绑定后回报 |
+| POST /devices/{workerId}/directory-listings | 在线；暂停禁止 | 10秒内临时查询结果，一层目录 |
+| POST /devices/{workerId}/workspaces | 在线；暂停禁止 | 202登记意图，catalog/command结果确认完成 |
+
+以下为bash curl模板。BASE、COOKIE、CSRF来自登录部署；所有ID/token/revision由上一步响应取得，不使用CLI的latest，也不让用户填写电脑路径。示例内容全部合成。
+
+```bash
+BASE='https://hub.example.invalid'
+# COOKIE为登录响应的会话值，CSRF从会话接口获得；不要提交到脚本仓库。
+curl "$BASE/api/v2/devices/worker_demo/native-sessions?workspaceId=workspace_example&agentType=codex&limit=20" --cookie "__Host-hqremote=$COOKIE"
+curl "$BASE/api/v2/native-sessions/native_example" --cookie "__Host-hqremote=$COOKIE"
+curl "$BASE/api/v2/native-sessions/native_example/messages?limit=20" --cookie "__Host-hqremote=$COOKIE"
+# 向前翻页使用响应before，并URL编码。不把它解释成messageId或serverCursor。
+curl --get "$BASE/api/v2/native-sessions/native_example/messages" --data-urlencode "before=$BEFORE" --data-urlencode 'limit=20' --cookie "__Host-hqremote=$COOKIE"
+```
+
+列表cursor是云端索引分页游标；历史before/snapshotCursor由电脑签发，固定源切点，15分钟过期；serverCursor仍是浏览器持久事件流游标。三者不能互换。查询不产生serverCursor事件。原生历史limit按片段计，完整消息可跨页；messageId/段号/hash拼齐才显示，不能将一页的半条消息当完整回答。sourceRevision变化不能混拼，刷新最新页重新取。
+
+```bash
+# INDEX_VERSION和SOURCE_REVISION取最新索引。只有用户明确勾选“终端里已关闭”才发送。
+curl -X POST "$BASE/api/v2/native-sessions/native_example/imports" --cookie "__Host-hqremote=$COOKIE" \
+  -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Idempotency-Key: native-import-example-01' -H 'Content-Type: application/json' \
+  --data "{\"terminalClosedConfirmed\":true,\"expectedIndexVersion\":$INDEX_VERSION,\"sourceRevision\":\"$SOURCE_REVISION\"}"
+# 202的commandId用于对账；完成后的resourceRef含映射后的conversationId/workspaceId。
+curl "$BASE/api/v2/commands/$COMMAND_ID" --cookie "__Host-hqremote=$COOKIE"
+```
+
+确认不覆盖电脑检测到的活跃进程。导入自身不启动模型；收到电脑同步对话后，才使用现有POST conversations/{conversationId}/messages，sessionMode必须continue。出现新的外部写入时，获取对话的nativeSourceRevision并由用户重新确认，发送可选nativeConfirmation；不默认勾选、不自动重复确认。忙碌时保留输入。
+
+```bash
+# catalog含根目录标签；没有authorizedRoots或[]就不显示“添加项目”。
+curl "$BASE/api/v2/devices/worker_demo/catalog" --cookie "__Host-hqremote=$COOKIE"
+curl -X POST "$BASE/api/v2/devices/worker_demo/directory-listings" --cookie "__Host-hqremote=$COOKIE" \
+  -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Idempotency-Key: browse-root-example-01' -H 'Content-Type: application/json' \
+  --data '{"rootId":"root_example","rootVersion":1,"limit":50}'
+# 下一层传响应条目的directoryToken；需要翻页时另传nextCursor为cursor。
+curl -X POST "$BASE/api/v2/devices/worker_demo/directory-listings" --cookie "__Host-hqremote=$COOKIE" \
+  -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Idempotency-Key: browse-child-example-01' -H 'Content-Type: application/json' \
+  --data "{\"rootId\":\"root_example\",\"rootVersion\":1,\"directoryToken\":\"$DIRECTORY_TOKEN\",\"limit\":50}"
+curl -X POST "$BASE/api/v2/devices/worker_demo/workspaces" --cookie "__Host-hqremote=$COOKIE" \
+  -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Idempotency-Key: register-workspace-example-01' -H 'Content-Type: application/json' \
+  --data "{\"rootId\":\"root_example\",\"rootVersion\":1,\"directoryToken\":\"$DIRECTORY_TOKEN\",\"name\":\"Demo project\"}"
+```
+
+根目录只能在电脑本机GET/PUT /api/v1/remote/authorized-roots或本机Cookie /api/v2/remote/authorized-roots配置（CAS expectedVersion），默认空。它们不是本云端Base URL路由，Cookie不可互换，不可把Hub Token交给手机。新登记返回202不代表成功，更不代表已创建文件夹；等待command.completed和catalog更新。非Git项目可登记为只读，不暗中init-git。
+
+在线查询固定总超时10秒、响应≤1MiB、每设备4个/每账号16个并发；传输分段最多128片，整帧≤256KiB。超时REMOTE_QUERY_TIMEOUT；限流REMOTE_RATE_LIMITED；超页减小limit。目录最多100条只返回目录元数据，链接越界拒绝REMOTE_PATH_OUTSIDE_ROOT，根被移除REMOTE_ROOT_NOT_AUTHORIZED，过期/替换目录REMOTE_DIRECTORY_CHANGED。错误优先级仍认证/归属→暂停（受限项）→离线→线路/存储→资源/版本/活跃检查。
+
+查询正文不进入服务端数据库、HTTP幂等重放、消息事件、代理磁盘buffer、APM或日志；浏览器只用当前页内存。目录POST同幂等键同摘要重查安全状态后可重新查询，结果不保证相同快照；不同摘要返回IDEMPOTENCY_MISMATCH。断线/超时/同步reset立即销毁拼段内存；不能从“历史API缓存”恢复。排查仅用响应X-Request-Id/信封requestId与既有journalctl流程，不要粘贴原生正文或选择令牌到日志。

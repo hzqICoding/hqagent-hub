@@ -8,9 +8,10 @@ import json
 from .common import Fault, require, validated
 
 MAX_FRAME_BYTES = 262144
-CURRENT = 2
+CURRENT = 3
 CODECS = {1: ("RemoteWorkerOutboundFrame", "RemoteServerOutboundFrame", "RemoteCommandEnvelope"),
-          2: ("RemoteV2WorkerOutboundFrame", "RemoteV2ServerOutboundFrame", "RemoteV2CommandEnvelope")}
+          2: ("RemoteV2WorkerOutboundFrame", "RemoteV2ServerOutboundFrame", "RemoteV2CommandEnvelope"),
+          3: ("RemoteV3WorkerOutboundFrame", "RemoteV3ServerOutboundFrame", "RemoteV3CommandEnvelope")}
 
 
 def revision(frame):
@@ -53,10 +54,13 @@ def encode(value, revision=CURRENT):
     value = dict(value, wireRevision=revision)
     if value["type"] == "worker.hello_rejected":
         value["supportedWireRevisions"] = sorted(CODECS)
+    for field in ('error', 'reason'):
+        if field not in value or not isinstance(value[field], dict):
+            continue
         try:
-            validated(f'RemoteWire{revision}Error', value['error'])
+            validated(f'RemoteWire{revision}Error', value[field])
         except ValueError:
-            value['error'] = Fault('INTERNAL').view()
+            value[field] = Fault('INTERNAL').view()
     result = validated(CODECS[revision][1], value)
     require(len(json.dumps(result, ensure_ascii=False).encode()) <= MAX_FRAME_BYTES, "REMOTE_FRAME_TOO_LARGE")
     return result

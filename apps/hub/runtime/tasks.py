@@ -494,6 +494,18 @@ class TaskService:
         for node in self.repository.list_nodes(parent_task_id):
             if node.session_id and _text(node.status) == NodeStatus.SUCCEEDED.value:
                 resume_sessions[_text(node.role_id)] = node.session_id
+        native = getattr(self.repository.database, "native_service", None)
+        if native is not None:
+            for role_id, session_id in (parent_spec["request"].get("resumeSessions") or {}).items():
+                try:
+                    native.row(session_id, session=True)
+                except HubError as error:
+                    if error.code != "NOT_FOUND":
+                        raise
+                else:
+                    # Native retry must retain its exact imported binding, even
+                    # when the preceding node was cancelled rather than succeeded.
+                    resume_sessions[role_id] = session_id
         raw["resumeSessions"] = resume_sessions or None
         child_value = CreateTaskInput.model_validate(raw)
         profile = TeamProfileView.model_validate(parent_spec["profile"])
@@ -658,6 +670,10 @@ class TaskService:
         original_acceptance = str(node.phase) == "acceptance" and role_id == "planner" and str(value.review_mode) == "original_planner"
         original_agent_id = None
         objective = self._node_objective(task_id, value.objective)
+        native = getattr(self.repository.database, "native_service", None)
+        native_session_id = (value.resume_sessions or {}).get(role_id)
+        if native is not None and native_session_id:
+            await native.prepare_session(native_session_id, task_id, node.id, objective)
         if original_acceptance:
             execution_path, resume_session_id, original_agent_id, objective = await self._planner_acceptance_inputs(task_id, node, spec, value)
         else:
