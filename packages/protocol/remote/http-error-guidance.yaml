@@ -16,8 +16,8 @@ errors:
     surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
   ORIGIN_NOT_ALLOWED:
     message: Host 或 Origin 不在白名单
-    cause: Host 或 Origin 不在白名单。与 UNAUTHORIZED 区分开：那条是「没带对 token」， 这条是「token 对但来源不对」。混用会让排障时分不清是凭据问题还是来源问题。 HTTP
-      与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
+    cause: Host 或 Origin 不在白名单。与 UNAUTHORIZED 区分开：那条是「没带对 token」， 这条是「token 对但来源不对」。混用会让排障时分不清是凭据问题还是来源问题。
+      HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
     handling: 检查授权范围和允许的操作
     surface: 共享注册表；仅在所属子系统/Worker事实中出现，不表示每个HTTP接口都可返回
   NOT_FOUND:
@@ -327,7 +327,7 @@ errors:
     surface: Hub Server HTTP
   REMOTE_REVISION_REQUIRED:
     message: 电脑端需升级后使用此操作
-    cause: 该操作要求线路修订2，不能降级执行
+    cause: 该操作要求较新的线路修订（R1.5为2，R3为3），不能降级执行
     handling: 刷新或修正请求后使用新幂等键
     surface: Hub Server HTTP
   REMOTE_SYNC_RESOURCE_LIMIT:
@@ -360,3 +360,48 @@ errors:
     cause: 请求同时提供了多种身份凭据
     handling: 刷新或修正请求后使用新幂等键
     surface: Hub Server HTTP
+  REMOTE_QUERY_TIMEOUT:
+    message: 电脑在线查询超时
+    cause: 电脑未在查询期限内返回完整结果
+    handling: 保持输入并用新查询重试
+    surface: R3 HTTP / Worker wireRevision 3 only
+  REMOTE_QUERY_TOO_LARGE:
+    message: 在线查询结果超过大小上限
+    cause: 完整页超过1MiB或分段超限
+    handling: 减小limit；不得显示不完整消息
+    surface: R3 HTTP / Worker wireRevision 3 only
+  NATIVE_SESSION_ACTIVE:
+    message: 原生会话可能仍在终端运行
+    cause: 存在活跃证据或未确认终端关闭
+    handling: 关闭终端并重新确认；只读历史仍可用
+    surface: R3 HTTP / Worker wireRevision 3 only
+  NATIVE_SESSION_UNSUPPORTED:
+    message: 无法读取该版本的原生会话
+    cause: 无已验证读取插件或结构不符
+    handling: 在电脑升级读取插件，不猜测解析
+    surface: R3 HTTP / Worker wireRevision 3 only
+  NATIVE_SESSION_CHANGED:
+    message: 原生会话已变化，请刷新后确认
+    cause: 文件身份或sourceRevision与确认不一致
+    handling: 重新获取索引和历史后显式确认
+    surface: R3 HTTP / Worker wireRevision 3 only
+  NATIVE_SESSION_WRITER_CONFLICT:
+    message: 该原生会话已有写进程
+    cause: 本工具精确会话写互斥已被占用
+    handling: 等待原写进程结束，不另开会话冒充续接
+    surface: R3 HTTP / Worker wireRevision 3 only
+  REMOTE_ROOT_NOT_AUTHORIZED:
+    message: 电脑未授权该根目录
+    cause: 根目录为空或已移除
+    handling: 在电脑本机配置根目录后刷新
+    surface: R3 HTTP / Worker wireRevision 3 only
+  REMOTE_PATH_OUTSIDE_ROOT:
+    message: 所选目录不在授权范围内
+    cause: 真实路径越界或含不安全路径形式
+    handling: 选择授权根目录内的真实子目录
+    surface: R3 HTTP / Worker wireRevision 3 only
+  REMOTE_DIRECTORY_CHANGED:
+    message: 目录授权或目录内容已变化
+    cause: 选择令牌已过期或目录身份改变
+    handling: 重新逐级浏览并选择目标目录
+    surface: R3 HTTP / Worker wireRevision 3 only

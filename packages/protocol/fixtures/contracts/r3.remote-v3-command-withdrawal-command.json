@@ -1,0 +1,16 @@
+{
+  "type": "command.withdraw",
+  "commandId": "command_demo",
+  "conversationId": "conversation_demo",
+  "targetWorkerId": "worker_demo",
+  "expectedWorkerStoreId": "store_demo",
+  "createdAt": "2026-09-26T12:00:00Z",
+  "expiresAt": "2026-09-26T12:05:00Z",
+  "payload": {
+    "targetCommandId": "command_original",
+    "targetConversationSeq": 1
+  },
+  "wireRevision": 3,
+  "deliverBy": "2026-09-26T12:00:30Z",
+  "localConversationId": "conversation_demo"
+}

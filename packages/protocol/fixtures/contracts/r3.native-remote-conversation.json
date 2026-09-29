@@ -1,0 +1,13 @@
+{
+  "conversationId": "conversation_native",
+  "targetWorkerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "authority": "local",
+  "title": "合成原生历史",
+  "workspaceId": "workspace_example",
+  "createdAt": "2026-09-28T12:00:00Z",
+  "updatedAt": "2026-09-28T12:00:00Z",
+  "conversationKind": "native",
+  "agentType": "codex",
+  "nativeSessionId": "native_example"
+}

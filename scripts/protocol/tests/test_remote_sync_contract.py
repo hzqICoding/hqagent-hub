@@ -4,6 +4,7 @@ from datetime import datetime
 from itertools import permutations
 import hashlib
 import json
+import re
 from pathlib import Path
 import subprocess
 
@@ -39,7 +40,10 @@ def test_all_new_fixtures_generated_round_trip_and_frame_byte_limit(file, name):
 
 def test_new_type_fixture_coverage_and_version():
     assert set(SYNC) == {name for _, name in CASES}
-    assert models.PROTOCOL_VERSION == (P / 'VERSION').read_text().strip() == '0.7.0'
+    version = (P / 'VERSION').read_text().strip()
+    assert models.PROTOCOL_VERSION == version
+    assert re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', version)
+    assert tuple(map(int, version.split('.'))) >= (0, 7, 0)
 
 def test_revision_one_shapes_are_exact_except_approved_error_reference_freeze():
     old = json.loads(before('schema/remote.json'))['$defs']

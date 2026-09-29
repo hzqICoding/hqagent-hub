@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HQAgent-Hub Local Hub API
-  version: 0.7.0
+  version: 0.9.1
   description: |
     Vue 与 Tauri 桌面壳的**唯一**网络契约（裁决 D1）。Update Agent 的内部 API 见
     `update-agent.internal.v1.yaml`，它不向 Vue 暴露第二个 Base URL、第二个 Token
@@ -43,6 +43,643 @@ tags:
   - name: internal
 
 paths:
+  /api/v1/native-sessions:
+    get:
+      operationId: listLocalNativeSessionV1
+      security:
+      - bearerAuth: []
+      description: 本机操作不依赖配对、云端在线或线路修订。仅已登记workspace范围；ID为本机索引ID。所有响应no-store，日志不记录正文；沿现有本机Host/Origin及鉴权规则。详见R3-contract
+        §11。 默认limit=50，最多100，updatedAt倒序和ID稳定次序；cursor绑定过滤范围/快照，hasMore时提供nextCursor。
+      parameters:
+      - name: workspaceId
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 160
+      - name: agentType
+        in: query
+        required: false
+        schema:
+          $ref: ../schema/remote-native.json#/$defs/NativeAgentType
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 4096
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          x-dataSchema:
+            $ref: ../schema/local-native.json#/$defs/LocalNativeSessionPage
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              example:
+                success: true
+                data:
+                  items:
+                  - &local_native_001
+                    nativeSessionId: native_local_example
+                    workspaceId: workspace_example
+                    agentType: codex
+                    title: 合成终端会话
+                    createdAt: '2026-09-28T12:00:00Z'
+                    updatedAt: '2026-09-28T12:00:00Z'
+                    indexVersion: 1
+                    sourceRevision: 270c0d536da1e328c882cda409fc95a131d86851b817f538836313cad3b9ed03
+                    format:
+                      status: readable
+                      readerId: synthetic-tested-reader-v1
+                      cliVersion: 1.2.3
+                    activity:
+                      activity: unknown
+                      observedAt: '2026-09-28T12:00:00Z'
+                      processMatch: unknown
+                      recentlyModified: false
+                  hasMore: false
+                requestId: local_request_example
+                protocolVersion: 0.9.1
+        '401':
+          description: 'ApiEnvelope.error: UNAUTHORIZED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '404':
+          description: 'ApiEnvelope.error: NOT_FOUND'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '422':
+          description: 'ApiEnvelope.error: VALIDATION_FAILED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '500':
+          description: 'ApiEnvelope.error: INTERNAL'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '400':
+          description: 'ApiEnvelope.error: REMOTE_CURSOR_INVALID'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '410':
+          description: 'ApiEnvelope.error: REMOTE_CURSOR_EXPIRED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      x-error-codes:
+      - UNAUTHORIZED
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - INTERNAL
+      - REMOTE_CURSOR_INVALID
+      - REMOTE_CURSOR_EXPIRED
+  /api/v1/native-sessions/{nativeSessionId}:
+    get:
+      operationId: getLocalNativeSessionV1
+      security:
+      - bearerAuth: []
+      description: 本机操作不依赖配对、云端在线或线路修订。仅已登记workspace范围；ID为本机索引ID。所有响应no-store，日志不记录正文；沿现有本机Host/Origin及鉴权规则。详见R3-contract
+        §11。
+      parameters:
+      - name: nativeSessionId
+        in: path
+        required: true
+        schema: &local_native_002
+          type: string
+          minLength: 1
+          maxLength: 160
+      responses:
+        '200':
+          description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          x-dataSchema:
+            $ref: ../schema/remote-native.json#/$defs/NativeSessionIndex
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              example:
+                success: true
+                data: *local_native_001
+                requestId: local_request_example
+                protocolVersion: 0.9.1
+        '401':
+          description: 'ApiEnvelope.error: UNAUTHORIZED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '404':
+          description: 'ApiEnvelope.error: NOT_FOUND'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '422':
+          description: 'ApiEnvelope.error: VALIDATION_FAILED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '500':
+          description: 'ApiEnvelope.error: INTERNAL'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      x-error-codes:
+      - UNAUTHORIZED
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - INTERNAL
+  /api/v1/native-sessions/{nativeSessionId}/messages:
+    get:
+      operationId: readLocalNativeSessionV1
+      security:
+      - bearerAuth: []
+      description: 本机操作不依赖配对、云端在线或线路修订。仅已登记workspace范围；ID为本机索引ID。所有响应no-store，日志不记录正文；沿现有本机Host/Origin及鉴权规则。详见R3-contract
+        §11。 NativeReadInput的ID来自路径；before固定源快照，sourceRevision可选且须与游标一致。页/分段及1MiB上限复用NativeMessagePage。
+      parameters:
+      - name: nativeSessionId
+        in: path
+        required: true
+        schema: *local_native_002
+      - name: sourceRevision
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+      - name: before
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 4096
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          x-dataSchema:
+            $ref: ../schema/remote-native.json#/$defs/NativeMessagePage
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              example:
+                success: true
+                data:
+                  nativeSessionId: native_local_example
+                  sourceRevision: 270c0d536da1e328c882cda409fc95a131d86851b817f538836313cad3b9ed03
+                  snapshotCursor: opaque_synthetic_snapshot_0001
+                  items:
+                  - messageId: native_message_example
+                    role: user
+                    text: 合成历史消息
+                    createdAt: '2026-09-28T12:00:00Z'
+                    segmentIndex: 0
+                    segmentCount: 1
+                    totalUtf8Bytes: 18
+                    contentSha256: 6a63554a47bba16b2edb3db09fad0c2a90a00c1b4d8c9b5096e217a85cd4d9dc
+                  hasMore: false
+                requestId: local_request_example
+                protocolVersion: 0.9.1
+        '401':
+          description: 'ApiEnvelope.error: UNAUTHORIZED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '404':
+          description: 'ApiEnvelope.error: NOT_FOUND'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '422':
+          description: 'ApiEnvelope.error: VALIDATION_FAILED, NATIVE_SESSION_UNSUPPORTED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '500':
+          description: 'ApiEnvelope.error: INTERNAL'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '409':
+          description: 'ApiEnvelope.error: NATIVE_SESSION_CHANGED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '413':
+          description: 'ApiEnvelope.error: REMOTE_QUERY_TOO_LARGE'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '400':
+          description: 'ApiEnvelope.error: REMOTE_CURSOR_INVALID'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '410':
+          description: 'ApiEnvelope.error: REMOTE_CURSOR_EXPIRED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      x-error-codes:
+      - UNAUTHORIZED
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - INTERNAL
+      - NATIVE_SESSION_UNSUPPORTED
+      - NATIVE_SESSION_CHANGED
+      - REMOTE_QUERY_TOO_LARGE
+      - REMOTE_CURSOR_INVALID
+      - REMOTE_CURSOR_EXPIRED
+  /api/v1/native-sessions/{nativeSessionId}/imports:
+    post:
+      operationId: importLocalNativeSessionV1
+      security:
+      - bearerAuth: []
+      description: 本机操作不依赖配对、云端在线或线路修订。仅已登记workspace范围；ID为本机索引ID。所有响应no-store，日志不记录正文；沿现有本机Host/Origin及鉴权规则。详见R3-contract
+        §11。 同步提交完整历史与精确绑定后返回201；不经过送达/grant、不返回202。Hub签发关闭确认并审计，复用写锁及活跃再检查。同键同体重放同一对话，不再导入/签发确认；冲突IDEMPOTENCY_MISMATCH。
+      parameters:
+      - name: nativeSessionId
+        in: path
+        required: true
+        schema: *local_native_002
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      responses:
+        '201':
+          description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          x-dataSchema:
+            $ref: ../schema/local-chat.json#/$defs/LocalConversationView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              example:
+                success: true
+                data:
+                  id: conversation_native
+                  title: 合成原生历史
+                  workspaceId: workspace_example
+                  createdAt: '2026-09-28T12:00:00Z'
+                  updatedAt: '2026-09-28T12:00:00Z'
+                  conversationKind: native
+                  agentType: codex
+                  nativeSessionId: native_local_example
+                requestId: local_request_example
+                protocolVersion: 0.9.1
+        '401':
+          description: 'ApiEnvelope.error: UNAUTHORIZED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '404':
+          description: 'ApiEnvelope.error: NOT_FOUND'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '422':
+          description: 'ApiEnvelope.error: VALIDATION_FAILED, NATIVE_SESSION_UNSUPPORTED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '500':
+          description: 'ApiEnvelope.error: INTERNAL'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '403':
+          description: 'ApiEnvelope.error: ORIGIN_NOT_ALLOWED'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+        '409':
+          description: 'ApiEnvelope.error: IDEMPOTENCY_MISMATCH, NATIVE_SESSION_ACTIVE, NATIVE_SESSION_CHANGED, NATIVE_SESSION_WRITER_CONFLICT'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote-native.json#/$defs/RemoteNativeImportInput
+            example:
+              terminalClosedConfirmed: true
+              expectedIndexVersion: 1
+              sourceRevision: 270c0d536da1e328c882cda409fc95a131d86851b817f538836313cad3b9ed03
+      x-error-codes:
+      - UNAUTHORIZED
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - INTERNAL
+      - ORIGIN_NOT_ALLOWED
+      - IDEMPOTENCY_MISMATCH
+      - NATIVE_SESSION_ACTIVE
+      - NATIVE_SESSION_CHANGED
+      - NATIVE_SESSION_UNSUPPORTED
+      - NATIVE_SESSION_WRITER_CONFLICT
+  /api/v1/remote/authorized-roots:
+    get:
+      operationId: getLocalAuthorizedRootsV1
+      security:
+      - bearerAuth: []
+      description: 仅电脑本机可配置，默认空。GET读取；PUT使用expectedVersion原子替换，重算真实路径与根ID/版本，立即撤销旧选择令牌并更新catalog。保持现有本机Host/Origin与鉴权边界，不接受云端Cookie/PAT。已登记workspace不受根移除影响。
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      version: 1
+                      roots: []
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.9.1
+          x-dataSchema:
+            $ref: ../schema/remote-native.json#/$defs/LocalAuthorizedRootsView
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+      parameters: []
+    put:
+      operationId: putLocalAuthorizedRootsV1
+      security:
+      - bearerAuth: []
+      description: 仅电脑本机可配置，默认空。GET读取；PUT使用expectedVersion原子替换，重算真实路径与根ID/版本，立即撤销旧选择令牌并更新catalog。保持现有本机Host/Origin与鉴权边界，不接受云端Cookie/PAT。已登记workspace不受根移除影响。
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      version: 2
+                      roots:
+                      - rootId: root_example
+                        displayName: synthetic_displayName
+                        path: E:/tmp/r3-example
+                        version: 1
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.9.1
+          x-dataSchema:
+            $ref: ../schema/remote-native.json#/$defs/LocalAuthorizedRootsView
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '409':
+          description: 'CONFLICT: expectedVersion不一致；ApiEnvelope.error'
+        '422':
+          description: 'VALIDATION_FAILED: 根路径不合法；ApiEnvelope.error'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/remote-native.json#/$defs/LocalAuthorizedRootsInput
+            example:
+              expectedVersion: 1
+              roots:
+              - displayName: synthetic_displayName
+                path: E:/tmp/r3-example
   /api/v1/conversations/{conversationId}:
     patch:
       operationId: updateLocalConversationV1

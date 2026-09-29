@@ -1,0 +1,13 @@
+{
+  "conversationId": "conversation_demo",
+  "workspaceId": "workspace_demo",
+  "sceneId": "analyze",
+  "sceneVersion": 1,
+  "title": "Synced conversation",
+  "createdAt": "2026-09-26T12:00:00Z",
+  "updatedAt": "2026-09-26T12:00:00Z",
+  "archived": false,
+  "visibility": "both",
+  "metadataVersion": 1,
+  "authority": "local"
+}

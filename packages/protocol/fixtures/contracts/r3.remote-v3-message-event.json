@@ -1,0 +1,18 @@
+{
+  "type": "message.appended",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "conversationId": "conversation_demo",
+  "payload": {
+    "messageId": "message_demo",
+    "conversationId": "conversation_demo",
+    "role": "assistant",
+    "text": "只读分析已登记项目，不修改文件。",
+    "createdAt": "2026-09-26T12:00:00Z"
+  },
+  "wireRevision": 3
+}

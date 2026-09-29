@@ -1,0 +1,16 @@
+{
+  "type": "query.result.segment",
+  "wireRevision": 3,
+  "queryId": "query_example",
+  "requestId": "req_example",
+  "connectionId": "connection_example",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "epoch_demo",
+  "resultType": "native.messages",
+  "segmentIndex": 0,
+  "segmentCount": 1,
+  "totalUtf8Bytes": 455,
+  "contentSha256": "60ebc9d213918c546d141a21f5fa51f401ffe96a3368c97854cdf21065635a86",
+  "text": "{\"nativeSessionId\":\"native_local_example\",\"sourceRevision\":\"270c0d536da1e328c882cda409fc95a131d86851b817f538836313cad3b9ed03\",\"snapshotCursor\":\"opaque_synthetic_snapshot_0001\",\"items\":[{\"messageId\":\"native_message_example\",\"role\":\"user\",\"text\":\"合成历史消息\",\"createdAt\":\"2026-09-28T12:00:00Z\",\"segmentIndex\":0,\"segmentCount\":1,\"totalUtf8Bytes\":18,\"contentSha256\":\"6a63554a47bba16b2edb3db09fad0c2a90a00c1b4d8c9b5096e217a85cd4d9dc\"}],\"hasMore\":false}"
+}
