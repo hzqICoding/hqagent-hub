@@ -14,7 +14,7 @@ import pytest
 import uvicorn
 from protocol.generated import python as dto
 
-from remote_support import System, TLS_FILES, until
+from remote_support import System, TLS_FILES, until, WORKER_CODECS, SERVER_CODECS
 from runtime.paths import HubPaths
 from runtime.remote.security import CredentialVault
 from runtime.remote.worker import NoRedirectConnect
@@ -22,6 +22,7 @@ from storage.database import Database
 from storage.events import EventStore
 from storage.local_chat import LocalChatRepository, now
 from storage.remote import RemoteRepository
+from storage.migrations import LATEST_SCHEMA_VERSION
 
 
 @pytest.fixture(autouse=True)
@@ -124,13 +125,13 @@ class RealPair:
         assert login.status_code == 200, login.text
         self.browser.headers["X-CSRF-Token"] = login.json()["data"]["csrfToken"]
         self.system = System(self.path)
-        assert self.system.db.schema_version == 7
+        assert self.system.db.schema_version == LATEST_SCHEMA_VERSION
         self.system.worker.connector = self.connect
         self.system.adapter.result = self.system.adapter.result.model_copy(update={"summary": "记住了"})
         await self.system.chat.start()
         await self.system.worker.start()
         await until(lambda: any(f["type"] == "worker.hello_ack" for f in self.received))
-        assert self.received[0]["wireRevision"] == 2
+        assert next(f for f in self.received if f["type"] == "worker.hello_ack")["wireRevision"] == 2
         assert self.system.repo.get("identity")["wireRevision"] == 2
         return self
 
@@ -140,14 +141,14 @@ class RealPair:
         async with NoRedirectConnect(uri, ssl=self.tls, **kwargs) as ws:
             class TracedSocket:
                 async def send(self, raw):
-                    frame = dto.RemoteV2WorkerOutboundFrame.model_validate_json(raw).model_dump(mode="json", by_alias=True, exclude_none=True)
+                    frame = WORKER_CODECS[json.loads(raw)["wireRevision"]].model_validate_json(raw).model_dump(mode="json", by_alias=True, exclude_none=True)
                     pair.sent.append(frame)
                     if pair.hold_history and pair.hold_seq is None and frame["type"] == "sync.backfill.progress" and not frame["complete"]:
                         pair.hold_seq = frame["seq"]
                     await ws.send(raw)
 
                 async def incoming(self, raw):
-                    frame = dto.RemoteV2ServerOutboundFrame.model_validate_json(raw).model_dump(mode="json", by_alias=True, exclude_none=True)
+                    frame = SERVER_CODECS[json.loads(raw)["wireRevision"]].model_validate_json(raw).model_dump(mode="json", by_alias=True, exclude_none=True)
                     pair.received.append(frame)
                     if frame["type"] == "worker.events_ack" and pair.hold_seq is not None and frame["position"]["seq"] >= pair.hold_seq:
                         pair.history_held.set()
@@ -252,7 +253,7 @@ def test_real_r1_upgrade_backfill_and_computer_rounds_keep_reply_and_connection(
                 dto.RemoteQueuedReceipt.model_validate(receipt.json()["data"])
                 await pair.mirrored(conversation.id, 3)
                 assert len(pair.system.adapter.resumed) == 1
-            assert not [f for f in pair.received if f["type"] == "worker.hello_rejected"]
+            assert not [f for f in pair.received if f["type"] == "worker.hello_rejected" and f["error"]["code"] != "REMOTE_PROTOCOL_UNSUPPORTED"]
     asyncio.run(scenario())
 
 
@@ -270,7 +271,7 @@ def test_real_server_rejection_preserves_error_instead_of_inventing_epoch_failur
             assert pair.received[-1]["type"] == "worker.hello_rejected"
             assert pair.received[-1]["error"]["code"] == "REMOTE_SYNC_CONFLICT"
             assert pair.system.repo.get("link")["view"]["lastErrorCode"] == "REMOTE_SYNC_CONFLICT"
-            hello = pair.received[0]
+            hello = next(f for f in pair.received if f["type"] == "worker.hello_ack")
             assert all(f['connectionId'] == hello['connectionId'] for f in pair.received
                        if f['type'] in {'worker.events_ack', 'server.heartbeat'})
             with pair.service.repo.transaction() as tx:
