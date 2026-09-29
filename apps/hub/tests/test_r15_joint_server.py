@@ -23,7 +23,7 @@ from storage.events import EventStore
 from storage.local_chat import LocalChatRepository, now
 from storage.remote import RemoteRepository
 from storage.migrations import LATEST_SCHEMA_VERSION
-from test_r3_native import fixture_history, setup_native
+from test_r3_native import fixture_history, setup_native, indexed_listing
 
 
 @pytest.fixture(autouse=True)
@@ -140,7 +140,7 @@ class RealPair:
             fixture_history(root / "import", self.path, text="synthetic native imported history",
                             identifier="00000000-0000-4000-8000-000000000002")
             native = setup_native(self.system, root)
-            items = (await native.listing()).items
+            items = (await indexed_listing(native)).items
             imported = next(i for i in items if i.title == "synthetic native imported history")
             self.native_index = next(i for i in items if i.native_session_id != imported.native_session_id)
             response = await self.system.local.post(f"/api/v2/native-sessions/{imported.native_session_id}/imports",

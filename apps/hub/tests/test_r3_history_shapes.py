@@ -143,6 +143,7 @@ def test_preferred_title_is_sanitized_in_local_index_without_bridge_metadata(tmp
                 {'type':'ai-title','sessionId':rows[0]['sessionId'],'aiTitle':'Preferred sk-TITLESECRET '+('界'*140)}])
             write_rows(path,rows)
             setup_native(system,root,'claude')
+            await system.worker.native.scan()
             response=await system.local.get('/api/v2/native-sessions')
             assert response.status_code==200,response.text
             assert response.json()['data']['items'][0]['title']==public_text(rows[-1]['aiTitle'])[:120]
