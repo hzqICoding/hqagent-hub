@@ -130,7 +130,7 @@ def test_activity_confirmation_cannot_override_live_process_and_changes_expire_c
 
 
 @pytest.mark.parametrize('agent', ['claude','codex'])
-def test_unknown_blocks_and_damaged_records_are_unsupported_not_empty_history(tmp_path,agent):
+def test_unknown_blocks_placeholder_but_damaged_records_are_unsupported(tmp_path,agent):
     root=tmp_path/'records'
     path=fixture_history(root,tmp_path,agent)
     plugin=FileHistory(agent,root)
@@ -140,7 +140,9 @@ def test_unknown_blocks_and_damaged_records_are_unsupported_not_empty_history(tm
     path.write_text(''.join(json.dumps(r)+'\n' for r in data),encoding='utf-8')
     from types import SimpleNamespace
     values=plugin.list([SimpleNamespace(id='workspace',path=str(tmp_path))])
-    assert len(values)==1 and not values[0][0].readable and values[0][0].reason
+    assert len(values)==1 and values[0][0].readable
+    assert '[不支持的内容块]' in str(plugin.inspect(path).messages)
+    assert plugin.capabilities()['structureCounts']['unknownBlocks']==1
     assert 'MUST_NOT_GUESS' not in str(values[0][0].messages)
     message['content']=['not-a-block-object']
     path.write_text(''.join(json.dumps(r)+'\n' for r in data),encoding='utf-8')
@@ -163,6 +165,7 @@ def test_claude_provenance_and_sidechains_are_never_inferred_from_filename(tmp_p
     fixture_history(root,tmp_path,'claude')
     path.write_text(path.read_text().replace('"isSidechain": false','"isSidechain": true'),encoding='utf-8')
     assert not plugin.list(scopes)
+    assert not plugin.diagnostics
 
 
 def test_tool_summaries_never_include_arguments_or_output_and_time_basis_is_explicit(tmp_path):

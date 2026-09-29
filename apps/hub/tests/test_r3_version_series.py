@@ -45,7 +45,7 @@ def test_new_patch_still_requires_consistent_record_identity_and_shapes(tmp_path
         target[field]={'id':'00000000-0000-4000-8000-000000000003','cwd':'relative-invalid-cwd','version':'2.2.0' if agent=='claude' else '0.154.0'}[broken]
     if broken=='block':
         target=rows[1]['payload'] if agent=='codex' else rows[1]['message']
-        target['content']=[{'type':'unrecognized','text':'PRIVATE_BROKEN_BODY'}]
+        target['content']=[{'type':'text','text':{'invalid':'PRIVATE_BROKEN_BODY'}}]
     path.write_text(''.join(json.dumps(row)+'\n' for row in rows)+('broken-json\n' if broken=='json' else ''),encoding='utf-8')
     source=FileHistory(agent,root).inspect(path)
     assert not source.readable and not source.messages

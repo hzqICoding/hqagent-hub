@@ -7,7 +7,7 @@ import os
 import re
 import uuid
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +17,9 @@ from runtime.remote.security import safe_text
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
 FILTER_VERSION = "public-text-v1"
 CANCEL_READ = ContextVar("native_read_cancel", default=None)
+CLAUDE_AUXILIARY = frozenset({'progress', 'summary', 'attachment', 'mode', 'permission-mode',
+    'bridge-session', 'atis-latch', 'ai-title', 'last-prompt', 'file-history-snapshot',
+    'file-history-delta', 'queue-operation', 'cost-state', 'system'})
 
 
 def check_cancelled():
@@ -70,6 +73,8 @@ class HistorySource:
     reason: str = ""
     created_time_basis: str = "metadata"
     updated_time_basis: str = "file_stat"
+    title: str | None = None
+    structure_counts: dict = field(default_factory=dict)
 
     @property
     def revision(self):
@@ -98,6 +103,7 @@ class FileHistory:
         self.diagnostics = []
         self.observed_versions = set()
         self.version_diagnostics = []
+        self.structure_counts = {}
 
     def capabilities(self):
         return {"history.list": self.root.is_dir(), "history.read": self.root.is_dir(),
@@ -105,6 +111,7 @@ class FileHistory:
                 "verifiedSeries": self.series_description(), "observedVersions": sorted(self.observed_versions),
                 "versionPolicy": self.version_policy,
                 "versionDiagnostics": list(self.version_diagnostics),
+                "structureCounts": dict(self.structure_counts),
                 "reason": "" if self.root.is_dir() else "Runtime历史目录不可用"}
 
     def series_description(self):
@@ -179,6 +186,7 @@ class FileHistory:
         return result
 
     def inspect(self, path, *, snapshot=None, terminals=None):
+        self.structure_counts = {}
         content, identity, st = self._bytes(Path(path), snapshot)
         try:
             records, damaged = [], False
@@ -208,13 +216,16 @@ class FileHistory:
                 created_raw = meta.get("timestamp")
                 created = source_time(created_raw, st.st_ctime)
             else:
-                envelope = next((r for r in records if all(k in r for k in ("sessionId", "cwd"))), None)
+                if any(r.get('isSidechain') for r in records) and not any(
+                        not r.get('isSidechain') and r.get('type') in {'user', 'assistant'} for r in records):
+                    return None  # Auxiliary-only remainder of an excluded sidechain.
+                envelope = next((r for r in records if not r.get('isSidechain') and
+                    r.get('type') in {'user','assistant','system'} and all(k in r for k in ("sessionId", "cwd", "version"))), None)
                 if envelope is None:
                     self.diagnostics.append("原生记录缺少可验证的会话信封")
                     return None
-                if any(r.get("isSidechain") for r in records):
-                    return None
-                if any(r.get("source") not in {None,"cli","terminal"} or r.get("userType") not in {None,"external"} for r in records):
+                if any(r.get("source") not in {None,"cli","terminal"} or r.get("userType") not in {None,"external"}
+                       for r in records if not r.get('isSidechain') and r.get('type') in {'user','assistant'}):
                     return None
                 if not Path(envelope["cwd"]).is_absolute():
                     return None
@@ -233,7 +244,7 @@ class FileHistory:
                 return None
             if not isinstance(version,str) or not version.isascii():
                 version = "unknown"
-            profile = self.agent_type + ".jsonl." + str(version)
+            profile = self.agent_type + ".jsonl." + str(version) + '.structures-v2'
             source = HistorySource(Path(path), identity, len(content), hashlib.sha256(content).hexdigest(),
                 vendor, cwd, str(version), profile, self.agent_type, created, stamp(st.st_mtime), st.st_mtime,
                 self.verified_version(version) and not damaged, [])
@@ -259,6 +270,7 @@ class FileHistory:
             self.version_diagnostics = (self.version_diagnostics + [diagnostic + "; " + ("结构校验通过" if source.readable else source.reason)])[-32:]
             if not source.readable:
                 self.diagnostics.append(source.reason)
+            self.structure_counts = dict(source.structure_counts)
             return source
         except (ValueError, KeyError, TypeError):
             raise HubError("NATIVE_SESSION_UNSUPPORTED", "原生记录格式无法识别") from None
@@ -266,9 +278,13 @@ class FileHistory:
     def _validate_identity(self, records, source):
         for index, row in enumerate(records):
             check_cancelled()
+            if row.get('isSidechain'):
+                continue
             if self.agent_type == "claude":
+                if row.get('type') not in CLAUDE_AUXILIARY | {'user', 'assistant'}:
+                    continue
                 required = {"sessionId", "cwd", "version"} if row.get("type") in {"user", "assistant"} else set()
-                fields = {"sessionId": source.vendor_id, "cwd": source.cwd, "version": source.version}
+                fields = {"sessionId": source.vendor_id, "session_id": source.vendor_id, "cwd": source.cwd, "version": source.version}
                 values = row
             else:
                 if row.get("type") in {"session_meta", "event_msg", "turn_context", "compacted"} and not isinstance(row.get("payload"), dict):
@@ -302,93 +318,178 @@ class FileHistory:
                 if actual != expected:
                     raise HistoryStructureError(f"第{index + 1}条记录的{key}缺失或与会话信封不一致")
 
-    def _messages(self, records, source):
-        result, chain, seen = [], None, set()
-        calls = {}
-        private = {"thinking", "reasoning", "redacted_thinking", "encrypted_content"}
-        tool_names = {"Read", "Write", "Edit", "Bash", "Glob", "Grep", "shell", "exec_command", "apply_patch"}
+    @staticmethod
+    def _compact_boundary(row):
+        return row.get('isCompactSummary') is True or (
+            row.get('type') == 'system' and row.get('subtype') == 'compact_boundary'
+            and isinstance(row.get('compactMetadata'), dict))
+
+    def _validate_chain(self, records):
+        # All main-stream record IDs participate, including hidden/meta records.
+        # Multiple assistant blocks may share an earlier parent; adjacency is
+        # not the chain invariant. Only explicit compact boundaries may refer
+        # to a discarded prefix.
+        seen = set()
         for index, row in enumerate(records):
             check_cancelled()
-            if self.agent_type == "codex":
-                if row.get("type") in {"session_meta", "event_msg", "turn_context", "compacted"}:
-                    continue
-                if row.get("type") != "response_item":
-                    raise ValueError()
-                message = row["payload"]
-                if not isinstance(message,dict):
-                    raise ValueError()
-                if message.get("type") in {"function_call","custom_tool_call"}:
-                    name = message.get("name")
-                    if name in tool_names:
-                        calls[message.get("call_id")] = name
-                        result.append({"id":digest([source.vendor_id,index,"tool"]),"role":"tool_summary","text":"工具 " + name + "：历史调用"})
-                    continue
-                if message.get("type") in {"function_call_output","custom_tool_call_output"}:
-                    name = calls.get(message.get("call_id"))
-                    if name:
-                        result.append({"id":digest([source.vendor_id,index,"tool"]),"role":"tool_summary","text":"工具 " + name + "：历史返回记录"})
-                    continue
-                if message.get("type") in private | {"function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output", "web_search_call"}:
-                    continue
-                if message.get("type") != "message":
-                    raise ValueError()
-                mid = message.get("id") or digest([index, row])
-            else:
-                if row.get("type") not in {"user", "assistant"}:
-                    if row.get("type") in {"progress", "system", "summary", "file-history-snapshot", "queue-operation", "last-prompt"}:
-                        continue
-                    raise ValueError()
-                if row.get("isMeta"):
-                    continue
-                if row.get("sessionId") != source.vendor_id:
-                    raise ValueError()
-                mid, parent = row["uuid"], row.get("parentUuid")
-                if mid in seen:
-                    raise ValueError()
-                if chain is not None and parent != chain:
-                    raise ValueError()  # Branch reconstruction unsupported, never mix paths.
-                chain = mid
+            if row.get('isSidechain'):
+                continue
+            mid, parent = row.get('uuid'), row.get('parentUuid')
+            if row.get('type') not in CLAUDE_AUXILIARY | {'user', 'assistant'}:
+                if isinstance(mid, str) and mid:
+                    seen.add(mid)
+                continue
+            message = row.get('type') in {'user', 'assistant'} or (row.get('type') == 'system' and 'message' in row)
+            if message and (not isinstance(mid, str) or not mid):
+                raise HistoryStructureError(f'第{index + 1}条消息缺少有效uuid')
+            if mid is not None:
+                if not isinstance(mid, str) or not mid or mid in seen:
+                    raise HistoryStructureError(f'第{index + 1}条记录uuid无效或重复')
+                if parent is not None and (not isinstance(parent, str) or not parent):
+                    raise HistoryStructureError(f'第{index + 1}条记录parentUuid无效')
+                if parent is not None and parent not in seen and not self._compact_boundary(row):
+                    raise HistoryStructureError(f'第{index + 1}条记录的parentUuid没有先行记录')
                 seen.add(mid)
-                message = row["message"]
-                if not isinstance(message,dict):
-                    raise ValueError()
-            role = message.get("role")
-            if role in {"system", "developer"}:
+
+    def _messages(self, records, source):
+        result, calls = [], {}
+        counts = source.structure_counts = dict(ignoredRecords=0, unknownRecords=0,
+            unknownItems=0, unknownEvents=0, unknownBlocks=0, sidechainRecords=0, internalMessages=0)
+        private = {'thinking', 'reasoning', 'redacted_thinking', 'encrypted_content'}
+        tool_names = {'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'shell', 'exec_command', 'apply_patch'}
+        if self.agent_type == 'claude':
+            self._validate_chain(records)
+
+        def emit(mid, role, text, row):
+            if not text:
+                return
+            if role == 'user' and text.lstrip().startswith((
+                    '<environment_context>', '<permissions instructions>', '# AGENTS.md instructions')):
+                return
+            text.encode('utf-8')
+            value = {'id': digest([source.vendor_id, mid, role]), 'role': role,
+                'text': public_text(text, self.secrets_provider())}
+            if source_time(row.get('timestamp')):
+                value['createdAt'] = source_time(row['timestamp'])
+            result.append(value)
+
+        def tool_name(value):
+            return value if isinstance(value, str) and value in tool_names else '工具'
+
+        for index, row in enumerate(records):
+            check_cancelled()
+            if row.get('isSidechain'):
+                counts['sidechainRecords'] += 1
                 continue
-            if message.get("channel") in {"analysis", "reasoning"}:
+            if self.agent_type == 'codex':
+                if row.get('type') in {'session_meta', 'event_msg', 'turn_context', 'compacted'}:
+                    counts['ignoredRecords'] += 1
+                    if row.get('type') == 'event_msg' and row['payload'].get('type') not in {
+                            'task_started','task_complete','item_completed','token_count','thread_settings_applied',
+                            'user_message','agent_message','turn_aborted'}:
+                        counts['unknownEvents'] += 1
+                    if row.get('type') == 'compacted':
+                        emit(digest([index, 'compact']), 'tool_summary', '对话已压缩', row)
+                    continue
+                if row.get('type') != 'response_item':
+                    counts['unknownRecords'] += 1
+                    continue
+                message = row['payload']
+                if not isinstance(message, dict):
+                    raise HistoryStructureError(f'第{index + 1}条记录payload不是对象')
+                kind = message.get('type')
+                if kind in {'function_call', 'custom_tool_call'}:
+                    name = tool_name(message.get('name'))
+                    call = message.get('call_id')
+                    if isinstance(call, str):
+                        calls[call] = name
+                    emit(digest([index, 'tool']), 'tool_summary', name + '：历史调用', row)
+                    continue
+                if kind in {'function_call_output', 'custom_tool_call_output'}:
+                    call = message.get('call_id')
+                    name = calls.get(call, '工具') if isinstance(call, str) else '工具'
+                    emit(digest([index, 'tool']), 'tool_summary', name + '：历史返回记录', row)
+                    continue
+                if kind in private:
+                    continue
+                if kind == 'web_search_call':
+                    emit(digest([index, 'tool']), 'tool_summary', '工具：历史搜索调用', row)
+                    continue
+                if kind != 'message':
+                    counts['unknownItems'] += 1
+                    continue
+                mid = message.get('id') or digest([index, row])
+            else:
+                is_message = row.get('type') in {'user', 'assistant'} or (row.get('type') == 'system' and 'message' in row)
+                if not is_message:
+                    if self._compact_boundary(row):
+                        emit(row.get('uuid') or digest([index, 'compact']), 'tool_summary', '对话已压缩', row)
+                    if row.get('type') == 'ai-title' and isinstance(row.get('aiTitle'), str) and not row.get('isMeta') and not row.get('isVisibleInTranscriptOnly'):
+                        # Only this explicitly supported title field is read.
+                        # bridge-session/account/organization metadata stays opaque.
+                        source.title = public_text(row['aiTitle'], self.secrets_provider())[:120] or None
+                    counts['ignoredRecords' if row.get('type') in CLAUDE_AUXILIARY else 'unknownRecords'] += 1
+                    continue
+                mid, message = row['uuid'], row.get('message')
+                if not isinstance(message, dict):
+                    raise HistoryStructureError(f'第{index + 1}条消息缺失或不是对象')
+                if message.get('role') != row['type']:
+                    raise HistoryStructureError(f'第{index + 1}条消息role与记录类型不一致')
+
+            role = message.get('role')
+            if role not in {'user', 'assistant', 'system', 'developer'}:
+                raise HistoryStructureError(f'第{index + 1}条消息role非法')
+            content = message.get('content')
+            blocks = [{'type': 'text', 'text': content}] if isinstance(content, str) else content
+            if not isinstance(blocks, list) or not all(isinstance(block, dict) for block in blocks):
+                raise HistoryStructureError(f'第{index + 1}条消息content结构非法')
+            if self._compact_boundary(row):
+                emit(mid, 'tool_summary', '对话已压缩', row)
                 continue
-            if message.get("channel") not in {None, "final", "commentary"}:
-                raise ValueError()
-            if role not in {"user", "assistant"}:
-                raise ValueError()
-            content = message["content"]
-            blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
-            if not isinstance(blocks,list) or not all(isinstance(block,dict) for block in blocks):
-                raise ValueError()
+            if row.get('isMeta') or row.get('isVisibleInTranscriptOnly'):
+                counts['internalMessages'] += 1
+                continue
+            if message.get('channel') in {'analysis', 'reasoning'} or role == 'developer':
+                continue
+            if message.get('channel') not in {None, 'final', 'commentary'}:
+                raise HistoryStructureError(f'第{index + 1}条消息channel未知')
+            if role == 'system':
+                # NativeMessagePart has no system role. Never upload raw system
+                # instructions; retain a safe notice, mapped to system on import.
+                if self.agent_type == 'claude':
+                    emit(mid, 'tool_summary', '[系统消息]', row)
+                continue
             texts, tools = [], []
             for block in blocks:
-                kind = block.get("type")
-                if kind in private or kind in {"image", "image_url", "input_image", "document"}:
+                kind = block.get('type')
+                if not isinstance(kind, str):
+                    raise HistoryStructureError(f'第{index + 1}条消息内容块缺少类型')
+                if kind in private:
                     continue
-                if kind in {"text", "input_text", "output_text"}:
-                    texts.append(block["text"])
-                elif kind in {"tool_use", "tool_result"}:
-                    if block.get("name") in tool_names:
-                        tools.append("工具 " + block["name"] + "：历史记录")
+                if kind in {'image', 'image_url', 'input_image'}:
+                    texts.append('[图片]')
+                elif kind in {'text', 'input_text', 'output_text'}:
+                    if not isinstance(block.get('text'), str):
+                        raise HistoryStructureError(f'第{index + 1}条消息text不是字符串')
+                    texts.append(block['text'])
+                elif kind in {'tool_use', 'tool_result'}:
+                    if kind == 'tool_use':
+                        name = tool_name(block.get('name'))
+                        if isinstance(block.get('id'), str):
+                            calls[block['id']] = name
+                        tools.append(name + '：历史调用')
+                    else:
+                        call = block.get('tool_use_id')
+                        name = calls.get(call, '工具') if isinstance(call, str) else '工具'
+                        tools.append(name + '：历史返回记录')
                 else:
-                    raise ValueError()
-            for message_role, text in ((role, "".join(texts)), ("tool_summary", "\n".join(tools))):
-                if text:
-                    if message_role == "user" and text.lstrip().startswith((
-                            "<environment_context>", "<permissions instructions>", "# AGENTS.md instructions")):
-                        continue  # Runtime-injected instruction/context envelopes.
-                    text.encode("utf-8")  # Invalid Unicode is unsupported, never a truncated reply.
-                    value = {"id": digest([source.vendor_id, mid, message_role]), "role": message_role,
-                        "text": public_text(text, self.secrets_provider())}
-                    if source_time(row.get("timestamp")):
-                        value["createdAt"] = source_time(row["timestamp"])
-                    result.append(value)
+                    counts['unknownBlocks'] += 1
+                    texts.append('[不支持的内容块]')
+            emit(mid, role, ''.join(texts), row)
+            emit(mid, 'tool_summary', '\n'.join(tools), row)
         return result
+
+
 
     def list(self, workspaces, excluded=()):
         self.diagnostics = []

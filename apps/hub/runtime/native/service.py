@@ -101,7 +101,7 @@ class NativeService:
                     fmt["readerId"] = source.reader_id
                 else:
                     fmt["reason"] = source.reason
-                title = next((m["text"] for m in source.messages if m["role"] == "user"), "原生会话")[:120]
+                title = source.title or next((m["text"] for m in source.messages if m["role"] == "user"), "原生会话")[:120]
                 index = {"nativeSessionId": identifier, "workspaceId": workspace, "agentType": source.agent_type,
                     "title": title, "createdAt": source.created_at, "updatedAt": source.updated_at,
                     "indexVersion": old_index["indexVersion"] if old_index else 1, "sourceRevision": source.revision,
