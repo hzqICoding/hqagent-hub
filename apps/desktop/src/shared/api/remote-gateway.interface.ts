@@ -1,4 +1,5 @@
 import type {
+  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV3CatalogView,
   RemoteDevicePatchInput,
   RemoteDeviceDeletionView,
   RemoteApiTokenCreateInput,
@@ -17,7 +18,6 @@ import type {
   RemoteDevicePage,
   RemoteDeviceRevokeInput,
   RemoteDeviceRevocationView,
-  RemoteCatalogView,
   RemoteConversationPage,
   RemoteCreateConversationInput,
   RemoteConversationView,
@@ -40,6 +40,12 @@ import type {
 export type RemoteDeviceFilters = Pick<RemoteDeviceView, 'remoteAccess' | 'online'> & { includeRevoked?: boolean }
 
 export interface IRemoteGateway {
+  listNativeSessions(workerId: string, cursor?: string): Promise<RemoteNativeSessionPage>
+  getNativeSession(id: string): Promise<RemoteNativeSessionView>
+  readNativeMessages(id: string, before?: string): Promise<NativeMessagePage>
+  importNativeSession(id: string, input: RemoteNativeImportInput, key?: string): Promise<RemoteResourceQueuedReceipt>
+  listDirectory(workerId: string, input: DirectoryListingInput): Promise<DirectoryListingPage>
+  registerWorkspace(workerId: string, input: RemoteWorkspaceRegisterInput, key?: string): Promise<RemoteResourceQueuedReceipt>
   readonly supportsDeviceManagement: boolean
   patchDevice(workerId: string, input: RemoteDevicePatchInput, idempotencyKey?: string): Promise<RemoteDeviceView>
   deleteDevice(workerId: string, idempotencyKey?: string): Promise<RemoteDeviceDeletionView>
@@ -59,7 +65,7 @@ export interface IRemoteGateway {
   listDevices(cursor?: string, limit?: number, filters?: RemoteDeviceFilters): Promise<RemoteDevicePage>
   getDevice(workerId: string): Promise<RemoteDeviceView>
   revokeDevice(workerId: string, input: RemoteDeviceRevokeInput, idempotencyKey?: string): Promise<RemoteDeviceRevocationView>
-  getWorkerCatalog(workerId: string): Promise<RemoteCatalogView>
+  getWorkerCatalog(workerId: string): Promise<RemoteV3CatalogView>
 
   // Conversations
   listConversations(params?: {

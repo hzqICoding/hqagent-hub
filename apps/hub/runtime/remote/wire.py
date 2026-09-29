@@ -7,14 +7,16 @@ from pydantic import ValidationError
 
 from protocol.generated.python import (PROTOCOL_VERSION, RemoteWorkerHello,
     RemoteServerOutboundFrame, RemoteWorkerOutboundFrame,
-    RemoteV2ServerOutboundFrame, RemoteV2WorkerOutboundFrame)
+    RemoteV2ServerOutboundFrame, RemoteV2WorkerOutboundFrame,
+    RemoteV3ServerOutboundFrame, RemoteV3WorkerOutboundFrame)
 from core.errors import HubError
 
 # The generated Literal is the frozen schema constant (no second version source).
 WIRE_REVISION = get_args(RemoteWorkerHello.model_fields["wire_revision"].annotation)[0]
 MAX_FRAME_BYTES = 256 * 1024
 CODECS = {1: (RemoteWorkerOutboundFrame, RemoteServerOutboundFrame),
-          2: (RemoteV2WorkerOutboundFrame, RemoteV2ServerOutboundFrame)}
+          2: (RemoteV2WorkerOutboundFrame, RemoteV2ServerOutboundFrame),
+          3: (RemoteV3WorkerOutboundFrame, RemoteV3ServerOutboundFrame)}
 
 
 def canonical(value: dict) -> str:

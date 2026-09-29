@@ -117,9 +117,21 @@ class Replica:
                 self.s.event(tx, owner, 'conversation.updated', self.s.view(owner, 'conversation', conv))
 
     def conversation(self, tx, owner, event):
+        local_workspace = event['payload']['workspaceId']
+        if event['wireRevision'] == 3:
+            event = self.s.native_events.conversation(tx, owner, event)
         payload = event['payload']; local = payload['conversationId']
         public = self.bind(tx, owner, event['workerId'], event['workerStoreId'], 'conversation', local, local)
         previous = tx.get(owner, 'conversation', public)
+        # Revision 2 stored the local workspace ID; revision 3 projects it to
+        # an owner/device/store-scoped public ID. Compare the same identity
+        # domain across an upgrade without treating a real metadata edit as
+        # activity. Never reinterpret an already-public workspace as local.
+        rebound_workspace = bool(event['wireRevision'] == 3 and previous and
+            previous.get('workspaceId') == local_workspace and local_workspace != payload['workspaceId'] and
+            tx.sync_reverse(owner, 'workspace', local_workspace) is None)
+        if rebound_workspace:
+            previous = dict(previous, workspaceId=payload['workspaceId'])
         if previous and '_localId' not in previous:
             tx.retire_legacy_messages(owner, public)
         if previous and previous.get('metadataVersion', 0) >= payload['metadataVersion']:
@@ -130,9 +142,9 @@ class Replica:
             # Compare all actual metadata, not a hash that includes activity.
             require(all(previous.get(k) == v for k, v in payload.items()
                         if k not in {'conversationId', 'updatedAt'}), 'REMOTE_SYNC_CONFLICT')
-            if payload['updatedAt'] <= previous['updatedAt']:
+            if payload['updatedAt'] <= previous['updatedAt'] and not rebound_workspace:
                 return
-            value = dict(previous, updatedAt=payload['updatedAt'],
+            value = dict(previous, updatedAt=max(payload['updatedAt'], previous['updatedAt']),
                          lastActivityAt=max(previous.get('lastActivityAt', previous['updatedAt']), payload['updatedAt']),
                          _metadataHash=digest(payload))
             self.s.save(tx, owner, 'conversation', public, value)

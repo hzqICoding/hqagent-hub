@@ -358,5 +358,50 @@
     "status": 400,
     "retryable": false,
     "message": "请求同时提供了多种身份凭据"
+  },
+  "REMOTE_QUERY_TIMEOUT": {
+    "status": 504,
+    "retryable": true,
+    "message": "电脑在线查询超时"
+  },
+  "REMOTE_QUERY_TOO_LARGE": {
+    "status": 413,
+    "retryable": false,
+    "message": "在线查询结果超过大小上限"
+  },
+  "NATIVE_SESSION_ACTIVE": {
+    "status": 409,
+    "retryable": false,
+    "message": "原生会话可能仍在终端运行"
+  },
+  "NATIVE_SESSION_UNSUPPORTED": {
+    "status": 422,
+    "retryable": false,
+    "message": "无法读取该版本的原生会话"
+  },
+  "NATIVE_SESSION_CHANGED": {
+    "status": 409,
+    "retryable": false,
+    "message": "原生会话已变化，请刷新后确认"
+  },
+  "NATIVE_SESSION_WRITER_CONFLICT": {
+    "status": 409,
+    "retryable": false,
+    "message": "该原生会话已有写进程"
+  },
+  "REMOTE_ROOT_NOT_AUTHORIZED": {
+    "status": 403,
+    "retryable": false,
+    "message": "电脑未授权该根目录"
+  },
+  "REMOTE_PATH_OUTSIDE_ROOT": {
+    "status": 403,
+    "retryable": false,
+    "message": "所选目录不在授权范围内"
+  },
+  "REMOTE_DIRECTORY_CHANGED": {
+    "status": 409,
+    "retryable": false,
+    "message": "目录授权或目录内容已变化"
   }
 }

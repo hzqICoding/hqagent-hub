@@ -1,6 +1,9 @@
 hub.example.com {
     # Caddy manages HTTPS. Do not enable request logging with headers/bodies/query.
-    reverse_proxy 127.0.0.1:8080
+    reverse_proxy 127.0.0.1:8080 {
+        # R3 ephemeral reads: stream without response buffering/cache plugins.
+        flush_interval -1
+    }
     header {
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options "nosniff"

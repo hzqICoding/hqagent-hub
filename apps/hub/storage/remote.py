@@ -50,6 +50,12 @@ class RemoteRepository:
         CredentialVault.atomic_write(self.witness, canonical({k: identity[k] for k in ("store", "revision")}).encode())
 
     def check_continuity(self):
+        # A background query audit can seal concurrently. Observe the database
+        # identity and external witness as one pair, never old DB + new witness.
+        with self.database.locked_connection():
+            return self._check_continuity_locked()
+
+    def _check_continuity_locked(self):
         identity = self.get("identity")
         try:
             witness = json.loads(self.witness.read_text())

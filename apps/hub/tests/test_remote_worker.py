@@ -364,7 +364,7 @@ def test_unsupported_wire_revision_freezes_without_reconnect_storm(tmp_path):
     async def scenario():
         system = System(tmp_path)
         try:
-            async with FakeRemoteServer(reject_revisions=[3]) as server:
+            async with FakeRemoteServer(reject_revisions=[4]) as server:
                 await system.pair(server, start=True)
                 await until(lambda: system.repo.get("link")["view"]["state"] == "frozen")
                 await asyncio.sleep(0.2)

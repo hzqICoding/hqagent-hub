@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { agentLabel } from '@/pages/native/native-utils'
+import NativeSessionsPanel from '@/pages/native/NativeSessionsPanel.vue'
 import { ref, inject } from 'vue'
 import { routerKey, type Router } from 'vue-router'
 import type { LocalConversationView, LocalSceneId, TaskStatus } from '@hqagent/protocol'
@@ -318,6 +320,7 @@ function handleConversationSelect(conversationId: string) {
     </div>
 
     <div class="flex-1 overflow-y-auto py-1.5">
+      <NativeSessionsPanel :projects="chatStore.workspaces.map((w) => ({ id: w.id, name: w.name }))" @opened="emit('close')" />
       <div
         v-if="chatStore.groupedConversations.length === 0"
         class="p-6 text-center text-xs text-text-muted"
@@ -381,7 +384,7 @@ function handleConversationSelect(conversationId: string) {
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
-                  <p class="text-xs font-medium text-text truncate leading-tight flex-1">{{ conversation.title }}</p>
+                  <p class="text-xs font-medium text-text truncate leading-tight flex-1">{{ conversation.title }}</p><span v-if="conversation.conversationKind === 'native'" class="text-[10px] text-text-muted">{{ agentLabel(conversation.agentType) }}</span>
                   <span
                     v-if="conversation.authority === 'remote'"
                     class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-primary/15 text-primary border border-primary/25"

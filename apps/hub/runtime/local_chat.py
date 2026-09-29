@@ -180,7 +180,7 @@ class LocalChatService:
                         await self.ports.tasks.expire_approvals()
                     except Exception:
                         logging.getLogger(__name__).error("工具审批过期检查失败，需要检查本机任务状态", exc_info=True)
-            for conversation in self.repository.conversations(include_hidden=True):
+            for conversation in self.repository.conversations(include_hidden=True, observe_native=False):
                 job = self._jobs.get(conversation.id)
                 if job and not job.done():
                     continue
@@ -240,6 +240,8 @@ class LocalChatService:
                 error_code=error.code if isinstance(error, HubError) else None)
 
     async def _task_input(self, record: dict) -> CreateTaskInput:
+        if json.loads(record["scene_json"]).get("conversationKind") == "native":
+            return await self.native.task_input(record)
         scene = LocalSceneView.model_validate_json(record["scene_json"])
         conversation = self.repository.conversation(record["conversation_id"])
         roles = [r for r in scene.roles if r.enabled]

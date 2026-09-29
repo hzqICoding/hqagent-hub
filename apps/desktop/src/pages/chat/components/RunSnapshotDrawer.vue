@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { agentLabel } from '@/pages/native/native-utils'
 import { ref, computed } from 'vue'
 import { useChatStore } from '@/stores/chat.store'
 import {
@@ -249,7 +250,7 @@ function getReviewVerdictMeta(verdict: string) {
       </div>
 
       <!-- Scene Snapshot Info (Immutable config for this run) -->
-      <div class="space-y-2">
+      <div v-if="activeRun.conversationKind !== 'native' && chatStore.activeConversation?.conversationKind !== 'native'" class="space-y-2">
         <div class="flex items-center justify-between text-[11px] text-text-muted">
           <span class="font-medium text-text">本轮场景快照 (SceneSnapshot)</span>
           <span class="font-mono">v{{ scene?.version }}</span>
@@ -291,6 +292,7 @@ function getReviewVerdictMeta(verdict: string) {
         </div>
       </div>
 
+      <p v-if="activeRun.conversationKind === 'native'" class="text-xs text-text-muted">{{ agentLabel(activeRun.agentType) }} · 原生会话，无场景角色</p>
       <!-- Steps & Task Nodes -->
       <div v-if="task?.nodes && task.nodes.length > 0" class="space-y-2">
         <span class="font-medium text-text text-[11px] block">执行步骤 (Nodes)</span>

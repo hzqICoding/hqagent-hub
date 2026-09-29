@@ -196,6 +196,9 @@ class SessionManager:
                     "Session 缺少持久化 AgentTaskSpec，无法可靠重建 Adapter 状态",
                 )
             adapter = self.adapters.adapter_for(current.agent_instance_id)
+            native = getattr(getattr(self.repository, "database", None), "native_service", None)
+            if native is not None:
+                await native.acquire_session(current.id, message)
             result = await adapter.resume(
                 ResumeRequest.model_validate(
                     {
@@ -239,6 +242,9 @@ class SessionManager:
             now=timestamp(self.clock()),
         )
         await self.repository.save(closed)
+        native = getattr(getattr(self.repository, "database", None), "native_service", None)
+        if native is not None:
+            native.release_session(session_id, safe=False)
         return closed
 
     async def finish_cancelled(self, session_id: str, task_id: str, result: CancelResult) -> SessionView:
@@ -279,4 +285,7 @@ class SessionManager:
             now=timestamp(self.clock()),
         )
         await self.repository.save(finished)
+        native = getattr(getattr(self.repository, "database", None), "native_service", None)
+        if native is not None:
+            native.release_session(session_id, safe=True)
         return finished

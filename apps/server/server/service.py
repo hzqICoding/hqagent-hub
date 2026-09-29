@@ -223,7 +223,7 @@ class Service:
         identifier = frame["commandId"]
         kind = "skip" if frame["type"] == "conversation.skip" else "command"
         self.save(tx, owner, "outbox", kind + ":" + identifier,
-                  dict(id=kind + ":" + identifier, _frame=frame, done=False, dispatching=False, conversationId=frame["conversationId"]))
+                  dict(id=kind + ":" + identifier, _frame=frame, done=False, dispatching=False, **({"conversationId": frame["conversationId"]} if "conversationId" in frame else {})))
         self.notify(tx, owner, frame["targetWorkerId"])
 
     def send_message(self, tx, owner, conv_id, body):
