@@ -74,7 +74,7 @@ def test_old_fixture_files_byte_identical():
 
 def test_each_new_type_and_every_revision3_frame_has_fixture():
     assert set(R3) <= {n for f,n in M.items() if f.startswith('r3.')}
-    assert models.PROTOCOL_VERSION==API['info']['version']=='0.9.1'
+    assert models.PROTOCOL_VERSION==API['info']['version']=='0.9.2'
     assert set(API['x-worker-websocket']['revisions'])=={1,2,3}
     assert all(v['properties']['wireRevision']['const']==3 for v in R3.values() if 'wireRevision' in v.get('properties',{}))
 
@@ -230,6 +230,29 @@ def test_pat_enabled_scopes_not_expanded_and_revision3_no_attempt_identity():
     text=json.dumps(R3)
     for forbidden in ['attemptId','retryOfRunId','modelApiKey','modelSecret']:
         assert '"'+forbidden+'"' not in text
+
+
+@pytest.mark.parametrize('path',[
+    '/api/v2/devices/{workerId}/native-sessions',
+    '/api/v2/native-sessions/{nativeSessionId}',
+    '/api/v2/native-sessions/{nativeSessionId}/messages',
+])
+def test_native_read_sync_disabled_is_explicit_409_not_empty_or_missing(path):
+    op=API['paths'][path]['get']
+    assert {'REMOTE_SYNC_DISABLED','NOT_FOUND'} <= set(op['x-error-codes'])
+    assert op['security']==[{'remoteSession':[]}]
+    examples=op['responses']['409']['content']['application/json']['examples']
+    error=examples['REMOTE_SYNC_DISABLED']['value']
+    assert error['success'] is False and 'data' not in error
+    assert error['error']=={'code':'REMOTE_SYNC_DISABLED','message':'这台电脑已关闭同步','retryable':False}
+    assert error['protocolVersion']=='0.9.2'
+    assert op['responses']['409']['headers']['Cache-Control']['schema']['const']=='no-store'
+    assert 'REMOTE_DEVICE_SUSPENDED' not in op['x-error-codes']
+    assert 'authentication and ownership first' in op['description']
+    assert 'deleted/missing device => NOT_FOUND before sync state' in op['description']
+    registry={e['code']:e for e in yaml.safe_load((P/'registry/error-codes.yaml').read_text(encoding='utf-8'))['errors']}
+    assert registry['REMOTE_SYNC_DISABLED']['http']==409
+    assert registry['REMOTE_SYNC_DISABLED']['retryable'] is False
 
 
 @pytest.mark.parametrize('mutation',['persist','sequence','wrong_type','deadline','missing_more_cursor'])
