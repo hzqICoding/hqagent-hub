@@ -106,6 +106,36 @@ class CredentialVault:
             raise HubError("INTERNAL", "本机设备凭据删除失败") from None
 
 
+_LINE_SECRET = re.compile(r'''(?:token|api[_-]?key|password|secret)["']?\s*[:=]|os\.environ|process\.env''', re.I)
+
+
+def _sensitive_lines(value: str) -> str:
+    # Equivalent line predicate to ^.*([\w-]*token|...).*$. Searching the
+    # literal suffix avoids quadratic backtracking on long credential-free
+    # lines. Preserve \s* across newlines and the original CR/LF behavior.
+    matches = iter(_LINE_SECRET.finditer(value))
+    pending = next(matches, None)
+    pieces, offset = [], 0
+    while pending is not None:
+        start = value.rfind('\n', offset, pending.start()) + 1
+        line_end = value.find('\n', pending.start())
+        line_end = len(value) if line_end < 0 else line_end
+        chosen = pending
+        pending = next(matches, None)
+        # The old greedy prefix chooses the last marker on its starting line.
+        while pending is not None and pending.start() < line_end:
+            chosen, pending = pending, next(matches, None)
+        end = value.find('\n', chosen.end())
+        end = len(value) if end < 0 else end
+        pieces.extend((value[offset:start], '[redacted]'))
+        offset = end
+        # A marker swallowed by the old match cannot extend that match again.
+        while pending is not None and pending.start() < end:
+            pending = next(matches, None)
+    pieces.append(value[offset:])
+    return ''.join(pieces)
+
+
 def safe_text(value: str, secrets_to_hide: tuple[str, ...] = ()) -> str:
     for secret in secrets_to_hide:
         if secret:
@@ -114,5 +144,5 @@ def safe_text(value: str, secrets_to_hide: tuple[str, ...] = ()) -> str:
     value = re.sub(r"(?is)<(?:analysis|think|thinking)>.*?</(?:analysis|think|thinking)>", "[redacted]", value)
     value = re.sub(r"(?i)(?:authorization[ \t]*[:=][ \t]*(?:bearer[ \t]+)?|bearer[ \t]+)\S+", "[redacted]", value)
     value = re.sub(r"(?m)^[ \t]*(?:export[ \t]+)?[A-Z_][A-Z0-9_]*=.*$", "[redacted]", value)
-    value = re.sub(r'''(?im)^.*(?:["']?(?:[\w-]*token|api[_-]?key|password|secret)["']?\s*[:=]|os\.environ|process\.env).*$''', "[redacted]", value)
+    value = _sensitive_lines(value)
     return value
