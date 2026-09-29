@@ -90,6 +90,7 @@ class RemoteWorker:
 
     async def stop(self):
         self.closed = True
+        await self.native.stop()
         if self.expiry_job:
             self.expiry_job.cancel()
             await asyncio.gather(self.expiry_job, return_exceptions=True)
@@ -285,7 +286,7 @@ class RemoteWorker:
                 self.busy.connection_id = connection_id
                 self.busy.snapshot(force=True)
                 if revision == 3 and self.sync.settings().mirror_enabled:
-                    await self.native.scan()
+                    self.native.request_scan()
                 self.sync.prepare()
             window = SendWindow(self.repo, self.sync) if revision >= 2 else None
             heartbeat_sends = []
@@ -306,6 +307,7 @@ class RemoteWorker:
                 sent = set()
                 retransmit_at = time.monotonic() + 15
                 catalog_at = 0.0
+                native_scan = -1
                 while True:
                     if generation != self.repo.get("link")["generation"]:
                         return
@@ -314,10 +316,12 @@ class RemoteWorker:
                     if time.monotonic() >= catalog_at:
                         await self.projector.catalog()
                         if revision == 3 and self.sync.settings().mirror_enabled:
-                            await self.native.scan()
-                            self.sync.prune_native()
+                            self.native.request_scan()
                         catalog_at = time.monotonic() + 5
                     if revision >= 2:
+                        if revision == 3 and native_scan != self.native.scan_revision:
+                            self.sync.prune_native()
+                            native_scan = self.native.scan_revision
                         await self.delivery.tick()
                         await self.sync.poll_execution(self.delivery)
                         self.busy.snapshot()

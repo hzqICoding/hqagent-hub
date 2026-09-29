@@ -2,16 +2,16 @@
 wp: R3-P2
 status: done
 scope_declared: [apps/hub/**, apps/server/server/replica.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, .hqagent/handoffs/R3-P2-hub.md]
-scope_touched: [apps/hub/tests/test_r3_history_shapes.py, apps/hub/tests/test_r3_directory_mixed.py, apps/hub/tests/test_r3_long_history.py, apps/hub/tests/test_r3_roots.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, apps/hub/tests/test_r3_upgrade_fences.py, apps/hub/tests/test_r3_upgrade_history.py, apps/hub/tests/test_r3_version_series.py, apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md]
+scope_touched: [apps/hub/tests/test_r3_history_shapes.py, apps/hub/tests/test_r3_directory_mixed.py, apps/hub/tests/test_r3_long_history.py, apps/hub/tests/test_r3_roots.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, apps/hub/tests/test_r3_upgrade_fences.py, apps/hub/tests/test_r3_upgrade_history.py, apps/hub/tests/test_r3_version_series.py, apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md, apps/hub/adapters/history_index.py, apps/hub/runtime/remote/security.py, apps/hub/storage/native_history.py, apps/hub/tests/test_native_filter_performance.py, apps/hub/tests/test_r3_history_performance.py]
 build: pass
 tests: pass
-commit: 5b84af62ed61f5c3849f6d22946dbc4352632c50
+commit: 28a4dd365aeca8320144a45a7bbc6144ae9a1953
 open_questions: 0
 ---
 
 # R3-P2 Hub / Worker 完成回执（协议 0.9.1）
 
-工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1 / 2 / 3 / 4 的修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
+工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1–5 的修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
 
 ## Q1 已由 0.9.1 关闭
 
@@ -695,3 +695,149 @@ exit $LASTEXITCODE
 本次提交：
 - `5b84af6`：原生历史结构解析、安全降级、标题投影和合成回归。
 - 本回执另提交。每次提交后执行 git log -1 --format=%B 自查，无署名或生成标记；未合回 integration。
+
+## 返修 5：原生会话增量索引与按偏移读取
+
+本轮基线为 3821dbd，未再合并分支；只修改 Hub 代码/测试及本回执，没有修改协议、Server 或桌面。发布阻断项按以下路径处理。
+
+### 根因与模块改动
+
+旧列表每次 await 全量扫描，并对全文做规范化和过滤；旧 messages 先展开所有历史、拼接所有分段，返回前又完整解析一次。每条消息还重复获取凭据。长无凭据文本行的敏感字段正则存在回溯开销。
+
+- adapters/history_index.py：新建元数据/偏移索引器。按文件路径、文件身份、size、mtime_ns、完整记录前缀 SHA-256 和解析策略版本复用缓存。即使 size/mtime 相同，复用前也校验前缀；重写/截断/替换会重建。追加只 JSON 解码新增完整记录，未完成尾行留待下一次追加。并发追加可以在已验证完整记录切点发布；中途改写不能发布混合快照。
+- storage/native_history.py、migration 9：新增 native_history_indexes(cache_key, metadata_json)，事务保存可重建的索引元数据；迁移 1–8 未改。包含规范 cwd/原生身份/版本/结构结论、标题及来源记录/字节位置、已解析 cut、前缀 hash、消息候选记录的 offset/length/record 序号、续接结构状态和安全工具名称。链 ID/调用引用以摘要保存。**不保存 JSONL 记录、工具参数/输出、规范化正文或分页正文副本**。标题是脱敏后最多 120 码点的既有索引元数据。
+- adapters/history.py：结构校验与正文规范化分离，元数据模式不对全部消息做全文过滤；只处理索引标题。一次操作获取一次凭据，保留原身份/版本/链/块验证。发现路径接口可单独限定只读计时样本；生产默认发现规则不变。
+- runtime/native/service.py：列表/详情仅返回已就绪元数据；冷扫描运行在后台线程。没有自造冻结 DTO 的“索引中”字段，首次未就绪项先不列出，调用方可稍后刷新。持续在线的 Worker 周期触发后台刷新，本机请求也可独立触发；不依赖配对或同步开启。
+- messages 以消息记录的字节偏移和记录内分段位置分页，从尾部读取需要的记录，仅规范化当前页涉及的记录。单个跨页消息仍计算完整消息的分段数/hash；不截断正文。before 持有原不可变偏移快照，追加不会改变旧页；改写前缀则拒绝。返回前复核快照，读取中发生改写不会返回混合正文。游标内只有元数据与位置，没有正文缓存。
+- runtime/remote/security.py：敏感行检测改为等价的线性扫描，保留原正则的整行遮蔽、跨行空白、贪婪起始行选择及 CR/LF 语义。与旧实现做 1000 组确定性随机及固定样本逐字对照；凭据/私有推理规则未放宽。
+- runtime/remote/worker.py：握手和发布循环触发后台扫描，不等待冷索引；扫描完成后及时处理 native 删除。停止时等待索引任务及其线程收尾。
+- api/local_chat.py、runtime/remote/delivery.py：本机发送和远程收件/grant 前异步核对物理源；事务内沿用缓存的已核对元数据及结构化错误，拒绝仍在原接单事务中保存。实际 Session 获取写锁前仍重新读取/核对。
+- orchestrator/sessions.py：原生会话的完成/关闭观察放入可等待的 IO 执行器，保留原取消与写锁语义。正常结束只核对新追加记录，不再为归属水位展开两份完整历史。取消不会遗留仍使用已关闭数据库的解析线程。
+
+显式 imports 仍按原 R3 授权将完整脱敏历史事务写入 local_messages；这是用户明确导入的对话，不是新增的缓存副本。列表、索引与按需读取不执行导入。全量规范化只用于明确导入；准备和文件校验在线程执行，元数据/历史提交仍保持原子性。
+
+### 缓存与恢复边界
+
+索引策略包含读取器结构版本、已验证版本系列及过滤策略版本。策略变化会使旧缓存失效。缓存写入失败不会伪装成已持久化成功；重启恢复先校验真实文件，再使用偏移，无需重扫 JSON。
+
+源结构变更正确更新 sourceRevision/indexVersion；确认仍绑定真实 sourceRevision。既有确认不能覆盖改写。读取过程与背景索引不共享可变正文；快照使用原文件身份/切点/前缀校验。未识别格式仍如实 unsupported，临时索引故障不伪装成全文已同步。
+
+全量原生历史的索引和写入条件仍按 workspace/来源/活动证据约束；索引表不是执行许可。协议 10 秒临时查询、无可靠 Outbox 正文、远程 grant、原生精确 ID 锁与恢复规则未变。
+
+### 性能验证
+
+新增 test_r3_history_performance.py：
+
+- 约 30MB、12000 条合成会话；冷列表立即返回未就绪空页，后台完成后列出；
+- 热列表不增加 JSON 解析量、元数据索引 normalized_records=0；
+- 读取 20 项只解码当前记录，解析页字节远小于全文件；
+- 追加后精确校验“新增解析字节 = 追加字节”；
+- 相同 size/mtime 的前缀改写仍全量重建，旧游标及确认失效；
+- 重建 System 后复用持久化索引，新增索引解析量为 0；
+- 真正暂停索引线程时，其它 API 仍可响应；关闭等待线程退出，不留下半个索引；
+- 页读取中改写源必须在返回正文前拒绝；
+- 真实本机 TLS 假服务端的修订 3 临时查询在期限内完成，query.result 不写可靠 Outbox。
+
+另新增 test_native_filter_performance.py，验证规则等价和 30 万字符长行的有界耗时。CI 时间阈值适度放宽，但同时使用 parsed_bytes、page_parsed_bytes、normalized_records 和数据库哨兵断言，不能靠机器变快掩盖重复全量解析。
+
+最终复测的真实输出（只含合成计数/耗时和真实文件性能数字）：
+
+```text
+SYNTHETIC bytes=29819653 index=0.429s read20=0.047s parsed_initial=29821077 append_parsed=389 restart_parsed=0
+...
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+3 passed, 1 warning in 2.42s
+
+REAL_TIMING {"bytes": 27516000, "records": 11830, "first_list_s": 0.029376199934631586, "background_index_s": 0.6080201999284327, "hot_list_s": [0.0017742998898029327, 0.0010031999554485083, 0.0008031001780182123], "read20_s": [0.04305560002103448, 0.04449349991045892, 0.04264360014349222], "cold_page_s": 0.05080109997652471, "cold_status": 200, "parsed_index_bytes": 27524293, "reload_parsed_bytes": 0, "sql": "memory-only; no real content saved"}
+```
+
+汇总：真实文件 27,516,000 字节/11,830 条；后台首次索引 0.608 秒；热列表 0.8–1.8 毫秒；20 项读取 42.6–44.5 毫秒；重建加载器后的冷页读取 50.8 毫秒。合成磁盘索引 29,819,653 字节，后台 0.429 秒、20 项读取 0.047 秒；追加 389 字节只增加 389 字节解析，重启新增索引解析量 0。首次索引计数略大于文件字节数来自有界信封识别，后续追加不重复解析旧前缀。
+
+计时命令（cwd worktree 根，临时目录同下面验收命令）：
+
+```powershell
+.venv/Scripts/python.exe -B -m pytest apps/hub/tests/test_r3_history_performance.py -q -s -p no:cacheprovider --basetemp .tmp/r3-repair5-perf-report --tb=short
+.venv/Scripts/python.exe -B .tmp/r3-real-timing.py
+```
+
+真实计时脚本仅在忽略目录中，使用真实文件但不导入对话、不启动模型，且将测试 Hub 的空数据库复制到内存后才开始接触真实样本。文件路径/正文/标题不进入输出；上述日志只有计时数据。
+
+真实样本通过同一本机 FastAPI ASGI 路由、索引和读取代码计时，没有启动模型。为遵守真实内容不落盘，真实样本的 SQLite 使用内存数据库，输出只有耗时、文件字节数、记录数和解析计数；没有输出路径/标题/消息/原生 ID，没有向磁盘保存真实正文或标题。磁盘 SQLite 持久化、关闭重建与缓存复用由合成大文件测试覆盖。因此以上真实数据不冒称为跨进程网络/桌面 UI 的端到端延迟。
+
+### 旧测试适配
+
+test_r3_native.py 新增 indexed_listing 测试辅助：先等后台索引完成，再运行既有格式、导入、权限和生命周期断言。test_r3_guards.py、test_r3_wire.py、test_r3_api_sync.py、test_r3_long_history.py、test_r15_joint_server.py 的直接列表准备使用它；纯 HTTP 语义测试在首次请求前显式准备索引。test_r3_history_shapes.py 的标题投影测试同样先等就绪。
+
+活动/确认测试增加与真实发送入口相同的异步 prepare_send，再保留原 NATIVE_SESSION_CHANGED 和“Adapter 未续接”断言。没有把可读/完整历史、凭据不泄露、身份不匹配、写锁冲突、取消证据、清理或协议校验改为宽松断言。冷请求不等待索引的行为由新增性能测试单独验证。
+
+### 最终验收
+
+串行运行，无 pytest 并行 worker、无 Vitest、无依赖安装。TEMP/TMP/--basetemp 都在 worktree/.tmp。新索引不引入第三方依赖。
+
+Hub，cwd apps/hub：
+
+```powershell
+$env:TEMP='E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair5-hub-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair5-hub-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 16%]
+........................................................................ [ 32%]
+........................................................................ [ 48%]
+........................................................................ [ 64%]
+........................................................................ [ 80%]
+........................................................................ [ 96%]
+远程送达预留清理暂未完成，将重试
+远程送达预留清理暂未完成，将重试
+................                                                         [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+448 passed, 4 warnings in 208.15s (0:03:28)
+```
+
+Server，cwd apps/server，TEMP/TMP/PYTHONIOENCODING 同上：
+
+```powershell
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair5-server-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair5-server-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 31%]
+........................................................................ [ 62%]
+........................................................................ [ 93%]
+...............                                                          [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+231 passed, 1 warning in 63.31s (0:01:03)
+```
+
+退出码均为 0。git diff --check 通过。依赖弃用 warning 和既有通用预留清理重试日志仍在，不宣称本轮修复它们。未遇到 429、0xC0000142 或额度错误。协议未修改，本轮没有重新生成协议。
+
+本次提交：
+- `a143d1e`：等价的线性敏感行过滤与对照测试。
+- `28a4dd3`：持久增量元数据索引、偏移分页、线程生命周期和回归。
+- 回执另提交。每次提交后均执行 git log -1 --format=%B 自查，无署名/生成标记；未合回 integration。

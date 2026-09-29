@@ -94,7 +94,7 @@ class DeliveryBridge(CommandBridge):
                 if frame["wireRevision"] != 3 or payload.get("conversationKind") != "native" or payload.get("nativeSessionId") != conversation.native_session_id or payload.get("agentType") != str(conversation.agent_type) or payload["sessionMode"] != "continue" or "sceneId" in payload or "sceneVersion" in payload:
                     raise HubError("REMOTE_TARGET_MISMATCH", "原生会话绑定不匹配")
                 binding = self.chat.native.row(local,conversation=True)
-                self.chat.native.check(binding,self.chat.native.source(binding),payload.get("nativeConfirmation"))
+                self.chat.native.check(binding,self.chat.native.cached_source(binding),payload.get("nativeConfirmation"),observe=False)
             if kind == "run.submit" and (conversation.workspace_id != payload["workspaceId"] or (not native and str(conversation.scene_id) != payload.get("sceneId"))):
                 raise HubError("REMOTE_TARGET_MISMATCH", "对话执行目标不匹配")
             if kind == "conversation.update":
@@ -244,6 +244,17 @@ class DeliveryBridge(CommandBridge):
         frame = CODECS[raw["wireRevision"]][1].model_validate(raw).model_dump(mode="json", by_alias=True, exclude_none=True)
         self._check_connection(frame)
         workspaces = {w.id for w in await self.chat.ports.workspaces.list_workspaces(None, None)}
+        original = frame
+        if frame['type'] == 'command.delivery_granted':
+            row = self.row(frame['commandId'])
+            original = json.loads(row['command_json']) if row and row['command_json'] else {}
+        if original.get('type') == 'run.submit':
+            try:
+                await self.chat.native.prepare_send(original['localConversationId'])
+            except HubError:
+                # The cached structured error is consumed by _validate inside
+                # the atomic rejection transaction, never a connection error.
+                pass
         async with self.lock:
             self._check_connection(frame)
             if frame["type"] == "command.delivery_granted":

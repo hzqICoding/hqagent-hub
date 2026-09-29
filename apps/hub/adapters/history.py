@@ -93,6 +93,7 @@ class FileHistory:
     matching both exact sessionId and canonical project. Sidechains never qualify.
     """
     verified_series = {"codex": (0, 153, 4), "claude": (2, 1, 261)}
+    structure_version = 'structures-v2'
     version_policy = "verified-series-minimum-patch-and-record-structure"
 
     def __init__(self, agent_type, data_root, *, runtime_id=None, secrets_provider=lambda: ()):
@@ -117,6 +118,9 @@ class FileHistory:
     def series_description(self):
         major, minor, patch = self.verified_series[self.agent_type]
         return {"series": f"{major}.{minor}.x", "minimumPatch": patch}
+
+    def paths(self):
+        return self.root.rglob('*.jsonl')
 
     def verified_version(self, version):
         match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version)
@@ -185,9 +189,9 @@ class FileHistory:
             pass
         return result
 
-    def inspect(self, path, *, snapshot=None, terminals=None):
+    def inspect(self, path, *, snapshot=None, terminals=None, _data=None, metadata_only=False, validate_chain=True, header_only=False):
         self.structure_counts = {}
-        content, identity, st = self._bytes(Path(path), snapshot)
+        content, identity, st = _data if _data is not None else self._bytes(Path(path), snapshot)
         try:
             records, damaged = [], False
             for line in content.splitlines():
@@ -244,7 +248,7 @@ class FileHistory:
                 return None
             if not isinstance(version,str) or not version.isascii():
                 version = "unknown"
-            profile = self.agent_type + ".jsonl." + str(version) + '.structures-v2'
+            profile = self.agent_type + ".jsonl." + str(version) + '.' + self.structure_version
             source = HistorySource(Path(path), identity, len(content), hashlib.sha256(content).hexdigest(),
                 vendor, cwd, str(version), profile, self.agent_type, created, stamp(st.st_mtime), st.st_mtime,
                 self.verified_version(version) and not damaged, [])
@@ -260,9 +264,11 @@ class FileHistory:
                 self.version_diagnostics = (self.version_diagnostics + [diagnostic + "; " + source.reason])[-32:]
                 self.diagnostics.append(source.reason)
                 return source
+            if header_only:
+                return source
             try:
                 self._validate_identity(records, source)
-                source.messages = self._messages(records, source)
+                source.messages = self._messages(records, source, metadata_only=metadata_only, validate_chain=validate_chain)
             except HistoryStructureError as error:
                 source.readable, source.reason = False, str(error)
             except (ValueError, KeyError, TypeError):
@@ -275,8 +281,8 @@ class FileHistory:
         except (ValueError, KeyError, TypeError):
             raise HubError("NATIVE_SESSION_UNSUPPORTED", "原生记录格式无法识别") from None
 
-    def _validate_identity(self, records, source):
-        for index, row in enumerate(records):
+    def _validate_identity(self, records, source, *, record_offset=0):
+        for index, row in enumerate(records, record_offset):
             check_cancelled()
             if row.get('isSidechain'):
                 continue
@@ -324,41 +330,48 @@ class FileHistory:
             row.get('type') == 'system' and row.get('subtype') == 'compact_boundary'
             and isinstance(row.get('compactMetadata'), dict))
 
-    def _validate_chain(self, records):
+    def _validate_chain(self, records, *, seen=None, record_offset=0, hash_ids=False):
         # All main-stream record IDs participate, including hidden/meta records.
         # Multiple assistant blocks may share an earlier parent; adjacency is
         # not the chain invariant. Only explicit compact boundaries may refer
         # to a discarded prefix.
-        seen = set()
-        for index, row in enumerate(records):
+        seen = set() if seen is None else seen
+        for index, row in enumerate(records, record_offset):
             check_cancelled()
             if row.get('isSidechain'):
                 continue
             mid, parent = row.get('uuid'), row.get('parentUuid')
+            key = digest(mid) if hash_ids and isinstance(mid, str) else mid
+            parent_key = digest(parent) if hash_ids and isinstance(parent, str) else parent
             if row.get('type') not in CLAUDE_AUXILIARY | {'user', 'assistant'}:
                 if isinstance(mid, str) and mid:
-                    seen.add(mid)
+                    seen.add(key)
                 continue
             message = row.get('type') in {'user', 'assistant'} or (row.get('type') == 'system' and 'message' in row)
             if message and (not isinstance(mid, str) or not mid):
                 raise HistoryStructureError(f'第{index + 1}条消息缺少有效uuid')
             if mid is not None:
-                if not isinstance(mid, str) or not mid or mid in seen:
+                if not isinstance(mid, str) or not mid or key in seen:
                     raise HistoryStructureError(f'第{index + 1}条记录uuid无效或重复')
                 if parent is not None and (not isinstance(parent, str) or not parent):
                     raise HistoryStructureError(f'第{index + 1}条记录parentUuid无效')
-                if parent is not None and parent not in seen and not self._compact_boundary(row):
+                if parent is not None and parent_key not in seen and not self._compact_boundary(row):
                     raise HistoryStructureError(f'第{index + 1}条记录的parentUuid没有先行记录')
-                seen.add(mid)
+                seen.add(key)
 
-    def _messages(self, records, source):
-        result, calls = [], {}
-        counts = source.structure_counts = dict(ignoredRecords=0, unknownRecords=0,
-            unknownItems=0, unknownEvents=0, unknownBlocks=0, sidechainRecords=0, internalMessages=0)
+    def _messages(self, records, source, *, metadata_only=False, validate_chain=True,
+                  state=None, record_offset=0, hidden_secrets=None):
+        state = {} if state is None else state
+        result, calls = [], state.setdefault('calls', {})
+        counts = source.structure_counts = state.setdefault('counts', dict(ignoredRecords=0, unknownRecords=0,
+            unknownItems=0, unknownEvents=0, unknownBlocks=0, sidechainRecords=0, internalMessages=0))
+        # DPAPI and environment lookup once per operation, never once per message.
+        hidden_secrets = self.secrets_provider() if hidden_secrets is None else hidden_secrets
         private = {'thinking', 'reasoning', 'redacted_thinking', 'encrypted_content'}
         tool_names = {'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'shell', 'exec_command', 'apply_patch'}
-        if self.agent_type == 'claude':
-            self._validate_chain(records)
+        if self.agent_type == 'claude' and validate_chain:
+            self._validate_chain(records, seen=state.setdefault('seen', set()), record_offset=record_offset, hash_ids=state.get('hash_ids',False))
+        call_key = (lambda value: digest(value)) if state.get('hash_ids') else (lambda value:value)
 
         def emit(mid, role, text, row):
             if not text:
@@ -366,9 +379,15 @@ class FileHistory:
             if role == 'user' and text.lstrip().startswith((
                     '<environment_context>', '<permissions instructions>', '# AGENTS.md instructions')):
                 return
+            if role == 'user' and state.get('first_title') is None:
+                state['first_title'] = public_text(text, hidden_secrets)[:120]
+                state['first_title_record'] = index
             text.encode('utf-8')
+            if metadata_only:
+                result.append({'id': digest([source.vendor_id, mid, role]), 'role': role, 'recordIndex': index})
+                return
             value = {'id': digest([source.vendor_id, mid, role]), 'role': role,
-                'text': public_text(text, self.secrets_provider())}
+                'text': public_text(text, hidden_secrets)}
             if source_time(row.get('timestamp')):
                 value['createdAt'] = source_time(row['timestamp'])
             result.append(value)
@@ -376,7 +395,7 @@ class FileHistory:
         def tool_name(value):
             return value if isinstance(value, str) and value in tool_names else '工具'
 
-        for index, row in enumerate(records):
+        for index, row in enumerate(records, record_offset):
             check_cancelled()
             if row.get('isSidechain'):
                 counts['sidechainRecords'] += 1
@@ -402,12 +421,12 @@ class FileHistory:
                     name = tool_name(message.get('name'))
                     call = message.get('call_id')
                     if isinstance(call, str):
-                        calls[call] = name
+                        calls[call_key(call)] = name
                     emit(digest([index, 'tool']), 'tool_summary', name + '：历史调用', row)
                     continue
                 if kind in {'function_call_output', 'custom_tool_call_output'}:
                     call = message.get('call_id')
-                    name = calls.get(call, '工具') if isinstance(call, str) else '工具'
+                    name = calls.get(call_key(call), '工具') if isinstance(call, str) else '工具'
                     emit(digest([index, 'tool']), 'tool_summary', name + '：历史返回记录', row)
                     continue
                 if kind in private:
@@ -427,7 +446,8 @@ class FileHistory:
                     if row.get('type') == 'ai-title' and isinstance(row.get('aiTitle'), str) and not row.get('isMeta') and not row.get('isVisibleInTranscriptOnly'):
                         # Only this explicitly supported title field is read.
                         # bridge-session/account/organization metadata stays opaque.
-                        source.title = public_text(row['aiTitle'], self.secrets_provider())[:120] or None
+                        state['ai_title'] = public_text(row['aiTitle'], hidden_secrets)[:120] or None
+                        state['ai_title_record'] = index
                     counts['ignoredRecords' if row.get('type') in CLAUDE_AUXILIARY else 'unknownRecords'] += 1
                     continue
                 mid, message = row['uuid'], row.get('message')
@@ -476,17 +496,18 @@ class FileHistory:
                     if kind == 'tool_use':
                         name = tool_name(block.get('name'))
                         if isinstance(block.get('id'), str):
-                            calls[block['id']] = name
+                            calls[call_key(block['id'])] = name
                         tools.append(name + '：历史调用')
                     else:
                         call = block.get('tool_use_id')
-                        name = calls.get(call, '工具') if isinstance(call, str) else '工具'
+                        name = calls.get(call_key(call), '工具') if isinstance(call, str) else '工具'
                         tools.append(name + '：历史返回记录')
                 else:
                     counts['unknownBlocks'] += 1
                     texts.append('[不支持的内容块]')
             emit(mid, role, ''.join(texts), row)
             emit(mid, 'tool_summary', '\n'.join(tools), row)
+        source.title = state.get('ai_title') or state.get('first_title')
         return result
 
 
@@ -498,7 +519,7 @@ class FileHistory:
             return []
         terminals = self._terminal_history()
         values = []
-        paths = self.root.rglob("*.jsonl")
+        paths = self.paths()
         for count, path in enumerate(paths):
             if count >= 10000:
                 raise HubError("REMOTE_SYNC_RESOURCE_LIMIT", "原生索引超过扫描限额")

@@ -9,7 +9,7 @@ from protocol.generated.python import NativeMessagePage, LocalConversationView
 
 from adapters.history import FileHistory
 from remote_support import System
-from test_r3_native import fixture_history, setup_native
+from test_r3_native import fixture_history, setup_native, indexed_listing
 
 
 @pytest.mark.parametrize('agent', ['claude','codex'])
@@ -38,7 +38,7 @@ def test_long_history_keeps_canonical_workspace_across_cwd_and_patch_changes(tmp
             assert new_version in plugin.capabilities()['observedVersions']
             assert plugin.list([SimpleNamespace(id='changed-only',path=str(changed))])==[]
             assert plugin.list([SimpleNamespace(id='canonical',path=str(tmp_path))])[0][1]=='canonical'
-            item=(await native.listing()).items[0]
+            item=(await indexed_listing(native)).items[0]
             assert item.workspace_id=='workspace'
             response=await system.local.get(f'/api/v2/native-sessions/{item.native_session_id}/messages?limit=100')
             assert response.status_code==200,response.text

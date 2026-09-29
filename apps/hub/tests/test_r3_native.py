@@ -43,6 +43,13 @@ def setup_native(system, path, agent="codex"):
     return system.worker.native
 
 
+async def indexed_listing(native):
+    # Listing no longer waits for a cold scan. Existing semantic tests operate
+    # on an explicitly prepared background index; performance tests cover cold requests.
+    await native.scan()
+    return await native.listing()
+
+
 @pytest.mark.parametrize("agent", ["claude", "codex"])
 def test_local_offline_history_import_and_precise_resume(tmp_path, agent):
     async def scenario():
@@ -51,6 +58,7 @@ def test_local_offline_history_import_and_precise_resume(tmp_path, agent):
             root = tmp_path / "records"
             fixture_history(root, tmp_path, agent)
             native = setup_native(system, root, agent)
+            await native.scan()
             response = await system.local.get("/api/v2/native-sessions")
             assert response.status_code == 200, response.text
             assert response.headers["cache-control"] == "no-store"
@@ -69,7 +77,7 @@ def test_local_offline_history_import_and_precise_resume(tmp_path, agent):
             conv = imported.json()["data"]
             assert conv["conversationKind"] == "native" and "sceneId" not in conv
             assert len(system.chat.repository.messages(conv["id"])) == 2 and not system.adapter.started
-            assert (await native.listing()).items == []
+            assert (await indexed_listing(native)).items == []
             await system.chat.start()
             sent = system.chat.send(conv["id"], SendLocalMessageInput(clientMessageId="continue", text="continue", sessionMode="continue"), "continue")
             await until(lambda: system.chat.repository.run_record(sent.run_id)["status"] in {"succeeded", "failed"})
@@ -108,7 +116,7 @@ def test_activity_confirmation_cannot_override_live_process_and_changes_expire_c
             root = tmp_path / "records"
             path = fixture_history(root, tmp_path)
             native = setup_native(system, root)
-            item = (await native.listing()).items[0]
+            item = (await indexed_listing(native)).items[0]
             value = RemoteNativeImportInput(terminalClosedConfirmed=True, expectedIndexVersion=item.index_version, sourceRevision=item.source_revision)
             native.probe = lambda _id: "present"
             with pytest.raises(HubError) as active:
@@ -121,6 +129,7 @@ def test_activity_confirmation_cannot_override_live_process_and_changes_expire_c
                 stream.write(json.dumps({"type": "event_msg", "payload": {"type": "task_complete"}}) + "\n")
             os.utime(path, (time.time()-60, time.time()-60))
             with pytest.raises(HubError) as changed:
+                await native.prepare_send(view.id)
                 system.chat.send(view.id, SendLocalMessageInput(clientMessageId="stale", text="stale", sessionMode="continue"), "stale")
             assert changed.value.code == "NATIVE_SESSION_CHANGED"
             assert not system.adapter.resumed
@@ -197,6 +206,7 @@ def test_unidentifiable_records_report_local_capability_gap_without_echoing_cont
             root=tmp_path/'records'; root.mkdir()
             (root/'unknown.jsonl').write_text('UNREADABLE_PRIVATE_CONTENT\n',encoding='utf-8')
             setup_native(system,root)
+            await system.worker.native.scan()
             response=await system.local.get('/api/v2/native-sessions')
             assert response.status_code==422
             assert response.json()['error']['code']=='NATIVE_SESSION_UNSUPPORTED'
