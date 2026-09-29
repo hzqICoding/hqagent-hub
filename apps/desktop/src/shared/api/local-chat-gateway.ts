@@ -1,4 +1,5 @@
 import type {
+  LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
   LocalAuthInput,
   AgentView,
@@ -44,6 +45,27 @@ export class RealLocalChatGateway implements LocalChatGateway {
     // In dev, defaults to '' which uses Vite proxy for /api and /ws
     // In production, Worker serves web from same origin
     this.baseUrl = baseUrl.replace(/\/$/, '')
+  }
+
+  listNativeSessions(cursor?: string): Promise<LocalNativeSessionPage> {
+    const query = new URLSearchParams({ limit: '50', ...(cursor ? { cursor } : {}) })
+    return this.fetchApi(`/api/v2/native-sessions?${query}`)
+  }
+  getNativeSession(id: string): Promise<NativeSessionIndex> {
+    return this.fetchApi(`/api/v2/native-sessions/${encodeURIComponent(id)}`)
+  }
+  readNativeMessages(id: string, before?: string): Promise<NativeMessagePage> {
+    const query = new URLSearchParams({ limit: '50', ...(before ? { before } : {}) })
+    return this.fetchApi(`/api/v2/native-sessions/${encodeURIComponent(id)}/messages?${query}`)
+  }
+  importNativeSession(id: string, input: RemoteNativeImportInput, key = crypto.randomUUID()): Promise<LocalConversationView> {
+    return this.fetchApi(`/api/v2/native-sessions/${encodeURIComponent(id)}/imports`, { method: 'POST', body: JSON.stringify(input) }, key)
+  }
+  getAuthorizedRoots(): Promise<LocalAuthorizedRootsView> {
+    return this.fetchApi('/api/v2/remote/authorized-roots')
+  }
+  setAuthorizedRoots(input: LocalAuthorizedRootsInput): Promise<LocalAuthorizedRootsView> {
+    return this.fetchApi('/api/v2/remote/authorized-roots', { method: 'PUT', body: JSON.stringify(input) }, crypto.randomUUID())
   }
 
   private async fetchApi<T>(
@@ -94,6 +116,7 @@ export class RealLocalChatGateway implements LocalChatGateway {
       response = await fetch(url, {
         ...options,
         headers,
+        cache: 'no-store',
         credentials: 'include', // HttpOnly cookie session
       })
     } catch (networkErr) {
@@ -145,7 +168,7 @@ export class RealLocalChatGateway implements LocalChatGateway {
         response.status,
         err?.detail as Record<string, unknown> | undefined,
         err?.retryable ?? response.status >= 500,
-        envelope.requestId
+        response.headers?.get('X-Request-Id') || envelope.requestId
       )
     }
 

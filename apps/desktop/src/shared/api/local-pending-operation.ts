@@ -5,6 +5,7 @@ interface PendingOperation {
   payload: unknown
 }
 
+const volatile = new Map<string, PendingOperation>()
 const cache = new Map<string, Record<string, PendingOperation>>()
 
 function bucket(): [string, Record<string, PendingOperation>] {
@@ -26,7 +27,11 @@ function persist(name: string, value: Record<string, PendingOperation>) {
   try { sessionStorage.setItem(name, JSON.stringify(value)) } catch { /* memory fallback */ }
 }
 
-export function pendingOperation<T>(identity: string, payload: T): { id: string; payload: T } {
+export function pendingOperation<T>(identity: string, payload: T, memoryOnly = false): { id: string; payload: T } {
+  if (memoryOnly) {
+    if (!volatile.has(identity)) volatile.set(identity, { id: crypto.randomUUID(), payload })
+    return volatile.get(identity) as { id: string; payload: T }
+  }
   const [name, data] = bucket()
   if (!data[identity]) {
     data[identity] = { id: crypto.randomUUID(), payload }
@@ -36,10 +41,13 @@ export function pendingOperation<T>(identity: string, payload: T): { id: string;
 }
 
 export function completeOperation(identity: string): void {
+  if (volatile.delete(identity)) return
   const [name, data] = bucket()
   delete data[identity]
   persist(name, data)
 }
+
+export function clearVolatileOperations(): void { volatile.clear() }
 
 export function definiteRejection(error: unknown): boolean {
   const status = (error as { status?: number })?.status

@@ -1,0 +1,5 @@
+mobile native read / unchecked confirmation / directory browsing: PASS
+desktop authorized roots: PASS
+desktop local import, history and in-memory-only content: PASS
+browser errors: 0
+Screenshots: 3 mobile + 1 desktop; synthetic content only

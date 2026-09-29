@@ -2,9 +2,11 @@
 
 账号认证、设备配对、电脑对话的完整副本、在线命令转发和浏览器轮询。电脑是唯一写入和执行方；服务端不调用模型，不保存模型凭据，不管理 AI 订阅或安装。
 
-协议包：0.9.1；Worker 线路支持修订 1、2、3。实现 `remote-hub.v2.yaml` 的全部 39 个 HTTP 操作与 `/ws/v2/worker`。修订 1 保留历史对账，既有浏览器写入要求至少修订 2；R3 原生会话及授权目录操作要求修订 3。D50 的设备管理、PAT 和请求追踪保持原行为。
+协议包：0.9.2；Worker 线路支持修订 1、2、3。实现 `remote-hub.v2.yaml` 的全部 39 个 HTTP 操作与 `/ws/v2/worker`。修订 1 保留历史对账，既有浏览器写入要求至少修订 2；R3 原生会话及授权目录操作要求修订 3。D50 的设备管理、PAT 和请求追踪保持原行为。
 
 ## R3 原生会话与授权目录
+
+0.9.2：原生会话列表、详情、读取先验证认证及owner/设备映射；设备删除或不存在优先404。当前store同步关闭统一409 `REMOTE_SYNC_DISABLED`，文案“这台电脑已关闭同步”，不因离线或暂停返回其它读取状态。reset后仅借助既有无内容ID映射识别归属，不保留索引标题/正文。未知或其他owner的ID仍404；同步开启但没有会话时列表空页，缺失的详情/读取ID为404，补传后恢复访问。
 
 - 六个新云端接口全部只接受 Cookie。`GET /devices/{workerId}/native-sessions` 按 workspaceId/agentType/cursor/limit 查索引；`GET /native-sessions/{id}` 查详情；`GET /native-sessions/{id}/messages` 在线临时读取；`POST /native-sessions/{id}/imports` 返回202导入回执；`POST /devices/{workerId}/directory-listings` 等待一次临时目录结果；`POST /devices/{workerId}/workspaces` 返回202登记回执。POST 均要求 Origin、CSRF、Idempotency-Key，PAT 不扩权。
 - 原生索引、workspace、native 对话 ID 按 owner/worker/store/本机ID映射。修订3 catalog 对外 workspaceId 与原生索引里的 workspaceId 一致；发回电脑时映射回本机ID。HTTP 不接收供应商 CLI 会话 ID 或路径。索引按 updatedAt/公开ID稳定分页，过滤和 store 绑定游标；离线或暂停仍可读已有索引。
@@ -22,7 +24,7 @@
 
 ### 临时查询部署约束
 
-发行包必须包含更新的 `server/resources/*.json`，公开 `/api/v2/openapi.json` 与0.9.1 bundle等价；部署目录 `/opt/hqremote/app` 无需保留协议源码树。Caddy 示例显式流式转发且不配置磁盘响应缓存。若使用 Nginx，在代理 location 中加入：
+发行包必须包含更新的 `server/resources/*.json`，公开 `/api/v2/openapi.json` 与0.9.2 bundle等价；部署目录 `/opt/hqremote/app` 无需保留协议源码树。Caddy 示例显式流式转发且不配置磁盘响应缓存。若使用 Nginx，在代理 location 中加入：
 
 ```nginx
 proxy_buffering off;
