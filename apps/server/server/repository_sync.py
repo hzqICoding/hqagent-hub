@@ -33,6 +33,9 @@ CREATE INDEX sync_segment_conversation ON sync_segments(owner,worker,store,conve
 
 
 class SyncRepository:
+    def sync_unapplied(self, owner, worker, store):
+        return self.db.execute('SELECT 1 FROM sync_log WHERE owner=? AND worker=? AND store=? AND applied=0 LIMIT 1', (owner, worker, store)).fetchone() is not None
+
     def legacy_pending(self, owner, worker, store):
         return self.db.execute('SELECT 1 FROM inbox WHERE owner=? AND worker=? AND store=? AND applied=0 LIMIT 1', (owner, worker, store)).fetchone() is not None
 
@@ -67,7 +70,7 @@ class SyncRepository:
         marker = self.sync_entry(owner, event['workerId'], event['workerStoreId'], event_id=event['eventId'])
         require(len(rows) == count and sum(r[3] for r in rows) + marker['bytes'] <= 1048576, 'REMOTE_SYNC_CONFLICT')
         for offset, row in enumerate(rows, 1):
-            require(row[0] == row[1] == event['seq'] - offset and row[2] in {'sync.conversation.upserted','sync.message.segment','sync.run.state','approval.state_changed'}, 'REMOTE_SYNC_CONFLICT')
+            require(row[0] == row[1] == event['seq'] - offset and row[2] in {'sync.conversation.upserted','sync.message.segment','sync.run.state','approval.state_changed','native.index.upserted'}, 'REMOTE_SYNC_CONFLICT')
 
     def sync_part_checked(self, owner, worker, store, generation, payload, quota):
         row = self.db.execute('SELECT text FROM sync_segments WHERE owner=? AND worker=? AND store=? AND generation=? AND message=? AND revision=? AND part=?',

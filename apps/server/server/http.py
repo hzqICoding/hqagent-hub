@@ -61,6 +61,7 @@ class RequestAudit:
         scope.setdefault('state', {})['contract_operation'] = operation
         reset = CONTEXT.set(context)
         start = time.monotonic(); started = False
+        context['_started'] = start
 
         async def correlated(message):
             nonlocal started
@@ -96,5 +97,5 @@ class RequestAudit:
                 context['errorCode'] = 'INTERNAL'  # Never log exception text.
         finally:
             context['elapsedMs'] = round((time.monotonic() - start) * 1000, 3)
-            LOG.info(json.dumps(context, ensure_ascii=True, separators=(',', ':')))
+            LOG.info(json.dumps({k:v for k,v in context.items() if not k.startswith('_')}, ensure_ascii=True, separators=(',', ':')))
             CONTEXT.reset(reset)
