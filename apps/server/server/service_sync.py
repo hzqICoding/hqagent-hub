@@ -8,12 +8,17 @@ from .common import Fault, MAX_SEQ, canonical, digest, require, seconds, stamp, 
 from .replica import Replica
 from .service import BLOCKED, Service, TERMINAL
 from .devices import DeviceManagement
+from .native import NativeService
 
 
-class SyncService(DeviceManagement, Service):
+class SyncService(NativeService, DeviceManagement, Service):
     def __init__(self, repo, settings, security):
         super().__init__(repo, settings, security)
         self.replica = Replica(self)
+        from .queries import Queries
+        self.queries = Queries(self)
+        from .native_events import NativeEvents
+        self.native_events = NativeEvents(self)
         with repo.transaction() as tx:
             for account in tx.auth_list('account:'):
                 owner = account['owner']
@@ -25,21 +30,23 @@ class SyncService(DeviceManagement, Service):
 
     def on_hello(self, tx, owner, device, frame, connection_id):
         requested = frame['wireRevision']; previous = device.get('_wireRevision', 1)
-        if previous == 2 and requested == 1:
+        if previous >= 2 and requested == 1:
             raise Fault('REMOTE_PROTOCOL_UNSUPPORTED')
-        if requested == 2 and previous == 1:
-            pending = [c for c in tx.list(owner, 'command', worker=device['workerId']) if c['_frame']['wireRevision'] == 1 and
+        if requested != previous:
+            pending = [c for c in tx.list(owner, 'command', worker=device['workerId']) if c['_frame']['wireRevision'] != requested and
                        (c['status'] not in TERMINAL or c.get('controlResult', {}).get('outcome') == 'unconfirmed' or c.get('controlResult', {}).get('orphanProcessIds'))]
-            pending_boxes = [b for b in tx.list(owner, 'outbox', worker=device['workerId']) if not b['done'] and b['_frame']['wireRevision'] == 1]
+            pending_boxes = [b for b in tx.list(owner, 'outbox', worker=device['workerId']) if not b['done'] and b['_frame']['wireRevision'] != requested]
             position = tx.get(owner, 'event-position', device['workerId'] + ':' + frame['workerStoreId']) or dict(seq=0)
-            require(not pending and not pending_boxes and not tx.legacy_pending(owner, device['workerId'], frame['workerStoreId']), 'REMOTE_REVISION_REQUIRED')
+            require(not pending and not pending_boxes and not tx.legacy_pending(owner, device['workerId'], frame['workerStoreId']) and not tx.sync_unapplied(owner, device['workerId'], frame['workerStoreId']), 'REMOTE_REVISION_REQUIRED')
             report = frame['lastServerAck']
             require(not position['seq'] or (report and report['workerStoreId'] == frame['workerStoreId'] and report['seq'] == position['seq']), 'REMOTE_REVISION_REQUIRED')
             device['_upgradeAck'] = position['seq']
+            device['_upgradeWorkerAck'] = report['seq'] if report else 0
+            device.pop('_upgradeTarget', None)
         device['_supported'] = sorted(set(device.get('_supported', [])) | {requested})
         if not device['_frozen']:
             device['_wireRevision'] = requested
-        if requested == 2:
+        if requested >= 2:
             state = self.replica.state(tx, owner, device['workerId'], frame['workerStoreId'])
             state.update(busyFresh=False, busyConnection=connection_id, busyPending=None)
             self.replica.save_state(tx, owner, state)
@@ -52,10 +59,10 @@ class SyncService(DeviceManagement, Service):
         worker = value.get('targetWorkerId', value.get('workerId', value.get('_worker')))
         if worker:
             self.get(tx, owner, 'device', worker)
-        conv_id = identifier if kind == 'conversation' else value.get('conversationId', value.get('_conversation'))
+        conv_id = identifier if kind == 'conversation' else value.get('conversationId', value.get('_conversation', value.get('resourceRef', {}).get('conversationId')))
         if conv_id:
             conv = tx.get(owner, 'conversation', conv_id)
-            if not conv and kind == 'command' and tx.get(owner, 'create-reservation', conv_id):
+            if not conv and kind == 'command' and (tx.get(owner, 'create-reservation', conv_id) or value['type'] in {'native.import','workspace.register'}):
                 return value
             require(conv is not None and conv.get('visibility', 'both') != 'pc_only', 'NOT_FOUND')
         return value
@@ -87,7 +94,7 @@ class SyncService(DeviceManagement, Service):
                           archived=value.get('archived', False), lastActivityAt=value.get('lastActivityAt', value['updatedAt']))
             if value.get('_busyObservedAt'):
                 result['busyObservedAt'] = value['_busyObservedAt']
-        if kind == 'command' and value.get('_frame', {}).get('wireRevision') == 2:
+        if kind == 'command' and value.get('_frame', {}).get('wireRevision', 1) >= 2:
             if result['deliveryState'] in {'queued_offline', 'sent'}:
                 result['deliveryState'] = 'awaiting_receipt'
             if value.get('_granted') and value['status'] == 'queued':
@@ -115,7 +122,10 @@ class SyncService(DeviceManagement, Service):
             self.invalidate_busy(tx, owner, connection)
 
     def command_event(self, tx, owner, command):
-        if self.command_visible(tx, owner, command['conversationId']):
+        if command.get('_deleted'):
+            return
+        conv_id = command.get('conversationId', command.get('resourceRef', {}).get('conversationId'))
+        if not conv_id or self.command_visible(tx, owner, conv_id):
             super().command_event(tx, owner, command)
 
     def command_visible(self, tx, owner, conversation):
@@ -127,7 +137,8 @@ class SyncService(DeviceManagement, Service):
         require(exempt or device.get('remoteAccess', 'enabled') != 'suspended', 'REMOTE_DEVICE_SUSPENDED')
         require(self.online(owner, worker), 'REMOTE_DEVICE_OFFLINE')
         conn = self.connections[(owner, worker)]
-        require(conn.revision == 2, 'REMOTE_REVISION_REQUIRED')
+        require(conn.revision >= 2, 'REMOTE_REVISION_REQUIRED')
+        require(not device.get('_upgradeTarget') or device['_upgradeTarget'] == conn.revision, 'REMOTE_REVISION_REQUIRED')
         require(not device['_frozen'] and conn.store == store == device['workerStoreId'], 'REMOTE_STORE_CHANGED')
         require(self.replica.state(tx, owner, worker, store)['enabled'], 'REMOTE_SYNC_DISABLED')
         return conn
@@ -149,12 +160,14 @@ class SyncService(DeviceManagement, Service):
                      targetWorkerId=conv['targetWorkerId'], expectedWorkerStoreId=conv['workerStoreId'], createdAt=stamp(now), expiresAt=deadline, deliverBy=deadline, payload=payload)
         if sequence is not None:
             frame['conversationSeq'] = sequence
-        frame = wire.command(frame, 2)
+        frame = wire.command(self.native_command_payload(tx, owner, frame), self.connections[(owner, conv['targetWorkerId'])].revision)
         receipt = dict(commandId=identifier, conversationId=conv['conversationId'], status='queued', deliveryState='queued_online', workerOnline=True, expiresAt=deadline)
         if sequence is not None:
             receipt['conversationSeq'] = sequence
         value = dict(receipt, targetWorkerId=conv['targetWorkerId'], type=kind, withdrawalState='none', observedAt=stamp(now), createdAt=stamp(now), deliverBy=deadline,
                      _frame=frame, _digest=digest(frame), _receipt=receipt, _dispatch=False, _granted=False)
+        if 'nativeConfirmation' in frame['payload']:
+            value.update(_nativeId=frame['payload']['nativeSessionId'], _closureConfirmation=frame['payload']['nativeConfirmation'])
         self.save(tx, owner, 'command', identifier, value)
         self.outbox(tx, owner, frame)
         self.command_event(tx, owner, value)
@@ -196,7 +209,7 @@ class SyncService(DeviceManagement, Service):
         order = tx.get(owner, 'remote-order', identifier) or dict(next=1)
         require(order['next'] <= MAX_SEQ, 'REMOTE_SYNC_RESOURCE_LIMIT')
         payload = {k: body[k] for k in ('clientMessageId', 'text', 'sessionMode')}
-        payload.update({k: conv[k] for k in ('workspaceId', 'sceneId', 'sceneVersion')})
+        payload.update(self.submit_metadata(tx, owner, conv, body))
         receipt = self.enqueue_v2(tx, owner, conv, 'run.submit', payload, body.get('expiresAt'), sequence=order['next'])
         tx.put(owner, 'remote-order', identifier, dict(next=order['next'] + 1), worker=conn.worker, store=conn.store, parent=identifier)
         tx.put(owner, 'message-intent', key, dict(content=digest(body), receipt=receipt), worker=conn.worker, store=conn.store, parent=identifier)
@@ -237,7 +250,7 @@ class SyncService(DeviceManagement, Service):
     def withdraw(self, tx, owner, identifier, body):
         value = self.browser_get(tx, owner, 'command', identifier)
         conv = self.conversation(tx, owner, value['conversationId'])
-        require(value['_frame']['wireRevision'] == 2, 'REMOTE_REVISION_REQUIRED')
+        require(value['_frame']['wireRevision'] >= 2, 'REMOTE_REVISION_REQUIRED')
         require(value['type'] == 'run.submit' and 'resultRef' not in value and value['status'] not in TERMINAL, 'REMOTE_WITHDRAWAL_TOO_LATE')
         if value['withdrawalState'] == 'none':
             receipt = self.enqueue_v2(tx, owner, conv, 'command.withdraw', dict(body, targetCommandId=identifier, targetConversationSeq=value['conversationSeq']))
@@ -269,14 +282,14 @@ class SyncService(DeviceManagement, Service):
         if 'conversationSeq' in value:
             frame = value['_frame']
             skip = wire.encode(dict(type='conversation.skip', commandId=value['commandId'], conversationId=value['conversationId'], conversationSeq=value['conversationSeq'],
-                targetWorkerId=value['targetWorkerId'], expectedWorkerStoreId=frame['expectedWorkerStoreId'], reason='expired_before_dispatch', recordedAt=self.now()), 2)
+                targetWorkerId=value['targetWorkerId'], expectedWorkerStoreId=frame['expectedWorkerStoreId'], reason='expired_before_dispatch', recordedAt=self.now()), frame['wireRevision'])
             self.outbox(tx, owner, skip)
         self.command_event(tx, owner, value)
 
     def received(self, tx, owner, event):
         value = self.get(tx, owner, 'command', event['commandId'])
         frame = value['_frame']
-        require(frame['wireRevision'] == 2 and value['targetWorkerId'] == event['workerId'] and frame['expectedWorkerStoreId'] == event['workerStoreId'] and value['conversationId'] == event['conversationId'], 'REMOTE_TARGET_MISMATCH')
+        require(frame['wireRevision'] == event['wireRevision'] and frame['wireRevision'] >= 2 and value['targetWorkerId'] == event['workerId'] and frame['expectedWorkerStoreId'] == event['workerStoreId'] and value.get('conversationId') == event.get('conversationId'), 'REMOTE_TARGET_MISMATCH')
         require(value['_digest'] == event['commandDigest'] and frame['deliverBy'] == event['deliverBy'], 'REMOTE_EVENT_CONFLICT')
         if value.get('_granted') or value['status'] in TERMINAL or value.get('_deleted'):
             return
@@ -284,12 +297,24 @@ class SyncService(DeviceManagement, Service):
         if received_now >= seconds(value['deliverBy']):
             self.delivery_expired(tx, owner, value)
             return
+        if value['type'] == 'workspace.register':
+            try:
+                self.root_check(tx, owner, value['targetWorkerId'], frame['payload'])
+            except Fault as exc:
+                self.delivery_expired(tx, owner, value, exc.code)
+                return
+        if value['type'] == 'native.import':
+            mapping = tx.sync_lookup(owner, value['targetWorkerId'], frame['expectedWorkerStoreId'], 'native-index', frame['payload']['nativeSessionId'])
+            index = tx.get(owner, 'native-index', mapping['public']) if mapping else None
+            if not index or index['sourceRevision'] != frame['payload']['sourceRevision'] or index['indexVersion'] != frame['payload']['expectedIndexVersion']:
+                self.delivery_expired(tx, owner, value, 'NATIVE_SESSION_CHANGED')
+                return
         require(value['_dispatch'], 'REMOTE_EVENT_CONFLICT')
         value.update(_granted=True, deliveryState='granted')
         self.save(tx, owner, 'command', value['commandId'], value)
-        grant = wire.encode(dict(type='command.delivery_granted', commandId=value['commandId'], conversationId=value['conversationId'],
-            targetWorkerId=value['targetWorkerId'], expectedWorkerStoreId=event['workerStoreId'], receivedEventId=event['eventId'], commandDigest=value['_digest'], deliverBy=event['deliverBy'], grantedAt=stamp(received_now)), 2)
-        self.save(tx, owner, 'outbox', 'grant:' + value['commandId'], dict(id='grant:' + value['commandId'], _frame=grant, done=False, dispatching=False, conversationId=value['conversationId']))
+        grant = wire.encode(dict(type='command.delivery_granted', commandId=value['commandId'], **({'conversationId': value['conversationId']} if 'conversationId' in value else {}),
+            targetWorkerId=value['targetWorkerId'], expectedWorkerStoreId=event['workerStoreId'], receivedEventId=event['eventId'], commandDigest=value['_digest'], deliverBy=event['deliverBy'], grantedAt=stamp(received_now)), frame['wireRevision'])
+        self.save(tx, owner, 'outbox', 'grant:' + value['commandId'], dict(id='grant:' + value['commandId'], _frame=grant, done=False, dispatching=False, **({'conversationId': value['conversationId']} if 'conversationId' in value else {})))
         self.command_event(tx, owner, value)
         self.notify(tx, owner, event['workerId'])
 
@@ -307,18 +332,21 @@ class SyncService(DeviceManagement, Service):
         return result
 
     def erase_replica(self, tx, owner, worker, store, conversation=None, permanent=False, through_generation=None):
+        if conversation is None:
+            tx.erase_native(owner, worker, store, generation=through_generation)
+            tx.after_commit(('queries', owner, worker, store), lambda: self.queries.invalidate(owner, worker, store, 'REMOTE_SYNC_DISABLED'))
         for value in tx.list(owner, 'command', worker=worker, store=store):
             frame = value['_frame']
             if conversation is not None and frame.get('localConversationId') != conversation:
                 continue
-            if frame['wireRevision'] == 2 and not value.get('_granted') and value['status'] == 'queued':
+            if frame['wireRevision'] >= 2 and not value.get('_granted') and value['status'] == 'queued':
                 code = 'REMOTE_DEVICE_REVOKED' if permanent and conversation is None else 'REMOTE_SYNC_DISABLED'
                 value.update(status='rejected', error=Fault(code).view(), observedAt=self.now())
                 self.save(tx, owner, 'command', value['commandId'], value)
                 if 'conversationSeq' in value:
                     # No execution grant ever existed: retire the remote order slot
                     # even if a provisional transport write may have happened.
-                    skip = wire.encode(dict(type='conversation.skip', commandId=value['commandId'], conversationId=value['conversationId'], conversationSeq=value['conversationSeq'], targetWorkerId=worker, expectedWorkerStoreId=store, reason='withdrawn_before_dispatch', recordedAt=self.now()), 2)
+                    skip = wire.encode(dict(type='conversation.skip', commandId=value['commandId'], conversationId=value['conversationId'], conversationSeq=value['conversationSeq'], targetWorkerId=worker, expectedWorkerStoreId=store, reason='withdrawn_before_dispatch', recordedAt=self.now()), frame['wireRevision'])
                     self.outbox(tx, owner, skip)
         tx.sync_erase(owner, worker, store, conversation, permanent, through_generation)
 
@@ -386,7 +414,7 @@ class SyncService(DeviceManagement, Service):
                 break
             for index, body in rows:
                 payload = body.get('payload', {})
-                conversation = body.get('conversationId') or payload.get('conversationId')
+                conversation = body.get('conversationId') or payload.get('conversationId') or payload.get('resourceRef', {}).get('conversationId')
                 command_event = body['type'] == 'command.updated' or (body['type'] == 'worker.event' and payload.get('type', '').startswith('command.'))
                 allowed = body['type'] in {'conversation.deleted', 'store.reset'} or conversation is None or self.replica.visible(tx, owner, conversation) or (command_event and self.command_visible(tx, owner, conversation))
                 if allowed:
