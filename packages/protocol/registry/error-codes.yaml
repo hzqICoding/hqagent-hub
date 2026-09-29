@@ -290,7 +290,7 @@ errors:
   - code: REMOTE_SYNC_DISABLED
     http: 409
     retryable: false
-    description: 该电脑关闭内容同步，不能向已删除副本提交
+    description: 这台电脑已关闭同步
   - code: REMOTE_DELIVERY_EXPIRED
     http: 409
     retryable: true

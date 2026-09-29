@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.9.1' as const
+export const PROTOCOL_VERSION = '0.9.2' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */

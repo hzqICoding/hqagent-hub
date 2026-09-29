@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer, model_validator
 
-PROTOCOL_VERSION = "0.9.1"
+PROTOCOL_VERSION = "0.9.2"
 
 
 class _Base(BaseModel):

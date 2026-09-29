@@ -1,4 +1,4 @@
-# Hub Server 对外接口规范（协议包 0.9.1）
+# Hub Server 对外接口规范（协议包 0.9.2）
 
 R3完整约束见[R3-contract.md](R3-contract.md)。新接口仅Cookie；不扩展PAT白名单。电脑是原生会话内容与目录安全的唯一权威。
 
@@ -9,7 +9,7 @@ R3完整约束见[R3-contract.md](R3-contract.md)。新接口仅Cookie；不扩�
 ## 1. 基础约定
 
 - HTTPS Base URL：`https://<部署域名>`，资源前缀`/api/v2`。示例域名`hub.example.invalid`及全部示例ID/令牌均是合成数据，不能用于真实认证。
-- `protocolVersion`是协议包版本，当前0.9.1；URI版本仍v2。Worker线路修订支持[1,2,3]，以wireRevision协商，不能拿包版本相等当接入条件。
+- `protocolVersion`是协议包版本，当前0.9.2；URI版本仍v2。Worker线路修订支持[1,2,3]，以wireRevision协商，不能拿包版本相等当接入条件。
 - 请求和响应JSON使用UTF-8、camelCase。写入通常`Content-Type: application/json`；无请求体的DELETE不要求伪造JSON。拒绝未声明的输入字段，不接受客户端传owner/账号归属字段。
 - 时间统一RFC3339 UTC `Z`，例如`2026-09-27T12:00:00.000Z`。ID是不可解析的有界字符串，按Schema长度限制，拼URL时编码路径段。安全整数上限2^53-1。
 - 成功信封：`{success:true,data,requestId,protocolVersion}`；失败：`{success:false,error,requestId,protocolVersion}`。两者互斥，不以HTTP200包装失败，不在失败时返回业务data。
@@ -19,7 +19,7 @@ R3完整约束见[R3-contract.md](R3-contract.md)。新接口仅Cookie；不扩�
 示例错误（已授权资源的CAS冲突）：
 
 ```json
-{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.9.1"}
+{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.9.2"}
 ```
 
 ## 2. 鉴权矩阵与凭据边界
@@ -295,7 +295,7 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | `REMOTE_CONVERSATION_BUSY` | 409 | true | 对话正在忙碌，请稍后再发送 | 电脑已有queued/running/waiting_approval轮次；保留输入，取消不受此限制 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_STATE_NOT_READY` | 409 | true | 电脑状态尚未同步完成 | 等待当前连接的完整忙碌快照；不是持久锁 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_SYNC_CONFLICT` | 409 | false | 同步分段/版本/快照内容冲突，不得发布部分正文 | 同步分段/版本/快照内容冲突，不得发布部分正文 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
-| `REMOTE_SYNC_DISABLED` | 409 | false | 该电脑关闭内容同步，不能向已删除副本提交 | 该电脑关闭内容同步，不能向已删除副本提交 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
+| `REMOTE_SYNC_DISABLED` | 409 | false | 这台电脑已关闭同步 | 已授权设备的当前store关闭内容同步；原生索引列表、详情、读取统一拒绝，不能以空页或NOT_FOUND冒充无会话 | 在电脑开启同步并等待补传后刷新；不要自动重试或显示无会话 | Hub Server HTTP |
 | `REMOTE_DELIVERY_EXPIRED` | 409 | true | 设备离线，发送失败 | 送达期限已过且未获执行许可；设备离线，发送失败 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_REVISION_REQUIRED` | 409 | false | 电脑端需升级后使用此操作 | 该操作要求较新的线路修订（R1.5为2，R3为3），不能降级执行 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_SYNC_RESOURCE_LIMIT` | 413 | false | 全文同步资源配额不足，明确失败，不截断伪装成功 | 全文同步资源配额不足，明确失败，不截断伪装成功 | 减小请求或检查资源配额；不得截断后伪装成功 | Hub Server HTTP |
@@ -515,3 +515,14 @@ curl -X POST "$BASE/api/v2/devices/worker_demo/workspaces" --cookie "__Host-hqre
 在线查询固定总超时10秒、响应≤1MiB、每设备4个/每账号16个并发；传输分段最多128片，整帧≤256KiB。超时REMOTE_QUERY_TIMEOUT；限流REMOTE_RATE_LIMITED；超页减小limit。目录最多100条只返回目录元数据，链接越界拒绝REMOTE_PATH_OUTSIDE_ROOT，根被移除REMOTE_ROOT_NOT_AUTHORIZED，过期/替换目录REMOTE_DIRECTORY_CHANGED。错误优先级仍认证/归属→暂停（受限项）→离线→线路/存储→资源/版本/活跃检查。
 
 查询正文不进入服务端数据库、HTTP幂等重放、消息事件、代理磁盘buffer、APM或日志；浏览器只用当前页内存。目录POST同幂等键同摘要重查安全状态后可重新查询，结果不保证相同快照；不同摘要返回IDEMPOTENCY_MISMATCH。断线/超时/同步reset立即销毁拼段内存；不能从“历史API缓存”恢复。排查仅用响应X-Request-Id/信封requestId与既有journalctl流程，不要粘贴原生正文或选择令牌到日志。
+
+
+### 13.1 同步关闭与空列表（0.9.2）
+
+云端GET /devices/{workerId}/native-sessions、GET /native-sessions/{nativeSessionId}、GET /native-sessions/{nativeSessionId}/messages统一遵循：认证/归属→设备不存在或已删除404→同步关闭409。暂停不影响读取；同步关闭也先于正文在线查询。详情/读取未知或跨账号ID仍404，只有已核实的ID归属映射才能判断所属设备的开关。
+
+```json
+{"success":false,"error":{"code":"REMOTE_SYNC_DISABLED","message":"这台电脑已关闭同步","retryable":false},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.9.2"}
+```
+
+三个接口均返回HTTP409及上述错误，X-Request-Id与信封一致，Cache-Control:no-store。前端显示“这台电脑已关闭同步”，不能显示“没有原生会话”；提示去电脑开启同步，等待补传后刷新，不自动重试。同步开启而确实没有会话时，列表才返回200空页（items=[]、hasMore=false），不存在的详情/读取仍404。sync.reset不保留内容，仅允许无内容的归属映射用于区分已关闭；设备删除优先404。本机原生会话接口不受此门禁影响。

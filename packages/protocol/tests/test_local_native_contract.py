@@ -73,7 +73,7 @@ def test_patch_changes_no_existing_wire_schema_or_fixture():
         relative='schema/'+file
         old=subprocess.check_output(['git','show',f'{BASE}:packages/protocol/{relative}'],cwd=P).decode('utf-8')
         assert (P/relative).read_text(encoding='utf-8')==old
-    assert models.PROTOCOL_VERSION==(P/'VERSION').read_text().strip()=='0.9.1'
+    assert models.PROTOCOL_VERSION==(P/'VERSION').read_text().strip()=='0.9.2'
     manifest=load('fixtures/contracts/manifest.json')['fixtures']
     assert manifest['local-native.page.json']=='LocalNativeSessionPage'
     assert set(load('schema/local-native.json')['$defs'])=={'LocalNativeSessionPage'}
