@@ -213,3 +213,8 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 ### R3返修1验收更新（2026-09-29）
 
 三个历史测试前提已修正，未改协议冻结SHA、未删除/skip/xfail测试。全量packages/protocol/tests与scripts/protocol/tests：**495 passed in 28.98s**；validate（426类型/288Fixture）和api-contract均通过。原301/3记录仅为历史证据，不再是当前失败状态，详见R3-P0回执“返修1”。
+
+
+## R3本机接口补冻 / 0.9.1（2026-09-29）
+
+冻结SHA：`271c9046e3bb9d7be62e563c2962a2a7dd3e030e`。D51补充已登记；P2 Q1关闭，P2/P3可按本机v1/v2列表、详情、读取、同步201导入接口实施。新增LocalNativeSessionPage；本机使用独立于配对/线路，3不可用时延迟同步。线路仍3，既有帧不变。全量498 passed；validate 427类型/289Fixture、api-contract均通过。详见[R3-P0回执补冻节](handoffs/R3-P0-protocol.md)。未合回integration。
