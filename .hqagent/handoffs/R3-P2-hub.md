@@ -1,17 +1,17 @@
 ---
 wp: R3-P2
 status: done
-scope_declared: [apps/hub/**, .hqagent/handoffs/R3-P2-hub.md]
-scope_touched: [apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md]
+scope_declared: [apps/hub/**, apps/server/server/replica.py, .hqagent/handoffs/R3-P2-hub.md]
+scope_touched: [apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md]
 build: pass
 tests: pass
-commit: 809cc5f402fe9d0530ec7f32a07a406bb21cfce6
+commit: 970dfbbc946e2522da34a666be32a14b012da470
 open_questions: 0
 ---
 
 # R3-P2 Hub / Worker 完成回执（协议 0.9.1）
 
-工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。本次续作相对主代理合入的 `f3b86f5`，头部 scope_touched 也是此范围；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
+工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1 的服务端修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
 
 ## Q1 已由 0.9.1 关闭
 
@@ -192,3 +192,125 @@ exit $LASTEXITCODE
 - 864e9130ea0115c6494010b688d7e09e845963fc：原生隔离、恢复、延迟同步等测试及连续性修正。
 - 809cc5f402fe9d0530ec7f32a07a406bb21cfce6：不可识别历史的结构化能力错误及回归。
 - 本回执另提交。每次提交后均执行 git log -1 --format=%B 检查，无署名或生成标记；未合回 integration。
+
+## 返修 1：真实 R3 服务端联调、显式修订 2 回退与升级投影修复
+
+本次基线 `361f363 merge: sync integration with R3 server for joint test fix` 已包含 P1 R3。先确认 git log / clean status，再复现原模块：
+
+```text
+FAILED tests/test_r15_joint_server.py::test_real_r1_upgrade_backfill_and_computer_rounds_keep_reply_and_connection[False]
+FAILED tests/test_r15_joint_server.py::test_real_r1_upgrade_backfill_and_computer_rounds_keep_reply_and_connection[True]
+FAILED tests/test_r15_joint_server.py::test_real_server_rejection_preserves_error_instead_of_inventing_epoch_failure
+3 failed, 1 warning in 8.12s
+```
+
+三项直接错误均为 RealPair.__aenter__ 的 `hello_ack.wireRevision == 2`，实际为 3。此前回执中“未与真实 P1 修订 3 联调”描述的是首次交付；**本次已用真实 P1 create_app + uvicorn TLS + Worker/core 验证下述 R3 场景**。模型仍用 FakeAdapter，原生文件仍用合成夹具，不宣称真实 CLI 验收。
+
+### 断言与夹具逐项调整
+
+仅修改 Hub 的 `tests/test_r15_joint_server.py`：
+
+1. 原 helper 的 hello_ack=2、identity.wireRevision=2，改为精确等于测试参数；默认参数 **3**。并没有改成“2 或 3 都行”。原三项测试分别在 2、3 下各跑一次，共六项。
+2. 修订 2 用 monkeypatch 限制**真实服务端** wire.CODECS 为 [1,2]，没有把 Worker 伪装成旧版或用假 ACK。额外断言真实拒绝帧为 REMOTE_PROTOCOL_UNSUPPORTED、supportedWireRevisions=[1,2]，随后精确协商到 2；修订 3 正常握手不得出现拒绝。
+3. 原有 backfill 未完成时接单、两轮回复全文、本机版本为 1、busy=false/busyFresh=true、手机 continue 原 Session、真正元数据冲突 REMOTE_SYNC_CONFLICT、connectionId/epoch 和服务端未错误冻结等业务断言**全部保留**，在两种线路均验证。
+4. 新增两项真实 native 联调：合成一个只上传索引的会话及另一个已本机导入的完整历史。直接修订 3 时断言 native.index.upserted 及 native 对话/消息走 3，真实手机 API 可读一个未导入索引及完整导入历史。
+5. 显式修订 2 时断言：本机导入仍保存两条消息；服务端无 native 索引/对话；所有发出帧没有 native 类型、native 标记或合成正文；link 如实为 REMOTE_REVISION_REQUIRED。停止 Worker 后，在同一服务端/数据库/store 启用 [1,2,3]，重连通过栅栏后完整补传，未清数据库或重配对绕过升级。
+6. 新增升级完整性断言：旧两条 R1 对话均保留标题、metadataVersion=1、每条 12 条历史，其 workspaceId 与新 native 对话使用同一个公开映射。所有 native 帧必须 wireRevision=3，导入本身不调用 Adapter start/resume。
+7. 新增消息页按 R1.5-contract §7 的 messageSequence **降序**断言 [2,1]，并精确比对 assistant/user 两条正文。编写新用例时最初按升序期望失败，核对契约后改为正确的降序；这不是删除或放宽既有业务断言。
+8. RealPair 在启动 Worker 前将 reader 配到测试临时目录，非 native 场景使用独立空目录。原夹具只在修订 2 下运行，不会发现默认原生数据根；修订 3 开启扫描后暴露这个隔离缺口，现已显式封闭。native 导入请求同时提供接口规定的可信 Origin。没有从真实用户内容构造夹具或在回执记录它。
+
+新增帧仍逐条通过生成的 WORKER_CODECS / SERVER_CODECS 校验；手机页用 RemoteNativeSessionPage / RemoteConversationView / RemoteSyncMessagePage 校验。
+
+### 新测试定位到的真实生产缺陷
+
+修订 2→3 用例不是只改期望就通过：初次新增用例在升级后冻结，持久状态为 `REMOTE_SYNC_CONFLICT`，ACK=43、下一条 seq=44 为旧 scenario 的 `sync.conversation.upserted`，native 历史尚未发送。
+
+原因在 `apps/server/server/replica.py::Replica.conversation`：
+
+- 修订 2 副本持有本机 workspaceId。
+- R3 `native_events.conversation` 按契约将相同 workspace 映射为 owner/device/store 范围内的公开 ID。
+- 同版本元数据校验直接比较旧本机 ID 和新公开 ID，因此把纯身份投影升级误判为用户修改。
+
+按本次要求“业务断言失败要修代码”，改服务端，不伪造 Worker metadataVersion，也不增加同步 generation 或删旧历史躲过冲突。仅在修订 3、旧 workspaceId 精确等于入站本机 workspaceId、且旧 ID 不是已有公开 workspace 映射时，将旧投影归一化后比较。全部元数据字段仍经过原 require 比较；真正标题/归属等变化仍失败。同时间戳也提交映射升级，updatedAt 取 max 防止回退。没有改协议、数据库迁移或生产 Worker。
+
+### 本次验证
+
+所有测试串行，未开并行 worker、未跑 Vitest、未安装依赖。TEMP/TMP 均放 worktree/.tmp；使用 --basetemp 避开默认临时目录权限问题。
+
+复现及定向命令（cwd apps/hub）：
+
+```powershell
+$env:TEMP='E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest tests/test_r15_joint_server.py -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair-repro --tb=short
+../../.venv/Scripts/python.exe -B -m pytest tests/test_r15_joint_server.py -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair-joint3 --tb=short
+```
+
+修复后定向真实输出：
+
+```text
+8 passed, 1 warning in 18.73s
+```
+
+此后追加旧对话标题/版本/历史和 workspace 映射断言，最终由下面全量覆盖。
+
+最终 Hub 全量（cwd apps/hub，TEMP/TMP 同上）：
+
+```powershell
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair-full --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair-full.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 17%]
+........................................................................ [ 35%]
+........................................................................ [ 53%]
+........................................................................ [ 71%]
+........................................................................ [ 89%]
+远程送达预留清理暂未完成，将重试
+...........................................                              [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+403 passed, 4 warnings in 231.82s (0:03:51)
+```
+
+退出码 0，原 398 项扩展为 403 项（原三项额外跑修订 2，加两项 native 联调）。4 个 warning 为依赖弃用提示；仍有一条此前记录的通用预留清理重试日志，不把它宣称为本次修复内容。
+
+由于本次修复服务端生产代码，额外串行跑服务端全量（cwd apps/server，TEMP/TMP 同上）：
+
+```powershell
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair-server --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair-server.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 32%]
+........................................................................ [ 64%]
+........................................................................ [ 96%]
+.......                                                                  [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+223 passed, 1 warning in 61.00s (0:01:01)
+```
+
+退出码 0。git diff --check 通过。本次没有 429、0xC0000142 或额度错误；未变更协议，因此本返修没有重复生成协议，先前协议校验记录保持原样。
+
+本次提交：
+- `a3f9726`：真实修订 3、显式修订 2 兼容、native 延迟补传集成测试。
+- `970dfbb`：服务端 workspace 身份投影升级修复。
+- 回执另提交。每次提交后均 git log -1 --format=%B 自查；未合回 integration。
