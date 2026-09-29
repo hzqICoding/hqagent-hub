@@ -1,17 +1,17 @@
 ---
 wp: R3-P2
 status: done
-scope_declared: [apps/hub/**, apps/server/server/replica.py, .hqagent/handoffs/R3-P2-hub.md]
-scope_touched: [apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md]
+scope_declared: [apps/hub/**, apps/server/server/replica.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, .hqagent/handoffs/R3-P2-hub.md]
+scope_touched: [apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, apps/hub/tests/test_r3_upgrade_fences.py, apps/hub/tests/test_r3_upgrade_history.py, apps/hub/tests/test_r3_version_series.py, apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md]
 build: pass
 tests: pass
-commit: 970dfbbc946e2522da34a666be32a14b012da470
+commit: 7f73ce5dc40250cf72b2595cdfbb91728d32fe74
 open_questions: 0
 ---
 
 # R3-P2 Hub / Worker 完成回执（协议 0.9.1）
 
-工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1 的服务端修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
+工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1 / 2 的修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
 
 ## Q1 已由 0.9.1 关闭
 
@@ -314,3 +314,136 @@ exit $LASTEXITCODE
 - `a3f9726`：真实修订 3、显式修订 2 兼容、native 延迟补传集成测试。
 - `970dfbb`：服务端 workspace 身份投影升级修复。
 - 回执另提交。每次提交后均 git log -1 --format=%B 自查；未合回 integration。
+
+## 返修 2：旧修订 2 升级收敛与原生读取版本系列
+
+### 基线及诊断边界
+
+开工 git log 为 `507a2db merge: sync integration with R3 server 0.9.2 fix before upgrade repair`，工作区干净；按要求执行 `git merge --no-ff integration/phase1` 返回 `Already up to date.`，确认已经包含 0.9.2 服务端修复。合并日志已自查。
+
+提供的证据数据库使用 SQLite mode=ro 打开返回 OperationalError，未读取到内容，也没有复制或提交证据。以下根因来自真实代码路径与持久化合成数据测试，不宣称已经核实那条生产 accepted 的具体 run/task。测试分别覆盖“已上报最终结果的残留 accepted”和“本机终止但恢复证据仍不确定的 accepted”。
+
+本次没有修改 packages/protocol、apps/desktop、迁移或执行内核；为了让同一个升级栅栏两端一致，按本次裁决最小修改了 server/service_sync.py，并新增服务端守卫测试。没有改掉控制结果的三态或真实进程停止语义。
+
+### 根因与修复
+
+1. **unconfirmed 错算未决**：worker.can_upgrade 的修订 2 查询原来只排除 completed/failed/rejected。DeliveryBridge._finish 实际还持久化 unconfirmed，它是该次控制投递的最终观察，不等于执行成功。本次用真实 FINAL_STATES 四态排除它；waiting、provisional、accepted 和未知异常状态仍阻挡。未删除任何不确定性、orphanProcessIds 或 recoveryRequired。
+2. **accepted 双账本历史恢复**：正常成功/失败仍由 SyncService.poll_execution 调 DeliveryBridge._completed/_failed，在同一事务更新 Inbox、delivery 和可靠事件。补强 _cache 同时保存 Inbox 的最终原回执。对历史 accepted 只用原 result_json、receipt_json 或原事件日志中的同 store/worker/command/conversation 最终结果修复，不根据 LocalRun 标签伪造成功；保留原 eventId/epoch/seq/wireRevision，不新发重复结果。已接单原命令不能被同 ID 冲突变体的 command.rejected 误终结，因此该类拒绝不作为 accepted 修复证据。
+3. **本机终态仍有恢复疑点**：原 poll_execution 遇 recoveryRequired/unresolvedCancellation 时什么也不做，会永久留 accepted。现在在 LocalRun 已终止的前提下输出结构化 unconfirmed，保留 executionMayStillBeRunning=true、orphan 列表和 recovery_flag，不输出 command.completed。仍在执行的轮次不走此分支。
+4. **服务端同样阻挡**：Server 原 on_hello 将任何 controlResult.unconfirmed/orphan 都当作未决；云端 schema 的 command.status 仍可保持 accepted。本次仅对 **2→3**，将 deliveryState=acknowledged 且已有 unconfirmed 结果的控制投递视为已经得到最终观察；命令视图状态和证据原样保留。未收到回执的 accepted、queued、未完成 Outbox、连续 ACK 缺口、未应用事件仍阻挡；其它线路转换保留原规则。
+5. **不能换线路重发旧结论**：升级后的 poll_execution 不再以新 wireRevision 重新输出旧线路命令的延迟控制结论。旧结果与不确定性保留供对账；新请求仍走原控制证据检查。真实联调测试验证升到 3 后对遗留未确认运行发 retry，仍返回 unconfirmed、没有启动第二次执行。
+6. **在线旧服务端永久失去探测**：原条件要求 server_supported 已含 3 才探测 3，但曾被 [1,2] 拒绝的在线设备不会再获知更新。现在沿用 30 秒节流、在栅栏可通过时重新探测；真实旧服务端仍按拒绝回退，不形成重连风暴。测试只提前探测计时点以缩短等待，没有强改身份或模拟成功 ACK。
+
+### 其它升级条件核查
+
+- **remote_sync_items**：发现真实收敛问题。重连时 phase=synced 会重新 capture，但旧版 capture 未清前次未分配 seq 的暂存项；旧 batch 永远不会被新 batch 的 pump 消费，can_upgrade 却会检查全表。现在新 capture 在同一事务替换暂存快照；对既有 backfilling/waiting_complete_ack，仅退休非当前 backfillId 的旧快照暂存项。当前快照完整覆盖源数据，已进入可靠 Outbox 的帧完全不动。
+- **sync-work.phase**：backfilling 必须消费当前批次并等 complete；waiting_complete_ack / waiting_reset_ack 必须等持久 ACK。握手中的 lastServerAck 也调用现有 sync.on_ack，使重启/重连不必等另一条重复 ACK 才推进 synced/disabled。
+- **Outbox**：仍要求当前 store 的可靠 Outbox 清空；没有丢弃未确认记录、跳 ACK 或重写原 hash。测试分别证明当前暂存及未确认 Outbox 仍阻挡，真实 ACK 到达后放行。
+- 关闭同步原 set_settings 清空待上传暂存并发 reset，只有 reset ACK 后进入 disabled；本次没有放宽 reset/删除证明规则。撤销状态不能作为可升级在线连接使用。
+
+### 文件与版本判定
+
+- runtime/remote/delivery.py：FINAL_STATES、原始结果修复、最终回执一致写入。
+- runtime/remote/worker.py：终态栅栏、握手 ACK 接线、定期重新探测。
+- runtime/remote/sync.py：旧暂存快照收敛、旧线路结果隔离、已终止但有疑点的最终 unconfirmed 观察。
+- server/service_sync.py：2→3 服务端栅栏的“已确认收妥未知结果”判定，不改公开 DTO。
+- adapters/history.py：由精确补丁白名单改为经验证主次系列 + 最低补丁 + 逐条结构验证。
+
+读取规则：
+
+| Agent | 已验证系列 | 最低补丁 | 未验证系列 |
+| --- | --- | --- | --- |
+| Claude Code | 2.1.x | 261 | 2.2、3.x 等返回 unsupported |
+| Codex | 0.153.x | 4 | 0.154、1.x 等返回 unsupported |
+
+不低于下限只取得进入结构校验的资格，不直接判可读。继续校验消息块、角色和链；补足每条身份信封的 sessionId/id、cwd、version/cli_version 一致性，Codex 重复 session_meta 及 turn_context 中声明的绑定也检查。损坏 JSONL 和身份字段不一致有具体固定字段/行号原因；未知主次系列或低于下限返回“该 CLI 版本尚未验证”。不在错误里回显原正文或任意路径。
+
+capabilities 新增内部 verifiedSeries、observedVersions、versionPolicy、versionDiagnostics：如实标明最低补丁、实际观察到的版本以及“系列下限 + 结构”判定方式，诊断有界；这不是修改冻结协议中的 capability DTO。实际版本只允许数值版本进入诊断，其它记 unknown，不把任意文件文本伪装成诊断版本。没有在测试里启动真实 CLI 或读取用户实际历史。
+
+### 新增回归与原断言
+
+既有业务断言未修改、未删除。本次新增文件：
+
+- test_r3_version_series.py：22 项；系列下限、新补丁、未知主次版本、结构损坏/身份冲突及能力诊断。
+- test_r3_upgrade_history.py：2 项真实 create_app + uvicorn TLS + Worker/core 联调。持久化两个 unconfirmed 和一个已完成但残留 accepted，重建 System 后修复原结果并在线自动升级；另测真实已 grant 正在执行仍阻挡、最终回执与 ACK 后升级。保留不确定性证据，升级后的 retry 仍被核对规则挡住。
+- test_r3_upgrade_fences.py：4 项；waiting/provisional、旧 batch 暂存退休而当前暂存与 Outbox 仍阻挡、终态疑点上报 unconfirmed。
+- server/tests/test_r3_guards.py：新增 3 项参数化守卫，只有 accepted + acknowledged + unconfirmed 放行，未确认收到和 queued 仍拒绝，原 command.status/controlResult 不改。
+
+所有文件都用合成数据。模型路径仍为 FakeAdapter；“真实”指真实服务端/Worker/协议/TLS/数据库，不指真实 CLI。没有冒称对提供的生产数据库做了修复。
+
+### 验证与提交
+
+先跑新版本及真实历史升级测试：
+
+```text
+24 passed, 1 warning in 9.56s
+```
+
+随后跑栅栏、既有 native 与恢复测试：
+
+```text
+19 passed, 1 warning in 9.31s
+```
+
+首轮全量输出 430 passed，但运行中又补了最终疑点收尾回归，因此以下**最终重新运行**的输出才作为交付结果。TEMP/TMP 和 --basetemp 全部在 worktree/.tmp，串行运行，未跑 Vitest、未安装依赖。
+
+Hub，cwd apps/hub：
+
+```powershell
+$env:TEMP='E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair2-hub-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair2-hub-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 16%]
+........................................................................ [ 33%]
+........................................................................ [ 50%]
+........................................................................ [ 66%]
+........................................................................ [ 83%]
+远程送达预留清理暂未完成，将重试
+.......................................................................  [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+431 passed, 4 warnings in 242.77s (0:04:02)
+```
+
+Server，cwd apps/server，TEMP/TMP/PYTHONIOENCODING 同上：
+
+```powershell
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair2-server-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair2-server-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 31%]
+........................................................................ [ 62%]
+........................................................................ [ 93%]
+...............                                                          [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+231 passed, 1 warning in 62.85s (0:01:02)
+```
+
+两条命令退出码均 0；git diff --check 通过。依赖弃用 warning 未修改；Hub 仍出现一条此前记录的通用预留清理重试日志，本次不宣称解决该日志。最终 Hub 新增 28 项，Server 新增 3 项；其余业务断言未放宽。没有 429、0xC0000142 或额度错误。此轮未变更协议，也没有重新生成协议。
+
+本次提交：
+- `68b83c8`：按已验证版本系列与结构判定原生历史。
+- `7f73ce5`：旧投递结果核对、Worker/Server 升级栅栏收敛及回归。
+- 本回执另提交。每次提交后均 `git log -1 --format=%B` 自查，无署名或生成标记；未合回 integration。
