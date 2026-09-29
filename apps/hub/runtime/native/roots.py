@@ -5,6 +5,7 @@ import hashlib
 import json
 import secrets
 import time
+import threading
 from contextlib import ExitStack, contextmanager
 
 from protocol.generated.python import LocalAuthorizedRootsView, DirectoryListingPage
@@ -19,6 +20,7 @@ class AuthorizedRoots:
         self.repo, self.chat = repository, chat_repository
         self.clock = monotonic
         self.references = {}
+        self.reference_lock = threading.RLock()
         with self.repo.database.transaction() as tx:
             if self.repo.get("authorized-roots", tx) is None:
                 self.repo.put("authorized-roots", {"version": 1, "roots": []}, tx)
@@ -78,22 +80,27 @@ class AuthorizedRoots:
 
     def _prune(self):
         stamp = self.clock()
-        self.references = {k: v for k, v in self.references.items() if v["expires"] > stamp}
+        with self.reference_lock:
+            self.references = {k: v for k, v in self.references.items() if v["expires"] > stamp}
 
     def _token(self, root, path, identity, *, listing=None, offset=0):
-        self._prune()
-        if len(self.references) >= 4096:
-            raise HubError("REMOTE_RATE_LIMITED", "目录选择引用过多，请稍后重试")
-        token = secrets.token_urlsafe(32)
-        self.references[token] = {"store": self.repo.get("identity")["store"], "rootId": root["rootId"],
-            "rootVersion": root["version"], "path": str(path), "identity": identity,
-            "expires": self.clock() + 900, "listing": listing, "offset": offset}
-        return token
+        store = self.repo.get("identity")["store"]
+        with self.reference_lock:
+            self._prune()
+            if len(self.references) >= 4096:
+                raise HubError("REMOTE_RATE_LIMITED", "目录选择引用过多，请稍后重试")
+            token = secrets.token_urlsafe(32)
+            self.references[token] = {"store": store, "rootId": root["rootId"],
+                "rootVersion": root["version"], "path": str(path), "identity": identity,
+                "expires": self.clock() + 900, "listing": listing, "offset": offset}
+            return token
 
     def _reference(self, token, root, *, cursor=False):
-        self._prune()
-        value = self.references.get(token)
-        if (value is None or value["store"] != self.repo.get("identity")["store"] or
+        store = self.repo.get("identity")["store"]
+        with self.reference_lock:
+            self._prune()
+            value = self.references.get(token)
+        if (value is None or value["store"] != store or
                 value["rootId"] != root["rootId"] or value["rootVersion"] != root["version"] or
                 (value["listing"] is not None) != cursor):
             raise denied("REMOTE_DIRECTORY_CHANGED")
@@ -108,12 +115,18 @@ class AuthorizedRoots:
                 yield target
                 self._root(root_id, version)
 
-    def audit(self, request_id, root_id, code):
-        with self.repo.database.transaction() as tx:
+    def audit(self, request_id, root_id, code, *, operation="directory.list", transaction=None):
+        def record(tx):
+            known = {r["rootId"] for r in self.repo.get("authorized-roots",tx)["roots"]}
             self.repo.events.append(tx, EventDraft(aggregate_type="system", aggregate_id="directory-audit",
-                type="remote.directory.audited", payload={"requestId": request_id, "operation": "directory.list",
-                "rootId": root_id, "resultCode": code}))
+                type="remote.directory.audited", payload={"requestId": request_id, "operation": operation,
+                "rootId": root_id if root_id in known else "unrecognized-root", "resultCode": code}))
             self.repo.seal(tx)
+        if transaction is not None:
+            record(transaction)
+        else:
+            with self.repo.database.transaction() as tx:
+                record(tx)
 
     def listing(self, value, request_id):
         try:
@@ -125,6 +138,8 @@ class AuthorizedRoots:
         return result
 
     def _listing(self, value):
+        from adapters.history import check_cancelled
+        check_cancelled()
         root = self._root(value.root_id, value.root_version)
         reference = self._reference(value.directory_token, root) if value.directory_token else None
         with directory_lease(root["path"], identity=root["_identity"]) as (base, _):
@@ -133,6 +148,7 @@ class AuthorizedRoots:
                 rows = []
                 modified = directory.stat().st_mtime_ns
                 for child in directory.iterdir():
+                    check_cancelled()
                     if child.suffix.lower() == ".lnk" or not child.is_dir():
                         continue
                     absolute_directory(str(child))

@@ -10,7 +10,7 @@ from storage.idempotency import request_hash
 from storage.local_chat import now
 from runtime.remote.commands import CommandBridge, control_result, error_view
 from runtime.remote.deadline import DeliveryClock, instant
-from runtime.remote.wire import canonical
+from runtime.remote.wire import canonical, CODECS
 
 
 class DeliveryBridge(CommandBridge):
@@ -53,7 +53,7 @@ class DeliveryBridge(CommandBridge):
         return True
 
     def _check_connection(self, frame):
-        if self.repo.get("identity").get("wireRevision") != 2:
+        if self.repo.get("identity").get("wireRevision", 1) < 2:
             raise HubError("REMOTE_PROTOCOL_UNSUPPORTED", "连接尚未切换到修订2")
         if not self.repo.check_continuity() or self.repo.get("link")["view"]["state"] != "paired":
             raise HubError("REMOTE_STORE_CHANGED", "当前世代需要核对")
@@ -87,7 +87,13 @@ class DeliveryBridge(CommandBridge):
                 raise HubError("CONFLICT", "本机对话标识已使用")
         else:
             conversation = self.chat.repository.conversation(local)
-            if kind == "run.submit" and (conversation.workspace_id != payload["workspaceId"] or str(conversation.scene_id) != payload["sceneId"]):
+            native = str(conversation.conversation_kind) == "native"
+            if kind == "run.submit" and native:
+                if frame["wireRevision"] != 3 or payload.get("conversationKind") != "native" or payload.get("nativeSessionId") != conversation.native_session_id or payload.get("agentType") != str(conversation.agent_type) or payload["sessionMode"] != "continue" or "sceneId" in payload or "sceneVersion" in payload:
+                    raise HubError("REMOTE_TARGET_MISMATCH", "原生会话绑定不匹配")
+                binding = self.chat.native.row(local,conversation=True)
+                self.chat.native.check(binding,self.chat.native.source(binding),payload.get("nativeConfirmation"))
+            if kind == "run.submit" and (conversation.workspace_id != payload["workspaceId"] or (not native and str(conversation.scene_id) != payload.get("sceneId"))):
                 raise HubError("REMOTE_TARGET_MISMATCH", "对话执行目标不匹配")
             if kind == "conversation.update":
                 if payload["conversationId"] != local:
@@ -113,7 +119,7 @@ class DeliveryBridge(CommandBridge):
         if kind in {"run.submit", "conversation.create"}:
             if payload["workspaceId"] not in workspaces:
                 raise HubError("NOT_FOUND", "工作区未登记")
-            if self.chat.repository.scene(payload["sceneId"]).version != payload["sceneVersion"]:
+            if payload.get("conversationKind") != "native" and self.chat.repository.scene(payload["sceneId"]).version != payload["sceneVersion"]:
                 raise HubError("REMOTE_SCENE_VERSION_MISMATCH", "场景版本已变化")
 
     def _insert(self, tx, frame):
@@ -161,6 +167,9 @@ class DeliveryBridge(CommandBridge):
             self.busy.require_idle(tx, frame["localConversationId"])
             self.clock.check(frame)
             message = SendLocalMessageInput.model_validate({k: frame["payload"][k] for k in ("clientMessageId", "text", "sessionMode")})
+            if frame["payload"].get("nativeConfirmation"):
+                proof = frame["payload"]["nativeConfirmation"]
+                self.chat.native.remote_confirmation(tx,frame["localConversationId"],proof,frame["commandId"])
             receipt = self.chat.repository.enqueue(frame["localConversationId"], message, "r15:" + frame["commandId"], transaction=tx, legacy=True)
             if receipt.duplicate:
                 raise HubError("IDEMPOTENCY_MISMATCH", "消息已由其它命令提交")
@@ -230,7 +239,7 @@ class DeliveryBridge(CommandBridge):
             self._rejected(tx, json.loads(row[0]), code)
 
     async def receive(self, raw):
-        frame = RemoteV2ServerOutboundFrame.model_validate(raw).model_dump(mode="json", by_alias=True, exclude_none=True)
+        frame = CODECS[raw["wireRevision"]][1].model_validate(raw).model_dump(mode="json", by_alias=True, exclude_none=True)
         self._check_connection(frame)
         workspaces = {w.id for w in await self.chat.ports.workspaces.list_workspaces(None, None)}
         async with self.lock:
@@ -295,7 +304,7 @@ class DeliveryBridge(CommandBridge):
             if row[0] != expected or not row[1]:
                 break
             expected += 1
-        return [{"type": "conversation.gap", "wireRevision": 2, "workerId": self.scope()[0], "workerStoreId": self.scope()[1],
+        return [{"type": "conversation.gap", "wireRevision": frame["wireRevision"], "workerId": self.scope()[0], "workerStoreId": self.scope()[1],
             "workerEpoch": self.repo.get("identity", tx)["epoch"], "conversationId": frame["conversationId"],
             "expectedSeq": expected, "receivedSeq": frame["conversationSeq"]}]
 

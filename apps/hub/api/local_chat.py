@@ -64,6 +64,8 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
 
     app.include_router(public)
     router = APIRouter(prefix="/api/v2", dependencies=[Depends(require_auth)])
+    from runtime.native.api import native_router
+    router.include_router(native_router(service.native))
     if remote_router is not None:
         router.include_router(remote_router)
 

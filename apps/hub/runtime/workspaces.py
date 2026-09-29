@@ -70,7 +70,7 @@ class WorkspaceService:
 
     # ---------- 变更 ----------
 
-    async def add_workspace(self, value: AddWorkspaceInput) -> WorkspaceView:
+    async def add_workspace(self, value: AddWorkspaceInput, *, commit=None) -> WorkspaceView:
         path = Path(value.path).expanduser()
         if not path.is_absolute():
             raise HubError("VALIDATION_FAILED", "工作区路径必须是绝对路径", detail={"path": value.path})
@@ -83,7 +83,7 @@ class WorkspaceService:
             # 重复添加不报错，返回已有的那个并刷新打开时间——
             # 用户的意图是「我要用这个目录」，它已经在管了就是成功。
             existing.last_opened_at = _now()
-            return await self._to_view(self.repository.save(existing))
+            return await self._to_view(commit(existing) if commit else self.repository.save(existing))
 
         record = WorkspaceRecord(
             id=f"ws_{uuid.uuid4().hex[:12]}",
@@ -95,7 +95,7 @@ class WorkspaceService:
             default_profile_id=value.default_profile_id,
             last_opened_at=_now(),
         )
-        return await self._to_view(self.repository.save(record))
+        return await self._to_view(commit(record) if commit else self.repository.save(record))
 
     async def remove_workspace(self, workspace_id: str) -> None:
         self.repository.get(workspace_id)  # 不存在时抛 NOT_FOUND
