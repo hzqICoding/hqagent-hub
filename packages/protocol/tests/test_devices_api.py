@@ -39,7 +39,7 @@ def test_new_fixtures_round_trip(filename,kind):
 
 def test_every_new_type_has_fixture_and_version_is_http_minor_only():
     assert set(NEW)<={k for f,k in MANIFEST.items() if f.startswith('devices.')}
-    assert models.PROTOCOL_VERSION==API['info']['version']=='0.9.1'
+    assert models.PROTOCOL_VERSION==API['info']['version']=='0.9.2'
     sync=json.loads((P/'schema/remote-sync.json').read_text(encoding='utf-8'))['$defs']
     assert {d['properties']['wireRevision']['const'] for d in sync.values() if 'wireRevision' in d.get('properties',{})}=={2}
 
@@ -159,7 +159,7 @@ def test_spec_bundle_auth_examples_and_error_table_do_not_drift():
     guidance=yaml.safe_load((P/'remote/http-error-guidance.yaml').read_text(encoding='utf-8'))['errors']
     bundle=module.bundled(API,registry)
     runtime_count,total=module.check(API,registry,guidance,bundle)
-    assert total==39 and runtime_count==33
+    assert total==39 and runtime_count==39  # All six R3 routes are now implemented in integration.
     assert bundle==json.loads((P/'openapi/remote-hub.v2.bundle.json').read_text(encoding='utf-8'))
     guide=(P/'remote/api-guide.md').read_text(encoding='utf-8')
     for name,block in module.table_blocks(API,registry,guidance).items():

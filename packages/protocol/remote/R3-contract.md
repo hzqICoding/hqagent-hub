@@ -99,7 +99,9 @@ DirectoryListingInput只收rootId/rootVersion/directoryToken/cursor/limit，不�
 
 优先级延续D50：认证/CSRF/归属与可见性→删除NOT_FOUND/撤销→对受限操作检查suspended→offline→revision3/store→同步/根/格式/索引版本→活跃/写互斥。目录浏览虽只读，依用户规则也属于suspended禁止项；未导入原生历史只读不在暂停禁止项。暂停原子失败全部尚未grant的导入/登记，已grant如实处理；取消运行/拒绝审批豁免不变。原生导入没有Run，所以不受别的对话busy锁影响，只受自身精确绑定写锁；发送导入Hub对话沿既有busyFresh/busy门禁。
 
-索引GET可离线且可在暂停时读取。sync关闭/设备删除/workspace移除清理索引后GET返回NOT_FOUND；已知路由的在线查询仍先执行不泄露资源的认证/归属校验。Server使用索引缓存不代表电脑已授权某次读，Worker必须复查。
+索引GET可离线且可在暂停时读取。**0.9.2裁决**：云端原生会话列表、详情、读取三个GET，先认证及归属检查，再确认设备存在；设备已删除或不存在返回404 NOT_FOUND，优先于同步状态。对已授权且存在的设备，当前store的同步总开关关闭统一返回409 REMOTE_SYNC_DISABLED，message为“这台电脑已关闭同步”，retryable=false，不返回空页或以NOT_FOUND冒充无会话；这一检查也先于读取的在线查询，暂停不影响读取。同步开启但无会话：列表返回items=[]、hasMore=false；详情/读取不存在的ID仍404。workspace移除及其它资源不可见继续NOT_FOUND。
+
+详情/读取路由必须先通过公开ID的owner/worker/store映射确认所属设备；未知或其他账号ID始终NOT_FOUND，不能猜设备后泄露同步状态。sync.reset清理索引正文后，可保留不含标题、路径、消息或其它内容的最小ID归属映射/墓碑以支持上述判断，不恢复已删索引；设备删除令这些映射失去可访问性并优先404。本规则不扩大内容保留范围，不放宽真实删除。Server使用索引缓存不代表电脑已授权某次读，Worker仍须复查。0.9.1本机API独立于同步开关的规则不变。
 
 HTTP包N/N−1保留0.8字段/请求/旧撤销/PAT；0.9增加可选来源字段、原生专用操作和场景字段按类型可选。旧客户端不能展示无场景native时应提示升级或将它作为只读未知类别，不能合成场景；新客户端对旧scenario缺conversationKind按scenario。旧线路不能承载native元数据；双向栅栏完成前不得把R3对象编码上传；本机创建/导入不受配对或栅栏限制，先保存在电脑，修订3可用且同步开启后再补传（0.9.1裁决，见§11）。0.8的注册表测试升级包版本断言不等于放宽旧线路兼容验收。
 
