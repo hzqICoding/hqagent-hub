@@ -17,9 +17,11 @@ class VerificationStore:
     def key(self, agent, model):
         return hashlib.sha256(json.dumps([agent, model]).encode()).hexdigest() + '.json'
 
-    def record(self, agent, version, model, outcomes, mime_types):
+    def record(self, agent, version, model, outcomes, mime_types, *, diagnostics=None):
         self.root.mkdir(parents=True, exist_ok=True)
         result = dict(agent=agent, version=version, model=model, transport=TRANSPORTS[agent], observedAt=now(), passed=REQUIRED_PROBES <= outcomes.keys() and all(outcomes.values()), probes=outcomes, mimeTypes=mime_types)
+        if diagnostics is not None:
+            result['diagnostics'] = diagnostics
         CredentialVault.atomic_write(self.root / self.key(agent, model), json.dumps(result).encode())
         return result
 

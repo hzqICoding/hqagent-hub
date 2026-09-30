@@ -166,7 +166,7 @@ def execute(args, client, out):
         if args.action == 'verify-image':
             from runtime.attachments.verification import verify_images
             record = asyncio.run(verify_images(HubPaths.resolve(args.data_dir).root, args.agent, args.model))
-            data = {k: record[k] for k in ('agent', 'version', 'model', 'observedAt', 'passed', 'probes')}
+            data = {k: record[k] for k in ('agent', 'version', 'model', 'observedAt', 'passed', 'probes', 'diagnostics')}
     else:
         data = LocalAuthorizedRootsView.model_validate(
             client.request('GET', '/remote/authorized-roots')
