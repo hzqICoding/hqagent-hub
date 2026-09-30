@@ -13,7 +13,9 @@ location ~ ^/api/v2/(conversations/[^/]+/attachments|worker/attachments)$ {
     proxy_read_timeout 125s;
     proxy_send_timeout 30s;
     client_body_timeout 30s;
-    proxy_pass http://127.0.0.1:8080;
+    # Replace the placeholder with the site's EXISTING proxy_pass upstream.
+    # serverD currently uses http://127.0.0.1:18090; do not change other locations.
+    proxy_pass http://REPLACE_WITH_EXISTING_SITE_UPSTREAM;
     # Do not intercept upstream envelopes or buffer bodies for access/APM logs.
     proxy_intercept_errors off;
     access_log off;

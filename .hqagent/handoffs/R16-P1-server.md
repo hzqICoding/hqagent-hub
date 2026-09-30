@@ -2,10 +2,10 @@
 wp: R16-P1
 status: done
 scope_declared: [apps/server/**, .hqagent/handoffs/R16-P1-server.md]
-scope_touched: [apps/server/README.md, apps/server/nginx-attachments.conf.example, apps/server/pyproject.toml, apps/server/requirements.txt, apps/server/scripts/smoke.py, apps/server/scripts/smoke_attachments.py, apps/server/server/app.py, apps/server/server/attachment_types.py, apps/server/server/attachments.py, apps/server/server/blobstore.py, apps/server/server/events.py, apps/server/server/events_sync.py, apps/server/server/native.py, apps/server/server/native_events.py, apps/server/server/queries.py, apps/server/server/replica.py, apps/server/server/repository.py, apps/server/server/repository_attachments.py, apps/server/server/resources/http-errors.json, apps/server/server/resources/remote-hub.v2.bundle.json, apps/server/server/service.py, apps/server/server/service_sync.py, apps/server/server/thumbnail_child.py, apps/server/server/wire.py, apps/server/server/worker.py, apps/server/tests/test_attachment_races.py, apps/server/tests/test_attachment_wire.py, apps/server/tests/test_attachments.py, apps/server/tests/test_controls_storage.py, apps/server/tests/test_devices_tokens.py, apps/server/tests/test_protocol.py, apps/server/tests/test_r15_policy.py, apps/server/tests/test_r3_guards.py, apps/server/tests/test_test_dependencies.py, .hqagent/handoffs/R16-P1-server.md]
+scope_touched: [apps/server/README.md, apps/server/nginx-attachments.conf.example, apps/server/pyproject.toml, apps/server/requirements.txt, apps/server/scripts/smoke.py, apps/server/scripts/smoke_attachments.py, apps/server/server/app.py, apps/server/server/attachment_types.py, apps/server/server/attachments.py, apps/server/server/blobstore.py, apps/server/server/config.py, apps/server/server/events.py, apps/server/server/events_sync.py, apps/server/server/native.py, apps/server/server/native_events.py, apps/server/server/queries.py, apps/server/server/replica.py, apps/server/server/repository.py, apps/server/server/repository_attachments.py, apps/server/server/resources/http-errors.json, apps/server/server/resources/remote-hub.v2.bundle.json, apps/server/server/service.py, apps/server/server/service_sync.py, apps/server/server/thumbnail_child.py, apps/server/server/wire.py, apps/server/server/worker.py, apps/server/tests/test_attachment_races.py, apps/server/tests/test_attachment_wire.py, apps/server/tests/test_attachment_backend.py, apps/server/tests/test_blobstore_contract.py, apps/server/tests/test_attachments.py, apps/server/tests/test_controls_storage.py, apps/server/tests/test_devices_tokens.py, apps/server/tests/test_protocol.py, apps/server/tests/test_r15_policy.py, apps/server/tests/test_r3_guards.py, apps/server/tests/test_test_dependencies.py, .hqagent/handoffs/R16-P1-server.md]
 build: pass
 tests: pass
-commit: a8c5b82ea44a711b03eae4758a06308bb522b5fb
+commit: 004b6c12f65e8d1d5122cb6f566e2dcfeb7a5ada
 open_questions: 0
 ---
 
@@ -163,3 +163,131 @@ location @attachment_too_large {
 - `f9cfbe6`：流式附件库、引用/额度/清理、缩略图子进程、修订4与HTTP接线、Pillow依赖和发布资源。
 - `a8c5b82`：附件安全/竞争/恢复/线路测试、绑定/版本断言更新、真实20MB网络RSS冒烟。
 - README、nginx上传示例和本回执另作文档提交。头部commit指最后实现/测试提交。每次提交后用git log -1 --format=%B自查，信息仅描述改动，无署名。未合回integration、未推送、未实际部署。
+
+
+## 返修 1：已完成（OSS接入边界、维护频率、代码风格、部署示例）
+
+本节对应用户新增要求和附件方案§7.1，替代前文初次交付的平铺布局、文件系统删除日志、附件每5秒扫描等说明。返修基线为 `38b318b merge: sync integration for attachment storage requirements`，起始工作区干净；未修改继承的docs方案、协议或其它工作区。没有部署、推送或合并回integration。
+
+### §7.1 六项逐条对应
+
+| 项 | 本轮实现与证据 |
+| --- | --- |
+| 1. 存储接口唯一入口 | `BlobStore`补充size、iter_blobs、purge_staging、materialize，并定义不透明Stage协议（identifier/size/sha256/write/finish）。Attachments不再访问store.temp/cas/path、stage.path，不自行open/stat/unlink附件。只读物化上下文由后端管理，blob物化生成临时副本，退出清理；stage原本在本地时直接提供受保护只读租约。缩略图子进程输出有界PNG字节流，通过BlobStore再写入；业务只把物化租约交给解码器。业务中的Path仅定位Python解码器代码及Pillow安装目录，不解释任何存储对象路径。 |
+| 2. 配置选择 | Settings读取 `HQREMOTE_BLOB_BACKEND`，缺省local，未知值在启动初始化时ValueError，不静默回退。blobstore模块内BACKENDS及create_blob_store集中选择实现；新增实现注册到此处并改配置即可，Attachments不需要改动。OpaqueBackend测试隐藏LocalBlobStore所有诊断属性，实际跑上传/下载/缩略图/删除/维护，证明业务没有走本地旁路。 |
+| 3. 对象键 | object_key仅由sha256生成 `cas/ab/cd/<完整hash>`；原文件/缩略图同规则，不含账号、文件名或用户路径。新写入使用分层布局；兼容读取/枚举/删除原平铺 `cas/<hash>`，同hash旧/新对象在枚举中归为一个键，删除同时清两处。不做批量文件搬迁；当前尚未部署，无需数据迁移。LocalBlobStore的temp/cas/path诊断入口仅为原有本地存储测试保留，不属于BlobStore接口。 |
+| 4. 通用契约测试 | 新增 `test_blobstore_contract.py`，backend fixture当前只参数化LocalBlobStore；以后加OSS factory参数复用同一套。覆盖有界写读/size、hash/长度/上限失败回滚、同hash并发commit及输者abort、幂等删除、读者句柄关闭、重建后清abandoned stage、活跃stage保护、物化异常退出清理和对象键。另有后端配置、隐藏本地属性的适配器集成、平铺兼容、schema4升级及维护频率测试。 |
+| 5. 不依赖本地文件语义 | 删除意图只保留SQLite attachment-deletion，与引用/元数据删除同事务提交。移除remember_deletion/deletions文件日志实现和业务调用，不再读写blobs/deleted目录。启动从DB删除记录重做引用/回放清理，再GC孤儿；恢复旧快照须先合并最新DB tombstone，不能期待程序猜到丢失的删除历史。os.link只在LocalBlobStore内部表达原子create-if-absent；业务配额、引用、删除栅栏仍在DB。 |
+| 6. 下载出口独立 | Attachments.download仍为唯一出口，只调用exists/size/open_read并返回受控读取流。先取得size，再开句柄，避免size失败后遗留流。当前HTTP头/鉴权/长度/hash语义不变；未来短期签名链接策略集中改出口。仅替换后台存储不改DTO/客户端；要改为客户端直连OSS则按方案另行修订协议。 |
+
+尚未实现OSS网络适配器、配置凭据或迁移工具，这些属于第二期；当前交付的是可配置的接入边界和可复用验收套件，不宣称已经联通OSS。
+
+### 维护频率及数据库
+
+保留原5秒会话/rate/浏览器outbox/命令维护调度。Attachments内部用单调时钟分别调度：
+
+- 到期附件、上传额度预留和pin释放：启动一次，之后每60秒。未到周期直接返回，不开启附件扫描事务。
+- 孤儿blob枚举及staging清理：启动一次，之后每3600秒。后端purge保护当前活跃stage和物化租约，不删除有效上传。
+- 明确失败命令和显式删除仍在原事务路径立即释放/清理，不等待低频扫描；API到expiresAt即拒绝，后台回收不改变可访问期限。
+
+schema4→5增加records.attachment_state/attachment_due及条件查询索引，并填充旧uploaded/reserved/upload记录。due_attachments只返回到期uploaded和需要释放的reserved；attached历史不返回也不解析JSON。expired_attachment_uploads只返回到期上传，启动例外清理全部旧进程预留。只有启动恢复遍历无正文删除记录，低频GC枚举物理对象。新增迁移测试确认旧库升级及到期选择正确，频率测试确认前11次5秒唤醒没有附件查询/对象枚举，第60秒只到期查询，第3600秒才枚举和staging清理。
+
+### 代码风格与原有断言
+
+先单独提交纯风格重排 `5593db8`：五个附件模块及service_sync附件调用消除分号连写/单行多语句，补操作符与逗号空格。通过读取该提交前后源码进行AST（不含位置属性）比较，真实输出：
+
+```text
+Style commit AST comparison: 6 modules equivalent
+```
+
+后续接口/调度重构改变行为的部分不冒称AST等价；其余最终排版另做AST比较，repository SQL重新排为多行字面量也保持AST等价。没有安装格式化第三方依赖。新增索引SQL仅在仓储层。
+
+原有 `test_attachments.py`、`test_attachment_races.py`、`test_attachment_wire.py` 均未修改，git diff与返修基线比较无输出；断言未删、未改、未skip/xfail。历史测试名称/注释中出现external deletion journal是旧命名，原断言现在验证保留在SQLite的删除意图恢复，未为改实现而放宽测试。
+
+### 部署附带
+
+`nginx-attachments.conf.example` 的proxy_pass改为 `http://REPLACE_WITH_EXISTING_SITE_UPSTREAM`，部署前必须替换，与站点现有proxy_pass保持一致。README明确serverD目前为 `http://127.0.0.1:18090`，不直接套用开发默认8080。模板未在服务器加载，不能把占位值当可直接运行配置。其它location不修改。
+
+README已同步本地/OSS接入步骤、分层/平铺兼容、DB唯一删除权威、60秒/小时维护、schema5和备份恢复要求。此前未部署版本的文件系统删除日志不迁移；已有DB中的删除意图是权威。正式升级仍应先做DB Backup API一致性快照及匹配对象备份。
+
+### 本轮真实验证
+
+测试串行，不开pytest并行worker；并发契约用例只使用小型线程竞争，不并行运行多个重型进程。TEMP/TMP和basetemp使用worktree内已忽略的apps/server/.tmp。未遇到工具/API限流、0xC0000142或额度错误，没有网络安装。
+
+```powershell
+# cwd: apps/server
+$env:TEMP=(Join-Path $PWD '.tmp')
+$env:TMP=$env:TEMP
+../../.venv/Scripts/python.exe -B -m pytest -q --tb=short -p no:cacheprovider --basetemp=.tmp/r16-repair-final
+```
+
+```text
+........................................................................ [ 25%]
+........................................................................ [ 51%]
+........................................................................ [ 77%]
+................................................................         [100%]
+=============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-server\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+280 passed, 1 warning in 105.21s (0:01:45)
+```
+
+比原264项新增16项；警告仍为既有Starlette/httpx弃用提示。原附件专项单独运行结果 `33 passed, 1 warning in 13.76s`。完整输出 `.tmp/r16-repair-final-output.txt`。
+
+两个冒烟脚本分别串行执行，第二个新增独立命令入口，复用smoke的真实进程/账号/配对准备，不再空运行退出：
+
+```powershell
+../../.venv/Scripts/python.exe -B scripts/smoke.py
+```
+
+```text
+Account created
+uvicorn listening on loopback: PASS
+browser login and secure session: PASS
+pairing preview and confirmation: PASS
+fake Worker revision 2, create/grant/sync, offline refusal and reconnect: PASS
+20MB streaming RSS: baseline=93065216 peak=94531584 delta=1466368 bytes; upload/download SHA256: PASS
+revision 3 index, ephemeral queries, resource grant and imported history: PASS
+ephemeral query body and selection absent from database: PASS
+packaged public OpenAPI and request IDs: PASS
+PAT issuance, device pause/resume/delete and immediate revocation: PASS
+Consistent backup created
+server output credential redaction: PASS
+SMOKE PASS
+```
+
+```powershell
+../../.venv/Scripts/python.exe -B scripts/smoke_attachments.py
+```
+
+```text
+Account created
+uvicorn listening on loopback: PASS
+browser login and secure session: PASS
+pairing preview and confirmation: PASS
+fake Worker revision 2, create/grant/sync, offline refusal and reconnect: PASS
+20MB streaming RSS: baseline=93028352 peak=94453760 delta=1425408 bytes; upload/download SHA256: PASS
+revision 3 index, ephemeral queries, resource grant and imported history: PASS
+ephemeral query body and selection absent from database: PASS
+packaged public OpenAPI and request IDs: PASS
+PAT issuance, device pause/resume/delete and immediate revocation: PASS
+Consistent backup created
+server output credential redaction: PASS
+SMOKE PASS
+```
+
+两次20MB真实网络RSS增量分别1,466,368和1,425,408字节（约1.40/1.36MiB），均低于脚本16MiB上限；长度/hash匹配。日志为 `.tmp/r16-repair-smoke-output.txt`、`.tmp/r16-repair-streaming-output.txt`。仅本机uvicorn与假Worker，没有实际部署或真实模型调用。
+
+本轮未修改协议/客户端；按返修要求完成server全量及两个冒烟，没有重复跑未改动的协议生成器。git diff --check无空白错误，原附件测试断言差异为空。部署侧nginx占位替换、Linux cgroup资源限额、以后OSS接入和数据迁移仍须在对应环境验证。
+
+### 本轮提交
+
+- `5593db8`：纯风格重排，六模块AST等价。
+- `4d7c2d4`：BlobStore接口/配置工厂、分层键与平铺兼容、DB唯一删除意图、schema5条件查询及维护调度、缩略图物化/有界输出。
+- `004b6c1`：通用后端/隔离/频率/迁移测试，独立流式冒烟入口。
+- README、nginx占位和本回执另作文档提交。头部commit为最后实现/测试提交。每次提交后执行git log -1 --format=%B自查，无署名；未合回integration、未推送、未部署。
+
+返修1要求已完成，open_questions=0。
