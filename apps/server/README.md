@@ -1,8 +1,32 @@
-# R3 Hub Server
+# R1.6 Hub Server
 
 账号认证、设备配对、电脑对话的完整副本、在线命令转发和浏览器轮询。电脑是唯一写入和执行方；服务端不调用模型，不保存模型凭据，不管理 AI 订阅或安装。
 
-协议包：0.9.2；Worker 线路支持修订 1、2、3。实现 `remote-hub.v2.yaml` 的全部 39 个 HTTP 操作与 `/ws/v2/worker`。修订 1 保留历史对账，既有浏览器写入要求至少修订 2；R3 原生会话及授权目录操作要求修订 3。D50 的设备管理、PAT 和请求追踪保持原行为。
+协议包：0.10.0；Worker 线路支持修订 1、2、3、4。实现 `remote-hub.v2.yaml` 的全部 47 个 HTTP 操作与 `/ws/v2/worker`。修订 1 保留历史对账，既有浏览器文字写入要求至少修订 2，原生会话要求至少修订 3，带附件发送要求修订 4。D50 设备管理/PAT 和 R3 查询规则保留。
+
+## 对话附件（R1.6）
+
+八条附件操作以公开 OpenAPI 为准。浏览器使用 Cookie，上传/删除要求 Origin、CSRF、幂等键；Worker 专用上传/下载使用设备凭据。PAT 不扩权。上传为 raw application/octet-stream，必须提供准确 Content-Length、百分号编码的 X-File-Name、SHA256、Idempotency-Key。每块最多64KiB流式检测/计数/hash，不经JSON或普通响应正文缓存。文本需白名单后缀、UTF-8、无NUL/二进制伪装；PDF/图片按magic识别，显示名规范化，落盘绝不使用文件名。`GET /attachments/limits` 返回冻结限制和账号逻辑 used/reserved 字节。
+
+文件位于 `HQREMOTE_DATA_DIR/blobs/`（serverD对应 `/var/lib/hqremote/blobs/`）：`cas/` 为sha256文件，`temp/` 为未提交上传/缩略图，`deleted/` 为无正文的持久删除身份日志。BlobStore的stage_write/commit/open_read/delete/exists/abort接口隔离文件操作；原子create-if-absent不会覆盖同hash赢家，SQLite引用与GC通过同一仓储事务栅栏串行化。不同附件记录各计逻辑额度，同hash只节省物理空间。每账号最多2个在途上传，used+reserved≤5,000,000,000字节。
+
+浏览器上传允许电脑离线，但暂停拒绝；发送仍要求在线/可见/修订4、同对话且未过期的available附件，最多5个互异ID。图片须catalog目标所有角色或native Agent的CLI入口、实现及验证均支持该mime/大小；缺项按不支持。202事务原子将附件reserved到commandId并将不可变清单纳入commandDigest；Worker需grant且正式接单后才能下载。未grant失败立即释放，grant后未绑定消息的pin最多10分钟，维护器每5秒回收；不因此宣称任务未执行。uploaded完成后24h过期，API在期限即拒绝，启动及每5秒维护清理物理文件/额度。
+
+Worker先可靠同步完整role=user消息与pending_upload清单，再上传该绑定，最后新messageRevision报告available；不从HTTP头创建消息。暂停期间此同步上传继续。originAttachmentId必须来自同对话已grant命令并核对run绑定。available要求已校验blob存在；任何已捕获pending附件会阻止backfill complete，不能把半同步当完成。原生历史临时query不包含附件字节。
+
+下载无Range，只输出原始流；原文件为application/octet-stream，缩略图为image/png，两者均为attachment/no-store/nosniff、Content-Length和X-Request-Id。上传/下载总期限120秒、无进展30秒；中途失败停止流，不向二进制尾部拼JSON。跨owner、pc_only、删除或过期直接ID均404。
+
+Pillow固定12.3.0，仅在独立子进程解码；并发1，硬内存上限160MiB，父进程等待最多8秒（Linux CPU另限6秒），最多40M像素、首帧、最长边512、全新PNG且不带源元数据，产物≤512KiB。Linux使用RLIMIT_AS/CPU/FSIZE；Windows使用Job Object的每进程内存硬限，安装限制失败即不解码。失败/超限为thumbnailStatus=unavailable，绝不回退原图。这一保守预算面向2核/2G、MemoryMax=384M实例，部分大图可能无法生成缩略图。部署时需实际确认服务总内存峰值及平台限制可用。
+
+删除对话/reset/撤销/删除设备同事务清除附件元数据、引用、上传预留、消息绑定和可重放清单；提交后关闭读者、终止对应缩略图子进程、清临时文件，再确认零引用并删CAS文件。其它owner/会话的有效同hash引用保留。只保留无正文删除身份及上传意图摘要墓碑；重试原已删除上传意图不能复活文件。不能收回删除前客户端已经收到的字节。
+
+### 附件备份和部署
+
+使用SQLite Backup API生成DB快照，并为同一备份记录匹配的blob快照；建议短暂停止服务写入后完成两者的一致性备份，不直接复制正在写的SQLite文件。备份/恢复由运行账号操作，数据权限沿原数据目录设置。恢复前保留并合并**最新** `blobs/deleted/` 无正文删除日志，不能用旧备份覆盖它；启动先应用此日志，擦除旧快照中已退休附件、引用及可重放清单，再清临时块与零引用孤儿。SQLite中提交但尚未写入文件日志的删除意图也在启动补齐。没有最新删除记录的旧备份不能视为安全恢复；程序无法推断丢失的删除历史。保留期/销毁旧磁盘快照是部署侧责任。
+
+发布包带新 `server/resources/*.json`，Pillow依赖已锁定在requirements和pyproject；serverD Python3.11需由部署方预先下载匹配的离线wheel。本工作包不安装线上依赖、不部署、不改现有站点。附件上传专用nginx片段见 `nginx-attachments.conf.example`：仅两条上传路径放宽至十进制20MB并关闭请求缓冲，代理自身413用ATTACHMENT_TOO_LARGE信封与同值X-Request-Id。应用产生的错误信封不拦截，其他API原限额不变。应用/代理/APM禁采集文件名、正文、URL或凭据。
+
+验证中 `scripts/smoke.py` 会顺序启动真实uvicorn，用httpx增量生成并上传20,000,000字节，再流式下载核对大小/hash。监视的是实际Python服务进程的RSS（Windows working set或Linux VmRSS），不测venv启动器；脚本输出baseline/peak/delta并断言增量低于16MiB，不代表缩略图子进程或线上全部负载的内存验收。
 
 ## R3 原生会话与授权目录
 
@@ -24,7 +48,7 @@
 
 ### 临时查询部署约束
 
-发行包必须包含更新的 `server/resources/*.json`，公开 `/api/v2/openapi.json` 与0.9.2 bundle等价；部署目录 `/opt/hqremote/app` 无需保留协议源码树。Caddy 示例显式流式转发且不配置磁盘响应缓存。若使用 Nginx，在代理 location 中加入：
+发行包必须包含更新的 `server/resources/*.json`，公开 `/api/v2/openapi.json` 与0.10.0 bundle等价；部署目录 `/opt/hqremote/app` 无需保留协议源码树。Caddy 示例显式流式转发且不配置磁盘响应缓存。若使用 Nginx，在代理 location 中加入：
 
 ```nginx
 proxy_buffering off;
