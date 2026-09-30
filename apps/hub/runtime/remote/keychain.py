@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 
 from core.errors import HubError
@@ -32,13 +33,17 @@ def system_keyring(platform=None):
 
 
 class PosixCredentialStore:
-    def __init__(self, directory: Path, *, backend_factory=system_keyring, atomic_write):
+    def __init__(self, directory: Path, *, backend_factory=None, atomic_write, monotonic=time.monotonic):
         self.directory = directory
         self.path = directory / 'device.credential'
         self.pending = directory / 'device.keyring-pending'
         self.account = hashlib.sha256(str(directory.resolve()).encode()).hexdigest()
-        self.backend_factory = backend_factory
+        # Resolve lazily: callers/tests can replace discovery without a default
+        # argument capturing the native backend at module import time.
+        self.backend_factory = backend_factory or (lambda: system_keyring())
         self.atomic_write = atomic_write
+        self.monotonic = monotonic
+        self.retry_after = 0.0
         self.storage_mode = None
         self.lock = threading.RLock()
 
@@ -47,12 +52,13 @@ class PosixCredentialStore:
             self.storage_mode = name
             logging.getLogger(__name__).warning('Device credential storage mode=%s', name)
 
-    def migrate(self, secret):
-        backend = self.backend_factory()
-        if backend is None:
-            self.mode('file-0600')
-            return secret
+    def _store_in_keyring(self, secret):
+        if self.monotonic() < self.retry_after:
+            return False
         try:
+            backend = self.backend_factory()
+            if backend is None:
+                raise ValueError()
             # Journal any attempted keyring write so unlink can also clean up
             # partially completed migration. It contains no credential.
             self.atomic_write(self.pending, b'pending\n')
@@ -61,11 +67,17 @@ class PosixCredentialStore:
                 raise ValueError()
             self.atomic_write(self.path, MARKER)
         except Exception:
-            # The old file remains authoritative. Never expose backend errors.
-            self.mode('file-0600')
-            return secret
+            self.retry_after = self.monotonic() + 600
+            return False
         self.pending.unlink(missing_ok=True)
+        self.retry_after = 0.0
         self.mode('system-keyring')
+        return True
+
+    def migrate(self, secret):
+        # A failed attempt never removes or rewrites the authoritative old file.
+        if not self._store_in_keyring(secret):
+            self.mode('file-0600')
         return secret
 
     def read(self):
@@ -76,6 +88,13 @@ class PosixCredentialStore:
         try:
             if self.path.is_symlink():
                 raise ValueError()
+            if not self.path.exists() and self.pending.exists():
+                backend = self.backend_factory()
+                secret = backend.get_password(SERVICE, self.account) if backend else None
+                if not isinstance(secret, str) or not secret:
+                    raise ValueError()
+                self.atomic_write(self.path, MARKER)
+                self.pending.unlink(missing_ok=True)
             content = self.path.read_bytes()
             os.chmod(self.path, 0o600)
             if content == MARKER:
@@ -121,8 +140,9 @@ class PosixCredentialStore:
                 return
             except Exception:
                 raise HubError('REMOTE_DEVICE_AUTH_FAILED', '系统钥匙串暂不可用') from None
-        self.atomic_write(self.path, secret.encode('ascii'))
-        self.migrate(secret)
+        if not self._store_in_keyring(secret):
+            self.atomic_write(self.path, secret.encode('ascii'))
+            self.mode('file-0600')
 
     def delete(self):
         with self.lock:

@@ -45,6 +45,8 @@ def test_fallback_then_migration_and_unavailable_keyring_does_not_lose_credentia
 @pytest.mark.parametrize('failure',['set','verify','marker'])
 def test_migration_failure_preserves_old_file_and_allows_retry(tmp_path,monkeypatch,failure):
     backend=MemoryKeyring();vault=store(tmp_path,backend)
+    clock=[100.0]
+    vault.monotonic=lambda:clock[0]
     CredentialVault.atomic_write(vault.path,b'OLD_SECRET')
     with monkeypatch.context() as m:
         if failure=='set':
@@ -58,20 +60,21 @@ def test_migration_failure_preserves_old_file_and_allows_retry(tmp_path,monkeypa
             m.setattr(vault,'atomic_write',write)
         assert vault.read()=='OLD_SECRET'
         assert vault.path.read_bytes()==b'OLD_SECRET'
+    clock[0]+=600
     assert vault.read()=='OLD_SECRET' and vault.path.read_bytes()==MARKER
     vault.delete();assert not backend.items and not vault.pending.exists()
 
 
-def test_system_backend_selection_does_not_use_third_party_plaintext_backend(monkeypatch):
-    from runtime.remote.keychain import system_keyring
+def test_system_backend_selection_does_not_use_third_party_plaintext_backend(isolated_system_keyring):
+    system_keyring = isolated_system_keyring
     assert system_keyring('win32') is None and system_keyring('unknown') is None
 
 
 @pytest.mark.parametrize('platform,module',[('darwin','keyring.backends.macOS'),('linux','keyring.backends.SecretService')])
-def test_platform_keyring_selection_uses_only_native_backend(monkeypatch,platform,module):
+def test_platform_keyring_selection_uses_only_native_backend(monkeypatch,platform,module,isolated_system_keyring):
     import sys
     from types import SimpleNamespace
-    from runtime.remote.keychain import system_keyring
+    system_keyring = isolated_system_keyring
     class Backend(MemoryKeyring):priority=1
     monkeypatch.setitem(sys.modules,module,SimpleNamespace(Keyring=Backend))
     assert isinstance(system_keyring(platform),Backend)
@@ -85,6 +88,79 @@ def test_successfully_migrated_secret_is_not_replaced_on_new_save(tmp_path):
     backend=MemoryKeyring();vault=store(tmp_path,backend);vault.save('ORIGINAL')
     with pytest.raises(HubError):vault.save('REPLACEMENT')
     assert vault.read()=='ORIGINAL'
+
+
+def test_default_factory_is_late_bound_and_isolated_from_system_vaults(tmp_path,monkeypatch):
+    from runtime.remote import keychain
+    vault=PosixCredentialStore(tmp_path,atomic_write=CredentialVault.atomic_write)
+    assert keychain.system_keyring() is None
+    calls=[]
+    monkeypatch.setattr(keychain,'system_keyring',lambda:calls.append(True))
+    vault.save('ISOLATED')
+    assert calls==[True] and vault.path.read_bytes()==b'ISOLATED'
+
+
+@pytest.mark.parametrize('failure',[None,'set','verify','unavailable'])
+def test_new_save_never_writes_plaintext_before_trying_keyring(tmp_path,failure):
+    backend=MemoryKeyring();operations=[]
+    class Backend(MemoryKeyring):
+        def set_password(self,*args):
+            operations.append('set')
+            if failure=='set':raise RuntimeError('PRIVATE')
+            super().set_password(*args)
+        def get_password(self,*args):
+            operations.append('verify')
+            return 'mismatch' if failure=='verify' else super().get_password(*args)
+    backend=Backend()
+    def factory():
+        operations.append('discover')
+        return None if failure=='unavailable' else backend
+    def write(path,content):
+        operations.append('plaintext' if content==b'NEW_SECRET' else 'marker' if content==MARKER else 'journal')
+        CredentialVault.atomic_write(path,content)
+    vault=PosixCredentialStore(tmp_path,backend_factory=factory,atomic_write=write)
+    vault.save('NEW_SECRET')
+    if failure is None:
+        assert operations==['discover','journal','set','verify','marker']
+        assert vault.path.read_bytes()==MARKER
+    else:
+        assert operations[-1]=='plaintext' and operations[0]=='discover'
+        assert vault.path.read_bytes()==b'NEW_SECRET'
+
+
+@pytest.mark.parametrize('mode',['missing','raises','verification'])
+def test_file_mode_backs_off_and_marker_reads_bypass_backoff(tmp_path,mode):
+    ticks=[100.0];calls=[];backend=MemoryKeyring();ready=[False]
+    def factory():
+        calls.append(ticks[0])
+        if ready[0]:return backend
+        if mode=='raises':raise RuntimeError('PRIVATE_DBUS_ERROR')
+        if mode=='verification':
+            class Invalid(MemoryKeyring):
+                def get_password(self,*args):return 'mismatch'
+            return Invalid()
+        return None
+    vault=PosixCredentialStore(tmp_path,backend_factory=factory,atomic_write=CredentialVault.atomic_write,
+        monotonic=lambda:ticks[0])
+    vault.save('SECRET')
+    ready[0]=True
+    for _ in range(10):assert vault.read()=='SECRET'
+    ticks[0]=699.99
+    assert vault.read()=='SECRET' and calls==[100.0]
+    ticks[0]=700
+    assert vault.read()=='SECRET' and vault.path.read_bytes()==MARKER
+    assert calls==[100.0,700]
+    vault.retry_after=99999
+    assert vault.read()=='SECRET' and calls==[100.0,700,700]
+
+
+def test_pending_first_write_recovers_keyring_after_marker_commit_failure(tmp_path):
+    backend=MemoryKeyring();vault=store(tmp_path,backend)
+    CredentialVault.atomic_write(vault.pending,b'pending\n')
+    backend.set_password(SERVICE,vault.account,'RECOVERABLE')
+    assert not vault.path.exists()
+    assert vault.read()=='RECOVERABLE' and vault.path.read_bytes()==MARKER
+    assert not vault.pending.exists()
 
 
 @pytest.mark.skipif(__import__('os').name=='nt',reason='POSIX mode bits')

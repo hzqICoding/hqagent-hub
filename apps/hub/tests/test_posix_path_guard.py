@@ -30,6 +30,29 @@ def test_relative_reads_and_home_escape_use_real_worktree_boundary(tmp_path):
     assert guard.inspect_tool_call('Read',{'file_path':'~/.ssh'})
 
 
+@pytest.mark.parametrize('operator', ['>', '>>', '2>', '2>>', '&>', '&>>', '>|', '>&'])
+def test_posix_redirect_targets_are_checked_on_all_hosts(tmp_path,operator):
+    guard=PathGuard(str(tmp_path),['allowed/**'],platform='posix')
+    assert guard.inspect_tool_call('shell',{'command':f'echo x {operator} ../out'})
+    assert guard.inspect_tool_call('shell',{'command':f'echo x {operator} forbidden/out'})
+    assert guard.inspect_tool_call('shell',{'command':f'echo x {operator} "allowed/file name"'})==[]
+    assert guard.inspect_tool_call('shell',{'command':f'echo x {operator}'})
+
+
+@pytest.mark.parametrize('command', ['echo x >&2', 'echo x 2>&1', 'echo x 2>&-', 'echo x <&0'])
+def test_posix_fd_redirection_does_not_invent_file_targets(tmp_path,command):
+    guard=PathGuard(str(tmp_path),[],platform='posix')
+    assert guard.inspect_tool_call('shell',{'command':command})==[]
+    assert guard.inspect_tool_call('shell',{'command':command+' > ../out'})
+    assert guard.inspect_tool_call('shell',{'command':'rm >&2'})
+
+
+@pytest.mark.skipif(os.name=='nt',reason='POSIX absolute redirect path')
+def test_posix_stderr_append_outside_root(tmp_path):
+    guard=PathGuard(str(tmp_path),['**'])
+    assert guard.inspect_tool_call('shell',{'command':'echo x 2>> /tmp/x'})==['/tmp/x']
+
+
 @pytest.fixture
 def posix_guard(tmp_path):
     if os.name=='nt':pytest.skip('POSIX shell approval wrappers')

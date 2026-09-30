@@ -1,19 +1,19 @@
 ---
 wp: R35-P2
-status: needs-decision
+status: done
 scope_declared: [apps/hub/**, .hqagent/handoffs/R35-P2-hub.md]
-scope_touched: [apps/hub/adapters/path_guard.py, apps/hub/adapters/tests/test_contract_rules.py, apps/hub/packaging/README.md, apps/hub/packaging/hqagent-hub.service, apps/hub/packaging/local.hqagent.hub.plist, apps/hub/pyproject.toml, apps/hub/requirements.local-lock.txt, apps/hub/runtime/cli.py, apps/hub/runtime/main.py, apps/hub/runtime/pair.py, apps/hub/runtime/remote/keychain.py, apps/hub/runtime/remote/security.py, apps/hub/tests/test_connection_code_renewal.py, apps/hub/tests/test_posix_credentials.py, apps/hub/tests/test_posix_path_guard.py, apps/hub/tests/test_runtime_cli.py, apps/hub/tests/test_service_templates.py, .hqagent/handoffs/R35-P2-hub.md]
+scope_touched: [apps/hub/adapters/path_guard.py, apps/hub/adapters/tests/test_contract_rules.py, apps/hub/packaging/README.md, apps/hub/packaging/hqagent-hub.service, apps/hub/packaging/local.hqagent.hub.plist, apps/hub/pyproject.toml, apps/hub/requirements.local-lock.txt, apps/hub/runtime/cli.py, apps/hub/runtime/main.py, apps/hub/runtime/pair.py, apps/hub/runtime/remote/keychain.py, apps/hub/runtime/remote/security.py, apps/hub/tests/test_connection_code_renewal.py, apps/hub/tests/test_posix_credentials.py, apps/hub/tests/test_posix_path_guard.py, apps/hub/tests/test_runtime_cli.py, apps/hub/tests/test_service_templates.py, .hqagent/handoffs/R35-P2-hub.md, apps/hub/conftest.py, apps/hub/tests/test_r3_upgrade_history.py]
 build: pass
 tests: pass
-commit: 7f67083bd4ae6fed717e8b2cbd3c62879bdfa7f4
-open_questions: 1
+commit: fc7622c436bfee4dca94e08879fed92d0a2a9ab1
+open_questions: 0
 ---
 
 # R3.5-P2 跨平台 Hub 实施回执
 
-## 状态与唯一待裁决项 Q1
+## Q1（已由主代理关闭）
 
-本机功能实施及可运行验证见下文；**Linux 依赖完整锁定尚未完成，不应据 tests:pass 宣称三平台可发布**。
+主代理已补齐并集成 Linux Secret Service 链，Q1 已关闭。首次交付与本次返修的本机验证分别见下文；修后跨平台 CI 仍由主代理推送验证。
 
 按要求合并 integration/phase1，命令返回 Already up to date；HEAD 合并信息为 `merge: sync integration with R3 and CI for cross-platform work`。本轮未修改 .github/CI、协议、Server、桌面、docs 或根共享文件。只在 remote-worker 工作。
 
@@ -29,9 +29,7 @@ open_questions: 1
 | jaraco.context | 6.1.2 |
 | more-itertools | 11.1.0 |
 
-keyring 安装元数据声明 Linux 需要 SecretStorage>=3.2、jeepney>=0.4.2，但当前 .venv 中 **SecretStorage、jeepney、cryptography、cffi、pycparser 均未安装**，也没有给出的已批准版本或离线 wheel。本轮在开始实现时已提出异步信息请求，尚未收到版本补充。Python<3.12 条件依赖 importlib_metadata/zipp/backports.tarfile 同样未安装；安装模板明确使用 Python 3.13，现有项目 requires-python 未缩窄。
-
-因此没有联网、安装或把未知版本伪造为已验证锁。当前 keyring 在 Linux 由 pip 解析其未锁定传递依赖，**这不满足工作包的完全锁定验收**。请主代理提供上述 Linux 链的版本/离线包，再补入 requirements.local-lock.txt（SecretStorage/jeepney 及 Linux 链使用 sys_platform == "linux"；旧 Python 条件依赖如继续支持也需锁定）。pyproject 已声明 segno/keyring 固定直接依赖；没有修改 CI，由主代理决定安装步骤。没有其它公开 API/schema 决策缺口。
+首次交付时 Linux 传递依赖不在 Windows .venv 中，因此没有编造锁定版本。主代理随后通过 `build(hub): pin the Linux Secret Service chain for keyring` 锁定 SecretStorage 3.5.0、jeepney 0.9.0、cryptography 50.0.1、cffi 2.1.1、pycparser 3.0，均限定 Linux（后两项还排除 PyPy）。本次快进到 8d20faf 后已核对锁文件，Q1 正式关闭。模板使用 Python 3.13；本轮未联网安装或改动依赖锁。
 
 ## 路径与 POSIX shell 守卫
 
@@ -176,4 +174,158 @@ exit $LASTEXITCODE
 - 本回执另提交。每次提交后均 `git log -1 --format=%B` 自查，无署名或生成标记。
 
 
-Q1 处理完后还需要主代理推送 CI：核对 Ubuntu/macOS 的 POSIX 用例全过，按需建立 D-Bus/Secret Service 测试环境；当前 keyring 的注入测试不依赖 CI 的桌面钥匙串。未合回 integration、未推送远程。
+Q1 已处理；本次返修后需要主代理再次推送 CI：核对 Ubuntu/macOS 的 POSIX 用例全过，按需建立 D-Bus/Secret Service 测试环境；当前 keyring 的注入测试不依赖 CI 的桌面钥匙串。未合回 integration、未推送远程。
+
+## 返修 1：测试钥匙串隔离、凭据落盘顺序、退避与跨平台细节
+
+开工工作区干净；执行 `git merge integration/phase1`，由 bb1f0a6 快进到 **8d20faf**，合并信息已用 git log -1 --format=%B 自查。确认主代理锁定的 Linux Secret Service 链已在 requirements.local-lock.txt，Q1 关闭。本轮不改依赖锁、协议、CI、Server 或桌面。
+
+### 1. 默认测试隔离与生产默认
+
+新增 apps/hub/conftest.py 的 autouse fixture，覆盖 Hub tests/adapters/orchestrator/security 全部测试树，默认将 runtime.remote.keychain.system_keyring 换为返回 None。不能只在个别构造点 patch CredentialVault，否则其它直接构造仍可能接触 runner 钥匙串。
+
+同时修正 PosixCredentialStore 的默认 backend_factory：旧默认参数在 import 时捕获真实 system_keyring 函数，后续 monkeypatch 不会生效。改为 backend_factory=None 时延迟查找模块函数。**生产仍选择原系统 backend，没有 pytest 环境分支或生产禁用钥匙串。**
+
+钥匙串行为测试显式注入 MemoryKeyring；两个平台选择测试取得原选择函数但先替换对应 backend 模块为内存实现，不实例化 macOS Keychain/Secret Service。新增默认工厂延迟绑定回归。现有真实 P1/Worker 联调和直接 CredentialVault 构造均继承默认隔离，CI 不再写 runner 真实登录钥匙串。
+
+### 2. 首次保存顺序与可靠迁移
+
+PosixCredentialStore._save 改为：
+
+1. backend 可用时，先写无密钥 pending journal，再 set_password、get_password 严格比对；
+2. 只有上述成功后才原子写 marker，不先创建明文 credential 文件；
+3. backend 不可用、写/校验失败或 marker 无法提交时才走 0600 文件回退；
+4. 旧文件的 read→migrate 失败仍保持原字节，成功才换 marker，原迁移语义不变；
+5. 首次 keyring 写成功后若进程在 marker 提交前中断，可凭 pending journal 及确定性账户键恢复 marker；不丢掉已存的 secret。
+
+新增操作顺序测试严格断言成功路径仅为 discover/journal/set/verify/marker，**从未** atomic_write secret；失败测试验证确实先尝试 backend 再写 fallback。原 set/校验/marker 失败保留旧文件测试继续通过，另覆盖 pending 首次写恢复。
+
+### 3. 文件模式的 10 分钟退避
+
+失败后记录单调时钟 retry_after=now+600；文件模式后续读取只返回私有文件，不重复连接 D-Bus或写 keyring。达到期限才允许再次迁移；进程重启可重新探测。不存在 marker 模式的负缓存：marker read、已有 marker save、delete 仍直接联系 backend，锁定/失联不以缓存成功冒充。
+
+测试覆盖发现返回 None、发现抛错、校验失败三种退避，600 秒前多次 read 只探测一次，边界时重试迁移成功。marker read 即使 retry_after 还在未来也必须访问 backend。原迁移重试用例只改为推进注入单调时钟 600 秒，不删原文件/结果断言。
+
+### 4. LocalRun 结束等待与检查范围
+
+test_r3_upgrade_history.py 原来等待 submit delivery completed 后立即读 run 并 assert succeeded。现在先以 until 轮询该精确 run_id 的实际状态，再保留原 succeeded 断言。
+
+同文件“真实 grant 执行阻挡升级”用例也增加 run succeeded 等待，然后验证线路升级和最终回执。同类真服务器测试核查：
+
+- test_r15_joint_server.RealPair.send_local 已直接等待 LocalRun succeeded，无需改；
+- test_r3_restart_import 的资源 completed 指原子导入资源完成，不会创建 LocalRun，不能增加虚构 run 等待；
+- R3 原生 metadata/import 的 completed 校验仍按资源状态，未删除证据；
+- 原有 fake WS 执行测试检查了真实执行结果/Adapter 请求，未将其它 completed 断言整体放宽或替换。
+
+### 5. POSIX 重定向
+
+PathGuard 的 shlex 扫描明确识别 >、>>、<、&>、&>>、>|、>&、<&；2>/2>> 被 shlex 分为 fd 数字与操作符，后续目标仍校验。重定向目标优先于命令分隔符处理，缺失/异常连续操作符保守拒绝。
+
+>& / <& 后纯数字或 - 是 fd 复制/关闭，不加入路径；其它参数仍是文件目标。echo x >&2 可通过，但其后附加 > ../out 仍失败；rm >&2 也不能因为 fd 重定向掩盖无法解析的写目标。写动作检测与已解析重定向分离，避免将单独 >&2 误认为没有路径的写命令。
+
+新增 12 项平台无关参数化测试，在 Windows 指定 POSIX 解析模式也真实运行；另增实际 POSIX /tmp/x stderr append 用例。本机 Windows 后者跳过，Linux/macOS CI 应执行。原六项 POSIX wrapper 用例保留。
+
+### 6. CLI 纯格式变更
+
+runtime/cli.py 拆开分号语句、补齐运算符/逗号间距、整理多行调用与模块空行，保留注释和 0o077 权限写法。使用 Python ast.dump 对重排前后整个模块比较，输出：
+
+```text
+Formatted CLI AST equals original
+```
+
+CLI API路径、参数、错误处理、输出过滤和配对行为均未改；既有 CLI 真实 loopback Hub 集成用例继续运行。
+
+### Q1 与 CI 边界
+
+主代理已在集成锁定 SecretStorage 3.5.0 / jeepney 0.9.0 / cryptography 50.0.1 / cffi 2.1.1 / pycparser 3.0，Linux 平台标记已核对。旧 Q1 不再阻断交付；本轮使用既有离线环境，不联网安装。
+
+主代理报告 run **36677742192（8d20faf）8 个 job 成功**；Hub Ubuntu/macOS 各473 passed/9 skipped，POSIX 用例实际执行，Linux SecretStorage平台安装标记正确。这是**返修前、由主代理提供的 CI 结果**，不是本轮改动后的 CI 证明。修后仍需主代理推送重跑；本机无法验证 macOS/Linux OS backend及真实 POSIX操作。本轮隔离后的 CI 也不能宣称测试了真实 Keychain 持久化，只验证内存 backend 协议和路径选择。
+
+### 验证与交付
+
+定向（凭据、路径、CLI与真实升级联调）：
+
+```text
+42 passed, 9 skipped, 1 warning in 11.94s
+```
+
+随后 CLI 最终排版及定向回归：
+
+```text
+40 passed, 9 skipped, 1 warning in 1.41s
+```
+
+全部串行。TEMP/TMP 与 --basetemp 位于 worktree/.tmp，未跑 Vitest、未安装依赖。
+
+Hub 全量，cwd apps/hub：
+
+```powershell
+$env:TEMP='E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r35-repair1-hub-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r35-repair1-hub-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 14%]
+..................................................s................sssss [ 28%]
+sss..................................................................... [ 42%]
+........................................................................ [ 57%]
+........................................................................ [ 71%]
+........................................................................ [ 85%]
+远程送达预留清理暂未完成，将重试
+........................................................................ [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_posix_credentials.py:166: POSIX mode bits
+SKIPPED [1] tests\test_posix_path_guard.py:50: POSIX absolute redirect path
+SKIPPED [1] tests\test_posix_path_guard.py:68: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:76: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:84: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:101: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:108: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:115: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:122: POSIX executable symlink and directory-fd semantics
+495 passed, 9 skipped, 4 warnings in 244.50s (0:04:04)
+```
+
+Server 全量，cwd apps/server，TEMP/TMP/PYTHONIOENCODING 同上：
+
+```powershell
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r35-repair1-server-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r35-repair1-server-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 31%]
+........................................................................ [ 62%]
+........................................................................ [ 93%]
+...............                                                          [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+231 passed, 1 warning in 94.12s (0:01:34)
+```
+
+退出码均 0。Windows 的9项 skip 为 POSIX专属（原8项加新增绝对重定向路径1项），不是跳过 Windows CI 竞态。git diff --check、范围清单与 CLI AST 等价检查通过。原依赖弃用警告及通用预留清理重试日志仍存在，不宣称本轮修复。没有遇到429、0xC0000142或额度错误。
+
+提交：
+- `b220a62`：Hub 测试默认隔离系统钥匙串、先 keyring 后文件及迁移退避。
+- `3e0583a`：POSIX 重定向守卫与真实运行结束等待。
+- `fc7622c`：CLI 纯格式调整，AST 与重排前一致。
+- 回执另提交。每次提交后均 git log -1 --format=%B 自查，无署名或生成标记；未合回 integration。
