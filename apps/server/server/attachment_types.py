@@ -5,16 +5,15 @@ import unicodedata
 from urllib.parse import unquote
 from .common import require
 EXTENSIONS = ['.' + e for e in 'pdf txt md json c h cpp hpp cc cxx py js ts jsx tsx java kt kts go rs swift m mm cs rb php sh ps1 sql yaml yml toml'.split()]
-LIMITS = dict(imageMaxBytes=10000000,
+LIMITS = dict(
+    imageMaxBytes=10000000,
     fileMaxBytes=20000000,
     messageMaxCount=5,
     accountQuotaBytes=5000000000,
     unattachedTtlSeconds=86400,
-    imageMimeTypes=['image/jpeg',
-    'image/png',
-    'image/webp',
-    'image/gif'],
-    fileExtensions=EXTENSIONS)
+    imageMimeTypes=['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+    fileExtensions=EXTENSIONS
+)
 
 def filename(raw):
     require(0 < len(raw) <= 512, 'BAD_REQUEST')
@@ -58,22 +57,16 @@ class Detector:
                 ext = '.' + self.name.rsplit('.', 1)[-1].lower()
                 require(ext in EXTENSIONS and ext != '.pdf', 'ATTACHMENT_TYPE_UNSUPPORTED')
                 stripped = p.lstrip(b'\xef\xbb\xbf \t\r\n').lower()
-                require(not stripped.startswith((b'mz',
-                    b'\x7felf',
-                    b'pk\x03\x04',
-                    b'<svg',
-                    b'<?xml',
-                    b'<!doctype html',
-                    b'<html',
-                    b'<script')),
-                    'ATTACHMENT_TYPE_UNSUPPORTED')
+                require(
+                    not stripped.startswith((b'mz', b'\x7felf', b'pk\x03\x04', b'<svg', b'<?xml', b'<!doctype html', b'<html', b'<script')),
+                    'ATTACHMENT_TYPE_UNSUPPORTED'
+                )
                 self.kind, self.mime, self.extension = ('file', 'text/plain', ext)
         if self.mime == 'text/plain':
-            require(b'\x00' not in chunk and (not any((c < 32 and c not in (9,
-                10,
-                12,
-                13) for c in chunk))),
-                'ATTACHMENT_TYPE_UNSUPPORTED')
+            require(
+                b'\x00' not in chunk and (not any((c < 32 and c not in (9, 10, 12, 13) for c in chunk))),
+                'ATTACHMENT_TYPE_UNSUPPORTED'
+            )
             try:
                 self.decoder.decode(chunk, final=final)
             except UnicodeDecodeError:

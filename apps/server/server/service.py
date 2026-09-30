@@ -339,7 +339,8 @@ class Service:
 
     def maintain(self):
         """Low-frequency expiry/retention work; never invoked by HTTP handlers."""
-        if hasattr(self,'attachments'):self.attachments.maintain()
+        if hasattr(self, 'attachments'):
+            self.attachments.maintain()
         now = self.settings.clock()
         with self.repo.transaction() as tx:
             tx.cleanup_auth(now)

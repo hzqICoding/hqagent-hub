@@ -1,5 +1,6 @@
 """Standalone isolated decoder: no service imports, no network, no diagnostic text."""
 import os
+import io
 import sys
 
 def restrict():
@@ -14,47 +15,30 @@ def restrict():
         from ctypes import wintypes as w
 
         class Basic(ctypes.Structure):
-            _fields_ = [('perProcess',
-                ctypes.c_longlong),
-                ('perJob',
-                ctypes.c_longlong),
-                ('flags',
-                w.DWORD),
-                ('min',
-                ctypes.c_size_t),
-                ('max',
-                ctypes.c_size_t),
-                ('active',
-                w.DWORD),
-                ('affinity',
-                ctypes.c_size_t),
-                ('priority',
-                w.DWORD),
-                ('scheduling',
-                w.DWORD)]
+            _fields_ = [
+                ('perProcess', ctypes.c_longlong),
+                ('perJob', ctypes.c_longlong),
+                ('flags', w.DWORD),
+                ('min', ctypes.c_size_t),
+                ('max', ctypes.c_size_t),
+                ('active', w.DWORD),
+                ('affinity', ctypes.c_size_t),
+                ('priority', w.DWORD),
+                ('scheduling', w.DWORD)
+            ]
 
         class IO(ctypes.Structure):
-            _fields_ = [(s,
-                ctypes.c_ulonglong) for s in ('readOps',
-                'writeOps',
-                'otherOps',
-                'readBytes',
-                'writeBytes',
-                'otherBytes')]
+            _fields_ = [(s, ctypes.c_ulonglong) for s in ('readOps', 'writeOps', 'otherOps', 'readBytes', 'writeBytes', 'otherBytes')]
 
         class Extended(ctypes.Structure):
-            _fields_ = [('basic',
-                Basic),
-                ('io',
-                IO),
-                ('processMemory',
-                ctypes.c_size_t),
-                ('jobMemory',
-                ctypes.c_size_t),
-                ('peakProcess',
-                ctypes.c_size_t),
-                ('peakJob',
-                ctypes.c_size_t)]
+            _fields_ = [
+                ('basic', Basic),
+                ('io', IO),
+                ('processMemory', ctypes.c_size_t),
+                ('jobMemory', ctypes.c_size_t),
+                ('peakProcess', ctypes.c_size_t),
+                ('peakJob', ctypes.c_size_t)
+            ]
         kernel = ctypes.WinDLL('kernel32', use_last_error=True)
         kernel.CreateJobObjectW.restype = w.HANDLE
         kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, w.LPCWSTR]
@@ -65,11 +49,7 @@ def restrict():
         info = Extended()
         info.basic.flags = 256
         info.processMemory = limit
-        if not job or not kernel.SetInformationJobObject(job,
-            9,
-            ctypes.byref(info),
-            ctypes.sizeof(info)) or (not kernel.AssignProcessToJobObject(job,
-            kernel.GetCurrentProcess())):
+        if not job or not kernel.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)) or (not kernel.AssignProcessToJobObject(job, kernel.GetCurrentProcess())):
             raise RuntimeError()
     else:
         raise RuntimeError()
@@ -85,12 +65,10 @@ if __name__ == '__main__':
             image.thumbnail((512, 512))
             clean = Image.new('RGBA', image.size)
             clean.paste(image.convert('RGBA'))
-            clean.save(sys.argv[2], format='PNG')
-        if os.path.getsize(sys.argv[2]) > 524288:
+            output = io.BytesIO()
+            clean.save(output, format='PNG')
+        if output.tell() > 524288:
             raise ValueError()
+        sys.stdout.buffer.write(output.getvalue())
     except BaseException:
-        try:
-            os.unlink(sys.argv[2])
-        except OSError:
-            pass
         sys.exit(1)
