@@ -180,29 +180,40 @@ class PathGuard:
             return ['<unresolved shell write target>']
         writing = False
         start = True
-        redirect = False
+        redirect = None
         for token in tokens:
+            if redirect is not None:
+                if token in {';', '&&', '||', '|', '&', '>', '>>', '<', '&>', '&>>', '>|', '>&', '<&'}:
+                    return ['<unresolved shell write target>']
+                # Numeric fd duplication and fd closing do not name a file.
+                if not (redirect in {'>&', '<&'} and (token.isdigit() or token == '-')):
+                    if any(c in token for c in '*?[]{}'):
+                        return ['<unresolved shell write target>']
+                    paths.append(token)
+                redirect = None
+                continue
             if token in {';', '&&', '||', '|', '&'}:
                 start, writing = True, False
                 continue
-            if token in {'>', '>>', '<'}:
-                if redirect:
-                    return ['<unresolved shell write target>']
-                redirect = True
+            # shlex separates 2>/2>> into the fd token and > / >>.
+            if token in {'>', '>>', '<', '&>', '&>>', '>|', '>&', '<&'}:
+                redirect = token
                 continue
+            if re.fullmatch(r'[;&|<>]+', token):
+                return ['<unresolved shell write target>']
             if start:
                 writing = token in {'rm','mv','cp','touch','mkdir','rmdir','tee','truncate','install','chmod','chown','ln'}
                 start = False
-            elif redirect or (writing and not token.startswith('-')):
+            elif writing and not token.startswith('-'):
                 if any(c in token for c in '*?[]{}'):
                     return ['<unresolved shell write target>']
                 paths.append(token)
-                redirect = False
         paths = list(dict.fromkeys(paths))
         violations = self.violations(paths)
         if violations:
             return violations
-        if redirect or ((_WRITE_COMMAND.search(payload) or re.search(r'\b(?:writeFileSync|appendFileSync|unlinkSync)\b',payload)) and not paths):
+        without_redirects = re.sub(r'[<>]+', '', payload)
+        if redirect is not None or ((_WRITE_COMMAND.search(without_redirects) or re.search(r'\b(?:writeFileSync|appendFileSync|unlinkSync)\b',payload)) and not paths):
             return ['<unresolved shell write target>']
         return []
 

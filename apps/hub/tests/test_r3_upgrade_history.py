@@ -30,6 +30,7 @@ def test_persisted_unknown_and_finished_accepted_automatically_upgrade_real_serv
             submit=await phone_submit(pair,'historical-submit')
             delivery=pair.system.worker.delivery
             await until(lambda: delivery.row(submit) and delivery.row(submit)['state']=='completed')
+            await until(lambda: pair.system.chat.repository.run_record(delivery.row(submit)['run_id'])['status']=='succeeded')
             completed=json.loads(delivery.row(submit)['result_json'])
             run=pair.system.chat.repository.run_record(delivery.row(submit)['run_id'])
             assert run['status']=='succeeded'
@@ -113,6 +114,7 @@ def test_actual_granted_execution_blocks_upgrade_until_its_final_result(tmp_path
             assert pair.system.repo.get('identity')['wireRevision']==2
             pair.system.adapter.release.set()
             await until(lambda: delivery.row(command)['state']=='completed')
+            await until(lambda: pair.system.chat.repository.run_record(delivery.row(command)['run_id'])['status']=='succeeded')
             await until(lambda: pair.system.repo.get('identity')['wireRevision']==3,timeout=12)
             final=json.loads(delivery.row(command)['result_json'])
             assert final['wireRevision']==2 and final['type']=='command.completed'
