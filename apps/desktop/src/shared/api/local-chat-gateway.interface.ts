@@ -1,4 +1,6 @@
+import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
+  AttachmentLimits, AttachmentDeletedView, LocalAttachmentView, AttachmentTargetCapabilities,
   LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
   LocalAuthInput,
@@ -34,6 +36,14 @@ import type {
 } from '@hqagent/protocol'
 
 export interface LocalChatGateway {
+  getAttachmentLimits(): Promise<AttachmentLimits>
+  uploadAttachment(conversationId: string, file: Blob, options: UploadOptions): Promise<LocalAttachmentView>
+  getAttachment(id: string): Promise<LocalAttachmentView>
+  deleteAttachment(id: string): Promise<AttachmentDeletedView>
+  getAttachmentContent(id: string, signal?: AbortSignal): Promise<Blob>
+  getAttachmentThumbnail(id: string, signal?: AbortSignal): Promise<Blob>
+  getAttachmentCapabilities(conversationId: string): Promise<AttachmentTargetCapabilities>
+
   listNativeSessions(cursor?: string): Promise<LocalNativeSessionPage>
   getNativeSession(id: string): Promise<NativeSessionIndex>
   readNativeMessages(id: string, before?: string): Promise<NativeMessagePage>

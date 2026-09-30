@@ -1,3 +1,4 @@
+import { preflightAttachments } from '@/shared/attachments/preflight'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type {
@@ -530,7 +531,8 @@ export const useChatStore = defineStore('chat', () => {
   async function sendMessage(
     text: string,
     modeOverride?: 'new' | 'continue',
-    nativeConfirmation?: NativeContinuationConfirmationInput
+    nativeConfirmation?: NativeContinuationConfirmationInput,
+    attachmentIds: string[] = []
   ): Promise<void> {
     const convId = activeConversationId.value
     if (!convId || !text.trim() || sendingConversationIds.value.includes(convId)) return
@@ -548,8 +550,8 @@ export const useChatStore = defineStore('chat', () => {
       throw new HubApiError(resumptionError.value, 'SESSION_NOT_RESUMABLE', 409)
     }
     const wasRunActive = isCurrentRunActive.value
-    const identity = `send:${convId}:${text.trim()}${conversation?.conversationKind === 'native' ? `:${nativeConfirmation?.sourceRevision || 'confirmed'}` : ''}`
-    const operation = pendingOperation(identity, { text: text.trim(), sessionMode: mode, ...(nativeConfirmation ? { nativeConfirmation } : {}) }, conversation?.conversationKind === 'native')
+    const identity = `send:${convId}:${text.trim()}:${attachmentIds.join(',')}${conversation?.conversationKind === 'native' ? `:${nativeConfirmation?.sourceRevision || 'confirmed'}` : ''}`
+    const operation = pendingOperation(identity, { text: text.trim(), sessionMode: mode, ...(nativeConfirmation ? { nativeConfirmation } : {}), ...(attachmentIds.length ? { attachmentIds } : {}) }, conversation?.conversationKind === 'native' || attachmentIds.length > 0)
     const clientMessageId = operation.id
     const idempotencyKey = operation.id
 
@@ -568,6 +570,10 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       const gateway = getLocalChatGateway()
+      if (attachmentIds.length) {
+        await preflightAttachments(false, convId, attachmentIds)
+        if (activeConversationId.value !== convId) throw new Error('对话已切换，请返回原对话重试')
+      }
       const receipt = await gateway.sendLocalMessage(
         convId,
         {

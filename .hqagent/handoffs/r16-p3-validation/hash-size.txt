@@ -1,0 +1,1 @@
+{"implementation":"FIPS 180-4 incremental SHA-256, original TypeScript","newDependencies":0,"sourceBytes":3800,"minifiedBytes":2822,"gzipBytes":1484,"chunkBytes":65536}

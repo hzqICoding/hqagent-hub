@@ -48,3 +48,15 @@ python -X utf8 -B -m pytest packages/protocol/tests scripts/protocol/tests -q -p
 
 - 交付 f9cfbe6 / a8c5b82 / 6c0b52c：8 个附件操作、wireRevision 4、内容寻址存储、配额、缩略图隔离子进程（POSIX rlimit / Windows Job Object）、删除联动；server 264 passed，smoke 通过，20MB 真实网络上传下载 RSS 增量约 0.91MiB。
 - 返修 1（medium，01a0ddec）：①OSS 预留 §7.1 六条（业务代码仍直接用 store.temp / cas / path / stage.path，后端写死，删除意图 DB 与文件系统双份）；②maintain 每 5 秒全量扫附件与 CAS，改为到期清理 60 秒、孤儿扫描启动加每小时；③附件相关模块分号连写，按现有模块风格重排；④nginx 示例 proxy_pass 端口改为与站点一致（serverD 为 18090）。
+
+## 7. integration CI（cc17608，run 36696935866）红灯与处理
+
+- protocol：`test_devices_api.py:170` 写死 `runtime_count==39`（8 个附件操作未实现），服务端实现后为 47。排在 P2 之后交协议会话 01a0ceda（low）改为 47。
+- server macOS：`test_image_thumbnail_and_capability_fail_closed`、`test_business_uses_only_blobstore_interface` 缩略图为 unavailable。推断 `thumbnail_child.py` 在 darwin 上 `setrlimit(RLIMIT_AS)` 不受支持，子进程 fail-closed 退出。部署目标 Linux 不受影响。排在 P2 之后交服务端会话 01a0ddec（medium）。
+- hub 三平台 11 项 `assert 5 == 4`：`tests/test_r15_joint_server.py:117` 写死服务端 `PRAGMA user_version == 4`，P1 迁移后为 5。P2（正在跑，已合入 cc17608）应顺带修正，审核时核对。
+
+## 8. P3 前端审核（2026-09-30）
+
+- 01a0e638（high）与 P2 并行开发，交付 6ac9e12 / 49e4bc3：手机与电脑附件入口、限制值来自接口、增量 SHA-256（无新依赖，gzip 1.5KB）、raw 上传进度、图片能力发送前预检、缩略图只用服务端产物、下载 octet-stream、同步状态与本机可用分开显示；lint / typecheck / build 通过，vitest 61 文件 397 项通过。
+- 截图核对手机亮 / 暗、电脑各附件状态正确。合入 integration。
+- 后续项：手机暗色模式下顶栏设备名与按钮在截图中不可见，本包未改顶栏，属既有问题或截图环境所致，联调时真机确认。真实 Hub 附件链路待 P2 合入后联调。
