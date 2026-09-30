@@ -1,0 +1,6 @@
+{
+  "type": "server.heartbeat",
+  "connectionId": "connection_demo",
+  "receivedAt": "2026-09-26T12:00:00Z",
+  "wireRevision": 4
+}

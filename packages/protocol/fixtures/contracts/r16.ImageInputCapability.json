@@ -1,0 +1,9 @@
+{
+  "support": "unknown",
+  "cliEntry": "unknown",
+  "runtimeImplemented": false,
+  "verified": false,
+  "mimeTypes": [],
+  "maxBytes": 0,
+  "reason": "实际传输尚未验证"
+}

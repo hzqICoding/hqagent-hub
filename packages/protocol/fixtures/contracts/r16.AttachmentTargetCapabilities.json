@@ -1,0 +1,19 @@
+{
+  "conversationKind": "scenario",
+  "capabilityRevision": 1,
+  "roles": [
+    {
+      "roleId": "analyst",
+      "agentId": "local.example",
+      "imageInput": {
+        "support": "unknown",
+        "cliEntry": "unknown",
+        "runtimeImplemented": false,
+        "verified": false,
+        "mimeTypes": [],
+        "maxBytes": 0,
+        "reason": "实际传输尚未验证"
+      }
+    }
+  ]
+}

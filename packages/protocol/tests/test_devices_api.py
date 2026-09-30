@@ -39,7 +39,7 @@ def test_new_fixtures_round_trip(filename,kind):
 
 def test_every_new_type_has_fixture_and_version_is_http_minor_only():
     assert set(NEW)<={k for f,k in MANIFEST.items() if f.startswith('devices.')}
-    assert models.PROTOCOL_VERSION==API['info']['version']=='0.9.2'
+    assert models.PROTOCOL_VERSION==API['info']['version']=='0.10.0'
     sync=json.loads((P/'schema/remote-sync.json').read_text(encoding='utf-8'))['$defs']
     assert {d['properties']['wireRevision']['const'] for d in sync.values() if 'wireRevision' in d.get('properties',{})}=={2}
 
@@ -58,7 +58,7 @@ def test_wire1_is_unchanged_wire2_only_pins_old_error_value_set():
     current=json.loads((P/'schema/remote.json').read_text(encoding='utf-8'))['$defs']
     # D51 changes these HTTP-only DTOs. Their exact deltas and all old wire
     # transitive closures are independently pinned in test_native_protocol.py.
-    r3_http={'RemoteConversationView','RemoteCommandView','RemoteSendMessageInput'}
+    r3_http={'RemoteConversationView','RemoteCommandView','RemoteSendMessageInput','RemoteMessageView'}
     for name,d in old.items():
         if name not in {'RemoteDeviceView','RemoteDevicePage'} | r3_http:assert current[name]==d
     sync_old=json.loads(before('schema/remote-sync.json'))
@@ -131,16 +131,24 @@ def test_http_detail_is_safe_and_not_a_worker_field():
 
 
 def test_published_spec_examples_are_valid_for_generated_dtos():
+    spec=importlib.util.spec_from_file_location('binary_api_contract',P/'remote/api-contract.py')
+    contract=importlib.util.module_from_spec(spec);spec.loader.exec_module(contract)
     envelope=TypeAdapter(models.ApiEnvelope)
     error=TypeAdapter(models.RemoteHttpError)
     for path,ops in API['paths'].items():
         for method,op in ops.items():
             if 'requestBody' in op:
-                media=op['requestBody']['content']['application/json']
-                adapter=TypeAdapter(getattr(models,media['schema']['$ref'].split('/')[-1]))
-                for sample in media['examples'].values():adapter.validate_python(sample['value'])
+                if op.get('x-streaming-upload'):
+                    contract.check_binary_request(op)
+                else:
+                    media=op['requestBody']['content']['application/json']
+                    adapter=TypeAdapter(getattr(models,media['schema']['$ref'].split('/')[-1]))
+                    for sample in media['examples'].values():adapter.validate_python(sample['value'])
             for status,response in op['responses'].items():
                 if path=='/api/v2/openapi.json' and status=='200':continue
+                if op.get('x-binary-download') and status=='200':
+                    contract.check_binary_response(response)
+                    continue
                 media=response['content']['application/json']
                 for sample in media['examples'].values():
                     data=sample['value'];envelope.validate_python(data)
@@ -159,7 +167,7 @@ def test_spec_bundle_auth_examples_and_error_table_do_not_drift():
     guidance=yaml.safe_load((P/'remote/http-error-guidance.yaml').read_text(encoding='utf-8'))['errors']
     bundle=module.bundled(API,registry)
     runtime_count,total=module.check(API,registry,guidance,bundle)
-    assert total==39 and runtime_count==39  # All six R3 routes are now implemented in integration.
+    assert total==47 and runtime_count==39  # Eight R1.6 operations are specified, not yet implemented.
     assert bundle==json.loads((P/'openapi/remote-hub.v2.bundle.json').read_text(encoding='utf-8'))
     guide=(P/'remote/api-guide.md').read_text(encoding='utf-8')
     for name,block in module.table_blocks(API,registry,guidance).items():
@@ -172,6 +180,9 @@ def test_spec_bundle_auth_examples_and_error_table_do_not_drift():
         for op in ops.values():
             for status,response in op['responses'].items():
                 if path=='/api/v2/openapi.json' and status=='200':continue
+                if op.get('x-binary-download') and status=='200':
+                    module.check_binary_response(response)
+                    continue
                 branch=response['content']['application/json']['schema']['allOf'][1]
                 forbidden='error' if branch['properties']['success']['const'] else 'data'
                 assert branch['properties'][forbidden] is False

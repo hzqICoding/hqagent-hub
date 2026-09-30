@@ -68,8 +68,15 @@ class CredentialVault:
     def __init__(self, directory: Path) -> None:
         self.directory = directory
         self.path = directory / "device.credential"
+        self.posix = None
+        if os.name != 'nt':
+            from runtime.remote.keychain import PosixCredentialStore
+            self.posix = PosixCredentialStore(directory, atomic_write=self.atomic_write)
 
     def save(self, secret: str) -> None:
+        if self.posix is not None:
+            self.posix.save(secret)
+            return
         self.directory.mkdir(parents=True, exist_ok=True)
         if os.name != "nt":
             self.directory.chmod(0o700)
@@ -80,8 +87,13 @@ class CredentialVault:
     @staticmethod
     def atomic_write(path: Path, content: bytes) -> None:
         temporary = path.with_name(path.name + ".tmp")
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if os.name != 'nt':
+            flags |= os.O_NOFOLLOW
+        fd = os.open(temporary, flags, 0o600)
         with os.fdopen(fd, "wb") as stream:
+            if os.name != 'nt':
+                os.fchmod(stream.fileno(), 0o600)
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
@@ -90,6 +102,8 @@ class CredentialVault:
             path.chmod(0o600)
 
     def read(self) -> str:
+        if self.posix is not None:
+            return self.posix.read()
         try:
             content = self.path.read_bytes()
             return (_dpapi(content, decrypt=True) if os.name == "nt" else content).decode("ascii")
@@ -100,10 +114,43 @@ class CredentialVault:
         self.save(secrets.token_urlsafe(32))
 
     def delete(self) -> None:
+        if self.posix is not None:
+            self.posix.delete()
+            return
         try:
             self.path.unlink(missing_ok=True)
         except OSError:
             raise HubError("INTERNAL", "本机设备凭据删除失败") from None
+
+
+_LINE_SECRET = re.compile(r'''(?:token|api[_-]?key|password|secret)["']?\s*[:=]|os\.environ|process\.env''', re.I)
+
+
+def _sensitive_lines(value: str) -> str:
+    # Equivalent line predicate to ^.*([\w-]*token|...).*$. Searching the
+    # literal suffix avoids quadratic backtracking on long credential-free
+    # lines. Preserve \s* across newlines and the original CR/LF behavior.
+    matches = iter(_LINE_SECRET.finditer(value))
+    pending = next(matches, None)
+    pieces, offset = [], 0
+    while pending is not None:
+        start = value.rfind('\n', offset, pending.start()) + 1
+        line_end = value.find('\n', pending.start())
+        line_end = len(value) if line_end < 0 else line_end
+        chosen = pending
+        pending = next(matches, None)
+        # The old greedy prefix chooses the last marker on its starting line.
+        while pending is not None and pending.start() < line_end:
+            chosen, pending = pending, next(matches, None)
+        end = value.find('\n', chosen.end())
+        end = len(value) if end < 0 else end
+        pieces.extend((value[offset:start], '[redacted]'))
+        offset = end
+        # A marker swallowed by the old match cannot extend that match again.
+        while pending is not None and pending.start() < end:
+            pending = next(matches, None)
+    pieces.append(value[offset:])
+    return ''.join(pieces)
 
 
 def safe_text(value: str, secrets_to_hide: tuple[str, ...] = ()) -> str:
@@ -114,5 +161,5 @@ def safe_text(value: str, secrets_to_hide: tuple[str, ...] = ()) -> str:
     value = re.sub(r"(?is)<(?:analysis|think|thinking)>.*?</(?:analysis|think|thinking)>", "[redacted]", value)
     value = re.sub(r"(?i)(?:authorization[ \t]*[:=][ \t]*(?:bearer[ \t]+)?|bearer[ \t]+)\S+", "[redacted]", value)
     value = re.sub(r"(?m)^[ \t]*(?:export[ \t]+)?[A-Z_][A-Z0-9_]*=.*$", "[redacted]", value)
-    value = re.sub(r'''(?im)^.*(?:["']?(?:[\w-]*token|api[_-]?key|password|secret)["']?\s*[:=]|os\.environ|process\.env).*$''', "[redacted]", value)
+    value = _sensitive_lines(value)
     return value
