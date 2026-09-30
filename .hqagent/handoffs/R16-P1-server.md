@@ -5,7 +5,7 @@ scope_declared: [apps/server/**, .hqagent/handoffs/R16-P1-server.md]
 scope_touched: [apps/server/README.md, apps/server/nginx-attachments.conf.example, apps/server/pyproject.toml, apps/server/requirements.txt, apps/server/scripts/smoke.py, apps/server/scripts/smoke_attachments.py, apps/server/server/app.py, apps/server/server/attachment_types.py, apps/server/server/attachments.py, apps/server/server/blobstore.py, apps/server/server/config.py, apps/server/server/events.py, apps/server/server/events_sync.py, apps/server/server/native.py, apps/server/server/native_events.py, apps/server/server/queries.py, apps/server/server/replica.py, apps/server/server/repository.py, apps/server/server/repository_attachments.py, apps/server/server/resources/http-errors.json, apps/server/server/resources/remote-hub.v2.bundle.json, apps/server/server/service.py, apps/server/server/service_sync.py, apps/server/server/thumbnail_child.py, apps/server/server/wire.py, apps/server/server/worker.py, apps/server/tests/test_attachment_races.py, apps/server/tests/test_attachment_wire.py, apps/server/tests/test_attachment_backend.py, apps/server/tests/test_blobstore_contract.py, apps/server/tests/test_thumbnail_platform_limits.py, apps/server/tests/test_attachments.py, apps/server/tests/test_controls_storage.py, apps/server/tests/test_devices_tokens.py, apps/server/tests/test_protocol.py, apps/server/tests/test_r15_policy.py, apps/server/tests/test_r3_guards.py, apps/server/tests/test_test_dependencies.py, .hqagent/handoffs/R16-P1-server.md]
 build: pass
 tests: pass
-commit: e936b3b077ada76aedd680d28571fba6b1577f80
+commit: ce1a6340f319819f878ce0484c9b2a3cb98baf01
 open_questions: 0
 ---
 
@@ -392,3 +392,36 @@ SMOKE PASS
 输出在 `.tmp/r16-repair2-{targeted,full,smoke,streaming}-output.txt`。只串行运行服务端测试及两个冒烟；没有同时启动多组重型进程，没有联网安装。warning仍为预装Starlette/httpx弃用提示。未遇到429、0xC0000142或额度错误；文档工具404/批准策略限制已如上单列，不包装成代码故障。
 
 实现与测试提交 `e936b3b`；README和本回执另作文档提交。每次提交后用 `git log -1 --format=%B` 自查，无署名。工作只在允许路径内，未合并回integration、未推送、未部署。下一步由主代理推CI确认macos-latest；本轮不宣称真实macOS已通过。
+
+
+## 返修 3：macOS smoke RSS采样（本机验证完成）
+
+主代理反馈返修2的macOS 298项测试已通过；此次仅处理smoke读取不存在的/proc路径。起始HEAD为f93a7ec，工作区干净。本轮只改 `scripts/smoke_attachments.py` 和本回执。
+
+`rss(pid)` 新增darwin分支，用参数数组执行 `/bin/ps -o rss= -p <pid>`（无shell），将正整数KiB乘1024转换为字节。命令失败/超时、空输出、0、负数或非数字均抛OSError，不返回0。Windows GetProcessMemoryInfo和Linux /proc分支保持原样。另将采样线程的异常传回主流程，避免线程失效后仍用残留样本输出SMOKE PASS。
+
+本机模拟darwin检查输出：`Darwin RSS mocked checks: conversion and 8 failure cases PASS`，覆盖单位转换、五种非法输出及OSError/非零退出/超时。真实macOS进程采样仍由主代理推CI验证，没有宣称本机运行过macOS。
+
+Windows下设置TEMP/TMP为worktree内 `.tmp`，以下命令分别串行执行，均退出0。真实输出摘录：
+
+```powershell
+../../.venv/Scripts/python.exe -B scripts/smoke.py
+```
+
+```text
+20MB streaming RSS: baseline=93577216 peak=94760960 delta=1183744 bytes; upload/download SHA256: PASS
+SMOKE PASS
+```
+
+```powershell
+../../.venv/Scripts/python.exe -B scripts/smoke_attachments.py
+```
+
+```text
+20MB streaming RSS: baseline=93683712 peak=94953472 delta=1269760 bytes; upload/download SHA256: PASS
+SMOKE PASS
+```
+
+完整输出为 `.tmp/r16-repair3-smoke-output.txt` 和 `.tmp/r16-repair3-streaming-output.txt`，包含原有账号、配对、修订2/3、附件、PAT、备份与脱敏检查的PASS行。本轮按小修要求未重跑server全量；前节298项是上一轮结果。未发生429、0xC0000142或额度错误，没有并行重型进程、联网安装、部署、合并或推送。
+
+实现提交 `ce1a634`；本回执另提交。每次提交后执行 `git log -1 --format=%B` 自查，无署名。
