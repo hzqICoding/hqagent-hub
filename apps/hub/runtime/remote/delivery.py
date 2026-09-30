@@ -255,6 +255,8 @@ class DeliveryBridge(CommandBridge):
             row = self.row(frame['commandId'])
             original = json.loads(row['command_json']) if row and row['command_json'] else {}
         if original.get('type') == 'run.submit':
+            if any(item['kind'] == 'image' for item in original.get('payload', {}).get('attachments', [])):
+                await self.chat.attachments.capabilities.refresh()
             try:
                 await self.chat.native.prepare_send(original['localConversationId'])
             except HubError:

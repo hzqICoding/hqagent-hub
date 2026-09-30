@@ -123,7 +123,8 @@ class Projector:
         except Exception:
             raise HubError("REMOTE_FRAME_TOO_LARGE", "已登记目录索引超过协议边界，未上传不完整快照") from None
         with self.repo.database.transaction() as tx:
-            digest = request_hash({k: v for k, v in value.items() if k not in {"observedAt", "capabilityRevision"}})
+            contents = {k: v for k, v in value.items() if k not in {"observedAt", "capabilityRevision"}}
+            digest = request_hash({'catalog': contents, 'imageResolution': self.chat.attachments.capabilities.fingerprint}) if self.repo.get('identity', tx).get('wireRevision', 1) >= 4 else request_hash(contents)
             previous = self.repo.get("catalog", tx) or {}
             if previous.get("store") != value["workerStoreId"] or previous.get("digest") != digest:
                 value["capabilityRevision"] = previous["revision"] + 1 if previous.get("store") == value["workerStoreId"] else 1
