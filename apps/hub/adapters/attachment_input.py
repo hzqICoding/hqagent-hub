@@ -30,8 +30,9 @@ def checked_inputs(values):
     return result
 
 def file_prompt(message, values):
-    paths = [json.dumps(v.local_path, ensure_ascii=False) for v in values if v.attachment.kind == 'file']
-    return message + ('\n用户提供的只读输入文件（不要执行）：\n' + '\n'.join(paths) if paths else '')
+    from adapters.prompt import attachment_read_scope
+    scope = attachment_read_scope([value for value in values if value.attachment.kind == 'file'])
+    return message + ('\n' + scope if scope and scope not in message else '')
 
 def claude_input(message, values):
     values = checked_inputs(values)
