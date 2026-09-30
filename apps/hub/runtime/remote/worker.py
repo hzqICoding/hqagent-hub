@@ -43,10 +43,12 @@ class RemoteWorker:
         self.delivery = DeliveryBridge(repository, bridge.chat, link, self.busy, self.sync)
         self.roots = AuthorizedRoots(repository, bridge.chat.repository)
         self.native = NativeService(repository, bridge.chat, link)
+        from runtime.attachments.service import AttachmentService
+        self.attachments = AttachmentService(self)
         self.resources = ResourceCommands(self)
         self.projector.roots = self.roots
-        self.preferred_revision = 3
-        self.server_supported = {1, 2, 3}
+        self.preferred_revision = 4
+        self.server_supported = {1, 2, 3, 4}
         bridge.chat.native = self.native
         bridge.chat.repository.native = self.native
         bridge.chat.repository.busy_state = self.busy
@@ -72,8 +74,10 @@ class RemoteWorker:
         if self.job is not None:
             return
         self.repo.boot()
-        self.preferred_revision = 3
-        self.server_supported = {1, 2, 3}
+        self.attachments.sync.closed = False
+        await self.attachments.recover()
+        self.preferred_revision = 4
+        self.server_supported = {1, 2, 3, 4}
         self.delivery.clock.invalidate()
         self.busy.connection_id = None
         if self.sync.active():
@@ -90,6 +94,7 @@ class RemoteWorker:
 
     async def stop(self):
         self.closed = True
+        await self.attachments.stop()
         await self.native.stop()
         if self.expiry_job:
             self.expiry_job.cancel()
@@ -117,6 +122,7 @@ class RemoteWorker:
             try:
                 await self.delivery.expire_pending()
                 await self.resources.recover()
+                await self.attachments.library.maintain()
             except Exception:
                 # Retry transient storage failures without reflecting command
                 # bodies, transport headers or credential-bearing exceptions.
@@ -152,15 +158,16 @@ class RemoteWorker:
 
     def can_upgrade(self):
         identity = self.repo.get("identity")
-        if identity.get("wireRevision", 1) >= 3:
+        if identity.get("wireRevision", 1) >= 4:
             return False
-        if identity.get("wireRevision", 1) == 2:
+        if identity.get("wireRevision", 1) in {2, 3}:
             with self.repo.database.locked_connection() as db:
                 pending = db.execute("SELECT 1 FROM remote2_delivery WHERE store_id=? AND state NOT IN (?,?,?,?) LIMIT 1", (identity["store"], *FINAL_STATES)).fetchone()
                 outbox = db.execute("SELECT 1 FROM remote_outbox WHERE store_id=? LIMIT 1", (identity["store"],)).fetchone()
                 staged = db.execute("SELECT 1 FROM remote_sync_items LIMIT 1").fetchone()
+                resource = db.execute("SELECT 1 FROM native_commands WHERE store_id=? AND state IN ('provisional','admitted') LIMIT 1", (identity["store"],)).fetchone()
             work = self.repo.get("sync-work") or {}
-            return pending is None and outbox is None and staged is None and work.get("phase") in {"synced", "disabled"}
+            return pending is None and resource is None and outbox is None and staged is None and work.get("phase") in {"synced", "disabled"}
         with self.repo.database.locked_connection() as db:
             pending = db.execute("SELECT 1 FROM remote_inbox WHERE worker_id=? AND json_extract(command_json,'$.expectedWorkerStoreId')=? "
                 "AND json_extract(command_json,'$.wireRevision')=1 AND status NOT IN ('completed','failed','rejected') LIMIT 1",
@@ -282,7 +289,7 @@ class RemoteWorker:
                 self.busy.reconcile()
                 self.busy.connection_id = connection_id
                 self.busy.snapshot(force=True)
-                if revision == 3 and self.sync.settings().mirror_enabled:
+                if revision >= 3 and self.sync.settings().mirror_enabled:
                     self.native.request_scan()
                 self.sync.prepare()
             self.state("online", connected=True, frozen=hello["commandDelivery"] == "frozen",
@@ -295,7 +302,7 @@ class RemoteWorker:
             async def send(value):
                 async with send_lock:
                     await ws.send(encode(value) if isinstance(value, dict) else value)
-            queries = QueryChannel(self, connection_id, send) if revision == 3 else None
+            queries = QueryChannel(self, connection_id, send) if revision >= 3 else None
             self.sync.cancel_queries = queries.cancel_pending if queries else (lambda:None)
             async def heartbeat():
                 while True:
@@ -314,12 +321,15 @@ class RemoteWorker:
                     if not self.repo.check_continuity():
                         raise HubError("REMOTE_STORE_CHANGED", "本机存储需要对账")
                     if time.monotonic() >= catalog_at:
+                        await self.attachments.capabilities.refresh()
                         await self.projector.catalog()
-                        if revision == 3 and self.sync.settings().mirror_enabled:
+                        if revision >= 3 and self.sync.settings().mirror_enabled:
                             self.native.request_scan()
                         catalog_at = time.monotonic() + 5
                     if revision >= 2:
-                        if revision == 3 and native_scan != self.native.scan_revision:
+                        await self.attachments.library.maintain()
+                        await self.attachments.sync.tick()
+                        if revision >= 3 and native_scan != self.native.scan_revision:
                             self.sync.prune_native()
                             native_scan = self.native.scan_revision
                         await self.delivery.tick()
@@ -333,8 +343,8 @@ class RemoteWorker:
                             self.repo.seal(tx)
                     if revision >= 2:
                         await window.flush(send)
-                        if revision == 2 and time.monotonic() >= self.next_revision2_probe and self.can_upgrade():
-                            self.preferred_revision = 3
+                        if revision in {2, 3} and time.monotonic() >= self.next_revision2_probe and self.can_upgrade():
+                            self.preferred_revision = 4
                             raise Renegotiate()
                         await asyncio.sleep(0.2)
                         continue
@@ -350,7 +360,7 @@ class RemoteWorker:
                             sent.add(event["eventId"])
                     if (self.probe_revision2 or (self.peer_revision2 is True and time.monotonic() >= self.next_revision2_probe)) and self.can_upgrade():
                         self.probe_revision2 = True
-                        self.preferred_revision = max(self.server_supported & {1,2,3})
+                        self.preferred_revision = max(self.server_supported & {1,2,3,4})
                         raise Renegotiate()
                     await asyncio.sleep(0.2)
             queue = asyncio.Queue(maxsize=200)
@@ -361,7 +371,7 @@ class RemoteWorker:
                     frame = await queue.get()
                     if generation != self.repo.get("link")["generation"]:
                         return
-                    resource = revision == 3 and (frame["type"] in {"native.import","workspace.register"} or (frame["type"] == "command.delivery_granted" and ("conversationId" not in frame or self.resources.row(frame["commandId"]))))
+                    resource = revision >= 3 and (frame["type"] in {"native.import","workspace.register"} or (frame["type"] == "command.delivery_granted" and ("conversationId" not in frame or self.resources.row(frame["commandId"]))))
                     receipt, gaps = await (self.resources.receive(frame) if resource else bridge.receive(frame))
                     if receipt:
                         # New rev2 events pass through the bounded send window;

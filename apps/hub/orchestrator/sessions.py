@@ -181,7 +181,7 @@ class SessionManager:
         await self.repository.save(value)
         return value
 
-    async def resume(self, session: SessionView, message: str, acceptance: list[str] | None) -> SessionView:
+    async def resume(self, session: SessionView, message: str, acceptance: list[str] | None, *, input_attachments=None) -> SessionView:
         lock = self._locks.setdefault(session.id, asyncio.Lock())
         async with lock:
             current = await self.repository.get(session.id)
@@ -196,6 +196,10 @@ class SessionManager:
                     "Session 缺少持久化 AgentTaskSpec，无法可靠重建 Adapter 状态",
                 )
             adapter = self.adapters.adapter_for(current.agent_instance_id)
+            if input_attachments is not None:
+                from protocol.generated.python import AgentTaskSpec
+                spec = AgentTaskSpec.model_validate({**spec.model_dump(mode='json',by_alias=True), 'inputAttachments':input_attachments or None})
+                await self.repository.save_spec(session.id, spec)
             native = getattr(getattr(self.repository, "database", None), "native_service", None)
             if native is not None:
                 await native.acquire_session(current.id, message)

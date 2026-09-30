@@ -375,7 +375,7 @@ class CodexAdapter(AgentAdapter):
             session_id=spec.session_id,
             external_session_id=spec.resume_session_id or "",
             spec=spec,
-            guard=PathGuard(spec.worktree_path or "", spec.allowed_paths),
+            guard=PathGuard(spec.worktree_path or "", spec.allowed_paths, input_attachments=spec.input_attachments),
         )
         opened = await self._open_turn(
             state,
@@ -491,11 +491,13 @@ class CodexAdapter(AgentAdapter):
                 raise RuntimeError("Codex 没有返回预期 thread.id")
             state.external_session_id = str(external_id)
             await self._emit_started(state)
+            from adapters.attachment_input import codex_input
+            input_items = await asyncio.to_thread(codex_input, message, state.spec.input_attachments)
             turn_result = await connection.request(
                 "turn/start",
                 {
                     "threadId": state.external_session_id,
-                    "input": [{"type": "text", "text": message}],
+                    "input": input_items,
                     "outputSchema": AgentResult.model_json_schema(by_alias=True),
                     **({"model": state.spec.model_id_} if state.spec.model_id_ else {}),
                     **({"effort": state.spec.reasoning_effort} if state.spec.reasoning_effort else {}),
@@ -525,7 +527,7 @@ class CodexAdapter(AgentAdapter):
             if preflight is not None:
                 return preflight
             state = AdapterSessionState(session_id=request.session_id, external_session_id=request.external_session_id,
-                spec=spec, guard=PathGuard(spec.worktree_path or "", spec.allowed_paths))
+                spec=spec, guard=PathGuard(spec.worktree_path or "", spec.allowed_paths, input_attachments=spec.input_attachments))
             self.registry.add(state)
         if state is None:
             return failure(
@@ -541,6 +543,16 @@ class CodexAdapter(AgentAdapter):
             )
         if state.process is not None and state.process.returncode is None and not state.finished.is_set():
             return failure(AdapterFailureKind.AGENT_ERROR, "Codex turn 仍在运行", retryable=False)
+        if request.task_spec is not None:
+            spec = request.task_spec
+            if spec.session_id != request.session_id:
+                return failure(AdapterFailureKind.AGENT_ERROR, "恢复规格与明确会话ID不匹配", retryable=False)
+            preflight = await self._preflight(spec)
+            if preflight is not None:
+                return preflight
+            state.spec = spec
+            state.guard = await asyncio.to_thread(PathGuard, spec.worktree_path or '',
+                spec.allowed_paths, input_attachments=spec.input_attachments)
         state.queue = asyncio.Queue()
         state.result = None
         state.failure = None

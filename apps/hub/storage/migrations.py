@@ -303,6 +303,39 @@ MIGRATIONS += (
     """),
 )
 
+MIGRATIONS += (
+    Migration(10, """
+        CREATE TABLE local_attachments (
+            attachment_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL,
+            manifest_json TEXT NOT NULL, file_key TEXT, state TEXT NOT NULL,
+            created_at TEXT NOT NULL, expires_at TEXT, origin_id TEXT,
+            sync_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE TABLE local_attachment_messages (
+            message_id TEXT NOT NULL, attachment_id TEXT NOT NULL, ordinal INTEGER NOT NULL,
+            source_command_id TEXT, PRIMARY KEY(message_id,attachment_id), UNIQUE(message_id,ordinal)
+        );
+        CREATE TABLE attachment_preparations (
+            run_id TEXT PRIMARY KEY, state TEXT NOT NULL, source_json TEXT NOT NULL,
+            error_code TEXT, evidence_json TEXT
+        );
+        CREATE TABLE attachment_upload_keys (
+            conversation_id TEXT NOT NULL, request_key TEXT NOT NULL, digest TEXT NOT NULL,
+            attachment_id TEXT, PRIMARY KEY(conversation_id,request_key)
+        );
+        CREATE TABLE attachment_sync_jobs (
+            store_id TEXT NOT NULL, generation INTEGER NOT NULL,
+            message_id TEXT NOT NULL, attachment_id TEXT NOT NULL,
+            status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+            server_id TEXT, error_code TEXT, after_seq INTEGER,
+            PRIMARY KEY(store_id,generation,message_id,attachment_id)
+        );
+        CREATE TRIGGER attachment_conversation_delete AFTER DELETE ON local_conversations BEGIN
+            UPDATE local_attachments SET state='deleted' WHERE conversation_id=OLD.conversation_id;
+        END;
+    """),
+)
+
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
 
 

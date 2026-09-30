@@ -107,9 +107,17 @@ class Projector:
                 "vcs": str(w.vcs), "canWrite": bool(w.capabilities and w.capabilities.can_run_write_tasks)} for w in workspaces],
             "scenes": [{"sceneId": s.id, "name": self.link.sanitized(s.name), "version": s.version, "readOnly": s.read_only} for s in scenes]}
         try:
-            if self.repo.get("identity").get("wireRevision", 1) == 3:
+            if self.repo.get("identity").get("wireRevision", 1) >= 3:
                 value["authorizedRoots"] = [{**r,"displayName":self.link.sanitized(r["displayName"])} for r in self.roots.catalog()]
-                RemoteV3CatalogView.model_validate(value)
+                if self.repo.get('identity')['wireRevision'] >= 4:
+                    from protocol.generated.python import RemoteV4CatalogView
+                    capabilities = self.chat.attachments.capabilities
+                    for scene in value['scenes']:
+                        scene['roleImageCapabilities'] = capabilities.values.get(scene['sceneId'], [])
+                    value['nativeImageCapabilities'] = [capabilities.native(kind) for kind in ('claude','codex')]
+                    RemoteV4CatalogView.model_validate(value)
+                else:
+                    RemoteV3CatalogView.model_validate(value)
             else:
                 RemoteCatalogView.model_validate(value)
         except Exception:
