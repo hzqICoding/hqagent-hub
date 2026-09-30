@@ -1,12 +1,12 @@
 ---
 wp: R16-P2
-status: done
+status: blocked
 scope_declared: [apps/hub/**, .hqagent/handoffs/R16-P2-hub.md]
-scope_touched: ["apps/hub/adapters/attachment_input.py", "apps/hub/adapters/claude_adapter.py", "apps/hub/adapters/codex_adapter.py", "apps/hub/adapters/path_guard.py", "apps/hub/api/app.py", "apps/hub/api/local_chat.py", "apps/hub/orchestrator/runtime.py", "apps/hub/orchestrator/sessions.py", "apps/hub/pyproject.toml", "apps/hub/requirements.local-lock.txt", "apps/hub/runtime/attachments/__init__.py", "apps/hub/runtime/attachments/api.py", "apps/hub/runtime/attachments/capabilities.py", "apps/hub/runtime/attachments/content.py", "apps/hub/runtime/attachments/library.py", "apps/hub/runtime/attachments/service.py", "apps/hub/runtime/attachments/sync.py", "apps/hub/runtime/attachments/transport.py", "apps/hub/runtime/attachments/verification.py", "apps/hub/runtime/cli.py", "apps/hub/runtime/local_chat.py", "apps/hub/runtime/remote/commands.py", "apps/hub/runtime/remote/delivery.py", "apps/hub/runtime/remote/projection.py", "apps/hub/runtime/remote/queries.py", "apps/hub/runtime/remote/resources.py", "apps/hub/runtime/remote/sync.py", "apps/hub/runtime/remote/wire.py", "apps/hub/runtime/remote/worker.py", "apps/hub/runtime/tasks.py", "apps/hub/storage/attachments.py", "apps/hub/storage/local_chat.py", "apps/hub/storage/migrations.py", "apps/hub/tests/remote_support.py", "apps/hub/tests/test_r15_joint_server.py", "apps/hub/tests/test_r15_recovery.py", "apps/hub/tests/test_r16_attachments.py", "apps/hub/tests/test_r3_wire.py", "apps/hub/tests/test_remote_worker.py", ".hqagent/handoffs/R16-P2-hub.md"]
+scope_touched: ["apps/hub/adapters/attachment_input.py", "apps/hub/adapters/claude_adapter.py", "apps/hub/adapters/codex_adapter.py", "apps/hub/adapters/path_guard.py", "apps/hub/api/app.py", "apps/hub/api/local_chat.py", "apps/hub/orchestrator/runtime.py", "apps/hub/orchestrator/sessions.py", "apps/hub/pyproject.toml", "apps/hub/requirements.local-lock.txt", "apps/hub/runtime/attachments/__init__.py", "apps/hub/runtime/attachments/api.py", "apps/hub/runtime/attachments/capabilities.py", "apps/hub/runtime/attachments/content.py", "apps/hub/runtime/attachments/library.py", "apps/hub/runtime/attachments/service.py", "apps/hub/runtime/attachments/sync.py", "apps/hub/runtime/attachments/transport.py", "apps/hub/runtime/attachments/verification.py", "apps/hub/runtime/cli.py", "apps/hub/runtime/local_chat.py", "apps/hub/runtime/remote/commands.py", "apps/hub/runtime/remote/delivery.py", "apps/hub/runtime/remote/projection.py", "apps/hub/runtime/remote/queries.py", "apps/hub/runtime/remote/resources.py", "apps/hub/runtime/remote/sync.py", "apps/hub/runtime/remote/wire.py", "apps/hub/runtime/remote/worker.py", "apps/hub/runtime/tasks.py", "apps/hub/storage/attachments.py", "apps/hub/storage/local_chat.py", "apps/hub/storage/migrations.py", "apps/hub/tests/remote_support.py", "apps/hub/tests/test_r15_joint_server.py", "apps/hub/tests/test_r15_recovery.py", "apps/hub/tests/test_r16_attachments.py", "apps/hub/tests/test_r3_wire.py", "apps/hub/tests/test_remote_worker.py", ".hqagent/handoffs/R16-P2-hub.md", "apps/hub/adapters/prompt.py", "apps/hub/runtime/descriptor.py", "apps/hub/security/worktrees.py", "apps/hub/tests/test_r16_joint_repair.py"]
 build: pass
 tests: pass
-commit: b4522ea11393ddcc36e9b6d4b193f131827f3964
-open_questions: 0
+commit: a0799017f28d809c0969eb85fd93c82d6403e2f5
+open_questions: 1
 ---
 
 ## 基线与范围
@@ -216,3 +216,139 @@ pwsh scripts/protocol/validate.ps1 -CheckGenerated
 
 每次代码提交后已运行 `git log -1 --format=%B`，没有署名/Co-Authored-By/Generated with；回执提交另行自查。没有合并回 integration。
 
+
+## 返修 1：真实联调反馈
+
+### 基线与结论
+
+先执行 `git merge integration/phase1`，输出 `Already up to date.`；基线为 `a770761 merge: sync integration after attachment CI green`，含主代理已合入的三平台 CI 结果。未调用任何真实模型、未执行真实 verify-image，未修改 server / protocol / desktop，也未合回 integration。
+
+问题 1、2、4、5 已完成代码修复和回归。**问题 3 的原真实失败根因尚不能闭环**：旧验证记录只有布尔值，没有 cancel.start 的 AdapterFailure 或 cancel.stop 的结构化结果。不能把假 App Server 成功当成那一次真实失败已消除的证明。本轮已增加可定位到阶段的安全诊断；需要主代理用真实 CLI 重跑后确认。回执暂记 blocked / open_questions=1，测试通过不等于该证据缺口已解决。
+
+### 1. 附件提示词授权冲突
+
+原 `prompt.py` 的“所有读取均受根目录约束”和结尾“只在当前授权目录内读取”否定了附件授权；`file_prompt` 只有路径，且 JSON 编码导致 Windows 双反斜杠。新增共用 `attachment_read_scope`，在角色约束处明确精确文件的额外只读许可、禁止读同目录其他文件、禁止执行/修改、附件内容不能扩大权限。路径逐行原样呈现。
+
+新建及完整提示词续接通过 `build_task_prompt` 获得该说明；只发送新轮消息的原生/精确续接通过 `file_prompt` 获得非图片文件许可。图片仍经原有结构化图片通道，不用路径文本冒充图片。没有附件时保持原提示词字节不变，新增测试与原字符串快照比较。PathGuard 未修改，仍只允许指定文件，未给父目录授权。
+
+### 2. 旧连接 EOF 污染新回合
+
+不是把 `item/completed:agentMessage` 直接判断成回合完成：该分支原本只记录消息/进度，正常完成仍来自 `turn/completed`。实际可复现缺陷是 `_CodexConnection.force_close` 仅等待进程退出，不回收 stdout/stderr reader 和 server-request 任务。旧回调闭包引用可重用的 `AdapterSessionState`；resume 重置 queue/finished/expected_termination 后，旧进程迟到 EOF 会在新 state 上调用 `_handle_disconnect`，生成 `exitCode=-9` 的失败并提前结束新的事件流。原生回合可能仍在继续，因此可以看到过程消息后被后续清理打断。
+
+新增假 App Server JSON-RPC 测试，在修复前得到真实红灯：
+
+```text
+assert not result.done(), 'old EOF or intermediate message ended the resumed turn'
+AssertionError: old EOF or intermediate message ended the resumed turn
+... result=AdapterFailure(... 'exitCode=-9')
+1 failed, 1 warning in 0.21s
+```
+
+修法：连接关闭串行化；进程终止确认后取消并 join 旧读取/请求任务，跳过正在执行 close 的当前任务；若进程仍活着则保留观察能力，不谎称已清理。通知、服务请求和断连回调另以 connection 对象身份隔离；resume 在重置 state 前执行旧连接清理栅栏，未确认则拒绝续接。没有把任意过程消息当成结束，也没有放宽最终 AgentResult JSON 校验。
+
+测试按“首轮最终 JSON → 旧连接延迟 EOF → 续接过程消息 → 工具完成 → 最终 turn/completed JSON”执行，最终结果必须为本轮最终 JSON，而不是过程消息或旧结果。
+
+### 3. 独立取消会话与待补证据 Q1
+
+新测试使用真正的 Adapter/_CodexConnection 和假 stdio App Server，覆盖新建、精确续接、混合及取消探测：前三轮共用同一精确 thread ID，取消探测另开第二个 Hub Session / 原生 thread，确认四个连接均已回收。另注入第二次 start 失败、cancel refused、非空 orphanProcessIds，均必须保持 cancel=false / passed=false；没有放宽判定。
+
+验证记录及 CLI 输出新增内部 `diagnostics` 元数据：new/resume/mixed-five/cancel 的 start、collect、recognition、stop 阶段；耗时、AdapterFailure kind/code/retryable；启动失败的 process.start / initialize / model/list / thread/start / thread/resume / turn/start 阶段、可用的 OS 错误号；cancel outcome / orphanProcessIds。**不保存原生错误正文、模型输出、提示词、路径或凭据。** 不修改任何冻结的 API/线路 DTO。
+
+目前没有原真实 cancel.start/stop 的数据，不能断言它是 Session ID 复用、上轮未结束、资源不足，或取消结果拒绝。已向主代理请求该结构化信息；交付时仍待补证据。请主代理使用联调 Hub 的同一用户数据目录执行：
+
+```powershell
+python -m runtime.cli agents verify-image --agent codex
+```
+
+若仍 cancel=false，请回传 `diagnostics.cancel.start` 和（若有）`diagnostics.cancel.stop`；不需要任何会话正文。若五项全通过，再关闭 Q1 并更新本回执状态。主代理此前报告的真实 Claude 五项通过是主代理结果，不冒充本轮实测。
+
+### 4. 探测图可辨识度
+
+四色图由 128×128 增至 512×512；白色外边框和明显十字分隔，各图仍采用互不相同的随机色序。新建/续接仍严格匹配第一张图的四种颜色顺序，混合仍须匹配四图共 16 个颜色及文件随机标记。新增图像尺寸/分隔像素和交换颜色必失败测试。没有用“近似正确”把能力标为 supported。
+
+### 5. Windows 文本解码
+
+全仓扫描同步 subprocess 文本读取，发现 `runtime/descriptor.py` 的 whoami / icacls 未声明编码；这两条命令在 Hub 启动写 runtime descriptor、设置目录及临时文件 ACL 时反复执行。`-X utf8` 会让原来的 text=True 选择 UTF-8，无法保证兼容 Windows 本地化命令输出。显式使用 Windows OEM 编码及 errors=replace；SID 的解析字段仍是 ASCII。`security/worktrees.py` 的 Git 保留 UTF-8 并补 errors=replace。异步 Adapter ProcessRunner 已按 bytes 读取并容错，不重复改动。
+
+所有调用继续 check=True，真实非零退出码仍抛 CalledProcessError。测试用真实 Python 子进程在 `-X utf8` 下输出合成 GBK stderr 并返回 7，验证无解码线程异常且保留退出码和非空 stderr。另验证 whoami 的显式编码参数及命令失败传播。
+
+本轮对忽略目录内合成文件执行 icacls 的输出为 ASCII，未在当前 shell 重现主代理的中文 GBK 输出；这里只能确定存在不安全解码调用并验证修复机制，不能据此杜撰主代理那条日志的精确命令时间线。
+
+### 测试与交付
+
+新增 `apps/hub/tests/test_r16_joint_repair.py` 9 项；没有删除或放宽既有断言。临时文件与 TEMP/TMP/--basetemp 全部位于本 worktree .tmp，Hub/server 串行执行，不运行 vitest、不调用真实模型。不接触主代理运行中的联调进程。未遇到 429、额度不足或 0xC0000142。
+
+#### Hub 全量
+
+在 `apps/hub`：
+
+```powershell
+$env:TEMP=(Resolve-Path ../../.tmp).Path
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r16-repair-hub-final --tb=short
+```
+
+```text
+........................................................................ [ 13%]
+..................................................s................sssss [ 27%]
+sss..................................................................... [ 40%]
+........................................................................ [ 54%]
+........................................................................ [ 67%]
+........................................................................ [ 81%]
+........................................................................ [ 94%]
+远程送达预留清理暂未完成，将重试
+.............................                                            [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_posix_credentials.py:166: POSIX mode bits
+SKIPPED [1] tests\test_posix_path_guard.py:50: POSIX absolute redirect path
+SKIPPED [1] tests\test_posix_path_guard.py:68: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:76: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:84: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:101: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:108: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:115: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:122: POSIX executable symlink and directory-fd semantics
+524 passed, 9 skipped, 4 warnings in 265.86s (0:04:25)
+```
+
+#### server 全量
+
+在 `apps/server`：
+
+```powershell
+$env:TEMP=(Resolve-Path ../../.tmp).Path
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r16-repair-server --tb=short
+```
+
+```text
+........................................................................ [ 24%]
+........................................................................ [ 48%]
+........................................................................ [ 72%]
+........................................................................ [ 96%]
+..........                                                               [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+298 passed, 1 warning in 94.71s (0:01:34)
+```
+
+
+返修提交：`fd65763`（授权提示词、连接生命周期和本地命令解码）、`a079901`（较大探测图、安全诊断及9项回归）。逐次执行 `git log -1 --format=%B` 自查，无署名。`git diff --check` 通过。原始输出保留在本 worktree `.tmp/r16-repair-hub-final.txt` 和 `.tmp/r16-repair-server.txt`。
