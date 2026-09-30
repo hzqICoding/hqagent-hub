@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import AttachmentDrafts from '@/shared/attachments/AttachmentDrafts.vue'
+import MessageAttachments from '@/shared/attachments/MessageAttachments.vue'
+import { Paperclip } from 'lucide-vue-next'
 import NativeSessionsPanel from '@/pages/native/NativeSessionsPanel.vue'
 import RemoteWorkspaceDialog from '@/pages/native/RemoteWorkspaceDialog.vue'
 import { agentLabel, closureText } from '@/pages/native/native-utils'
@@ -39,6 +42,8 @@ const chatStore = useRemoteChatStore()
 const authStore = useRemoteAuthStore()
 
 const isMobileSidebarOpen = ref(false)
+const attachmentDrafts = ref<InstanceType<typeof AttachmentDrafts> | null>(null)
+const attachmentsBlocked = ref(false)
 const inputText = ref('')
 const sessionMode = ref<'new' | 'continue'>('continue')
 const messageContainerRef = ref<HTMLElement | null>(null)
@@ -302,7 +307,7 @@ function canWithdraw(cmd: RemoteCommandView): boolean {
 async function handleSendMessage() {
   if (chatStore.isRemoteSuspended) { chatStore.sendError = '这台电脑的远程操作已暂停'; return }
   const text = inputText.value.trim()
-  if (!text || chatStore.isSending || !nativeCanSend.value) return
+  if (!text || chatStore.isSending || attachmentsBlocked.value || !nativeCanSend.value) return
 
   if (!chatStore.isWorkerOnline) {
     chatStore.sendError = '设备离线，发送失败'
@@ -314,7 +319,11 @@ async function handleSendMessage() {
   }
 
   try {
-    await chatStore.sendMessage(text, sessionMode.value, nativeConfirmed.value && chatStore.activeConversation?.nativeSourceRevision ? { terminalClosedConfirmed: true, sourceRevision: chatStore.activeConversation.nativeSourceRevision } : undefined)
+    const conversationId = chatStore.activeConversationId
+    const drafts = attachmentDrafts.value
+    await chatStore.sendMessage(text, sessionMode.value, nativeConfirmed.value && chatStore.activeConversation?.nativeSourceRevision ? { terminalClosedConfirmed: true, sourceRevision: chatStore.activeConversation.nativeSourceRevision } : undefined, drafts?.ids() || [])
+    drafts?.sent()
+    if (chatStore.activeConversationId !== conversationId) return
     nativeConfirmed.value = false
     inputText.value = ''
     scrollToBottom()
@@ -942,6 +951,7 @@ function getExecutionStatusLabel(status?: string): string {
               ]"
             >
               <p class="whitespace-pre-wrap break-words">{{ msg.text }}</p>
+              <MessageAttachments v-if="msg.attachments?.length" :attachments="msg.attachments" remote />
             </div>
 
             <span class="text-[10px] text-text-muted px-1">
@@ -1050,23 +1060,26 @@ function getExecutionStatusLabel(status?: string): string {
             </span>
           </div>
 
+          <AttachmentDrafts v-if="chatStore.activeConversationId" :key="chatStore.activeConversationId" ref="attachmentDrafts" remote :conversation-id="chatStore.activeConversationId" :suspended="chatStore.isRemoteSuspended" :disabled="chatStore.isSending" :offline="!chatStore.isWorkerOnline" @blocked="attachmentsBlocked = $event" />
           <!-- Input + Send Button -->
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <button type="button" aria-label="添加附件" class="min-w-[44px] min-h-[44px] shrink-0 flex items-center justify-center text-content-muted" :disabled="!chatStore.activeConversationId || chatStore.isRemoteSuspended || chatStore.isSending" @click="attachmentDrafts?.open()"><Paperclip class="w-5 h-5" /></button>
             <textarea
               ref="composerRef"
               v-model="inputText"
               rows="1"
               placeholder="输入给电脑上 Agent 的指令..."
-              class="flex-1 py-2 px-3 text-xs sm:text-sm bg-bg-app border border-border rounded-xl text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors resize-none max-h-24"
+              class="flex-1 min-w-0 py-2 px-3 text-xs sm:text-sm bg-bg-app border border-border rounded-xl text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors resize-none max-h-24"
               :disabled="chatStore.isRemoteSuspended || chatStore.isSending || chatStore.isConversationBusy"
               @keydown.enter.exact.prevent="handleSendMessage"
             />
 
             <HqButton
               variant="primary"
-              class="h-9 px-3.5 rounded-xl shrink-0"
+              aria-label="发送消息"
+              class="min-h-[44px] min-w-[44px] px-3 rounded-xl shrink-0"
               :loading="chatStore.isSending"
-              :disabled="!nativeCanSend || chatStore.isRemoteSuspended || !inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
+              :disabled="attachmentsBlocked || !nativeCanSend || chatStore.isRemoteSuspended || !inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
               @click="handleSendMessage"
             >
               <Send class="w-4 h-4" />

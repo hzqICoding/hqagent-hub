@@ -1,4 +1,8 @@
+import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
+import { uploadAttachment as uploadBinary, attachmentBlob } from '@/shared/attachments/transport'
+import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
+  AttachmentLimits, AttachmentDeletedView, LocalAttachmentView, AttachmentTargetCapabilities,
   LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
   LocalAuthInput,
@@ -39,6 +43,21 @@ import type { LocalChatGateway } from './local-chat-gateway.interface'
 import { HubApiError } from './local-hub-gateway'
 
 export class RealLocalChatGateway implements LocalChatGateway {
+  private attachmentError = (code: ErrorCode, status: number, requestId?: string): Error => {
+    return new HubApiError(getRemoteErrorMessage(code), code, status, undefined, false, requestId)
+  }
+  getAttachmentLimits(): Promise<AttachmentLimits> { return this.fetchApi('/api/v2/attachments/limits') }
+  uploadAttachment(conversationId: string, file: Blob, options: UploadOptions): Promise<LocalAttachmentView> {
+    return uploadBinary(`${this.baseUrl}/api/v2/conversations/${encodeURIComponent(conversationId)}/attachments`, file, options, null, this.attachmentError)
+  }
+  getAttachment(id: string): Promise<LocalAttachmentView> { return this.fetchApi(`/api/v2/attachments/${encodeURIComponent(id)}`) }
+  deleteAttachment(id: string): Promise<AttachmentDeletedView> {
+    return this.fetchApi(`/api/v2/attachments/${encodeURIComponent(id)}`, { method: 'DELETE' }, crypto.randomUUID())
+  }
+  getAttachmentContent(id: string, signal?: AbortSignal): Promise<Blob> { return attachmentBlob(`${this.baseUrl}/api/v2/attachments/${encodeURIComponent(id)}/content`, false, signal, this.attachmentError) }
+  getAttachmentThumbnail(id: string, signal?: AbortSignal): Promise<Blob> { return attachmentBlob(`${this.baseUrl}/api/v2/attachments/${encodeURIComponent(id)}/thumbnail`, true, signal, this.attachmentError) }
+  getAttachmentCapabilities(conversationId: string): Promise<AttachmentTargetCapabilities> { return this.fetchApi(`/api/v2/conversations/${encodeURIComponent(conversationId)}/attachment-capabilities`) }
+
   private baseUrl: string
 
   constructor(baseUrl = '') {

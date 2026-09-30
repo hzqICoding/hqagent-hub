@@ -280,7 +280,7 @@ describe('R1.5 Remote Features: Multi-PC, Workspace Grouping, Pagination, Settin
       const textarea = wrapper.find('textarea')
       expect(textarea.attributes('disabled')).toBeDefined()
 
-      const sendBtn = wrapper.find('footer button')
+      const sendBtn = wrapper.get('button[aria-label="发送消息"]')
       expect(sendBtn.attributes('disabled')).toBeDefined()
     })
   })
