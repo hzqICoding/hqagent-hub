@@ -164,6 +164,16 @@ def test_http_binding_completeness():
             assert om is None and im is None and status == '200'
             assert op['responses'][status]['content']['application/json']['schema']['$ref'] == '#/components/schemas/PublishedOpenApiDocument'
             continue
+        if om is None:
+            assert route in {('GET','/api/v2/attachments/{attachmentId}/content'),('GET','/api/v2/attachments/{attachmentId}/thumbnail'),('GET','/api/v2/worker/attachments/{attachmentId}/content')}
+            assert status == '200' and im is None
+            media = set(op['responses'][status]['content'])
+            assert media <= {'application/octet-stream','image/png'} and media
+            for kind in media:
+                assert op['responses'][status]['content'][kind]['schema']['format'] == 'binary'
+            continue
         assert op["responses"][status]["x-dataSchema"]["$ref"].endswith("/" + om)
+        if route in {('POST','/api/v2/conversations/{conversationId}/attachments'),('POST','/api/v2/worker/attachments')}:
+            assert im is None and op['requestBody']['content']['application/octet-stream']['schema']['format']=='binary'
         if im:
             assert op["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/" + im)

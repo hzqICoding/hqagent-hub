@@ -36,7 +36,8 @@ def test_r3_index_isolation_paging_and_reset_erasure(env):
         assert env.alice.get(path(a)+'/native-sessions?cursor='+page['nextCursor']).json()['data']['hasMore'] is False
         assert env.alice.get(path(b)+'/native-sessions?cursor='+page['nextCursor']).status_code==400
         a.emit(a.event('sync.reset',syncGeneration=2))
-        assert env.alice.get('/native-sessions/'+first['nativeSessionId']).status_code==404
+        disabled = env.alice.get('/native-sessions/'+first['nativeSessionId'])
+        assert disabled.status_code == 409 and disabled.json()['error']['code'] == 'REMOTE_SYNC_DISABLED'
         with env.service.repo.transaction() as tx:
             assert tx.list(env.owner,'native-index',worker=a.worker)==[]
             assert len(tx.list(env.owner,'native-index',worker=b.worker))==1

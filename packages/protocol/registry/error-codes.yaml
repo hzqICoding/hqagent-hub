@@ -290,7 +290,7 @@ errors:
   - code: REMOTE_SYNC_DISABLED
     http: 409
     retryable: false
-    description: 该电脑关闭内容同步，不能向已删除副本提交
+    description: 这台电脑已关闭同步
   - code: REMOTE_DELIVERY_EXPIRED
     http: 409
     retryable: true
@@ -373,3 +373,49 @@ errors:
     http: 409
     retryable: false
     description: 目录授权或目录内容已变化
+
+  # R1.6 attachment errors; old wire error domains stay frozen.
+  - code: ATTACHMENT_TOO_LARGE
+    http: 413
+    retryable: false
+    description: 附件超过大小限制
+  - code: ATTACHMENT_TYPE_UNSUPPORTED
+    http: 415
+    retryable: false
+    description: 不支持此附件类型
+  - code: ATTACHMENT_COUNT_EXCEEDED
+    http: 422
+    retryable: false
+    description: 每条消息最多五个附件
+  - code: ATTACHMENT_QUOTA_EXCEEDED
+    http: 409
+    retryable: false
+    description: 附件存储配额不足
+  - code: ATTACHMENT_HASH_MISMATCH
+    http: 422
+    retryable: false
+    description: 附件大小或哈希校验失败
+  - code: AGENT_IMAGE_UNSUPPORTED
+    http: 422
+    retryable: false
+    description: 目标Agent尚不支持此图片输入
+  - code: ATTACHMENT_DOWNLOAD_FAILED
+    http: 502
+    retryable: true
+    description: 附件下载失败
+  - code: ATTACHMENT_NOT_READY
+    http: 409
+    retryable: false
+    description: 附件尚不可用
+  - code: ATTACHMENT_IN_USE
+    http: 409
+    retryable: false
+    description: 附件已被消息或在途命令引用
+  - code: ATTACHMENT_THUMBNAIL_UNAVAILABLE
+    http: 409
+    retryable: false
+    description: 附件缩略图不可用
+  - code: ATTACHMENT_PREPARATION_INTERRUPTED
+    http: 409
+    retryable: false
+    description: 附件准备被中断，请重新尝试

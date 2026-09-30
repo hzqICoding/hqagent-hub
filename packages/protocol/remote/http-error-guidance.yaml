@@ -316,9 +316,9 @@ errors:
     handling: 刷新或修正请求后使用新幂等键
     surface: Hub Server HTTP
   REMOTE_SYNC_DISABLED:
-    message: 该电脑关闭内容同步，不能向已删除副本提交
-    cause: 该电脑关闭内容同步，不能向已删除副本提交
-    handling: 刷新或修正请求后使用新幂等键
+    message: 这台电脑已关闭同步
+    cause: 已授权设备的当前store关闭内容同步；原生索引列表、详情、读取统一拒绝，不能以空页或NOT_FOUND冒充无会话
+    handling: 在电脑开启同步并等待补传后刷新；不要自动重试或显示无会话
     surface: Hub Server HTTP
   REMOTE_DELIVERY_EXPIRED:
     message: 设备离线，发送失败
@@ -405,3 +405,58 @@ errors:
     cause: 选择令牌已过期或目录身份改变
     handling: 重新逐级浏览并选择目标目录
     surface: R3 HTTP / Worker wireRevision 3 only
+  ATTACHMENT_TOO_LARGE:
+    message: 附件超过大小限制
+    cause: 附件超过大小限制
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  ATTACHMENT_TYPE_UNSUPPORTED:
+    message: 不支持此附件类型
+    cause: 不支持此附件类型
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  ATTACHMENT_COUNT_EXCEEDED:
+    message: 每条消息最多五个附件
+    cause: 每条消息最多五个附件
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  ATTACHMENT_QUOTA_EXCEEDED:
+    message: 附件存储配额不足
+    cause: 附件存储配额不足
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  ATTACHMENT_HASH_MISMATCH:
+    message: 附件大小或哈希校验失败
+    cause: 附件大小或哈希校验失败
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  AGENT_IMAGE_UNSUPPORTED:
+    message: 目标Agent尚不支持此图片输入
+    cause: 目标Agent尚不支持此图片输入
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  ATTACHMENT_DOWNLOAD_FAILED:
+    message: 附件下载失败
+    cause: 附件下载失败
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  ATTACHMENT_NOT_READY:
+    message: 附件尚不可用
+    cause: 附件尚不可用
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  ATTACHMENT_IN_USE:
+    message: 附件已被消息或在途命令引用
+    cause: 附件已被消息或在途命令引用
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  ATTACHMENT_THUMBNAIL_UNAVAILABLE:
+    message: 附件缩略图不可用
+    cause: 附件缩略图不可用
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  ATTACHMENT_PREPARATION_INTERRUPTED:
+    message: 附件准备被中断，请重新尝试
+    cause: 附件准备被中断，请重新尝试
+    handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
+    surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed

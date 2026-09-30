@@ -10,7 +10,7 @@ from runtime.workspaces import WorkspaceService
 from storage.workspaces import WorkspaceRepository
 from storage.local_chat import now
 from remote_support import System, FakeRemoteServer, until, command_events
-from test_r3_native import setup_native, fixture_history
+from test_r3_native import setup_native, fixture_history, indexed_listing
 
 
 def future(seconds=9):
@@ -104,7 +104,7 @@ def test_revision2_defers_native_history_then_revision3_backfills(tmp_path):
         try:
             root=tmp_path/'records'; fixture_history(root,tmp_path,text='native-private-before-rev3')
             native=setup_native(system,root)
-            item=(await native.listing()).items[0]
+            item=(await indexed_listing(native)).items[0]
             conv=await native.import_session(item.native_session_id,RemoteNativeImportInput(
                 terminalClosedConfirmed=True,expectedIndexVersion=item.index_version,sourceRevision=item.source_revision),'import','request')
             async with FakeRemoteServer(revision=2) as server:

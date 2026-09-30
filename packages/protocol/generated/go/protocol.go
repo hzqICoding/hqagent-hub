@@ -6,7 +6,7 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.9.1"
+const Version = "0.10.0"
 
 type AdapterId = string
 
@@ -96,9 +96,29 @@ const (
 	ErrorCodeRemoteRootNotAuthorized ErrorCode = "REMOTE_ROOT_NOT_AUTHORIZED"
 	ErrorCodeRemotePathOutsideRoot ErrorCode = "REMOTE_PATH_OUTSIDE_ROOT"
 	ErrorCodeRemoteDirectoryChanged ErrorCode = "REMOTE_DIRECTORY_CHANGED"
+	ErrorCodeAttachmentTooLarge ErrorCode = "ATTACHMENT_TOO_LARGE"
+	ErrorCodeAttachmentTypeUnsupported ErrorCode = "ATTACHMENT_TYPE_UNSUPPORTED"
+	ErrorCodeAttachmentCountExceeded ErrorCode = "ATTACHMENT_COUNT_EXCEEDED"
+	ErrorCodeAttachmentQuotaExceeded ErrorCode = "ATTACHMENT_QUOTA_EXCEEDED"
+	ErrorCodeAttachmentHashMismatch ErrorCode = "ATTACHMENT_HASH_MISMATCH"
+	ErrorCodeAgentImageUnsupported ErrorCode = "AGENT_IMAGE_UNSUPPORTED"
+	ErrorCodeAttachmentDownloadFailed ErrorCode = "ATTACHMENT_DOWNLOAD_FAILED"
+	ErrorCodeAttachmentNotReady ErrorCode = "ATTACHMENT_NOT_READY"
+	ErrorCodeAttachmentInUse ErrorCode = "ATTACHMENT_IN_USE"
+	ErrorCodeAttachmentThumbnailUnavailable ErrorCode = "ATTACHMENT_THUMBNAIL_UNAVAILABLE"
+	ErrorCodeAttachmentPreparationInterrupted ErrorCode = "ATTACHMENT_PREPARATION_INTERRUPTED"
 )
 
 type RoleId = string
+
+type AttachmentManifestItem struct {
+	AttachmentId string `json:"attachmentId"`
+	FileName string `json:"fileName"`
+	Kind string `json:"kind"`
+	MimeType string `json:"mimeType"`
+	SizeBytes int64 `json:"sizeBytes"`
+	Sha256 string `json:"sha256"`
+}
 
 type AggregateType string
 
@@ -112,6 +132,16 @@ const (
 )
 
 type ProtocolVersion = string
+
+type AttachmentLimits struct {
+	ImageMaxBytes int64 `json:"imageMaxBytes"`
+	FileMaxBytes int64 `json:"fileMaxBytes"`
+	MessageMaxCount int64 `json:"messageMaxCount"`
+	AccountQuotaBytes int64 `json:"accountQuotaBytes"`
+	UnattachedTtlSeconds int64 `json:"unattachedTtlSeconds"`
+	ImageMimeTypes []string `json:"imageMimeTypes"`
+	FileExtensions []string `json:"fileExtensions"`
+}
 
 type UpdatePhase string
 

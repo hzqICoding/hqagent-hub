@@ -15,7 +15,7 @@ from runtime.remote.security import normalize_origin
 from runtime.remote.wire import WIRE_REVISION, MAX_FRAME_BYTES, encode, decode
 from runtime.remote.projection import Projector
 from runtime.remote.busy import BusyState
-from runtime.remote.delivery import DeliveryBridge
+from runtime.remote.delivery import DeliveryBridge, FINAL_STATES
 from runtime.remote.sync import SyncService
 from runtime.remote.window import SendWindow
 from runtime.native.roots import AuthorizedRoots
@@ -90,6 +90,7 @@ class RemoteWorker:
 
     async def stop(self):
         self.closed = True
+        await self.native.stop()
         if self.expiry_job:
             self.expiry_job.cancel()
             await asyncio.gather(self.expiry_job, return_exceptions=True)
@@ -155,7 +156,7 @@ class RemoteWorker:
             return False
         if identity.get("wireRevision", 1) == 2:
             with self.repo.database.locked_connection() as db:
-                pending = db.execute("SELECT 1 FROM remote2_delivery WHERE store_id=? AND state NOT IN ('completed','failed','rejected') LIMIT 1", (identity["store"],)).fetchone()
+                pending = db.execute("SELECT 1 FROM remote2_delivery WHERE store_id=? AND state NOT IN (?,?,?,?) LIMIT 1", (identity["store"], *FINAL_STATES)).fetchone()
                 outbox = db.execute("SELECT 1 FROM remote_outbox WHERE store_id=? LIMIT 1", (identity["store"],)).fetchone()
                 staged = db.execute("SELECT 1 FROM remote_sync_items LIMIT 1").fetchone()
             work = self.repo.get("sync-work") or {}
@@ -251,6 +252,7 @@ class RemoteWorker:
             if generation != self.repo.get("link")["generation"]:
                 return
             self.repo.ack(hello["lastServerAck"])
+            self.sync.on_ack()
             if hello["commandDelivery"] == "frozen" and "reason" not in hello:
                 raise HubError("REMOTE_STORE_CHANGED", "服务端冻结响应缺少原因")
             if revision > active:
@@ -272,9 +274,6 @@ class RemoteWorker:
                     self.repo.put("sync-work", {"phase":"pending"}, tx)
                     self.repo.seal(tx)
             self.repo.source_mapper = self.sync.source_event if revision >= 2 else self.projector.source_event
-            self.state("online", connected=True, frozen=hello["commandDelivery"] == "frozen",
-                code=hello.get("reason", {}).get("code") or (
-                    ("REMOTE_REVISION_REQUIRED" if self.peer_revision2 is False else "REMOTE_STATE_NOT_READY") if revision == 1 else ("REMOTE_REVISION_REQUIRED" if revision == 2 and 3 not in self.server_supported else None)))
             connection_id = hello["connectionId"]
             bridge = self.delivery if revision >= 2 else self.bridge
             if revision >= 2:
@@ -284,8 +283,11 @@ class RemoteWorker:
                 self.busy.connection_id = connection_id
                 self.busy.snapshot(force=True)
                 if revision == 3 and self.sync.settings().mirror_enabled:
-                    await self.native.scan()
+                    self.native.request_scan()
                 self.sync.prepare()
+            self.state("online", connected=True, frozen=hello["commandDelivery"] == "frozen",
+                code=hello.get("reason", {}).get("code") or (
+                    ("REMOTE_REVISION_REQUIRED" if self.peer_revision2 is False else "REMOTE_STATE_NOT_READY") if revision == 1 else ("REMOTE_REVISION_REQUIRED" if revision == 2 and 3 not in self.server_supported else None)))
             window = SendWindow(self.repo, self.sync) if revision >= 2 else None
             heartbeat_sends = []
             last_server_time = hello["serverTime"]
@@ -305,6 +307,7 @@ class RemoteWorker:
                 sent = set()
                 retransmit_at = time.monotonic() + 15
                 catalog_at = 0.0
+                native_scan = -1
                 while True:
                     if generation != self.repo.get("link")["generation"]:
                         return
@@ -313,10 +316,12 @@ class RemoteWorker:
                     if time.monotonic() >= catalog_at:
                         await self.projector.catalog()
                         if revision == 3 and self.sync.settings().mirror_enabled:
-                            await self.native.scan()
-                            self.sync.prune_native()
+                            self.native.request_scan()
                         catalog_at = time.monotonic() + 5
                     if revision >= 2:
+                        if revision == 3 and native_scan != self.native.scan_revision:
+                            self.sync.prune_native()
+                            native_scan = self.native.scan_revision
                         await self.delivery.tick()
                         await self.sync.poll_execution(self.delivery)
                         self.busy.snapshot()
@@ -328,7 +333,7 @@ class RemoteWorker:
                             self.repo.seal(tx)
                     if revision >= 2:
                         await window.flush(send)
-                        if revision == 2 and 3 in self.server_supported and time.monotonic() >= self.next_revision2_probe and self.can_upgrade():
+                        if revision == 2 and time.monotonic() >= self.next_revision2_probe and self.can_upgrade():
                             self.preferred_revision = 3
                             raise Renegotiate()
                         await asyncio.sleep(0.2)

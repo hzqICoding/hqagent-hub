@@ -1,0 +1,31 @@
+{
+  "type": "run.submit",
+  "commandId": "command_demo",
+  "conversationId": "conversation_demo",
+  "conversationSeq": 1,
+  "targetWorkerId": "worker_demo",
+  "expectedWorkerStoreId": "store_demo",
+  "createdAt": "2026-09-26T12:00:00Z",
+  "expiresAt": "2026-09-26T12:05:00Z",
+  "payload": {
+    "clientMessageId": "client_message_demo",
+    "workspaceId": "workspace_demo",
+    "sceneId": "analyze",
+    "sceneVersion": 1,
+    "sessionMode": "new",
+    "text": "只读分析已登记项目，不修改文件。",
+    "attachments": [
+      {
+        "attachmentId": "attachment_demo",
+        "fileName": "example.txt",
+        "kind": "file",
+        "mimeType": "text/plain",
+        "sizeBytes": 15,
+        "sha256": "e2dbfe68423abd2a4aae75a697a9f47ef0298a44f8b40def76f878ee228a9e8d"
+      }
+    ]
+  },
+  "wireRevision": 4,
+  "deliverBy": "2026-09-26T12:00:30Z",
+  "localConversationId": "conversation_demo"
+}

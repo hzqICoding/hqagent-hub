@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.9.1' as const
+export const PROTOCOL_VERSION = '0.10.0' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -189,6 +189,17 @@ export type ErrorCode =
   | 'REMOTE_ROOT_NOT_AUTHORIZED'
   | 'REMOTE_PATH_OUTSIDE_ROOT'
   | 'REMOTE_DIRECTORY_CHANGED'
+  | 'ATTACHMENT_TOO_LARGE'
+  | 'ATTACHMENT_TYPE_UNSUPPORTED'
+  | 'ATTACHMENT_COUNT_EXCEEDED'
+  | 'ATTACHMENT_QUOTA_EXCEEDED'
+  | 'ATTACHMENT_HASH_MISMATCH'
+  | 'AGENT_IMAGE_UNSUPPORTED'
+  | 'ATTACHMENT_DOWNLOAD_FAILED'
+  | 'ATTACHMENT_NOT_READY'
+  | 'ATTACHMENT_IN_USE'
+  | 'ATTACHMENT_THUMBNAIL_UNAVAILABLE'
+  | 'ATTACHMENT_PREPARATION_INTERRUPTED'
 
 /** 任何 Port 方法失败时的统一结构。接入失败或缺少硬能力必须走这里，不得返回成功后在事件里静默降级。 */
 export interface AdapterFailure {
@@ -372,6 +383,22 @@ export interface AgentFailedPayload {
   blockers?: Blocker[]
 }
 
+/** Immutable verified metadata only: no URL, path, base64, body or credentials. Command IDs are public server attachment IDs, at most five, bound to one owner/worker/store/conversation. */
+export interface AttachmentManifestItem {
+  attachmentId: string
+  fileName: string
+  kind: 'image' | 'file'
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' | 'application/pdf' | 'text/plain'
+  sizeBytes: number
+  sha256: string
+}
+
+/** Hub to local Adapter only: verified managed read-only input path, never HTTP response or remote command. Recheck hash/size and allowed input location before passing to model. */
+export interface AgentInputAttachment {
+  attachment: AttachmentManifestItem
+  localPath: string
+}
+
 export interface AgentProgressPayload {
   message: string
   percent?: number
@@ -468,6 +495,7 @@ export interface AgentTaskSpec {
   modelId?: string
   reasoningEffort?: string
   roleInstructions?: string
+  inputAttachments?: AgentInputAttachment[]
 }
 
 export interface AgentToolCallPayload {
@@ -636,6 +664,57 @@ export interface ApprovalView {
   expiresAt?: Timestamp
   /** 结构化上下文，例如完整命令行、影响文件数、diff 摘要 */
   details?: Record<string, unknown>
+}
+
+/** Delete only unreferenced uploaded attachment; cannot delete attached history through this endpoint. */
+export interface AttachmentDeletedView {
+  attachmentId: string
+  deleted: true
+}
+
+/** Decimal MB/GB. jpg/jpeg/png/webp/gif content-detected; text/source normalized as UTF-8 text/plain; PDF detected by content. Frozen whitelist in contract/fixture. */
+export interface AttachmentLimits {
+  imageMaxBytes: 10000000
+  fileMaxBytes: 20000000
+  messageMaxCount: 5
+  accountQuotaBytes: 5000000000
+  unattachedTtlSeconds: 86400
+  imageMimeTypes: ('image/jpeg' | 'image/png' | 'image/webp' | 'image/gif')[]
+  fileExtensions: string[]
+}
+
+/** supported iff CLI entry/runtime/model path and integration verification all succeed. Unknown/unsupported reject image before send. Missing capability means unknown; never infer from provider brand. */
+export interface ImageInputCapability {
+  support: 'unknown' | 'unsupported' | 'supported'
+  cliEntry: 'unknown' | 'unsupported' | 'supported'
+  runtimeImplemented: boolean
+  verified: boolean
+  mimeTypes: ('image/jpeg' | 'image/png' | 'image/webp' | 'image/gif')[]
+  maxBytes: number
+  reason?: string
+}
+
+export type NativeAgentType =
+  | 'claude'
+  | 'codex'
+
+export interface NativeImageCapability {
+  agentType: NativeAgentType
+  imageInput: ImageInputCapability
+}
+
+export interface RoleImageCapability {
+  roleId: string
+  agentId: string
+  imageInput: ImageInputCapability
+}
+
+/** All selected scenario roles, not only executor; native uses exactly one native entry and no scenario roles. Missing role or stale information fails closed. */
+export interface AttachmentTargetCapabilities {
+  conversationKind: 'scenario' | 'native'
+  capabilityRevision: number
+  roles: RoleImageCapability[]
+  native?: NativeImageCapability
 }
 
 export interface BootstrapAgentsSummary {
@@ -1022,6 +1101,17 @@ export interface LocalAgentModelsView {
   reason?: string
 }
 
+/** Computer-owned safe blob ID; no path returned. Independent of remote pairing and account quota; local same per-file/count limits apply. */
+export interface LocalAttachmentView {
+  attachment: AttachmentManifestItem
+  conversationId: string
+  state: 'uploaded' | 'attached'
+  createdAt: string
+  expiresAt?: string
+  syncStatus?: 'not_synced' | 'pending_upload' | 'available' | 'unavailable'
+  syncError?: ErrorCode
+}
+
 export interface LocalAuthInput {
   code: string
 }
@@ -1075,10 +1165,6 @@ export interface NativeActivityEvidence {
   recentlyModified: boolean
   terminalClosedConfirmedAt?: string
 }
-
-export type NativeAgentType =
-  | 'claude'
-  | 'codex'
 
 /** 任务状态。终态：succeeded / failed / cancelled */
 export type TaskStatus =
@@ -1142,6 +1228,7 @@ export interface LocalMessageView {
   text: string
   runId?: string
   createdAt: Timestamp
+  attachments?: AttachmentManifestItem[]
 }
 
 export type NativeFormatStatus =
@@ -1310,6 +1397,19 @@ export interface LocalRunView {
   task?: TaskDetailView
   conversationKind?: 'scenario' | 'native'
   agentType?: NativeAgentType
+}
+
+/** Public owner-scoped ID. Explicit pending/unavailable prevents dangling downloads. Thumbnail ready never implies original is safe to inline. */
+export interface MessageAttachmentView {
+  attachmentId: string
+  fileName: string
+  kind: 'image' | 'file'
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' | 'application/pdf' | 'text/plain'
+  sizeBytes: number
+  sha256: string
+  availability: 'pending_upload' | 'available' | 'unavailable'
+  thumbnailStatus: 'pending' | 'ready' | 'unavailable' | 'not_applicable'
+  errorCode?: ErrorCode
 }
 
 /** Server-generated from authenticated explicit user action, persisted by Worker at admission and bound to source revision. No caller-supplied owner ID. */
@@ -1632,6 +1732,23 @@ export interface RemoteApprovalView {
   denialCode?: ErrorCode
 }
 
+/** Owner-scoped logical quota: count each live attachment once, independent of physical deduplication; inflight reservations also consume quota. */
+export interface RemoteAttachmentLimitsView {
+  limits: AttachmentLimits
+  usedBytes: number
+  reservedBytes: number
+  observedAt: string
+}
+
+/** Deleted/expired records are not exposed: NOT_FOUND. uploaded expires after 24h, reserved has bounded command pin, attached belongs to Worker-confirmed message. Attached metadata may precede local-origin bytes. */
+export interface RemoteAttachmentView {
+  attachment: MessageAttachmentView
+  conversationId: string
+  state: 'uploaded' | 'reserved' | 'attached'
+  createdAt: string
+  expiresAt?: string
+}
+
 export interface RemoteAuthenticatedSession {
   authenticated: true
   account: RemoteAccountView
@@ -1682,17 +1799,17 @@ export interface RemoteControlUnconfirmed {
   observedAt: string
 }
 
-/** D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist. */
-export interface RemoteV2ControlConfirmed {
+/** D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist. input_preparation_cancelled requires durable no-Agent-start fence and confirmed stopped preparation I/O, never inferred from a missing process handle. */
+export interface RemoteV4ControlConfirmed {
   outcome: 'confirmed'
   executionMayStillBeRunning: boolean
   orphanProcessIds: number[]
   reason: string
-  evidence: 'adapter_confirmed' | 'node_boundary_paused' | 'already_terminal' | 'retry_enqueued' | 'supervisor_resumed' | 'inbox_tombstone' | 'metadata_committed'
+  evidence: 'adapter_confirmed' | 'node_boundary_paused' | 'already_terminal' | 'retry_enqueued' | 'supervisor_resumed' | 'inbox_tombstone' | 'metadata_committed' | 'input_preparation_cancelled'
   observedAt: string
 }
 
-export type RemoteV2ControlResult = RemoteV2ControlConfirmed | RemoteControlRejected | RemoteControlUnconfirmed
+export type RemoteV4ControlResult = RemoteV4ControlConfirmed | RemoteControlRejected | RemoteControlUnconfirmed
 
 /** Three layers must be displayed separately: transport/delivery, Worker controlResult, execution status from RemoteRunView. No inference from disconnected transport or command.completed to task success. Resource commands omit conversationId; resourceRef appears after Worker commit and contains mapped public IDs. Read through existing GET commands; no fabricated run/sequence. */
 export interface RemoteCommandView {
@@ -1710,7 +1827,7 @@ export interface RemoteCommandView {
   expiresAt: string
   resultStatus?: 'succeeded' | 'cancelled' | 'confirmed' | 'retry_enqueued' | 'approval_consumed' | 'withdrawn' | 'failed' | 'rejected'
   resultRef?: RemoteResultRef
-  controlResult?: RemoteV2ControlResult
+  controlResult?: RemoteV4ControlResult
   error?: RemoteError
   withdrawalCommandId?: string
   deliverBy?: string
@@ -1781,6 +1898,7 @@ export interface RemoteMessageView {
   runId?: string
   messageSequence?: number
   messageRevision?: number
+  attachments?: MessageAttachmentView[]
 }
 
 /** Owner-scoped browser event; ordering/resume is only by opaque serverCursor, never by payload Worker seq. */
@@ -1958,6 +2076,16 @@ export interface RemoteV2CommandAccepted {
   resultRef?: RemoteResultRef
 }
 
+/** D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist. */
+export interface RemoteV2ControlConfirmed {
+  outcome: 'confirmed'
+  executionMayStillBeRunning: boolean
+  orphanProcessIds: number[]
+  reason: string
+  evidence: 'adapter_confirmed' | 'node_boundary_paused' | 'already_terminal' | 'retry_enqueued' | 'supervisor_resumed' | 'inbox_tombstone' | 'metadata_committed'
+  observedAt: string
+}
+
 /** Not universally task success. Retry completes on durable new execution reference; execute completes on actual terminal Run success/cancellation. Cancel/pause/resume require confirmed structured control result. */
 export interface RemoteV2CommandCompleted {
   type: 'command.completed'
@@ -2019,6 +2147,8 @@ export interface RemoteV2CommandRejected {
   status: 'rejected'
   error: RemoteWire2Error
 }
+
+export type RemoteV2ControlResult = RemoteV2ControlConfirmed | RemoteControlRejected | RemoteControlUnconfirmed
 
 /** D41: unconfirmed leaves command accepted and pending reconciliation. Run-scoped controls include resultRef/executionStatus. Before a Run exists (withdrawal reconciliation), omit both rather than invent an identity or execution state. */
 export interface RemoteV2ControlObserved {
@@ -2841,6 +2971,7 @@ export interface RemoteSendMessageInput {
   sessionMode: 'new' | 'continue'
   expiresAt?: string
   nativeConfirmation?: NativeContinuationConfirmationInput
+  attachmentIds?: string[]
 }
 
 /** Heartbeat acknowledgement is not event ack. After 45 seconds without authenticated Worker traffic mark offline without modifying execution state. */
@@ -4264,6 +4395,917 @@ export interface RemoteV3WorkerHello {
 
 export type RemoteV3WorkerOutboundFrame = RemoteV3WorkerHello | RemoteV3WorkerHeartbeat | RemoteV3ConversationGap | RemoteV3WorkerEvent | RemoteV3ContentRedaction | RemoteV3QueryResultSegment | RemoteV3QueryFailed
 
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV4ApprovalDecisionCommand {
+  type: 'approval.decide'
+  wireRevision: 4
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteApprovalDecisionPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Frozen revision 4 error domain. New registry codes never silently broaden older codecs. Missing/deleted/expired attachment uses existing NOT_FOUND after authorization. */
+export type RemoteWire4ErrorCode =
+  | 'BAD_REQUEST'
+  | 'VALIDATION_FAILED'
+  | 'UNAUTHORIZED'
+  | 'ORIGIN_NOT_ALLOWED'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'IDEMPOTENCY_MISMATCH'
+  | 'PROTOCOL_VERSION_MISMATCH'
+  | 'HUB_NOT_READY'
+  | 'HUB_MAINTENANCE'
+  | 'EVENT_CURSOR_EXPIRED'
+  | 'FEATURE_UNAVAILABLE'
+  | 'AGENT_NOT_FOUND'
+  | 'AGENT_OFFLINE'
+  | 'AGENT_NOT_LOGGED_IN'
+  | 'AGENT_INCOMPATIBLE'
+  | 'CAPABILITY_MISSING'
+  | 'ROLE_UNRESOLVED'
+  | 'SESSION_NOT_RESUMABLE'
+  | 'TASK_NOT_CANCELLABLE'
+  | 'TASK_ACTION_INVALID'
+  | 'WORKTREE_BUSY'
+  | 'PATH_NOT_ALLOWED'
+  | 'APPROVAL_REQUIRED'
+  | 'APPROVAL_EXPIRED'
+  | 'APPROVAL_ALREADY_DECIDED'
+  | 'UPDATE_NOT_AVAILABLE'
+  | 'UPDATE_BUSY'
+  | 'UPDATE_VERIFY_FAILED'
+  | 'UPDATE_DRAIN_TIMEOUT'
+  | 'INTERNAL'
+  | 'REMOTE_AUTH_REQUIRED'
+  | 'REMOTE_CSRF_REJECTED'
+  | 'REMOTE_DEVICE_OFFLINE'
+  | 'REMOTE_DEVICE_REVOKED'
+  | 'REMOTE_DEVICE_AUTH_FAILED'
+  | 'REMOTE_PAIRING_EXPIRED'
+  | 'REMOTE_PAIRING_CONFLICT'
+  | 'REMOTE_PAIRING_INVALID'
+  | 'REMOTE_COMMAND_EXPIRED'
+  | 'REMOTE_COMMAND_WITHDRAWN'
+  | 'REMOTE_WITHDRAWAL_UNCONFIRMED'
+  | 'REMOTE_STORE_CHANGED'
+  | 'REMOTE_EPOCH_STALE'
+  | 'REMOTE_PROTOCOL_UNSUPPORTED'
+  | 'REMOTE_EVENT_CONFLICT'
+  | 'REMOTE_ACK_CONFLICT'
+  | 'REMOTE_SEQUENCE_GAP'
+  | 'REMOTE_APPROVAL_FORBIDDEN'
+  | 'CONVERSATION_AUTHORITY_MISMATCH'
+  | 'REMOTE_TARGET_MISMATCH'
+  | 'REMOTE_SCENE_VERSION_MISMATCH'
+  | 'REMOTE_CURSOR_EXPIRED'
+  | 'REMOTE_CURSOR_INVALID'
+  | 'REMOTE_RATE_LIMITED'
+  | 'REMOTE_FRAME_TOO_LARGE'
+  | 'REMOTE_WITHDRAWAL_TOO_LATE'
+  | 'REMOTE_PAIRING_IN_PROGRESS'
+  | 'REMOTE_SERVER_UNREACHABLE'
+  | 'REMOTE_SERVER_ORIGIN_INVALID'
+  | 'REMOTE_CONVERSATION_BUSY'
+  | 'REMOTE_STATE_NOT_READY'
+  | 'REMOTE_SYNC_CONFLICT'
+  | 'REMOTE_SYNC_DISABLED'
+  | 'REMOTE_DELIVERY_EXPIRED'
+  | 'REMOTE_REVISION_REQUIRED'
+  | 'REMOTE_SYNC_RESOURCE_LIMIT'
+  | 'REMOTE_QUERY_TIMEOUT'
+  | 'REMOTE_QUERY_TOO_LARGE'
+  | 'NATIVE_SESSION_ACTIVE'
+  | 'NATIVE_SESSION_UNSUPPORTED'
+  | 'NATIVE_SESSION_CHANGED'
+  | 'NATIVE_SESSION_WRITER_CONFLICT'
+  | 'REMOTE_ROOT_NOT_AUTHORIZED'
+  | 'REMOTE_PATH_OUTSIDE_ROOT'
+  | 'REMOTE_DIRECTORY_CHANGED'
+  | 'ATTACHMENT_TOO_LARGE'
+  | 'ATTACHMENT_TYPE_UNSUPPORTED'
+  | 'ATTACHMENT_COUNT_EXCEEDED'
+  | 'ATTACHMENT_QUOTA_EXCEEDED'
+  | 'ATTACHMENT_HASH_MISMATCH'
+  | 'AGENT_IMAGE_UNSUPPORTED'
+  | 'ATTACHMENT_DOWNLOAD_FAILED'
+  | 'ATTACHMENT_NOT_READY'
+  | 'ATTACHMENT_IN_USE'
+  | 'ATTACHMENT_THUMBNAIL_UNAVAILABLE'
+  | 'ATTACHMENT_PREPARATION_INTERRUPTED'
+
+/** Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely. */
+export interface RemoteWire4ApprovalView {
+  approvalId: string
+  resultRef: RemoteResultRef
+  action: DangerousAction
+  targetSummary: string
+  riskLevel: RiskLevel
+  status: ApprovalStatus
+  requestedAt: string
+  expiresAt: string
+  remoteApprovalAllowed: boolean
+  workerPolicyRevision: number
+  denialCode?: RemoteWire4ErrorCode
+}
+
+export interface RemoteV4ApprovalEvent {
+  type: 'approval.state_changed'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  payload: RemoteWire4ApprovalView
+}
+
+export interface RemoteV4BackfillProgress {
+  type: 'sync.backfill.progress'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  backfillId: string
+  batchIndex: number
+  batchEventCount: number
+  snapshotHighWater: number
+  complete: boolean
+}
+
+export interface RemoteV4BusySnapshot {
+  type: 'sync.busy.snapshot'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  snapshotId: string
+  connectionId: string
+  capturedAt: string
+  partIndex: number
+  partCount: number
+  conversationIds: string[]
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV4CancelCommand {
+  type: 'run.cancel'
+  wireRevision: 4
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Worker scene index only; model/provider credential or installation/subscription data is not relayed. */
+export interface RemoteV4SceneSummary {
+  sceneId: string
+  name: string
+  version: number
+  readOnly: boolean
+  roleImageCapabilities?: RoleImageCapability[]
+}
+
+/** Atomic bounded complete catalog for R1. Reject oversized catalogs instead of truncating; offline entries are last observed, not proof that paths still exist. Revision 3 producers include authorizedRoots, [] when none; omitted legacy HTTP field means no remote project browsing. Revision 4 includes each scene role image capability and native Agent capability; missing entries mean unknown. */
+export interface RemoteV4CatalogView {
+  workerId: string
+  capabilityRevision: number
+  observedAt: string
+  workspaces: RemoteWorkspaceSummary[]
+  scenes: RemoteV4SceneSummary[]
+  remotelyBlockedActions: DangerousAction[]
+  workerStoreId: string
+  authorizedRoots?: RemoteAuthorizedRoot[]
+  nativeImageCapabilities?: NativeImageCapability[]
+}
+
+export interface RemoteV4CatalogEvent {
+  type: 'capability.changed'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  payload: RemoteV4CatalogView
+}
+
+/** Durable inbox admission, not model/execution success. Duplicate immutable commands return the original receipt/event. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV4CommandAccepted {
+  type: 'command.accepted'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  receivedAt: string
+  status: 'accepted'
+  resultRef?: RemoteResultRef
+}
+
+/** Not universally task success. Retry completes on durable new execution reference; execute completes on actual terminal Run success/cancellation. Cancel/pause/resume require confirmed structured control result. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV4CommandCompleted {
+  type: 'command.completed'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  resultStatus: 'succeeded' | 'cancelled' | 'confirmed' | 'retry_enqueued' | 'approval_consumed' | 'withdrawn'
+  resultRef?: RemoteResultRef
+  controlResult?: RemoteV4ControlConfirmed
+  resourceRef?: RemoteResourceResultRef
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV4CommandWithdrawalCommand {
+  type: 'command.withdraw'
+  wireRevision: 4
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteCommandWithdrawalPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV4ConversationCreateCommand {
+  type: 'conversation.create'
+  wireRevision: 4
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteCreateConversationInput
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV4ConversationUpdateCommand {
+  type: 'conversation.update'
+  wireRevision: 4
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteSyncConversationUpdate
+  deliverBy: string
+  localConversationId: string
+}
+
+export interface RemoteV4NativeImportCommand {
+  type: 'native.import'
+  wireRevision: 4
+  commandId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  deliverBy: string
+  requestId: string
+  payload: NativeImportPayload
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV4PauseCommand {
+  type: 'run.pause'
+  wireRevision: 4
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV4ResumeCommand {
+  type: 'run.resume'
+  wireRevision: 4
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV4RetryCommand {
+  type: 'run.retry'
+  wireRevision: 4
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Scenario retains sceneId/sceneVersion. Native requires conversationKind=native, agentType/nativeSessionId matching persisted binding and sessionMode=continue; omits scene fields. Confirmation optional only when an existing audited confirmation remains valid. No fuzzy IDs or new-session fallback. With images, capabilityRevision is mandatory and all selected roles must support the detected image type/size. Download only after accepted grant and before any Agent start. */
+export interface RemoteV4RunSubmitPayload {
+  clientMessageId: string
+  workspaceId: string
+  sceneId?: string
+  sceneVersion?: number
+  sessionMode: 'new' | 'continue'
+  text: string
+  conversationKind?: 'scenario' | 'native'
+  agentType?: NativeAgentType
+  nativeSessionId?: string
+  nativeConfirmation?: NativeClosureConfirmation
+  attachments?: AttachmentManifestItem[]
+  attachmentCapabilityRevision?: number
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV4RunSubmitCommand {
+  type: 'run.submit'
+  wireRevision: 4
+  commandId: string
+  conversationId: string
+  conversationSeq: number
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteV4RunSubmitPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+export interface RemoteV4WorkspaceRegisterCommand {
+  type: 'workspace.register'
+  wireRevision: 4
+  commandId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  deliverBy: string
+  requestId: string
+  payload: RemoteWorkspaceRegisterInput
+}
+
+export type RemoteV4CommandEnvelope = RemoteV4RunSubmitCommand | RemoteV4PauseCommand | RemoteV4ResumeCommand | RemoteV4CancelCommand | RemoteV4RetryCommand | RemoteV4ApprovalDecisionCommand | RemoteV4CommandWithdrawalCommand | RemoteV4ConversationUpdateCommand | RemoteV4ConversationCreateCommand | RemoteV4NativeImportCommand | RemoteV4WorkspaceRegisterCommand
+
+/** Sanitized error. No credential, raw environment, owner locator or arbitrary detail object. */
+export interface RemoteWire4Error {
+  code: RemoteWire4ErrorCode
+  message: string
+  retryable: boolean
+}
+
+/** Failure after admission. A refused control is distinct from unconfirmed cancellation; do not infer that an Agent process has stopped. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV4CommandFailed {
+  type: 'command.failed'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  resultStatus: 'failed' | 'rejected'
+  error: RemoteWire4Error
+  resultRef?: RemoteResultRef
+  controlResult?: RemoteControlRejected
+}
+
+/** Pre-admission rejection only. An expired sequenced submit consumes its ordered slot without execution. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV4CommandRejected {
+  type: 'command.rejected'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  receivedAt: string
+  status: 'rejected'
+  error: RemoteWire4Error
+}
+
+export type RemoteV4CommandReceipt = RemoteV4CommandAccepted | RemoteV4CommandRejected
+
+/**  For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV4CommandReceived {
+  type: 'command.received'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  commandDigest: string
+  deliverBy: string
+  receivedAt: string
+}
+
+/** Only retired content slots, never admission/grant/control facts. Original identity and digest are retained, not rewritten. */
+export interface RemoteV4RedactedSlot {
+  seq: number
+  eventId: string
+  originalType: 'sync.conversation.upserted' | 'sync.message.segment' | 'sync.run.state' | 'sync.backfill.progress' | 'message.appended' | 'native.index.upserted'
+  eventSha256: string
+}
+
+/** Authenticated privacy coverage control, not a replacement immutable event. Bound to a durable reset/deletion fence. No new seq allocation; normal contiguous ACK only after all covered identities/digests and deletion are committed. native.index.deleted fences only that nativeSessionId; imported deletes the index, never the newly imported Hub conversation. sync.reset covers both kinds. No redaction of closure confirmation audit. */
+export interface RemoteV4ContentRedaction {
+  type: 'sync.content.redaction'
+  wireRevision: 4
+  redactionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  /** Deletion-fence generation. Reset retires content generations up to this value; conversation deletion additionally restricts the local conversation ID. Never cover later generations or seq >= deletionSeq. */
+  syncGeneration: number
+  deletionEventId: string
+  deletionSeq: number
+  conversationId?: string
+  slots: RemoteV4RedactedSlot[]
+  nativeSessionId?: string
+}
+
+/** D41: unconfirmed leaves command accepted and pending reconciliation. Run-scoped controls include resultRef/executionStatus. Before a Run exists (withdrawal reconciliation), omit both rather than invent an identity or execution state. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV4ControlObserved {
+  type: 'command.control_result'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  resultRef?: RemoteResultRef
+  controlResult: RemoteV4ControlResult
+  executionStatus?: TaskStatus
+}
+
+export interface RemoteV4ConversationDeleted {
+  type: 'sync.conversation.deleted'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  conversationId: string
+  deletedAt: string
+}
+
+/** Worker requests missing commands or skip records. Never run a later user message across a sequence gap. */
+export interface RemoteV4ConversationGap {
+  type: 'conversation.gap'
+  wireRevision: 4
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  conversationId: string
+  expectedSeq: number
+  receivedSeq: number
+}
+
+/** Durable ordered tombstone for a never-dispatched submit. Not an execution/control command; cannot be used to erase accepted work. Retain until gap replay/snapshot acknowledgement is safe. */
+export interface RemoteV4ConversationSkip {
+  type: 'conversation.skip'
+  wireRevision: 4
+  commandId: string
+  conversationId: string
+  conversationSeq: number
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  reason: 'withdrawn_before_dispatch' | 'expired_before_dispatch'
+  recordedAt: string
+}
+
+/** Worker local identifiers. Server namespaces by worker/store and maps browser IDs; visibility is display-only. Missing conversationKind means scenario (requires existing scene fields). Native requires agentType/nativeSessionId and omits scene fields; exact vendor session binding remains local. */
+export interface RemoteV4SyncConversation {
+  conversationId: string
+  workspaceId: string
+  sceneId?: string
+  sceneVersion?: number
+  title: string
+  createdAt: string
+  updatedAt: string
+  archived: boolean
+  visibility: 'both' | 'pc_only' | 'mobile_only'
+  metadataVersion: number
+  authority: 'local' | 'remote'
+  conversationKind?: 'scenario' | 'native'
+  agentType?: NativeAgentType
+  nativeSessionId?: string
+  nativeActivity?: NativeActivityEvidence
+  nativeSourceRevision?: string
+}
+
+export interface RemoteV4ConversationUpserted {
+  type: 'sync.conversation.upserted'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: RemoteV4SyncConversation
+}
+
+/** Explicit durable execution permission. Continuous event ACK is never permission. Late unconsumed grants expire; persisted grants are not reverted by server timers. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV4DeliveryGrant {
+  type: 'command.delivery_granted'
+  wireRevision: 4
+  commandId: string
+  conversationId?: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  receivedEventId: string
+  commandDigest: string
+  deliverBy: string
+  grantedAt: string
+}
+
+export interface RemoteV4DirectoryQuery {
+  type: 'query.directory.list'
+  wireRevision: 4
+  queryId: string
+  requestId: string
+  connectionId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  workerEpoch: string
+  expiresAt: string
+  payload: DirectoryListingInput
+}
+
+/** Only advances after event persistence AND projection/browser-outbox commit; old store ack never trims new store outbox. */
+export interface RemoteV4EventAck {
+  type: 'worker.events_ack'
+  wireRevision: 4
+  connectionId: string
+  workerId: string
+  position: RemoteEventPosition
+}
+
+export interface RemoteV4MessageEvent {
+  type: 'message.appended'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  payload: RemoteWorkerMessagePayload
+}
+
+/** Sanitized observable progress only. Never private model reasoning, raw provider auth, full environment, or credential files. */
+export interface RemoteV4ProgressEvent {
+  type: 'run.progress'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  resultRef: RemoteResultRef
+  message: string
+}
+
+/** Worker creates/binds LocalRun and execution Task using existing semantics; it does not invent long-lived Task or retryOfRunId. */
+export interface RemoteV4RunStateEvent {
+  type: 'run.state_changed'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  payload: RemoteRunStatePayload
+}
+
+/** Worker records ordered skip in the same durable inbox ordering ledger as submits. */
+export interface RemoteV4SkipRecorded {
+  type: 'conversation.skip_recorded'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  conversationSeq: number
+}
+
+export type RemoteV4ExecutionEvent = RemoteV4CommandAccepted | RemoteV4CommandRejected | RemoteV4CommandCompleted | RemoteV4CommandFailed | RemoteV4ControlObserved | RemoteV4RunStateEvent | RemoteV4MessageEvent | RemoteV4ApprovalEvent | RemoteV4ProgressEvent | RemoteV4CatalogEvent | RemoteV4SkipRecorded
+
+/** Worker-local attachment identity; originAttachmentId only for a browser upload authorized in this message command. Pending/unavailable never claim bytes exist; available requires server-verified upload. Same metadata in every message segment. */
+export interface SyncAttachmentItem {
+  localAttachmentId: string
+  fileName: string
+  kind: 'image' | 'file'
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' | 'application/pdf' | 'text/plain'
+  sizeBytes: number
+  sha256: string
+  availability: 'pending_upload' | 'available' | 'unavailable'
+  originAttachmentId?: string
+  errorCode?: RemoteWire4ErrorCode
+}
+
+/** Whole UTF-8 text, never truncated; 0-based contiguous segments. Immutable metadata per messageRevision, atomic publish only after digest/byte-count verification. */
+export interface RemoteV4SyncMessageSegment {
+  messageId: string
+  conversationId: string
+  messageSequence: number
+  messageRevision: number
+  role: 'user' | 'assistant' | 'system'
+  createdAt: string
+  runId?: string
+  text: string
+  segmentIndex: number
+  segmentCount: number
+  totalUtf8Bytes: number
+  contentSha256: string
+  attachments?: SyncAttachmentItem[]
+  sourceCommandId?: string
+}
+
+export interface RemoteV4MessageSegment {
+  type: 'sync.message.segment'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: RemoteV4SyncMessageSegment
+}
+
+export interface RemoteV4NativeConfirmationRecorded {
+  type: 'native.closure.confirmed'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  nativeSessionId: string
+  confirmation: NativeClosureConfirmation
+}
+
+export interface RemoteV4NativeIndexDeleted {
+  type: 'native.index.deleted'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  nativeSessionId: string
+  workspaceId: string
+  deletedAt: string
+  reason: 'source_removed' | 'workspace_removed' | 'imported'
+}
+
+export interface RemoteV4NativeIndexUpserted {
+  type: 'native.index.upserted'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: NativeSessionIndex
+}
+
+export interface RemoteV4NativeReadQuery {
+  type: 'query.native.messages'
+  wireRevision: 4
+  queryId: string
+  requestId: string
+  connectionId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  workerEpoch: string
+  expiresAt: string
+  payload: NativeReadInput
+}
+
+/** Worker local event seq continuity without publishing local-only history. Covers inclusive [firstSeq,seq], firstSeq<=seq. Opaque tombstone only, no local conversation/path/model data. Cannot cover any already published event or remote-critical event; immutable bounded ranges are replayed whole. Persist range coverage before advancing contiguous ack. */
+export interface RemoteV4OmittedEvents {
+  type: 'events.omitted'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  firstSeq: number
+  reason: 'not_remote_visible'
+}
+
+export interface RemoteV4QueryFailed {
+  type: 'query.failed'
+  wireRevision: 4
+  queryId: string
+  requestId: string
+  connectionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  error: RemoteWire4Error
+}
+
+export type RemoteV4QueryPayload = NativeMessagePage | DirectoryListingPage
+
+export interface RemoteV4QueryResultSegment {
+  type: 'query.result.segment'
+  wireRevision: 4
+  queryId: string
+  requestId: string
+  connectionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  resultType: 'native.messages' | 'directory.list'
+  segmentIndex: number
+  segmentCount: number
+  totalUtf8Bytes: number
+  contentSha256: string
+  text: string
+}
+
+/** Heartbeat acknowledgement is not event ack. After 45 seconds without authenticated Worker traffic mark offline without modifying execution state. */
+export interface RemoteV4ServerHeartbeat {
+  type: 'server.heartbeat'
+  wireRevision: 4
+  connectionId: string
+  receivedAt: string
+}
+
+/** Frozen delivery requires a reason. Store changes or ack regression require reconciliation; R1 exposes no automatic force-unfreeze API. */
+export interface RemoteV4WorkerHelloAck {
+  type: 'worker.hello_ack'
+  wireRevision: 4
+  connectionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  commandDelivery: 'ready' | 'frozen'
+  lastServerAck: RemoteEventPosition | null
+  /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
+  pendingCommandCursor: string
+  heartbeatIntervalSeconds: 15
+  offlineAfterSeconds: 45
+  reason?: RemoteWire4Error
+  serverTime: string
+}
+
+export interface RemoteV4WorkerHelloRejected {
+  type: 'worker.hello_rejected'
+  wireRevision: 4
+  error: RemoteWire4Error
+  /** Server supported wire revisions, mandatory on rejection (including REMOTE_PROTOCOL_UNSUPPORTED). Initially [1]; during upgrades advertise N and N-1. */
+  supportedWireRevisions: number[]
+}
+
+export type RemoteV4ServerOutboundFrame = RemoteV4WorkerHelloAck | RemoteV4WorkerHelloRejected | RemoteV4ServerHeartbeat | RemoteV4EventAck | RemoteV4CommandEnvelope | RemoteV4ConversationSkip | RemoteV4DeliveryGrant | RemoteV4NativeReadQuery | RemoteV4DirectoryQuery
+
+export interface RemoteV4SyncReset {
+  type: 'sync.reset'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+}
+
+export interface RemoteV4SyncedRunState {
+  type: 'sync.run.state'
+  wireRevision: 4
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: RemoteSyncRunState
+}
+
+export type RemoteV4VisibleWorkerEvent = RemoteV4CommandAccepted | RemoteV4CommandRejected | RemoteV4CommandCompleted | RemoteV4CommandFailed | RemoteV4ControlObserved | RemoteV4RunStateEvent | RemoteV4MessageEvent | RemoteV4ApprovalEvent | RemoteV4ProgressEvent | RemoteV4CatalogEvent | RemoteV4SkipRecorded | RemoteV4ConversationUpserted | RemoteV4MessageSegment | RemoteV4SyncedRunState | RemoteV4ConversationDeleted | RemoteV4SyncReset | RemoteV4BusySnapshot | RemoteV4BackfillProgress | RemoteV4CommandReceived | RemoteV4NativeIndexUpserted | RemoteV4NativeIndexDeleted | RemoteV4NativeConfirmationRecorded
+
+export type RemoteV4WorkerEvent = RemoteV4VisibleWorkerEvent | RemoteV4OmittedEvents
+
+/** Sent every 15 seconds. It reports liveness only, not durable business-event progress. */
+export interface RemoteV4WorkerHeartbeat {
+  type: 'worker.heartbeat'
+  wireRevision: 4
+  connectionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  sentAt: string
+  lastServerAck: RemoteEventPosition | null
+}
+
+/** First frame after device-authenticated WSS. Same store preserves seq across boots; new store requires null ack. Credentials never appear in frames. */
+export interface RemoteV4WorkerHello {
+  type: 'worker.hello'
+  wireRevision: 4
+  /** Protocol package semantic version for diagnostics only. Never negotiate or reject based on this value. */
+  protocolVersion: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  platform: 'windows' | 'linux' | 'darwin'
+  architecture: 'x86_64' | 'aarch64'
+  capabilityRevision: number
+  lastServerAck: RemoteEventPosition | null
+}
+
+export type RemoteV4WorkerOutboundFrame = RemoteV4WorkerHello | RemoteV4WorkerHeartbeat | RemoteV4ConversationGap | RemoteV4WorkerEvent | RemoteV4ContentRedaction | RemoteV4QueryResultSegment | RemoteV4QueryFailed
+
 export type RemoteWorkerEvent = RemoteVisibleWorkerEvent | RemoteOmittedEvents
 
 /** Sent every 15 seconds. It reports liveness only, not durable business-event progress. */
@@ -4425,6 +5467,7 @@ export interface SendLocalMessageInput {
   text: string
   sessionMode: 'new' | 'continue'
   nativeConfirmation?: NativeContinuationConfirmationInput
+  attachmentIds?: string[]
 }
 
 export interface SessionQuery {
@@ -4814,4 +5857,15 @@ export const ERROR_CATALOG: Record<ErrorCode, { http: number; retryable: boolean
   REMOTE_ROOT_NOT_AUTHORIZED: { http: 403, retryable: false },
   REMOTE_PATH_OUTSIDE_ROOT: { http: 403, retryable: false },
   REMOTE_DIRECTORY_CHANGED: { http: 409, retryable: false },
+  ATTACHMENT_TOO_LARGE: { http: 413, retryable: false },
+  ATTACHMENT_TYPE_UNSUPPORTED: { http: 415, retryable: false },
+  ATTACHMENT_COUNT_EXCEEDED: { http: 422, retryable: false },
+  ATTACHMENT_QUOTA_EXCEEDED: { http: 409, retryable: false },
+  ATTACHMENT_HASH_MISMATCH: { http: 422, retryable: false },
+  AGENT_IMAGE_UNSUPPORTED: { http: 422, retryable: false },
+  ATTACHMENT_DOWNLOAD_FAILED: { http: 502, retryable: true },
+  ATTACHMENT_NOT_READY: { http: 409, retryable: false },
+  ATTACHMENT_IN_USE: { http: 409, retryable: false },
+  ATTACHMENT_THUMBNAIL_UNAVAILABLE: { http: 409, retryable: false },
+  ATTACHMENT_PREPARATION_INTERRUPTED: { http: 409, retryable: false },
 }

@@ -9,7 +9,7 @@ class NativeService:
     def r3_ready(self, tx, owner, worker, *, read=False):
         device = self.get(tx, owner, 'device', worker)
         connection = self.ready(tx, owner, worker, device['workerStoreId'], exempt=read)
-        require(connection.revision == 3, 'REMOTE_REVISION_REQUIRED')
+        require(connection.revision >= 3, 'REMOTE_REVISION_REQUIRED')
         return connection
 
     def workspace_public(self, tx, owner, worker, store, local):
@@ -22,7 +22,20 @@ class NativeService:
         require(catalog['workerStoreId'] == store and any(w['workspaceId'] == public for w in catalog['workspaces']), 'NOT_FOUND')
         return mapping['local']
 
-    def native_get(self, tx, owner, identifier):
+    def native_sync_enabled(self, tx, owner, worker):
+        device = self.get(tx, owner, 'device', worker)
+        require(self.replica.state(tx, owner, worker, device['workerStoreId'])['enabled'], 'REMOTE_SYNC_DISABLED')
+        return device
+
+    def native_get(self, tx, owner, identifier, *, check_sync=False):
+        if check_sync:
+            # reset erases the index, but retains only its owner-scoped identity.
+            # Never guess a device for an unknown or another owner's public ID.
+            mapping = tx.sync_reverse(owner, 'native-index', identifier)
+            require(mapping is not None and not mapping['deleted'], 'NOT_FOUND')
+            device = self.get(tx, owner, 'device', mapping['worker'])
+            require(device['workerStoreId'] == mapping['store'], 'NOT_FOUND')
+            self.native_sync_enabled(tx, owner, mapping['worker'])
         value = self.browser_get(tx, owner, 'native-index', identifier)
         device = self.get(tx, owner, 'device', value['workerId'])
         require(device['workerStoreId'] == value['_store'], 'NOT_FOUND')
@@ -33,7 +46,7 @@ class NativeService:
         return dict({k: v for k, v in value.items() if not k.startswith('_')}, workerOnline=self.online(owner, value['workerId']))
 
     def native_page(self, tx, owner, worker, query):
-        device = self.get(tx, owner, 'device', worker)
+        device = self.native_sync_enabled(tx, owner, worker)
         limit = int(query.get('limit', 50)); require(1 <= limit <= 100)
         workspace, agent = query.get('workspaceId'), query.get('agentType')
         require(agent is None or agent in {'claude', 'codex'})
@@ -81,7 +94,7 @@ class NativeService:
     def enqueue_resource(self, tx, owner, connection, kind, payload, request_id):
         identifier = uid(); now = self.now(); deadline = stamp(self.settings.clock()+30)
         frame = wire.command(dict(type=kind, commandId=identifier, targetWorkerId=connection.worker, expectedWorkerStoreId=connection.store,
-                                  createdAt=now, expiresAt=deadline, deliverBy=deadline, requestId=request_id, payload=payload), 3)
+                                  createdAt=now, expiresAt=deadline, deliverBy=deadline, requestId=request_id, payload=payload), connection.revision)
         receipt = dict(commandId=identifier, targetWorkerId=connection.worker, type=kind, status='queued', deliveryState='queued_online', workerOnline=True, expiresAt=deadline)
         value = dict(receipt, withdrawalState='none', observedAt=now, createdAt=now, deliverBy=deadline,
                      _frame=frame, _digest=digest(frame), _receipt=receipt, _dispatch=False, _granted=False)
@@ -93,7 +106,7 @@ class NativeService:
         return receipt
 
     def native_command_payload(self, tx, owner, frame):
-        if self.connections[(owner, frame['targetWorkerId'])].revision != 3:
+        if self.connections[(owner, frame['targetWorkerId'])].revision < 3:
             return frame
         payload = dict(frame['payload'])
         if 'workspaceId' in payload:
@@ -104,7 +117,7 @@ class NativeService:
         if conv.get('conversationKind', 'scenario') != 'native':
             require('nativeConfirmation' not in body)
             return {k: conv[k] for k in ('workspaceId','sceneId','sceneVersion')}
-        require(self.connections[(owner, conv['targetWorkerId'])].revision == 3, 'REMOTE_REVISION_REQUIRED')
+        require(self.connections[(owner, conv['targetWorkerId'])].revision >= 3, 'REMOTE_REVISION_REQUIRED')
         require(body['sessionMode'] == 'continue', 'SESSION_NOT_RESUMABLE')
         evidence = conv.get('nativeActivity', {})
         require(evidence.get('processMatch') != 'present' and evidence.get('activity') != 'likely_active', 'NATIVE_SESSION_ACTIVE')
@@ -122,7 +135,7 @@ class NativeService:
     def query_plan(self, tx, owner, operation, path, body, query, key, request_id):
         from .queries import QueryPlan
         if operation == 'native_read':
-            value = self.native_get(tx, owner, path['nativeSessionId'])
+            value = self.native_get(tx, owner, path['nativeSessionId'], check_sync=True)
             connection = self.r3_ready(tx, owner, value['workerId'], read=True)
             require(value['format']['status'] == 'readable', 'NATIVE_SESSION_UNSUPPORTED')
             payload = dict(nativeSessionId=value['_localId'], limit=int(query.get('limit', 50)))

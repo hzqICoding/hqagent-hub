@@ -41,7 +41,7 @@ class Queries:
         self.pending[identifier] = item
         frame = wire.encode(dict(type='query.'+plan.kind, queryId=identifier, requestId=plan.request_id, connectionId=connection.identifier,
                     targetWorkerId=connection.worker, expectedWorkerStoreId=connection.store, workerEpoch=connection.epoch,
-                    expiresAt=stamp(self.s.settings.clock()+remaining), payload=plan.payload), 3)
+                    expiresAt=stamp(self.s.settings.clock()+remaining), payload=plan.payload), connection.revision)
         connection.transient.append(frame); connection.wake()
         async def disconnected():
             while True:
@@ -88,10 +88,10 @@ class Queries:
             return  # Unknown/late/fenced results never affect reliable ACKs.
         try:
             if event['type'] == 'query.failed':
-                validated('RemoteV3QueryFailed', event)
+                validated(f'RemoteV{connection.revision}QueryFailed', event)
                 raise Fault(event['error']['code'])  # Discard arbitrary Worker message.
             require(event.get('segmentCount',129) <= 128 and event.get('totalUtf8Bytes',MAX_QUERY_BYTES+1) <= MAX_QUERY_BYTES and len(event.get('text','')) <= 16000 and len(event.get('text','').encode()) <= 64000, 'REMOTE_QUERY_TOO_LARGE')
-            event = validated('RemoteV3QueryResultSegment', event)
+            event = validated(f'RemoteV{connection.revision}QueryResultSegment', event)
             require(event['resultType'] == plan.kind and event['segmentIndex'] < event['segmentCount'], 'REMOTE_SYNC_CONFLICT')
             metadata = [event[k] for k in ('segmentCount','totalUtf8Bytes','contentSha256','resultType')]
             require(item['metadata'] is None or item['metadata'] == metadata, 'REMOTE_SYNC_CONFLICT')

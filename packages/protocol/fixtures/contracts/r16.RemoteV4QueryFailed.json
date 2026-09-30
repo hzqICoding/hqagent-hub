@@ -1,0 +1,15 @@
+{
+  "type": "query.failed",
+  "wireRevision": 4,
+  "queryId": "synthetic_queryId",
+  "requestId": "synthetic_requestId",
+  "connectionId": "synthetic_connectionId",
+  "workerId": "synthetic_workerId",
+  "workerStoreId": "synthetic_workerStoreId",
+  "workerEpoch": "synthetic_workerEpoch",
+  "error": {
+    "code": "REMOTE_DEVICE_OFFLINE",
+    "message": "Observable progress",
+    "retryable": false
+  }
+}

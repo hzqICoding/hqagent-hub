@@ -218,3 +218,17 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 ## R3本机接口补冻 / 0.9.1（2026-09-29）
 
 冻结SHA：`271c9046e3bb9d7be62e563c2962a2a7dd3e030e`。D51补充已登记；P2 Q1关闭，P2/P3可按本机v1/v2列表、详情、读取、同步201导入接口实施。新增LocalNativeSessionPage；本机使用独立于配对/线路，3不可用时延迟同步。线路仍3，既有帧不变。全量498 passed；validate 427类型/289Fixture、api-contract均通过。详见[R3-P0回执补冻节](handoffs/R3-P0-protocol.md)。未合回integration。
+
+
+## R3错误语义补冻 / 0.9.2（2026-09-30）
+
+冻结SHA：`ec10a24b4730874080234c26242ce79edc311750`。云端原生列表/详情/读取同步关闭统一409 REMOTE_SYNC_DISABLED（这台电脑已关闭同步），认证/归属在前，设备删除404优先，暂停不影响读取；同步开启无会话返回空页/未知ID404。线路与本机接口不变。P1实现三个门禁，P3确认已有错误展示。全量501 passed；validate 427类型/289Fixture与api-contract（39现有接口、81错误码）均通过。详见回执“补冻0.9.2”，未合回integration。
+
+
+## R1.6 对话附件 / 0.10.0 — 已冻结（2026-09-30）
+
+冻结SHA：`fa1b327ddb10742d7a90a09de78a624f7a8f1ee5`。wireRevision 4，支持[1,2,3,4]；方案中的3已由R3占用。D52记录Q1：暂停禁手机上传/发送，Worker已有用户消息的附件同步继续，下载两端不受影响。P1/P2/P3可按契约开工，未合回integration，待审核。
+
+80新类型、48个修订4帧、84份合成Fixture；原1/2/3闭包和289份Fixture不变。清单走WSS、字节走鉴权HTTPS；有界准备/取消/恢复、能力三层验证、逻辑配额与CAS引用、真删除、电脑/手机双向及本机接口一并定义。
+
+验证：507类型/373Fixture；api-contract 39现有+8新增HTTP、92错误码；全量608 passed。此为协议验收，不是CLI图片或业务真删除已完成。见[R1.6契约](../packages/protocol/remote/R1.6-contract.md)、[回执与下游实施要点](handoffs/R16-P0-protocol.md)。

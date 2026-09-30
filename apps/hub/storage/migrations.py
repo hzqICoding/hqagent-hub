@@ -294,6 +294,15 @@ MIGRATIONS += (
     """),
 )
 
+MIGRATIONS += (
+    Migration(9, """
+        CREATE TABLE native_history_indexes (
+            cache_key TEXT PRIMARY KEY,
+            metadata_json TEXT NOT NULL
+        );
+    """),
+)
+
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
 
 

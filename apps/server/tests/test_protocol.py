@@ -15,20 +15,20 @@ def test_package_version_is_diagnostic(env, paired, version):
         assert "protocolVersion" not in paired.ack
 
 
-@pytest.mark.parametrize("revision", [0, 4, 999, True, 1.0, "1", None])
+@pytest.mark.parametrize("revision", [0, 5, 999, True, 1.0, "1", None])
 def test_revision_negotiated_before_strict_dto(env, paired, revision):
     hello = paired.hello(wireRevision=revision)
     hello["futureField"] = "unknown"
     with paired.connect(hello):
         assert paired.ack["error"]["code"] == "REMOTE_PROTOCOL_UNSUPPORTED"
-        assert paired.ack["supportedWireRevisions"] == [1, 2, 3]
+        assert paired.ack["supportedWireRevisions"] == [1, 2, 3, 4]
 
 
 def test_revision_one_remains_strict(env, paired):
     hello = paired.hello(futureField="forbidden")
     with paired.connect(hello):
         assert paired.ack["error"]["code"] == "VALIDATION_FAILED"
-        assert paired.ack["supportedWireRevisions"] == [1, 2, 3]
+        assert paired.ack["supportedWireRevisions"] == [1, 2, 3, 4]
 
 
 def test_old_draft_not_auto_upgraded(env, paired):

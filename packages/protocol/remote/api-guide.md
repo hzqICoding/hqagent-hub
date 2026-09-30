@@ -1,6 +1,6 @@
-# Hub Server 对外接口规范（协议包 0.9.1）
+# Hub Server 对外接口规范（协议包 0.10.0）
 
-R3完整约束见[R3-contract.md](R3-contract.md)。新接口仅Cookie；不扩展PAT白名单。电脑是原生会话内容与目录安全的唯一权威。
+R3完整约束见[R3-contract.md](R3-contract.md)。原生接口仅Cookie；附件浏览器/Worker分别用Cookie/设备凭据，不扩展PAT白名单。电脑是原生会话内容与目录安全的唯一权威。
 
 本文面向远程服务器调用方，覆盖所有HTTP业务接口及Worker WSS。它不是电脑上Local Hub的同名前缀接口。服务端只做认证、设备管理、指令通信和副本保存，不调用模型、不持有模型凭据。设备管理与PAT为0.8基线；0.9新增原生会话与授权根目录项目登记，落地由P1/P2/P3负责，本文不表示当前部署已完成R3升级。
 
@@ -9,17 +9,17 @@ R3完整约束见[R3-contract.md](R3-contract.md)。新接口仅Cookie；不扩�
 ## 1. 基础约定
 
 - HTTPS Base URL：`https://<部署域名>`，资源前缀`/api/v2`。示例域名`hub.example.invalid`及全部示例ID/令牌均是合成数据，不能用于真实认证。
-- `protocolVersion`是协议包版本，当前0.9.1；URI版本仍v2。Worker线路修订支持[1,2,3]，以wireRevision协商，不能拿包版本相等当接入条件。
+- `protocolVersion`是协议包版本，当前0.10.0；URI版本仍v2。Worker线路修订支持[1,2,3,4]，以wireRevision协商，不能拿包版本相等当接入条件。
 - 请求和响应JSON使用UTF-8、camelCase。写入通常`Content-Type: application/json`；无请求体的DELETE不要求伪造JSON。拒绝未声明的输入字段，不接受客户端传owner/账号归属字段。
 - 时间统一RFC3339 UTC `Z`，例如`2026-09-27T12:00:00.000Z`。ID是不可解析的有界字符串，按Schema长度限制，拼URL时编码路径段。安全整数上限2^53-1。
 - 成功信封：`{success:true,data,requestId,protocolVersion}`；失败：`{success:false,error,requestId,protocolVersion}`。两者互斥，不以HTTP200包装失败，不在失败时返回业务data。
 - HTTP错误用RemoteHttpError：`code`、中文`message`、`retryable`、可选`detail`。客户端按code分支，不解析message。detail只允许声明过的字段名列表、授权后的currentVersion、retryAfterSeconds；不得包含输入值、未知字段原名、账号定位信息、凭据、原始异常或请求体。通用ApiEnvelope复用原ApiError，但远程输出还须满足更窄的RemoteHttpError约束。
-- `Cache-Control: no-store`用于API响应，包括签发、错误和幂等重放。**例外格式**：GET `/api/v2/openapi.json`直接返回完整OpenAPI JSON，不套信封；静态HTML/assets及升级前WS拒绝也可能非信封，尽量提供X-Request-Id。
+- `Cache-Control: no-store`用于API响应，包括签发、错误和幂等重放。**例外格式**：附件content/thumbnail成功返回鉴权后的字节流（见§14），不套信封；GET `/api/v2/openapi.json`直接返回完整OpenAPI JSON，不套信封；静态HTML/assets及升级前WS拒绝也可能非信封，尽量提供X-Request-Id。
 
 示例错误（已授权资源的CAS冲突）：
 
 ```json
-{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.9.1"}
+{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.10.0"}
 ```
 
 ## 2. 鉴权矩阵与凭据边界
@@ -196,7 +196,7 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | `PATCH /api/v2/devices/{workerId}` | `updateRemoteDevice` | cookie_or_pat devices:manage | 200 RemoteDeviceView |
 | `DELETE /api/v2/devices/{workerId}` | `deleteRemoteDevice` | cookie_or_pat devices:delete | 200 RemoteDeviceDeletionView |
 | `POST /api/v2/devices/{workerId}/revocations` | `revokeRemoteDevice` | cookie_or_pat devices:delete | 200 RemoteDeviceRevocationView |
-| `GET /api/v2/devices/{workerId}/catalog` | `getRemoteWorkerCatalog` | cookie_or_pat devices:read | 200 RemoteV3CatalogView |
+| `GET /api/v2/devices/{workerId}/catalog` | `getRemoteWorkerCatalog` | cookie_or_pat devices:read | 200 RemoteV4CatalogView |
 | `GET /api/v2/conversations` | `listRemoteConversations` | cookie  | 200 RemoteConversationPage |
 | `POST /api/v2/conversations` | `createRemoteConversation` | cookie  | 202 RemoteQueuedReceipt |
 | `GET /api/v2/conversations/{conversationId}` | `getRemoteConversation` | cookie  | 200 RemoteConversationView |
@@ -223,11 +223,19 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | `POST /api/v2/native-sessions/{nativeSessionId}/imports` | `importNativeSession` | cookie  | 202 RemoteResourceQueuedReceipt |
 | `POST /api/v2/devices/{workerId}/directory-listings` | `listAuthorizedDirectory` | cookie  | 200 DirectoryListingPage |
 | `POST /api/v2/devices/{workerId}/workspaces` | `registerAuthorizedWorkspace` | cookie  | 202 RemoteResourceQueuedReceipt |
+| `GET /api/v2/attachments/limits` | `getAttachmentLimits` | cookie  | 200 RemoteAttachmentLimitsView |
+| `POST /api/v2/conversations/{conversationId}/attachments` | `uploadAttachment` | cookie  | 201 RemoteAttachmentView |
+| `GET /api/v2/attachments/{attachmentId}` | `getAttachment` | cookie  | 200 RemoteAttachmentView |
+| `DELETE /api/v2/attachments/{attachmentId}` | `deleteUnsentAttachment` | cookie  | 200 AttachmentDeletedView |
+| `GET /api/v2/attachments/{attachmentId}/content` | `downloadAttachment` | cookie  | 200 原始字节流 |
+| `GET /api/v2/attachments/{attachmentId}/thumbnail` | `getAttachmentThumbnail` | cookie  | 200 原始字节流 |
+| `POST /api/v2/worker/attachments` | `uploadWorkerAttachment` | worker_device  | 201 RemoteAttachmentView |
+| `GET /api/v2/worker/attachments/{attachmentId}/content` | `downloadWorkerAttachment` | worker_device  | 200 原始字节流 |
 <!-- END API_INDEX -->
 
 ## 10. 错误码总表
 
-表中code/HTTP/retryable来自唯一registry，中文提示/原因/处理建议来自http-error-guidance.yaml，由校验脚本保证集合一致。共享枚举还包含Local Hub/Worker子系统码，已标适用域，不意味着每个HTTP操作都主动产生全部码；各路由精确可能值见x-error-codes。错误描述是规范要求，P1需补齐HTTP映射，不能继续以裸code代替中文message。HTTP新码不能进入任何Worker线路。
+表中code/HTTP/retryable来自唯一registry，中文提示/原因/处理建议来自http-error-guidance.yaml，由校验脚本保证集合一致。共享枚举还包含Local Hub/Worker子系统码，已标适用域，不意味着每个HTTP操作都主动产生全部码；各路由精确可能值见x-error-codes。错误描述是规范要求，P1需补齐HTTP映射，不能继续以裸code代替中文message。新附件码仅允许修订4及HTTP，1/2/3固定错误域不扩大。
 
 <!-- BEGIN ERROR_TABLE -->
 | code | HTTP | retryable | 中文提示 | 典型原因 | 调用方处理 | 适用域 |
@@ -295,7 +303,7 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | `REMOTE_CONVERSATION_BUSY` | 409 | true | 对话正在忙碌，请稍后再发送 | 电脑已有queued/running/waiting_approval轮次；保留输入，取消不受此限制 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_STATE_NOT_READY` | 409 | true | 电脑状态尚未同步完成 | 等待当前连接的完整忙碌快照；不是持久锁 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_SYNC_CONFLICT` | 409 | false | 同步分段/版本/快照内容冲突，不得发布部分正文 | 同步分段/版本/快照内容冲突，不得发布部分正文 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
-| `REMOTE_SYNC_DISABLED` | 409 | false | 该电脑关闭内容同步，不能向已删除副本提交 | 该电脑关闭内容同步，不能向已删除副本提交 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
+| `REMOTE_SYNC_DISABLED` | 409 | false | 这台电脑已关闭同步 | 已授权设备的当前store关闭内容同步；原生索引列表、详情、读取统一拒绝，不能以空页或NOT_FOUND冒充无会话 | 在电脑开启同步并等待补传后刷新；不要自动重试或显示无会话 | Hub Server HTTP |
 | `REMOTE_DELIVERY_EXPIRED` | 409 | true | 设备离线，发送失败 | 送达期限已过且未获执行许可；设备离线，发送失败 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_REVISION_REQUIRED` | 409 | false | 电脑端需升级后使用此操作 | 该操作要求较新的线路修订（R1.5为2，R3为3），不能降级执行 | 刷新或修正请求后使用新幂等键 | Hub Server HTTP |
 | `REMOTE_SYNC_RESOURCE_LIMIT` | 413 | false | 全文同步资源配额不足，明确失败，不截断伪装成功 | 全文同步资源配额不足，明确失败，不截断伪装成功 | 减小请求或检查资源配额；不得截断后伪装成功 | Hub Server HTTP |
@@ -313,11 +321,22 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | `REMOTE_ROOT_NOT_AUTHORIZED` | 403 | false | 电脑未授权该根目录 | 根目录为空或已移除 | 在电脑本机配置根目录后刷新 | R3 HTTP / Worker wireRevision 3 only |
 | `REMOTE_PATH_OUTSIDE_ROOT` | 403 | false | 所选目录不在授权范围内 | 真实路径越界或含不安全路径形式 | 选择授权根目录内的真实子目录 | R3 HTTP / Worker wireRevision 3 only |
 | `REMOTE_DIRECTORY_CHANGED` | 409 | false | 目录授权或目录内容已变化 | 选择令牌已过期或目录身份改变 | 重新逐级浏览并选择目标目录 | R3 HTTP / Worker wireRevision 3 only |
+| `ATTACHMENT_TOO_LARGE` | 413 | false | 附件超过大小限制 | 附件超过大小限制 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `ATTACHMENT_TYPE_UNSUPPORTED` | 415 | false | 不支持此附件类型 | 不支持此附件类型 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `ATTACHMENT_COUNT_EXCEEDED` | 422 | false | 每条消息最多五个附件 | 每条消息最多五个附件 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `ATTACHMENT_QUOTA_EXCEEDED` | 409 | false | 附件存储配额不足 | 附件存储配额不足 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `ATTACHMENT_HASH_MISMATCH` | 422 | false | 附件大小或哈希校验失败 | 附件大小或哈希校验失败 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `AGENT_IMAGE_UNSUPPORTED` | 422 | false | 目标Agent尚不支持此图片输入 | 目标Agent尚不支持此图片输入 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `ATTACHMENT_DOWNLOAD_FAILED` | 502 | true | 附件下载失败 | 附件下载失败 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `ATTACHMENT_NOT_READY` | 409 | false | 附件尚不可用 | 附件尚不可用 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `ATTACHMENT_IN_USE` | 409 | false | 附件已被消息或在途命令引用 | 附件已被消息或在途命令引用 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `ATTACHMENT_THUMBNAIL_UNAVAILABLE` | 409 | false | 附件缩略图不可用 | 附件缩略图不可用 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `ATTACHMENT_PREPARATION_INTERRUPTED` | 409 | false | 附件准备被中断，请重新尝试 | 附件准备被中断，请重新尝试 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
 <!-- END ERROR_TABLE -->
 
 ## 11. Worker WebSocket（不是PAT接口）
 
-端点`/ws/v2/worker`，仅独立设备凭据Authorization Bearer。先确认已配对且未撤销/删除，10秒内首帧hello，协商整数wireRevision，当前支持1、2与3；15秒心跳/45秒失联，单连接fence旧连接。包版本仅诊断；最多256KiB一帧。未知修订拒绝并返回支持列表，不能按包版本猜测。
+端点`/ws/v2/worker`，仅独立设备凭据Authorization Bearer。先确认已配对且未撤销/删除，10秒内首帧hello，协商整数wireRevision，当前支持1、2、3与4；15秒心跳/45秒失联，单连接fence旧连接。包版本仅诊断；最多256KiB一帧。未知修订拒绝并返回支持列表，不能按包版本猜测。
 
 修订1/2分别选择原有WorkerOutboundFrame/ServerOutboundFrame，详见OpenAPI的x-worker-websocket.revisions与下表Schema索引。seq只确认连续持久事实，事件ACK不是执行grant。暂停不影响握手、同步或忙碌/目录；删除沿既有凭据失效/撤销及连接关闭处理。资源HTTP的404不代替未认证Worker的401/403/4401/4403。HTTP错误detail、API令牌和remoteAccess字段都不新增到Worker帧。
 
@@ -438,6 +457,54 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | 3 | `query.directory.list` | `RemoteV3DirectoryQuery` | `remote-native.json#/$defs/RemoteV3DirectoryQuery` |
 | 3 | `query.result.segment` | `RemoteV3QueryResultSegment` | `remote-native.json#/$defs/RemoteV3QueryResultSegment` |
 | 3 | `query.failed` | `RemoteV3QueryFailed` | `remote-native.json#/$defs/RemoteV3QueryFailed` |
+| 4 | `approval.decide` | `RemoteV4ApprovalDecisionCommand` | `remote-attachments.json#/$defs/RemoteV4ApprovalDecisionCommand` |
+| 4 | `approval.state_changed` | `RemoteV4ApprovalEvent` | `remote-attachments.json#/$defs/RemoteV4ApprovalEvent` |
+| 4 | `run.cancel` | `RemoteV4CancelCommand` | `remote-attachments.json#/$defs/RemoteV4CancelCommand` |
+| 4 | `capability.changed` | `RemoteV4CatalogEvent` | `remote-attachments.json#/$defs/RemoteV4CatalogEvent` |
+| 4 | `command.accepted` | `RemoteV4CommandAccepted` | `remote-attachments.json#/$defs/RemoteV4CommandAccepted` |
+| 4 | `command.completed` | `RemoteV4CommandCompleted` | `remote-attachments.json#/$defs/RemoteV4CommandCompleted` |
+| 4 | `command.failed` | `RemoteV4CommandFailed` | `remote-attachments.json#/$defs/RemoteV4CommandFailed` |
+| 4 | `command.rejected` | `RemoteV4CommandRejected` | `remote-attachments.json#/$defs/RemoteV4CommandRejected` |
+| 4 | `command.withdraw` | `RemoteV4CommandWithdrawalCommand` | `remote-attachments.json#/$defs/RemoteV4CommandWithdrawalCommand` |
+| 4 | `command.control_result` | `RemoteV4ControlObserved` | `remote-attachments.json#/$defs/RemoteV4ControlObserved` |
+| 4 | `conversation.gap` | `RemoteV4ConversationGap` | `remote-attachments.json#/$defs/RemoteV4ConversationGap` |
+| 4 | `conversation.skip` | `RemoteV4ConversationSkip` | `remote-attachments.json#/$defs/RemoteV4ConversationSkip` |
+| 4 | `worker.events_ack` | `RemoteV4EventAck` | `remote-attachments.json#/$defs/RemoteV4EventAck` |
+| 4 | `message.appended` | `RemoteV4MessageEvent` | `remote-attachments.json#/$defs/RemoteV4MessageEvent` |
+| 4 | `events.omitted` | `RemoteV4OmittedEvents` | `remote-attachments.json#/$defs/RemoteV4OmittedEvents` |
+| 4 | `run.pause` | `RemoteV4PauseCommand` | `remote-attachments.json#/$defs/RemoteV4PauseCommand` |
+| 4 | `run.progress` | `RemoteV4ProgressEvent` | `remote-attachments.json#/$defs/RemoteV4ProgressEvent` |
+| 4 | `run.resume` | `RemoteV4ResumeCommand` | `remote-attachments.json#/$defs/RemoteV4ResumeCommand` |
+| 4 | `run.retry` | `RemoteV4RetryCommand` | `remote-attachments.json#/$defs/RemoteV4RetryCommand` |
+| 4 | `run.state_changed` | `RemoteV4RunStateEvent` | `remote-attachments.json#/$defs/RemoteV4RunStateEvent` |
+| 4 | `run.submit` | `RemoteV4RunSubmitCommand` | `remote-attachments.json#/$defs/RemoteV4RunSubmitCommand` |
+| 4 | `server.heartbeat` | `RemoteV4ServerHeartbeat` | `remote-attachments.json#/$defs/RemoteV4ServerHeartbeat` |
+| 4 | `conversation.skip_recorded` | `RemoteV4SkipRecorded` | `remote-attachments.json#/$defs/RemoteV4SkipRecorded` |
+| 4 | `worker.heartbeat` | `RemoteV4WorkerHeartbeat` | `remote-attachments.json#/$defs/RemoteV4WorkerHeartbeat` |
+| 4 | `worker.hello` | `RemoteV4WorkerHello` | `remote-attachments.json#/$defs/RemoteV4WorkerHello` |
+| 4 | `worker.hello_ack` | `RemoteV4WorkerHelloAck` | `remote-attachments.json#/$defs/RemoteV4WorkerHelloAck` |
+| 4 | `worker.hello_rejected` | `RemoteV4WorkerHelloRejected` | `remote-attachments.json#/$defs/RemoteV4WorkerHelloRejected` |
+| 4 | `sync.conversation.upserted` | `RemoteV4ConversationUpserted` | `remote-attachments.json#/$defs/RemoteV4ConversationUpserted` |
+| 4 | `sync.message.segment` | `RemoteV4MessageSegment` | `remote-attachments.json#/$defs/RemoteV4MessageSegment` |
+| 4 | `sync.run.state` | `RemoteV4SyncedRunState` | `remote-attachments.json#/$defs/RemoteV4SyncedRunState` |
+| 4 | `sync.conversation.deleted` | `RemoteV4ConversationDeleted` | `remote-attachments.json#/$defs/RemoteV4ConversationDeleted` |
+| 4 | `sync.reset` | `RemoteV4SyncReset` | `remote-attachments.json#/$defs/RemoteV4SyncReset` |
+| 4 | `sync.busy.snapshot` | `RemoteV4BusySnapshot` | `remote-attachments.json#/$defs/RemoteV4BusySnapshot` |
+| 4 | `sync.backfill.progress` | `RemoteV4BackfillProgress` | `remote-attachments.json#/$defs/RemoteV4BackfillProgress` |
+| 4 | `command.received` | `RemoteV4CommandReceived` | `remote-attachments.json#/$defs/RemoteV4CommandReceived` |
+| 4 | `command.delivery_granted` | `RemoteV4DeliveryGrant` | `remote-attachments.json#/$defs/RemoteV4DeliveryGrant` |
+| 4 | `conversation.update` | `RemoteV4ConversationUpdateCommand` | `remote-attachments.json#/$defs/RemoteV4ConversationUpdateCommand` |
+| 4 | `conversation.create` | `RemoteV4ConversationCreateCommand` | `remote-attachments.json#/$defs/RemoteV4ConversationCreateCommand` |
+| 4 | `sync.content.redaction` | `RemoteV4ContentRedaction` | `remote-attachments.json#/$defs/RemoteV4ContentRedaction` |
+| 4 | `native.index.upserted` | `RemoteV4NativeIndexUpserted` | `remote-attachments.json#/$defs/RemoteV4NativeIndexUpserted` |
+| 4 | `native.index.deleted` | `RemoteV4NativeIndexDeleted` | `remote-attachments.json#/$defs/RemoteV4NativeIndexDeleted` |
+| 4 | `native.closure.confirmed` | `RemoteV4NativeConfirmationRecorded` | `remote-attachments.json#/$defs/RemoteV4NativeConfirmationRecorded` |
+| 4 | `native.import` | `RemoteV4NativeImportCommand` | `remote-attachments.json#/$defs/RemoteV4NativeImportCommand` |
+| 4 | `workspace.register` | `RemoteV4WorkspaceRegisterCommand` | `remote-attachments.json#/$defs/RemoteV4WorkspaceRegisterCommand` |
+| 4 | `query.native.messages` | `RemoteV4NativeReadQuery` | `remote-attachments.json#/$defs/RemoteV4NativeReadQuery` |
+| 4 | `query.directory.list` | `RemoteV4DirectoryQuery` | `remote-attachments.json#/$defs/RemoteV4DirectoryQuery` |
+| 4 | `query.result.segment` | `RemoteV4QueryResultSegment` | `remote-attachments.json#/$defs/RemoteV4QueryResultSegment` |
+| 4 | `query.failed` | `RemoteV4QueryFailed` | `remote-attachments.json#/$defs/RemoteV4QueryFailed` |
 <!-- END WIRE_INDEX -->
 
 ## 12. 版本、弃用、发布和后续扩展
@@ -446,7 +513,7 @@ HTTP `/api/v2`在包minor升级时不换路径；0.9保留N−1（0.8）的已�
 
 HTTP读取方须容忍新增响应字段、对未知错误码走通用message/requestId处理；服务器对请求仍严格验证。生成DTO是本包生产/验证边界，旧严格DTO不能假定会校验未来JSON，第三方应使用匹配版本的生成包或做兼容投影；本次不放宽Worker解析器。protocolVersion用于诊断/功能判断，不要求与客户端包字符串相等。
 
-D42线路升级至少保留3/2，本次还保留1用于历史对账，支持[1,2,3]；包0.9/0.8与线路号不相等。修订1/2错误值域和帧闭包固定；R3新增错误只走HTTP及3，D50的HTTP-only错误仍不进Worker线路。弃用先标记、保留至少N/N−1升级窗口，公告替代接口并完成调用方迁移后，另行批准破坏性移除，不随部署直接删旧路由。
+D42线路升级至少保留4/3，本次还保留1用于历史对账，支持[1,2,3,4]；包0.9/0.8与线路号不相等。修订1/2错误值域和帧闭包固定；R3新增错误只走HTTP及3，D50的HTTP-only错误仍不进Worker线路。弃用先标记、保留至少N/N−1升级窗口，公告替代接口并完成调用方迁移后，另行批准破坏性移除，不随部署直接删旧路由。
 
 P1须提供公开GET `/api/v2/openapi.json`，返回仓库bundle的等价JSON且由服务端测试比对；只有类型和合成示例，不注入实际设备、账号、密钥或部署数据。可选托管离线可视化文档页，建议使用随包固定版本的本地静态资源，禁止依赖外网CDN；不是本轮必做。页面也不能自动填入真实PAT或记录Try-it请求体。
 
@@ -515,3 +582,88 @@ curl -X POST "$BASE/api/v2/devices/worker_demo/workspaces" --cookie "__Host-hqre
 在线查询固定总超时10秒、响应≤1MiB、每设备4个/每账号16个并发；传输分段最多128片，整帧≤256KiB。超时REMOTE_QUERY_TIMEOUT；限流REMOTE_RATE_LIMITED；超页减小limit。目录最多100条只返回目录元数据，链接越界拒绝REMOTE_PATH_OUTSIDE_ROOT，根被移除REMOTE_ROOT_NOT_AUTHORIZED，过期/替换目录REMOTE_DIRECTORY_CHANGED。错误优先级仍认证/归属→暂停（受限项）→离线→线路/存储→资源/版本/活跃检查。
 
 查询正文不进入服务端数据库、HTTP幂等重放、消息事件、代理磁盘buffer、APM或日志；浏览器只用当前页内存。目录POST同幂等键同摘要重查安全状态后可重新查询，结果不保证相同快照；不同摘要返回IDEMPOTENCY_MISMATCH。断线/超时/同步reset立即销毁拼段内存；不能从“历史API缓存”恢复。排查仅用响应X-Request-Id/信封requestId与既有journalctl流程，不要粘贴原生正文或选择令牌到日志。
+
+
+### 13.1 同步关闭与空列表（0.9.2）
+
+云端GET /devices/{workerId}/native-sessions、GET /native-sessions/{nativeSessionId}、GET /native-sessions/{nativeSessionId}/messages统一遵循：认证/归属→设备不存在或已删除404→同步关闭409。暂停不影响读取；同步关闭也先于正文在线查询。详情/读取未知或跨账号ID仍404，只有已核实的ID归属映射才能判断所属设备的开关。
+
+```json
+{"success":false,"error":{"code":"REMOTE_SYNC_DISABLED","message":"这台电脑已关闭同步","retryable":false},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.10.0"}
+```
+
+三个接口均返回HTTP409及上述错误，X-Request-Id与信封一致，Cache-Control:no-store。前端显示“这台电脑已关闭同步”，不能显示“没有原生会话”；提示去电脑开启同步，等待补传后刷新，不自动重试。同步开启而确实没有会话时，列表才返回200空页（items=[]、hasMore=false），不存在的详情/读取仍404。sync.reset不保留内容，仅允许无内容的归属映射用于区分已关闭；设备删除优先404。本机原生会话接口不受此门禁影响。
+
+
+## 14. R1.6 对话附件（0.10.0，线路4）
+
+完整状态/计量/删除/运行语义见[R1.6-contract.md](R1.6-contract.md)。手机先上传到已有可见对话，成功取得attachmentId，再把ID放入普通发送接口attachmentIds（≤5且不同）。上传不是发消息、202也不是下载或Agent已启动。电脑离线仍可暂存，但发送立即失败；24h未发送自动清理。当前没有创建并发送的合并接口。
+
+浏览器所有附件接口仅Cookie，POST/DELETE需CSRF、Origin、Idempotency-Key。Worker独立设备凭据只能访问worker路径；PAT的attachments:read/write仅预留，不能签发或调用。暂停只禁手机上传/发送；Worker对本机已存在消息同步上传继续，下载两端均不受暂停影响。pc_only/删除/过期/跨owner直接ID均404。
+
+### 14.1 限制值与上传
+
+```bash
+BASE='https://hub.example.invalid'
+# COOKIE_JAR为已登录会话，CSRF取会话响应；不要在日志或仓库保存真实值。
+curl -fsS -b "$COOKIE_JAR" "$BASE/api/v2/attachments/limits"
+# 从响应limits读取大小/白名单/每条数量；usedBytes+reservedBytes按逻辑额度。
+# 示例以一个合成文本上传，实际客户端必须增量计算hash，不修改文件后沿用旧hash。
+FILE='./example.txt'
+SIZE=$(wc -c < "$FILE" | tr -d ' ')
+HASH=$(sha256sum "$FILE" | cut -d ' ' -f 1)
+curl -sS -b "$COOKIE_JAR" -X POST "$BASE/api/v2/conversations/$CONVERSATION/attachments" \
+  -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Idempotency-Key: upload-example-001' \
+  -H 'Content-Type: application/octet-stream' -H "Content-Length: $SIZE" \
+  -H 'X-File-Name: example.txt' -H "X-Content-Sha256: $HASH" --data-binary "@$FILE"
+```
+
+采用raw body，不是multipart、base64或JSON。X-File-Name为UTF-8百分号编码的显示名（一次解码、最长512头字符），不能传路径；落盘不使用它。代理硬限制20,000,000字节、关闭请求/响应磁盘缓存；服务端逐块计数、SHA256、内容检测及账号预留，不信任Content-Length/扩展名/Content-Type。图片10,000,000字节，其他20,000,000字节，5个/消息，5,000,000,000账号逻辑字节，86,400秒未发送TTL，均以查询返回值驱动界面。上传/下载流块≤64KiB，上传并发每账号2个，120s总期限及30s无进展终止。原有来源限流也生效，429退避保留幂等意图。
+
+上传失败不能把部分文件当成功；同键/同元数据/hash与实际字节才幂等，不重复记额度。附加图片前读取设备catalog.scenes[].roleImageCapabilities / nativeImageCapabilities，必须目标所有角色的CLI入口、Runtime实现和实测均支持该mime/大小，unknown或缺项先提示，不靠品牌猜测；服务端与Worker仍复核。
+
+### 14.2 查询、发送与删除未发送项
+
+```bash
+curl -fsS -b "$COOKIE_JAR" "$BASE/api/v2/attachments/$ATTACHMENT"
+curl -sS -b "$COOKIE_JAR" -X POST "$BASE/api/v2/conversations/$CONVERSATION/messages" \
+  -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Idempotency-Key: message-with-file-001' \
+  -H 'Content-Type: application/json' \
+  --data '{"clientMessageId":"example-msg-001","text":"请读取附件内容。","sessionMode":"continue","attachmentIds":["attachment_demo"]}'
+# 仅对尚未发送/引用的附件执行删除；不是紧接上一条发送后删除。
+curl -sS -b "$COOKIE_JAR" -X DELETE "$BASE/api/v2/attachments/$UNSENT_ATTACHMENT" \
+  -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Idempotency-Key: delete-unsent-001'
+```
+
+元数据state为uploaded/reserved/attached，deleted/expired不再暴露（404）；availability为pending_upload/available/unavailable，不能把pending当下载已就绪。reserved或attached不能通过删除未发送接口删除，返回ATTACHMENT_IN_USE。下载准备失败是一轮明确失败，前端保留文本/附件引用并展示可重试原因，不把它一直显示为忙碌。
+
+### 14.3 原文件与缩略图
+
+```bash
+curl -fsS -b "$COOKIE_JAR" "$BASE/api/v2/attachments/$ATTACHMENT/content" -o './downloaded-file'
+curl -fsS -b "$COOKIE_JAR" "$BASE/api/v2/attachments/$ATTACHMENT/thumbnail" -o './preview.png'
+```
+
+成功响应为原始字节流（本规范ApiEnvelope的明确例外），原文件application/octet-stream，缩略图image/png；错误在流开始前仍为标准JSON信封。全部流式响应带X-Request-Id、Content-Length、Content-Disposition: attachment、X-Content-Type-Options: nosniff、Cache-Control:no-store。只对服务器重编码的缩略图作内存blob预览，原始图片也不能作为预览回退。非图片/生成失败ATTACHMENT_THUMBNAIL_UNAVAILABLE，生成中ATTACHMENT_NOT_READY；服务器中途断流不能往尾部拼JSON，客户端检查完整长度/hash。暂不支持Range，带Range返回BAD_REQUEST。
+
+### 14.4 Worker与本机
+
+```bash
+# 设备secret仅从Worker凭据库读取，不能使用浏览器Cookie/PAT替代。
+# 必须先有此设备/store/generation的可靠已同步消息及pending附件占位。
+curl -sS -X POST "$BASE/api/v2/worker/attachments" \
+  -H "Authorization: Bearer $DEVICE_SECRET" -H 'Idempotency-Key: local-attachment-upload-001' \
+  -H "X-Worker-Store-Id: $STORE" -H "X-Sync-Generation: $GENERATION" \
+  -H "X-Local-Conversation-Id: $LOCAL_CONVERSATION" -H "X-Local-Message-Id: $LOCAL_MESSAGE" \
+  -H "X-Local-Attachment-Id: $LOCAL_ATTACHMENT" -H 'Content-Type: application/octet-stream' \
+  -H 'X-File-Name: example.txt' -H "Content-Length: $SIZE" -H "X-Content-Sha256: $HASH" --data-binary "@$FILE"
+# commandId必须属于已grant、正式接单的清单；设备不能下载用户未发送的暂存附件。
+curl -fsS --get "$BASE/api/v2/worker/attachments/$ATTACHMENT/content" \
+  -H "Authorization: Bearer $DEVICE_SECRET" --data-urlencode "commandId=$COMMAND" -o './verified-input.part'
+```
+
+Worker上传不创建任何用户消息；必须先同步pending_upload消息，再上传，最后新messageRevision发布available/失败unavailable。暂停期间继续这一同步路径（D52裁决）。关闭sync、generation失效或删除栅栏均拒绝旧上传，不因HTTP已开始就绕过提交再检查。下载由Worker核对大小/hash后原子落盘再传模型，不能让模型直接访问服务端凭据或下载链接。
+
+桌面使用**本机**v1 Bearer/v2 Cookie的同名附件库操作（详见两个local OpenAPI），还可GET /conversations/{id}/attachment-capabilities获取实际能力。仅手机侧账号配额由远程查询提供，本机无配对不伪造云用量。本机thumbnail是服务端生成缩略图的认证代理，不在电脑解码原图；离线/未同步显示图标。云端与本机ID/Cookie不可互换。
+
+只记录附件ID/大小/hash前缀/requestId和既有固定状态字段，不记录文件名、内容、URL或凭据。排查仍用requestId匹配journalctl；真删除要按契约直接检查存储、引用和缩略图，不能只凭列表隐藏判定。

@@ -100,7 +100,7 @@ class SyncEvents(Events):
         require(old is None or old['hash'] == digest(frame), 'REMOTE_SYNC_CONFLICT')
         require(len({slot['seq'] for slot in frame['slots']}) == len(frame['slots']), 'REMOTE_SYNC_CONFLICT')
         for slot in frame['slots']:
-            content = CONTENT | ({'native.index.upserted'} if frame['wireRevision'] == 3 else set())
+            content = CONTENT | ({'native.index.upserted'} if frame['wireRevision'] >= 3 else set())
             require(slot['seq'] < fence['seq'] and slot['originalType'] in content, 'REMOTE_SYNC_CONFLICT')
             require(fence['type'] != 'native.index.deleted' or slot['originalType'] == 'native.index.upserted', 'REMOTE_SYNC_CONFLICT')
             require(fence['type'] != 'sync.conversation.deleted' or slot['originalType'] != 'native.index.upserted', 'REMOTE_SYNC_CONFLICT')
@@ -122,7 +122,7 @@ class SyncEvents(Events):
             require(payload['workerId'] == worker and payload['workerStoreId'] == store, 'REMOTE_TARGET_MISMATCH')
             for group, key in [('workspaces','workspaceId'), ('scenes','sceneId')]:
                 require(len({v[key] for v in payload[group]}) == len(payload[group]), 'REMOTE_EVENT_CONFLICT')
-            if event['wireRevision'] == 3:
+            if event['wireRevision'] >= 3:
                 payload = self.s.native_events.catalog(tx, owner, event)
             self.s.save(tx, owner, 'catalog', worker, payload)
             device = self.s.get(tx, owner, 'device', worker)
@@ -170,7 +170,10 @@ class SyncEvents(Events):
         elif kind == 'message.appended':
             raise Fault('REMOTE_SYNC_CONFLICT')  # new producers must use bounded segments
         if self.s.replica.visible(tx, owner, public) or (kind.startswith('command.') and self.s.command_visible(tx, owner, public)):
-            self.s.event(tx, owner, 'worker.event', mapped)
+            if event['wireRevision']==4 and kind.startswith('command.'):
+                self.s.command_event(tx,owner,value)
+            else:
+                self.s.event(tx, owner, 'worker.event', mapped)
 
     def command_v2(self, tx, owner, raw, event, value):
         kind = event['type']; frame = value['_frame']; payload = frame.get('payload', {})

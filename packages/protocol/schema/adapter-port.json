@@ -237,6 +237,13 @@
         },
         "roleInstructions": {
           "type": "string"
+        },
+        "inputAttachments": {
+          "type": "array",
+          "items": {
+            "$ref": "adapter-port.json#/$defs/AgentInputAttachment"
+          },
+          "maxItems": 5
         }
       }
     },
@@ -560,6 +567,26 @@
           "type": "string"
         }
       }
+    },
+    "AgentInputAttachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "attachment",
+        "localPath"
+      ],
+      "properties": {
+        "attachment": {
+          "$ref": "remote-attachments.json#/$defs/AttachmentManifestItem"
+        },
+        "localPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "description": "Hub to local Adapter only: verified managed read-only input path, never HTTP response or remote command. Recheck hash/size and allowed input location before passing to model."
     }
   }
 }

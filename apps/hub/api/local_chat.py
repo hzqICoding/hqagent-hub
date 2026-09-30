@@ -172,6 +172,8 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
     @router.post("/conversations/{conversation_id}/messages")
     async def send_message(conversation_id: str, value: SendLocalMessageInput,
                            idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+        if getattr(service, 'native', None) is not None:
+            await service.native.prepare_send(conversation_id)
         return success_response(service.send(conversation_id, value, require_key(idempotency_key)), 202)
 
     @router.get("/conversations/{conversation_id}/runs")

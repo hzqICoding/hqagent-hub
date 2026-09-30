@@ -116,8 +116,12 @@ def test_junction_or_symlink_cannot_escape_authorized_root(tmp_path):
                 _winapi.CreateJunction(str(outside), str(link))
             else:
                 link.symlink_to(outside, target_is_directory=True)
+            page = listing(system, root)
+            assert page.entries == []
+            assert "escape" not in page.model_dump_json() and str(outside) not in page.model_dump_json()
             with pytest.raises(HubError) as error:
-                listing(system, root)
+                with directory_lease(str(link), root=root_path):
+                    pass
             assert error.value.code == "REMOTE_PATH_OUTSIDE_ROOT"
             assert str(outside) not in error.value.message
         finally:

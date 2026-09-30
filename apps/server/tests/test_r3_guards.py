@@ -53,8 +53,28 @@ def test_upgrade_blocks_unapplied_old_event_and_wire_errors_stay_frozen(env):
         assert w.ack['error']['code']=='REMOTE_REVISION_REQUIRED'
     for rev in (1,2):
         frame=wire.encode(dict(type='worker.hello_rejected',error=Fault('REMOTE_QUERY_TIMEOUT').view()),rev)
-        assert frame['error']['code']=='INTERNAL' and frame['supportedWireRevisions']==[1,2,3]
+        assert frame['error']['code']=='INTERNAL' and frame['supportedWireRevisions']==[1,2,3,4]
     assert wire.encode(dict(type='worker.hello_rejected',error=Fault('REMOTE_QUERY_TIMEOUT').view()),3)['error']['code']=='REMOTE_QUERY_TIMEOUT'
+
+
+@pytest.mark.parametrize('status,delivery,allowed',[
+    ('accepted','acknowledged',True), ('accepted','awaiting_receipt',False), ('queued','acknowledged',False)])
+def test_upgrade_preserves_acknowledged_unknown_control_evidence(env,status,delivery,allowed):
+    w=Worker3(env,env.alice); w.confirm()
+    with w.connect(w.hello(wireRevision=2)):
+        assert w.ack['type']=='worker.hello_ack'
+    evidence=dict(outcome='unconfirmed',executionMayStillBeRunning=True,orphanProcessIds=[424242],
+        reason='synthetic recovery evidence',evidence='recovery_flag',observedAt=stamp(env.clock()))
+    with env.service.repo.transaction() as tx:
+        tx.put(env.owner,'command','historical-control',dict(_frame=dict(wireRevision=2),status=status,
+            deliveryState=delivery,controlResult=evidence),worker=w.worker,store=w.store)
+    with w.connect(w.hello(lastServerAck=dict(workerStoreId=w.store,seq=0))):
+        assert w.ack['type']==('worker.hello_ack' if allowed else 'worker.hello_rejected')
+        if not allowed:
+            assert w.ack['error']['code']=='REMOTE_REVISION_REQUIRED'
+    with env.service.repo.transaction() as tx:
+        original=tx.get(env.owner,'command','historical-control')
+        assert original['status']==status and original['controlResult']==evidence
 
 
 def test_native_delete_redaction_gap_and_late_index_do_not_resurrect(env):
