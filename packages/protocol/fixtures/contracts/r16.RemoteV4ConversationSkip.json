@@ -1,0 +1,11 @@
+{
+  "type": "conversation.skip",
+  "commandId": "command_demo",
+  "conversationId": "conversation_demo",
+  "conversationSeq": 1,
+  "targetWorkerId": "worker_demo",
+  "expectedWorkerStoreId": "store_demo",
+  "reason": "withdrawn_before_dispatch",
+  "recordedAt": "2026-09-26T12:00:00Z",
+  "wireRevision": 4
+}

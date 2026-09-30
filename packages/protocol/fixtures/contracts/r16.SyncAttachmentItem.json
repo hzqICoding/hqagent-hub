@@ -1,0 +1,9 @@
+{
+  "fileName": "example.txt",
+  "kind": "file",
+  "mimeType": "text/plain",
+  "sizeBytes": 15,
+  "sha256": "e2dbfe68423abd2a4aae75a697a9f47ef0298a44f8b40def76f878ee228a9e8d",
+  "localAttachmentId": "local_attachment_demo",
+  "availability": "pending_upload"
+}

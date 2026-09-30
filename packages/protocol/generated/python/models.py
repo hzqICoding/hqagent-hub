@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer, model_validator
 
-PROTOCOL_VERSION = "0.9.2"
+PROTOCOL_VERSION = "0.10.0"
 
 
 class _Base(BaseModel):
@@ -228,6 +228,17 @@ class ErrorCode(StrEnum):
     REMOTE_ROOT_NOT_AUTHORIZED = "REMOTE_ROOT_NOT_AUTHORIZED"
     REMOTE_PATH_OUTSIDE_ROOT = "REMOTE_PATH_OUTSIDE_ROOT"
     REMOTE_DIRECTORY_CHANGED = "REMOTE_DIRECTORY_CHANGED"
+    ATTACHMENT_TOO_LARGE = "ATTACHMENT_TOO_LARGE"
+    ATTACHMENT_TYPE_UNSUPPORTED = "ATTACHMENT_TYPE_UNSUPPORTED"
+    ATTACHMENT_COUNT_EXCEEDED = "ATTACHMENT_COUNT_EXCEEDED"
+    ATTACHMENT_QUOTA_EXCEEDED = "ATTACHMENT_QUOTA_EXCEEDED"
+    ATTACHMENT_HASH_MISMATCH = "ATTACHMENT_HASH_MISMATCH"
+    AGENT_IMAGE_UNSUPPORTED = "AGENT_IMAGE_UNSUPPORTED"
+    ATTACHMENT_DOWNLOAD_FAILED = "ATTACHMENT_DOWNLOAD_FAILED"
+    ATTACHMENT_NOT_READY = "ATTACHMENT_NOT_READY"
+    ATTACHMENT_IN_USE = "ATTACHMENT_IN_USE"
+    ATTACHMENT_THUMBNAIL_UNAVAILABLE = "ATTACHMENT_THUMBNAIL_UNAVAILABLE"
+    ATTACHMENT_PREPARATION_INTERRUPTED = "ATTACHMENT_PREPARATION_INTERRUPTED"
 
 
 class AdapterFailure(_Base):
@@ -396,6 +407,24 @@ class AgentFailedPayload(_Base):
     blockers: list[Blocker] | None = Field(default=None, alias="blockers")
 
 
+class AttachmentManifestItem(_RemoteBase):
+    """Immutable verified metadata only: no URL, path, base64, body or credentials. Command IDs are public server attachment IDs, at most five, bound to one owner/worker/store/conversation."""
+
+    attachment_id: str = Field(alias="attachmentId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    file_name: str = Field(alias="fileName", min_length=1, max_length=120, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    kind: Literal["image", "file"] = Field(alias="kind", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    mime_type: Literal["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf", "text/plain"] = Field(alias="mimeType", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    size_bytes: int = Field(alias="sizeBytes", ge=1, le=20000000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    sha256: str = Field(alias="sha256", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class AgentInputAttachment(_RemoteBase):
+    """Hub to local Adapter only: verified managed read-only input path, never HTTP response or remote command. Recheck hash/size and allowed input location before passing to model."""
+
+    attachment: AttachmentManifestItem = Field(alias="attachment", json_schema_extra={'wireNullable': False, 'wireType': None})
+    local_path: str = Field(alias="localPath", min_length=1, max_length=4096, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
 class AgentProgressPayload(_Base):
     message: str = Field(alias="message")
     percent: int | None = Field(default=None, alias="percent")
@@ -481,6 +510,7 @@ class AgentTaskSpec(_Base):
     model_id_: str | None = Field(default=None, alias="modelId")
     reasoning_effort: str | None = Field(default=None, alias="reasoningEffort")
     role_instructions: str | None = Field(default=None, alias="roleInstructions")
+    input_attachments: list[AgentInputAttachment] | None = Field(default=None, alias="inputAttachments")
 
 
 class AgentToolCallPayload(_Base):
@@ -633,6 +663,62 @@ class ApprovalView(_Base):
     reason: str | None = Field(default=None, alias="reason")
     expires_at: Timestamp | None = Field(default=None, alias="expiresAt")
     details: dict[str, Any] | None = Field(default=None, alias="details")
+
+
+class AttachmentDeletedView(_RemoteBase):
+    """Delete only unreferenced uploaded attachment; cannot delete attached history through this endpoint."""
+
+    attachment_id: str = Field(alias="attachmentId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    deleted: Literal[True] = Field(alias="deleted", json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+
+
+class AttachmentLimits(_RemoteBase):
+    """Decimal MB/GB. jpg/jpeg/png/webp/gif content-detected; text/source normalized as UTF-8 text/plain; PDF detected by content. Frozen whitelist in contract/fixture."""
+
+    image_max_bytes: Literal[10000000] = Field(alias="imageMaxBytes", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    file_max_bytes: Literal[20000000] = Field(alias="fileMaxBytes", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    message_max_count: Literal[5] = Field(alias="messageMaxCount", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    account_quota_bytes: Literal[5000000000] = Field(alias="accountQuotaBytes", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    unattached_ttl_seconds: Literal[86400] = Field(alias="unattachedTtlSeconds", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    image_mime_types: list[Literal["image/jpeg", "image/png", "image/webp", "image/gif"]] = Field(alias="imageMimeTypes", max_length=4, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    file_extensions: list[Annotated[str, Field(strict=True, min_length=2, max_length=10)]] = Field(alias="fileExtensions", max_length=32, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+
+
+class ImageInputCapability(_RemoteBase):
+    """supported iff CLI entry/runtime/model path and integration verification all succeed. Unknown/unsupported reject image before send. Missing capability means unknown; never infer from provider brand."""
+
+    support: Literal["unknown", "unsupported", "supported"] = Field(alias="support", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    cli_entry: Literal["unknown", "unsupported", "supported"] = Field(alias="cliEntry", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    runtime_implemented: bool = Field(alias="runtimeImplemented", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    verified: bool = Field(alias="verified", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    mime_types: list[Literal["image/jpeg", "image/png", "image/webp", "image/gif"]] = Field(alias="mimeTypes", max_length=4, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    max_bytes: int = Field(alias="maxBytes", ge=0, le=10000000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    reason: str | None = Field(default=None, alias="reason", max_length=300, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class NativeAgentType(StrEnum):
+    CLAUDE = "claude"
+    CODEX = "codex"
+
+
+class NativeImageCapability(_RemoteBase):
+    agent_type: NativeAgentType = Field(alias="agentType", json_schema_extra={'wireNullable': False, 'wireType': None})
+    image_input: ImageInputCapability = Field(alias="imageInput", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RoleImageCapability(_RemoteBase):
+    role_id: str = Field(alias="roleId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    agent_id: str = Field(alias="agentId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    image_input: ImageInputCapability = Field(alias="imageInput", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class AttachmentTargetCapabilities(_RemoteBase):
+    """All selected scenario roles, not only executor; native uses exactly one native entry and no scenario roles. Missing role or stale information fails closed."""
+
+    conversation_kind: Literal["scenario", "native"] = Field(alias="conversationKind", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    capability_revision: int = Field(alias="capabilityRevision", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    roles: list[RoleImageCapability] = Field(alias="roles", max_length=32, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    native: NativeImageCapability | None = Field(default=None, alias="native", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
 class BootstrapAgentsSummary(_Base):
@@ -989,6 +1075,18 @@ class LocalAgentModelsView(_Base):
     reason: str | None = Field(default=None, alias="reason")
 
 
+class LocalAttachmentView(_RemoteBase):
+    """Computer-owned safe blob ID; no path returned. Independent of remote pairing and account quota; local same per-file/count limits apply."""
+
+    attachment: AttachmentManifestItem = Field(alias="attachment", json_schema_extra={'wireNullable': False, 'wireType': None})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    state: Literal["uploaded", "attached"] = Field(alias="state", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str | None = Field(default=None, alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_status: Literal["not_synced", "pending_upload", "available", "unavailable"] | None = Field(default=None, alias="syncStatus", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_error: ErrorCode | None = Field(default=None, alias="syncError", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
 class LocalAuthInput(_Base):
     code: str = Field(alias="code")
 
@@ -1046,11 +1144,6 @@ class NativeActivityEvidence(_RemoteBase):
     process_match: Literal["present", "absent", "unknown"] = Field(alias="processMatch", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     recently_modified: bool = Field(alias="recentlyModified", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
     terminal_closed_confirmed_at: str | None = Field(default=None, alias="terminalClosedConfirmedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-
-
-class NativeAgentType(StrEnum):
-    CLAUDE = "claude"
-    CODEX = "codex"
 
 
 class TaskStatus(StrEnum):
@@ -1113,6 +1206,7 @@ class LocalMessageView(_Base):
     text: str = Field(alias="text")
     run_id: str | None = Field(default=None, alias="runId")
     created_at: Timestamp = Field(alias="createdAt")
+    attachments: list[AttachmentManifestItem] | None = Field(default=None, alias="attachments")
 
 
 class NativeFormatStatus(StrEnum):
@@ -1278,6 +1372,20 @@ class LocalRunView(_Base):
     task: TaskDetailView | None = Field(default=None, alias="task")
     conversation_kind: Literal["scenario", "native"] | None = Field(default=None, alias="conversationKind")
     agent_type: NativeAgentType | None = Field(default=None, alias="agentType")
+
+
+class MessageAttachmentView(_RemoteBase):
+    """Public owner-scoped ID. Explicit pending/unavailable prevents dangling downloads. Thumbnail ready never implies original is safe to inline."""
+
+    attachment_id: str = Field(alias="attachmentId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    file_name: str = Field(alias="fileName", min_length=1, max_length=120, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    kind: Literal["image", "file"] = Field(alias="kind", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    mime_type: Literal["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf", "text/plain"] = Field(alias="mimeType", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    size_bytes: int = Field(alias="sizeBytes", ge=1, le=20000000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    sha256: str = Field(alias="sha256", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    availability: Literal["pending_upload", "available", "unavailable"] = Field(alias="availability", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    thumbnail_status: Literal["pending", "ready", "unavailable", "not_applicable"] = Field(alias="thumbnailStatus", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    error_code: ErrorCode | None = Field(default=None, alias="errorCode", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
 class NativeClosureConfirmation(_RemoteBase):
@@ -1624,6 +1732,25 @@ class RemoteApprovalView(_RemoteBase):
     denial_code: ErrorCode | None = Field(default=None, alias="denialCode", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
+class RemoteAttachmentLimitsView(_RemoteBase):
+    """Owner-scoped logical quota: count each live attachment once, independent of physical deduplication; inflight reservations also consume quota."""
+
+    limits: AttachmentLimits = Field(alias="limits", json_schema_extra={'wireNullable': False, 'wireType': None})
+    used_bytes: int = Field(alias="usedBytes", ge=0, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    reserved_bytes: int = Field(alias="reservedBytes", ge=0, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    observed_at: str = Field(alias="observedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteAttachmentView(_RemoteBase):
+    """Deleted/expired records are not exposed: NOT_FOUND. uploaded expires after 24h, reserved has bounded command pin, attached belongs to Worker-confirmed message. Attached metadata may precede local-origin bytes."""
+
+    attachment: MessageAttachmentView = Field(alias="attachment", json_schema_extra={'wireNullable': False, 'wireType': None})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    state: Literal["uploaded", "reserved", "attached"] = Field(alias="state", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str | None = Field(default=None, alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
 class RemoteAuthenticatedSession(_RemoteBase):
     authenticated: Literal[True] = Field(alias="authenticated", json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
     account: RemoteAccountView = Field(alias="account", json_schema_extra={'wireNullable': False, 'wireType': None})
@@ -1677,18 +1804,18 @@ class RemoteControlUnconfirmed(_RemoteBase):
     observed_at: str = Field(alias="observedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
 
 
-class RemoteV2ControlConfirmed(_RemoteBase):
-    """D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist."""
+class RemoteV4ControlConfirmed(_RemoteBase):
+    """D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist. input_preparation_cancelled requires durable no-Agent-start fence and confirmed stopped preparation I/O, never inferred from a missing process handle."""
 
     outcome: Literal["confirmed"] = Field(alias="outcome", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     execution_may_still_be_running: bool = Field(alias="executionMayStillBeRunning", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
     orphan_process_ids: list[Annotated[int, Field(strict=True, ge=1, le=4294967295)]] = Field(alias="orphanProcessIds", max_length=0, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
     reason: str = Field(alias="reason", min_length=1, max_length=2000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    evidence: Literal["adapter_confirmed", "node_boundary_paused", "already_terminal", "retry_enqueued", "supervisor_resumed", "inbox_tombstone", "metadata_committed"] = Field(alias="evidence", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    evidence: Literal["adapter_confirmed", "node_boundary_paused", "already_terminal", "retry_enqueued", "supervisor_resumed", "inbox_tombstone", "metadata_committed", "input_preparation_cancelled"] = Field(alias="evidence", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     observed_at: str = Field(alias="observedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
 
 
-class RemoteV2ControlResult(RootModel[RemoteV2ControlConfirmed | RemoteControlRejected | RemoteControlUnconfirmed]):
+class RemoteV4ControlResult(RootModel[RemoteV4ControlConfirmed | RemoteControlRejected | RemoteControlUnconfirmed]):
     pass
 
 
@@ -1709,7 +1836,7 @@ class RemoteCommandView(_RemoteBase):
     expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     result_status: Literal["succeeded", "cancelled", "confirmed", "retry_enqueued", "approval_consumed", "withdrawn", "failed", "rejected"] | None = Field(default=None, alias="resultStatus", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     result_ref: RemoteResultRef | None = Field(default=None, alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
-    control_result: RemoteV2ControlResult | None = Field(default=None, alias="controlResult", json_schema_extra={'wireNullable': False, 'wireType': None})
+    control_result: RemoteV4ControlResult | None = Field(default=None, alias="controlResult", json_schema_extra={'wireNullable': False, 'wireType': None})
     error: RemoteError | None = Field(default=None, alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
     withdrawal_command_id: str | None = Field(default=None, alias="withdrawalCommandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     deliver_by: str | None = Field(default=None, alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
@@ -1779,6 +1906,7 @@ class RemoteMessageView(_RemoteBase):
     run_id: str | None = Field(default=None, alias="runId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     message_sequence: int | None = Field(default=None, alias="messageSequence", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
     message_revision: int | None = Field(default=None, alias="messageRevision", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    attachments: list[MessageAttachmentView] | None = Field(default=None, alias="attachments", max_length=5, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
 
 
 class RemoteBrowserMessageEvent(_RemoteBase):
@@ -1966,6 +2094,17 @@ class RemoteV2CommandAccepted(_RemoteBase):
     result_ref: RemoteResultRef | None = Field(default=None, alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
+class RemoteV2ControlConfirmed(_RemoteBase):
+    """D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist."""
+
+    outcome: Literal["confirmed"] = Field(alias="outcome", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    execution_may_still_be_running: bool = Field(alias="executionMayStillBeRunning", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    orphan_process_ids: list[Annotated[int, Field(strict=True, ge=1, le=4294967295)]] = Field(alias="orphanProcessIds", max_length=0, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    reason: str = Field(alias="reason", min_length=1, max_length=2000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    evidence: Literal["adapter_confirmed", "node_boundary_paused", "already_terminal", "retry_enqueued", "supervisor_resumed", "inbox_tombstone", "metadata_committed"] = Field(alias="evidence", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    observed_at: str = Field(alias="observedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
 class RemoteV2CommandCompleted(_RemoteBase):
     """Not universally task success. Retry completes on durable new execution reference; execute completes on actual terminal Run success/cancellation. Cancel/pause/resume require confirmed structured control result."""
 
@@ -2027,6 +2166,10 @@ class RemoteV2CommandRejected(_RemoteBase):
     received_at: str = Field(alias="receivedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     status: Literal["rejected"] = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     error: RemoteWire2Error = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV2ControlResult(RootModel[RemoteV2ControlConfirmed | RemoteControlRejected | RemoteControlUnconfirmed]):
+    pass
 
 
 class RemoteV2ControlObserved(_RemoteBase):
@@ -2875,6 +3018,7 @@ class RemoteSendMessageInput(_RemoteBase):
     session_mode: Literal["new", "continue"] = Field(alias="sessionMode", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     expires_at: str | None = Field(default=None, alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     native_confirmation: NativeContinuationConfirmationInput | None = Field(default=None, alias="nativeConfirmation", json_schema_extra={'wireNullable': False, 'wireType': None})
+    attachment_ids: list[Annotated[str, Field(strict=True, min_length=1, max_length=160)]] | None = Field(default=None, alias="attachmentIds", max_length=5, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
 
 
 class RemoteServerHeartbeat(_RemoteBase):
@@ -4371,6 +4515,974 @@ class RemoteV3WorkerOutboundFrame(RootModel[RemoteV3WorkerHello | RemoteV3Worker
     pass
 
 
+class RemoteV4ApprovalDecisionCommand(_RemoteBase):
+    """Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."""
+
+    type: Literal["approval.decide"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteApprovalDecisionPayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    local_conversation_id: str = Field(alias="localConversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteWire4ErrorCode(StrEnum):
+    BAD_REQUEST = "BAD_REQUEST"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    ORIGIN_NOT_ALLOWED = "ORIGIN_NOT_ALLOWED"
+    NOT_FOUND = "NOT_FOUND"
+    CONFLICT = "CONFLICT"
+    IDEMPOTENCY_MISMATCH = "IDEMPOTENCY_MISMATCH"
+    PROTOCOL_VERSION_MISMATCH = "PROTOCOL_VERSION_MISMATCH"
+    HUB_NOT_READY = "HUB_NOT_READY"
+    HUB_MAINTENANCE = "HUB_MAINTENANCE"
+    EVENT_CURSOR_EXPIRED = "EVENT_CURSOR_EXPIRED"
+    FEATURE_UNAVAILABLE = "FEATURE_UNAVAILABLE"
+    AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
+    AGENT_OFFLINE = "AGENT_OFFLINE"
+    AGENT_NOT_LOGGED_IN = "AGENT_NOT_LOGGED_IN"
+    AGENT_INCOMPATIBLE = "AGENT_INCOMPATIBLE"
+    CAPABILITY_MISSING = "CAPABILITY_MISSING"
+    ROLE_UNRESOLVED = "ROLE_UNRESOLVED"
+    SESSION_NOT_RESUMABLE = "SESSION_NOT_RESUMABLE"
+    TASK_NOT_CANCELLABLE = "TASK_NOT_CANCELLABLE"
+    TASK_ACTION_INVALID = "TASK_ACTION_INVALID"
+    WORKTREE_BUSY = "WORKTREE_BUSY"
+    PATH_NOT_ALLOWED = "PATH_NOT_ALLOWED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    APPROVAL_EXPIRED = "APPROVAL_EXPIRED"
+    APPROVAL_ALREADY_DECIDED = "APPROVAL_ALREADY_DECIDED"
+    UPDATE_NOT_AVAILABLE = "UPDATE_NOT_AVAILABLE"
+    UPDATE_BUSY = "UPDATE_BUSY"
+    UPDATE_VERIFY_FAILED = "UPDATE_VERIFY_FAILED"
+    UPDATE_DRAIN_TIMEOUT = "UPDATE_DRAIN_TIMEOUT"
+    INTERNAL = "INTERNAL"
+    REMOTE_AUTH_REQUIRED = "REMOTE_AUTH_REQUIRED"
+    REMOTE_CSRF_REJECTED = "REMOTE_CSRF_REJECTED"
+    REMOTE_DEVICE_OFFLINE = "REMOTE_DEVICE_OFFLINE"
+    REMOTE_DEVICE_REVOKED = "REMOTE_DEVICE_REVOKED"
+    REMOTE_DEVICE_AUTH_FAILED = "REMOTE_DEVICE_AUTH_FAILED"
+    REMOTE_PAIRING_EXPIRED = "REMOTE_PAIRING_EXPIRED"
+    REMOTE_PAIRING_CONFLICT = "REMOTE_PAIRING_CONFLICT"
+    REMOTE_PAIRING_INVALID = "REMOTE_PAIRING_INVALID"
+    REMOTE_COMMAND_EXPIRED = "REMOTE_COMMAND_EXPIRED"
+    REMOTE_COMMAND_WITHDRAWN = "REMOTE_COMMAND_WITHDRAWN"
+    REMOTE_WITHDRAWAL_UNCONFIRMED = "REMOTE_WITHDRAWAL_UNCONFIRMED"
+    REMOTE_STORE_CHANGED = "REMOTE_STORE_CHANGED"
+    REMOTE_EPOCH_STALE = "REMOTE_EPOCH_STALE"
+    REMOTE_PROTOCOL_UNSUPPORTED = "REMOTE_PROTOCOL_UNSUPPORTED"
+    REMOTE_EVENT_CONFLICT = "REMOTE_EVENT_CONFLICT"
+    REMOTE_ACK_CONFLICT = "REMOTE_ACK_CONFLICT"
+    REMOTE_SEQUENCE_GAP = "REMOTE_SEQUENCE_GAP"
+    REMOTE_APPROVAL_FORBIDDEN = "REMOTE_APPROVAL_FORBIDDEN"
+    CONVERSATION_AUTHORITY_MISMATCH = "CONVERSATION_AUTHORITY_MISMATCH"
+    REMOTE_TARGET_MISMATCH = "REMOTE_TARGET_MISMATCH"
+    REMOTE_SCENE_VERSION_MISMATCH = "REMOTE_SCENE_VERSION_MISMATCH"
+    REMOTE_CURSOR_EXPIRED = "REMOTE_CURSOR_EXPIRED"
+    REMOTE_CURSOR_INVALID = "REMOTE_CURSOR_INVALID"
+    REMOTE_RATE_LIMITED = "REMOTE_RATE_LIMITED"
+    REMOTE_FRAME_TOO_LARGE = "REMOTE_FRAME_TOO_LARGE"
+    REMOTE_WITHDRAWAL_TOO_LATE = "REMOTE_WITHDRAWAL_TOO_LATE"
+    REMOTE_PAIRING_IN_PROGRESS = "REMOTE_PAIRING_IN_PROGRESS"
+    REMOTE_SERVER_UNREACHABLE = "REMOTE_SERVER_UNREACHABLE"
+    REMOTE_SERVER_ORIGIN_INVALID = "REMOTE_SERVER_ORIGIN_INVALID"
+    REMOTE_CONVERSATION_BUSY = "REMOTE_CONVERSATION_BUSY"
+    REMOTE_STATE_NOT_READY = "REMOTE_STATE_NOT_READY"
+    REMOTE_SYNC_CONFLICT = "REMOTE_SYNC_CONFLICT"
+    REMOTE_SYNC_DISABLED = "REMOTE_SYNC_DISABLED"
+    REMOTE_DELIVERY_EXPIRED = "REMOTE_DELIVERY_EXPIRED"
+    REMOTE_REVISION_REQUIRED = "REMOTE_REVISION_REQUIRED"
+    REMOTE_SYNC_RESOURCE_LIMIT = "REMOTE_SYNC_RESOURCE_LIMIT"
+    REMOTE_QUERY_TIMEOUT = "REMOTE_QUERY_TIMEOUT"
+    REMOTE_QUERY_TOO_LARGE = "REMOTE_QUERY_TOO_LARGE"
+    NATIVE_SESSION_ACTIVE = "NATIVE_SESSION_ACTIVE"
+    NATIVE_SESSION_UNSUPPORTED = "NATIVE_SESSION_UNSUPPORTED"
+    NATIVE_SESSION_CHANGED = "NATIVE_SESSION_CHANGED"
+    NATIVE_SESSION_WRITER_CONFLICT = "NATIVE_SESSION_WRITER_CONFLICT"
+    REMOTE_ROOT_NOT_AUTHORIZED = "REMOTE_ROOT_NOT_AUTHORIZED"
+    REMOTE_PATH_OUTSIDE_ROOT = "REMOTE_PATH_OUTSIDE_ROOT"
+    REMOTE_DIRECTORY_CHANGED = "REMOTE_DIRECTORY_CHANGED"
+    ATTACHMENT_TOO_LARGE = "ATTACHMENT_TOO_LARGE"
+    ATTACHMENT_TYPE_UNSUPPORTED = "ATTACHMENT_TYPE_UNSUPPORTED"
+    ATTACHMENT_COUNT_EXCEEDED = "ATTACHMENT_COUNT_EXCEEDED"
+    ATTACHMENT_QUOTA_EXCEEDED = "ATTACHMENT_QUOTA_EXCEEDED"
+    ATTACHMENT_HASH_MISMATCH = "ATTACHMENT_HASH_MISMATCH"
+    AGENT_IMAGE_UNSUPPORTED = "AGENT_IMAGE_UNSUPPORTED"
+    ATTACHMENT_DOWNLOAD_FAILED = "ATTACHMENT_DOWNLOAD_FAILED"
+    ATTACHMENT_NOT_READY = "ATTACHMENT_NOT_READY"
+    ATTACHMENT_IN_USE = "ATTACHMENT_IN_USE"
+    ATTACHMENT_THUMBNAIL_UNAVAILABLE = "ATTACHMENT_THUMBNAIL_UNAVAILABLE"
+    ATTACHMENT_PREPARATION_INTERRUPTED = "ATTACHMENT_PREPARATION_INTERRUPTED"
+
+    @classmethod
+    def model_validate(cls, value):
+        from pydantic import TypeAdapter
+        return TypeAdapter(cls).validate_python(value)
+
+    def model_dump(self, **kwargs):
+        return self.value
+
+
+class RemoteWire4ApprovalView(_RemoteBase):
+    """Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely."""
+
+    approval_id: str = Field(alias="approvalId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    result_ref: RemoteResultRef = Field(alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
+    action: DangerousAction = Field(alias="action", json_schema_extra={'wireNullable': False, 'wireType': None})
+    target_summary: str = Field(alias="targetSummary", max_length=2000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    risk_level: RiskLevel = Field(alias="riskLevel", json_schema_extra={'wireNullable': False, 'wireType': None})
+    status: ApprovalStatus = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': None})
+    requested_at: str = Field(alias="requestedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    remote_approval_allowed: bool = Field(alias="remoteApprovalAllowed", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    worker_policy_revision: int = Field(alias="workerPolicyRevision", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    denial_code: RemoteWire4ErrorCode | None = Field(default=None, alias="denialCode", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4ApprovalEvent(_RemoteBase):
+    type: Literal["approval.state_changed"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteWire4ApprovalView = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4BackfillProgress(_RemoteBase):
+    type: Literal["sync.backfill.progress"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_generation: int = Field(alias="syncGeneration", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    backfill_id: str = Field(alias="backfillId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    batch_index: int = Field(alias="batchIndex", ge=0, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    batch_event_count: int = Field(alias="batchEventCount", ge=0, le=100, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    snapshot_high_water: int = Field(alias="snapshotHighWater", ge=0, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    complete: bool = Field(alias="complete", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+
+
+class RemoteV4BusySnapshot(_RemoteBase):
+    type: Literal["sync.busy.snapshot"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    snapshot_id: str = Field(alias="snapshotId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    connection_id: str = Field(alias="connectionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    captured_at: str = Field(alias="capturedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    part_index: int = Field(alias="partIndex", ge=0, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    part_count: int = Field(alias="partCount", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    conversation_ids: list[Annotated[str, Field(strict=True, min_length=1, max_length=160)]] = Field(alias="conversationIds", max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+
+
+class RemoteV4CancelCommand(_RemoteBase):
+    """Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."""
+
+    type: Literal["run.cancel"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteRunControlPayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    local_conversation_id: str = Field(alias="localConversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4SceneSummary(_RemoteBase):
+    """Worker scene index only; model/provider credential or installation/subscription data is not relayed."""
+
+    scene_id: str = Field(alias="sceneId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    name: str = Field(alias="name", max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    version: int = Field(alias="version", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    read_only: bool = Field(alias="readOnly", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    role_image_capabilities: list[RoleImageCapability] | None = Field(default=None, alias="roleImageCapabilities", max_length=32, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+
+
+class RemoteV4CatalogView(_RemoteBase):
+    """Atomic bounded complete catalog for R1. Reject oversized catalogs instead of truncating; offline entries are last observed, not proof that paths still exist. Revision 3 producers include authorizedRoots, [] when none; omitted legacy HTTP field means no remote project browsing. Revision 4 includes each scene role image capability and native Agent capability; missing entries mean unknown."""
+
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    capability_revision: int = Field(alias="capabilityRevision", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    observed_at: str = Field(alias="observedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    workspaces: list[RemoteWorkspaceSummary] = Field(alias="workspaces", max_length=1000, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    scenes: list[RemoteV4SceneSummary] = Field(alias="scenes", max_length=1000, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    remotely_blocked_actions: list[DangerousAction] = Field(alias="remotelyBlockedActions", max_length=32, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    authorized_roots: list[RemoteAuthorizedRoot] | None = Field(default=None, alias="authorizedRoots", min_length=0, max_length=32, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    native_image_capabilities: list[NativeImageCapability] | None = Field(default=None, alias="nativeImageCapabilities", max_length=32, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+
+
+class RemoteV4CatalogEvent(_RemoteBase):
+    type: Literal["capability.changed"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteV4CatalogView = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4CommandAccepted(_RemoteBase):
+    """Durable inbox admission, not model/execution success. Duplicate immutable commands return the original receipt/event. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command."""
+
+    type: Literal["command.accepted"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str | None = Field(default=None, alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    received_at: str = Field(alias="receivedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    status: Literal["accepted"] = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    result_ref: RemoteResultRef | None = Field(default=None, alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4CommandCompleted(_RemoteBase):
+    """Not universally task success. Retry completes on durable new execution reference; execute completes on actual terminal Run success/cancellation. Cancel/pause/resume require confirmed structured control result. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command."""
+
+    type: Literal["command.completed"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str | None = Field(default=None, alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    result_status: Literal["succeeded", "cancelled", "confirmed", "retry_enqueued", "approval_consumed", "withdrawn"] = Field(alias="resultStatus", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    result_ref: RemoteResultRef | None = Field(default=None, alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
+    control_result: RemoteV4ControlConfirmed | None = Field(default=None, alias="controlResult", json_schema_extra={'wireNullable': False, 'wireType': None})
+    resource_ref: RemoteResourceResultRef | None = Field(default=None, alias="resourceRef", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4CommandWithdrawalCommand(_RemoteBase):
+    """Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."""
+
+    type: Literal["command.withdraw"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteCommandWithdrawalPayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    local_conversation_id: str = Field(alias="localConversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4ConversationCreateCommand(_RemoteBase):
+    """Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."""
+
+    type: Literal["conversation.create"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteCreateConversationInput = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    local_conversation_id: str = Field(alias="localConversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4ConversationUpdateCommand(_RemoteBase):
+    """Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."""
+
+    type: Literal["conversation.update"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteSyncConversationUpdate = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    local_conversation_id: str = Field(alias="localConversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4NativeImportCommand(_RemoteBase):
+    type: Literal["native.import"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    request_id: str = Field(alias="requestId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: NativeImportPayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4PauseCommand(_RemoteBase):
+    """Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."""
+
+    type: Literal["run.pause"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteRunControlPayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    local_conversation_id: str = Field(alias="localConversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4ResumeCommand(_RemoteBase):
+    """Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."""
+
+    type: Literal["run.resume"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteRunControlPayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    local_conversation_id: str = Field(alias="localConversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4RetryCommand(_RemoteBase):
+    """Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."""
+
+    type: Literal["run.retry"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteRunControlPayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    local_conversation_id: str = Field(alias="localConversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4RunSubmitPayload(_RemoteBase):
+    """Scenario retains sceneId/sceneVersion. Native requires conversationKind=native, agentType/nativeSessionId matching persisted binding and sessionMode=continue; omits scene fields. Confirmation optional only when an existing audited confirmation remains valid. No fuzzy IDs or new-session fallback. With images, capabilityRevision is mandatory and all selected roles must support the detected image type/size. Download only after accepted grant and before any Agent start."""
+
+    client_message_id: str = Field(alias="clientMessageId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    workspace_id: str = Field(alias="workspaceId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    scene_id: str | None = Field(default=None, alias="sceneId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    scene_version: int | None = Field(default=None, alias="sceneVersion", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    session_mode: Literal["new", "continue"] = Field(alias="sessionMode", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    text: str = Field(alias="text", min_length=1, max_length=32000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_kind: Literal["scenario", "native"] | None = Field(default=None, alias="conversationKind", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    agent_type: NativeAgentType | None = Field(default=None, alias="agentType", json_schema_extra={'wireNullable': False, 'wireType': None})
+    native_session_id: str | None = Field(default=None, alias="nativeSessionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    native_confirmation: NativeClosureConfirmation | None = Field(default=None, alias="nativeConfirmation", json_schema_extra={'wireNullable': False, 'wireType': None})
+    attachments: list[AttachmentManifestItem] | None = Field(default=None, alias="attachments", max_length=5, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    attachment_capability_revision: int | None = Field(default=None, alias="attachmentCapabilityRevision", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+
+
+class RemoteV4RunSubmitCommand(_RemoteBase):
+    """Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice."""
+
+    type: Literal["run.submit"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_seq: int = Field(alias="conversationSeq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteV4RunSubmitPayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    local_conversation_id: str = Field(alias="localConversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4WorkspaceRegisterCommand(_RemoteBase):
+    type: Literal["workspace.register"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    request_id: str = Field(alias="requestId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteWorkspaceRegisterInput = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4CommandEnvelope(RootModel[RemoteV4RunSubmitCommand | RemoteV4PauseCommand | RemoteV4ResumeCommand | RemoteV4CancelCommand | RemoteV4RetryCommand | RemoteV4ApprovalDecisionCommand | RemoteV4CommandWithdrawalCommand | RemoteV4ConversationUpdateCommand | RemoteV4ConversationCreateCommand | RemoteV4NativeImportCommand | RemoteV4WorkspaceRegisterCommand]):
+    pass
+
+
+class RemoteWire4Error(_RemoteBase):
+    """Sanitized error. No credential, raw environment, owner locator or arbitrary detail object."""
+
+    code: RemoteWire4ErrorCode = Field(alias="code", json_schema_extra={'wireNullable': False, 'wireType': None})
+    message: str = Field(alias="message", max_length=2000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    retryable: bool = Field(alias="retryable", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+
+
+class RemoteV4CommandFailed(_RemoteBase):
+    """Failure after admission. A refused control is distinct from unconfirmed cancellation; do not infer that an Agent process has stopped. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command."""
+
+    type: Literal["command.failed"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str | None = Field(default=None, alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    result_status: Literal["failed", "rejected"] = Field(alias="resultStatus", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    error: RemoteWire4Error = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
+    result_ref: RemoteResultRef | None = Field(default=None, alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
+    control_result: RemoteControlRejected | None = Field(default=None, alias="controlResult", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4CommandRejected(_RemoteBase):
+    """Pre-admission rejection only. An expired sequenced submit consumes its ordered slot without execution. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command."""
+
+    type: Literal["command.rejected"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str | None = Field(default=None, alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    received_at: str = Field(alias="receivedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    status: Literal["rejected"] = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    error: RemoteWire4Error = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4CommandReceipt(RootModel[RemoteV4CommandAccepted | RemoteV4CommandRejected]):
+    pass
+
+
+class RemoteV4CommandReceived(_RemoteBase):
+    """ For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command."""
+
+    type: Literal["command.received"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str | None = Field(default=None, alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_digest: str = Field(alias="commandDigest", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    received_at: str = Field(alias="receivedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4RedactedSlot(_RemoteBase):
+    """Only retired content slots, never admission/grant/control facts. Original identity and digest are retained, not rewritten."""
+
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    original_type: Literal["sync.conversation.upserted", "sync.message.segment", "sync.run.state", "sync.backfill.progress", "message.appended", "native.index.upserted"] = Field(alias="originalType", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    event_sha256: str = Field(alias="eventSha256", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4ContentRedaction(_RemoteBase):
+    """Authenticated privacy coverage control, not a replacement immutable event. Bound to a durable reset/deletion fence. No new seq allocation; normal contiguous ACK only after all covered identities/digests and deletion are committed. native.index.deleted fences only that nativeSessionId; imported deletes the index, never the newly imported Hub conversation. sync.reset covers both kinds. No redaction of closure confirmation audit."""
+
+    type: Literal["sync.content.redaction"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    redaction_id: str = Field(alias="redactionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_generation: int = Field(alias="syncGeneration", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    deletion_event_id: str = Field(alias="deletionEventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    deletion_seq: int = Field(alias="deletionSeq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    conversation_id: str | None = Field(default=None, alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    slots: list[RemoteV4RedactedSlot] = Field(alias="slots", min_length=1, max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    native_session_id: str | None = Field(default=None, alias="nativeSessionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4ControlObserved(_RemoteBase):
+    """D41: unconfirmed leaves command accepted and pending reconciliation. Run-scoped controls include resultRef/executionStatus. Before a Run exists (withdrawal reconciliation), omit both rather than invent an identity or execution state. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command."""
+
+    type: Literal["command.control_result"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str | None = Field(default=None, alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    result_ref: RemoteResultRef | None = Field(default=None, alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
+    control_result: RemoteV4ControlResult = Field(alias="controlResult", json_schema_extra={'wireNullable': False, 'wireType': None})
+    execution_status: TaskStatus | None = Field(default=None, alias="executionStatus", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4ConversationDeleted(_RemoteBase):
+    type: Literal["sync.conversation.deleted"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_generation: int = Field(alias="syncGeneration", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    deleted_at: str = Field(alias="deletedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4ConversationGap(_RemoteBase):
+    """Worker requests missing commands or skip records. Never run a later user message across a sequence gap."""
+
+    type: Literal["conversation.gap"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_seq: int = Field(alias="expectedSeq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    received_seq: int = Field(alias="receivedSeq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+
+
+class RemoteV4ConversationSkip(_RemoteBase):
+    """Durable ordered tombstone for a never-dispatched submit. Not an execution/control command; cannot be used to erase accepted work. Retain until gap replay/snapshot acknowledgement is safe."""
+
+    type: Literal["conversation.skip"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_seq: int = Field(alias="conversationSeq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    reason: Literal["withdrawn_before_dispatch", "expired_before_dispatch"] = Field(alias="reason", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    recorded_at: str = Field(alias="recordedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4SyncConversation(_RemoteBase):
+    """Worker local identifiers. Server namespaces by worker/store and maps browser IDs; visibility is display-only. Missing conversationKind means scenario (requires existing scene fields). Native requires agentType/nativeSessionId and omits scene fields; exact vendor session binding remains local."""
+
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    workspace_id: str = Field(alias="workspaceId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    scene_id: str | None = Field(default=None, alias="sceneId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    scene_version: int | None = Field(default=None, alias="sceneVersion", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    title: str = Field(alias="title", max_length=200, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    updated_at: str = Field(alias="updatedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    archived: bool = Field(alias="archived", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    visibility: Literal["both", "pc_only", "mobile_only"] = Field(alias="visibility", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    metadata_version: int = Field(alias="metadataVersion", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    authority: Literal["local", "remote"] = Field(alias="authority", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_kind: Literal["scenario", "native"] | None = Field(default=None, alias="conversationKind", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    agent_type: NativeAgentType | None = Field(default=None, alias="agentType", json_schema_extra={'wireNullable': False, 'wireType': None})
+    native_session_id: str | None = Field(default=None, alias="nativeSessionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    native_activity: NativeActivityEvidence | None = Field(default=None, alias="nativeActivity", json_schema_extra={'wireNullable': False, 'wireType': None})
+    native_source_revision: str | None = Field(default=None, alias="nativeSourceRevision", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4ConversationUpserted(_RemoteBase):
+    type: Literal["sync.conversation.upserted"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_generation: int = Field(alias="syncGeneration", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    payload: RemoteV4SyncConversation = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4DeliveryGrant(_RemoteBase):
+    """Explicit durable execution permission. Continuous event ACK is never permission. Late unconsumed grants expire; persisted grants are not reverted by server timers. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command."""
+
+    type: Literal["command.delivery_granted"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str | None = Field(default=None, alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    received_event_id: str = Field(alias="receivedEventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_digest: str = Field(alias="commandDigest", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    granted_at: str = Field(alias="grantedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4DirectoryQuery(_RemoteBase):
+    type: Literal["query.directory.list"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    query_id: str = Field(alias="queryId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    request_id: str = Field(alias="requestId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    connection_id: str = Field(alias="connectionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: DirectoryListingInput = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4EventAck(_RemoteBase):
+    """Only advances after event persistence AND projection/browser-outbox commit; old store ack never trims new store outbox."""
+
+    type: Literal["worker.events_ack"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    connection_id: str = Field(alias="connectionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    position: RemoteEventPosition = Field(alias="position", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4MessageEvent(_RemoteBase):
+    type: Literal["message.appended"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteWorkerMessagePayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4ProgressEvent(_RemoteBase):
+    """Sanitized observable progress only. Never private model reasoning, raw provider auth, full environment, or credential files."""
+
+    type: Literal["run.progress"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    result_ref: RemoteResultRef = Field(alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
+    message: str = Field(alias="message", max_length=4000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4RunStateEvent(_RemoteBase):
+    """Worker creates/binds LocalRun and execution Task using existing semantics; it does not invent long-lived Task or retryOfRunId."""
+
+    type: Literal["run.state_changed"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteRunStatePayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4SkipRecorded(_RemoteBase):
+    """Worker records ordered skip in the same durable inbox ordering ledger as submits."""
+
+    type: Literal["conversation.skip_recorded"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_seq: int = Field(alias="conversationSeq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+
+
+class RemoteV4ExecutionEvent(RootModel[RemoteV4CommandAccepted | RemoteV4CommandRejected | RemoteV4CommandCompleted | RemoteV4CommandFailed | RemoteV4ControlObserved | RemoteV4RunStateEvent | RemoteV4MessageEvent | RemoteV4ApprovalEvent | RemoteV4ProgressEvent | RemoteV4CatalogEvent | RemoteV4SkipRecorded]):
+    pass
+
+
+class SyncAttachmentItem(_RemoteBase):
+    """Worker-local attachment identity; originAttachmentId only for a browser upload authorized in this message command. Pending/unavailable never claim bytes exist; available requires server-verified upload. Same metadata in every message segment."""
+
+    local_attachment_id: str = Field(alias="localAttachmentId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    file_name: str = Field(alias="fileName", min_length=1, max_length=120, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    kind: Literal["image", "file"] = Field(alias="kind", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    mime_type: Literal["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf", "text/plain"] = Field(alias="mimeType", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    size_bytes: int = Field(alias="sizeBytes", ge=1, le=20000000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    sha256: str = Field(alias="sha256", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    availability: Literal["pending_upload", "available", "unavailable"] = Field(alias="availability", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    origin_attachment_id: str | None = Field(default=None, alias="originAttachmentId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    error_code: RemoteWire4ErrorCode | None = Field(default=None, alias="errorCode", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4SyncMessageSegment(_RemoteBase):
+    """Whole UTF-8 text, never truncated; 0-based contiguous segments. Immutable metadata per messageRevision, atomic publish only after digest/byte-count verification."""
+
+    message_id: str = Field(alias="messageId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    message_sequence: int = Field(alias="messageSequence", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    message_revision: int = Field(alias="messageRevision", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    role: Literal["user", "assistant", "system"] = Field(alias="role", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: str = Field(alias="createdAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    run_id: str | None = Field(default=None, alias="runId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    text: str = Field(alias="text", max_length=16000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    segment_index: int = Field(alias="segmentIndex", ge=0, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    segment_count: int = Field(alias="segmentCount", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    total_utf8_bytes: int = Field(alias="totalUtf8Bytes", ge=0, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    content_sha256: str = Field(alias="contentSha256", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    attachments: list[SyncAttachmentItem] | None = Field(default=None, alias="attachments", max_length=5, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    source_command_id: str | None = Field(default=None, alias="sourceCommandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4MessageSegment(_RemoteBase):
+    type: Literal["sync.message.segment"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_generation: int = Field(alias="syncGeneration", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    payload: RemoteV4SyncMessageSegment = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4NativeConfirmationRecorded(_RemoteBase):
+    type: Literal["native.closure.confirmed"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_id: str = Field(alias="commandId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    native_session_id: str = Field(alias="nativeSessionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    confirmation: NativeClosureConfirmation = Field(alias="confirmation", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4NativeIndexDeleted(_RemoteBase):
+    type: Literal["native.index.deleted"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_generation: int = Field(alias="syncGeneration", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    native_session_id: str = Field(alias="nativeSessionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    workspace_id: str = Field(alias="workspaceId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    deleted_at: str = Field(alias="deletedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    reason: Literal["source_removed", "workspace_removed", "imported"] = Field(alias="reason", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4NativeIndexUpserted(_RemoteBase):
+    type: Literal["native.index.upserted"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_generation: int = Field(alias="syncGeneration", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    payload: NativeSessionIndex = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4NativeReadQuery(_RemoteBase):
+    type: Literal["query.native.messages"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    query_id: str = Field(alias="queryId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    request_id: str = Field(alias="requestId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    connection_id: str = Field(alias="connectionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_worker_id: str = Field(alias="targetWorkerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_worker_store_id: str = Field(alias="expectedWorkerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: NativeReadInput = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4OmittedEvents(_RemoteBase):
+    """Worker local event seq continuity without publishing local-only history. Covers inclusive [firstSeq,seq], firstSeq<=seq. Opaque tombstone only, no local conversation/path/model data. Cannot cover any already published event or remote-critical event; immutable bounded ranges are replayed whole. Persist range coverage before advancing contiguous ack."""
+
+    type: Literal["events.omitted"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    first_seq: int = Field(alias="firstSeq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    reason: Literal["not_remote_visible"] = Field(alias="reason", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4QueryFailed(_RemoteBase):
+    type: Literal["query.failed"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    query_id: str = Field(alias="queryId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    request_id: str = Field(alias="requestId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    connection_id: str = Field(alias="connectionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    error: RemoteWire4Error = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4QueryPayload(RootModel[NativeMessagePage | DirectoryListingPage]):
+    pass
+
+
+class RemoteV4QueryResultSegment(_RemoteBase):
+    type: Literal["query.result.segment"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    query_id: str = Field(alias="queryId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    request_id: str = Field(alias="requestId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    connection_id: str = Field(alias="connectionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    result_type: Literal["native.messages", "directory.list"] = Field(alias="resultType", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    segment_index: int = Field(alias="segmentIndex", ge=0, le=127, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    segment_count: int = Field(alias="segmentCount", ge=1, le=128, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    total_utf8_bytes: int = Field(alias="totalUtf8Bytes", ge=1, le=1048576, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    content_sha256: str = Field(alias="contentSha256", min_length=64, max_length=64, pattern='^[0-9a-f]{64}$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    text: str = Field(alias="text", max_length=16000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4ServerHeartbeat(_RemoteBase):
+    """Heartbeat acknowledgement is not event ack. After 45 seconds without authenticated Worker traffic mark offline without modifying execution state."""
+
+    type: Literal["server.heartbeat"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    connection_id: str = Field(alias="connectionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    received_at: str = Field(alias="receivedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4WorkerHelloAck(_RemoteBase):
+    """Frozen delivery requires a reason. Store changes or ack regression require reconciliation; R1 exposes no automatic force-unfreeze API."""
+
+    type: Literal["worker.hello_ack"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    connection_id: str = Field(alias="connectionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    command_delivery: Literal["ready", "frozen"] = Field(alias="commandDelivery", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    last_server_ack: RemoteEventPosition | None = Field(alias="lastServerAck", json_schema_extra={'wireNullable': True, 'wireType': None})
+    pending_command_cursor: str = Field(alias="pendingCommandCursor", min_length=16, max_length=2048, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    heartbeat_interval_seconds: Literal[15] = Field(alias="heartbeatIntervalSeconds", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    offline_after_seconds: Literal[45] = Field(alias="offlineAfterSeconds", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    reason: RemoteWire4Error | None = Field(default=None, alias="reason", json_schema_extra={'wireNullable': False, 'wireType': None})
+    server_time: str = Field(alias="serverTime", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class RemoteV4WorkerHelloRejected(_RemoteBase):
+    type: Literal["worker.hello_rejected"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    error: RemoteWire4Error = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
+    supported_wire_revisions: list[Annotated[int, Field(strict=True, ge=1, le=2147483647)]] = Field(alias="supportedWireRevisions", min_length=1, max_length=16, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+
+
+class RemoteV4ServerOutboundFrame(RootModel[RemoteV4WorkerHelloAck | RemoteV4WorkerHelloRejected | RemoteV4ServerHeartbeat | RemoteV4EventAck | RemoteV4RunSubmitCommand | RemoteV4PauseCommand | RemoteV4ResumeCommand | RemoteV4CancelCommand | RemoteV4RetryCommand | RemoteV4ApprovalDecisionCommand | RemoteV4CommandWithdrawalCommand | RemoteV4ConversationUpdateCommand | RemoteV4ConversationCreateCommand | RemoteV4NativeImportCommand | RemoteV4WorkspaceRegisterCommand | RemoteV4ConversationSkip | RemoteV4DeliveryGrant | RemoteV4NativeReadQuery | RemoteV4DirectoryQuery]):
+    pass
+
+
+class RemoteV4SyncReset(_RemoteBase):
+    type: Literal["sync.reset"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_generation: int = Field(alias="syncGeneration", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+
+
+class RemoteV4SyncedRunState(_RemoteBase):
+    type: Literal["sync.run.state"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sync_generation: int = Field(alias="syncGeneration", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    payload: RemoteSyncRunState = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV4VisibleWorkerEvent(RootModel[RemoteV4CommandAccepted | RemoteV4CommandRejected | RemoteV4CommandCompleted | RemoteV4CommandFailed | RemoteV4ControlObserved | RemoteV4RunStateEvent | RemoteV4MessageEvent | RemoteV4ApprovalEvent | RemoteV4ProgressEvent | RemoteV4CatalogEvent | RemoteV4SkipRecorded | RemoteV4ConversationUpserted | RemoteV4MessageSegment | RemoteV4SyncedRunState | RemoteV4ConversationDeleted | RemoteV4SyncReset | RemoteV4BusySnapshot | RemoteV4BackfillProgress | RemoteV4CommandReceived | RemoteV4NativeIndexUpserted | RemoteV4NativeIndexDeleted | RemoteV4NativeConfirmationRecorded]):
+    pass
+
+
+class RemoteV4WorkerEvent(RootModel[RemoteV4CommandAccepted | RemoteV4CommandRejected | RemoteV4CommandCompleted | RemoteV4CommandFailed | RemoteV4ControlObserved | RemoteV4RunStateEvent | RemoteV4MessageEvent | RemoteV4ApprovalEvent | RemoteV4ProgressEvent | RemoteV4CatalogEvent | RemoteV4SkipRecorded | RemoteV4ConversationUpserted | RemoteV4MessageSegment | RemoteV4SyncedRunState | RemoteV4ConversationDeleted | RemoteV4SyncReset | RemoteV4BusySnapshot | RemoteV4BackfillProgress | RemoteV4CommandReceived | RemoteV4NativeIndexUpserted | RemoteV4NativeIndexDeleted | RemoteV4NativeConfirmationRecorded | RemoteV4OmittedEvents]):
+    pass
+
+
+class RemoteV4WorkerHeartbeat(_RemoteBase):
+    """Sent every 15 seconds. It reports liveness only, not durable business-event progress."""
+
+    type: Literal["worker.heartbeat"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    connection_id: str = Field(alias="connectionId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    sent_at: str = Field(alias="sentAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    last_server_ack: RemoteEventPosition | None = Field(alias="lastServerAck", json_schema_extra={'wireNullable': True, 'wireType': None})
+
+
+class RemoteV4WorkerHello(_RemoteBase):
+    """First frame after device-authenticated WSS. Same store preserves seq across boots; new store requires null ack. Credentials never appear in frames."""
+
+    type: Literal["worker.hello"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[4] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    protocol_version: str = Field(alias="protocolVersion", min_length=5, max_length=128, pattern='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    platform: Literal["windows", "linux", "darwin"] = Field(alias="platform", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    architecture: Literal["x86_64", "aarch64"] = Field(alias="architecture", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    capability_revision: int = Field(alias="capabilityRevision", ge=0, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    last_server_ack: RemoteEventPosition | None = Field(alias="lastServerAck", json_schema_extra={'wireNullable': True, 'wireType': None})
+
+
+class RemoteV4WorkerOutboundFrame(RootModel[RemoteV4WorkerHello | RemoteV4WorkerHeartbeat | RemoteV4ConversationGap | RemoteV4CommandAccepted | RemoteV4CommandRejected | RemoteV4CommandCompleted | RemoteV4CommandFailed | RemoteV4ControlObserved | RemoteV4RunStateEvent | RemoteV4MessageEvent | RemoteV4ApprovalEvent | RemoteV4ProgressEvent | RemoteV4CatalogEvent | RemoteV4SkipRecorded | RemoteV4ConversationUpserted | RemoteV4MessageSegment | RemoteV4SyncedRunState | RemoteV4ConversationDeleted | RemoteV4SyncReset | RemoteV4BusySnapshot | RemoteV4BackfillProgress | RemoteV4CommandReceived | RemoteV4NativeIndexUpserted | RemoteV4NativeIndexDeleted | RemoteV4NativeConfirmationRecorded | RemoteV4OmittedEvents | RemoteV4ContentRedaction | RemoteV4QueryResultSegment | RemoteV4QueryFailed]):
+    pass
+
+
 class RemoteWorkerEvent(RootModel[RemoteCommandAccepted | RemoteCommandRejected | RemoteCommandCompleted | RemoteCommandFailed | RemoteControlObserved | RemoteRunStateEvent | RemoteMessageEvent | RemoteApprovalEvent | RemoteProgressEvent | RemoteCatalogEvent | RemoteSkipRecorded | RemoteOmittedEvents]):
     pass
 
@@ -4519,13 +5631,14 @@ class SecuritySettings(_Base):
     approval_timeout_minutes: int | None = Field(default=None, alias="approvalTimeoutMinutes")
 
 
-class SendLocalMessageInput(_Base):
+class SendLocalMessageInput(_RemoteBase):
     """ Optional explicit re-confirmation for an imported native binding only; scenario rejects it. Native always resumes exact ID with sessionMode=continue."""
 
-    client_message_id: str = Field(alias="clientMessageId")
-    text: str = Field(alias="text")
-    session_mode: Literal["new", "continue"] = Field(alias="sessionMode")
-    native_confirmation: NativeContinuationConfirmationInput | None = Field(default=None, alias="nativeConfirmation")
+    client_message_id: str = Field(alias="clientMessageId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    text: str = Field(alias="text", min_length=1, max_length=32000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    session_mode: Literal["new", "continue"] = Field(alias="sessionMode", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    native_confirmation: NativeContinuationConfirmationInput | None = Field(default=None, alias="nativeConfirmation", json_schema_extra={'wireNullable': False, 'wireType': None})
+    attachment_ids: list[Annotated[str, Field(strict=True, min_length=1, max_length=160)]] | None = Field(default=None, alias="attachmentIds", max_length=5, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
 
 
 class SessionQuery(_Base):
@@ -4864,4 +5977,15 @@ ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "REMOTE_ROOT_NOT_AUTHORIZED": {"http": 403, "retryable": False},
     "REMOTE_PATH_OUTSIDE_ROOT": {"http": 403, "retryable": False},
     "REMOTE_DIRECTORY_CHANGED": {"http": 409, "retryable": False},
+    "ATTACHMENT_TOO_LARGE": {"http": 413, "retryable": False},
+    "ATTACHMENT_TYPE_UNSUPPORTED": {"http": 415, "retryable": False},
+    "ATTACHMENT_COUNT_EXCEEDED": {"http": 422, "retryable": False},
+    "ATTACHMENT_QUOTA_EXCEEDED": {"http": 409, "retryable": False},
+    "ATTACHMENT_HASH_MISMATCH": {"http": 422, "retryable": False},
+    "AGENT_IMAGE_UNSUPPORTED": {"http": 422, "retryable": False},
+    "ATTACHMENT_DOWNLOAD_FAILED": {"http": 502, "retryable": True},
+    "ATTACHMENT_NOT_READY": {"http": 409, "retryable": False},
+    "ATTACHMENT_IN_USE": {"http": 409, "retryable": False},
+    "ATTACHMENT_THUMBNAIL_UNAVAILABLE": {"http": 409, "retryable": False},
+    "ATTACHMENT_PREPARATION_INTERRUPTED": {"http": 409, "retryable": False},
 }

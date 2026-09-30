@@ -1,0 +1,12 @@
+{
+  "type": "command.delivery_granted",
+  "wireRevision": 4,
+  "commandId": "command_demo",
+  "conversationId": "conversation_demo",
+  "targetWorkerId": "worker_demo",
+  "expectedWorkerStoreId": "store_demo",
+  "receivedEventId": "event_demo",
+  "commandDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "deliverBy": "2026-09-26T12:00:30Z",
+  "grantedAt": "2026-09-26T12:00:01Z"
+}

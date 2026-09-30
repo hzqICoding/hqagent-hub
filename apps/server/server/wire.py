@@ -8,10 +8,11 @@ import json
 from .common import Fault, require, validated
 
 MAX_FRAME_BYTES = 262144
-CURRENT = 3
+CURRENT = 4
 CODECS = {1: ("RemoteWorkerOutboundFrame", "RemoteServerOutboundFrame", "RemoteCommandEnvelope"),
           2: ("RemoteV2WorkerOutboundFrame", "RemoteV2ServerOutboundFrame", "RemoteV2CommandEnvelope"),
-          3: ("RemoteV3WorkerOutboundFrame", "RemoteV3ServerOutboundFrame", "RemoteV3CommandEnvelope")}
+          3: ("RemoteV3WorkerOutboundFrame", "RemoteV3ServerOutboundFrame", "RemoteV3CommandEnvelope"),
+          4: ("RemoteV4WorkerOutboundFrame", "RemoteV4ServerOutboundFrame", "RemoteV4CommandEnvelope")}
 
 
 def revision(frame):

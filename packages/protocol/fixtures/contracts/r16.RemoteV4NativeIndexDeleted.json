@@ -1,0 +1,15 @@
+{
+  "type": "native.index.deleted",
+  "wireRevision": 4,
+  "eventId": "synthetic_eventId",
+  "workerId": "synthetic_workerId",
+  "workerStoreId": "synthetic_workerStoreId",
+  "workerEpoch": "synthetic_workerEpoch",
+  "seq": 1,
+  "occurredAt": "2026-09-28T12:00:00Z",
+  "syncGeneration": 1,
+  "nativeSessionId": "synthetic_nativeSessionId",
+  "workspaceId": "synthetic_workspaceId",
+  "deletedAt": "2026-09-28T12:00:00Z",
+  "reason": "source_removed"
+}
