@@ -1,0 +1,4 @@
+mobile selection, statuses, suspended download, 44px target, no horizontal overflow: PASS
+desktop input, independent sync failure, local download and storage checks: PASS
+browser errors: 0
+5 screenshots captured using synthetic attachments only

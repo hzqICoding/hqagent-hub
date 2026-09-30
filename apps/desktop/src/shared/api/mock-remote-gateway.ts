@@ -1,5 +1,8 @@
+import { MockAttachmentLibrary } from '@/shared/attachments/mock-library'
+import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
-  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV3CatalogView,
+  AttachmentDeletedView, RemoteAttachmentView, RemoteAttachmentLimitsView,
+  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV4CatalogView,
   RemoteDevicePatchInput,
   RemoteDeviceDeletionView,
   RemoteApiTokenView,
@@ -45,6 +48,14 @@ import { RemoteApiError } from './remote-gateway'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 
 export class MockRemoteGateway implements IRemoteGateway {
+  public attachmentLibrary = new MockAttachmentLibrary()
+  async getAttachmentLimits(): Promise<RemoteAttachmentLimitsView> { return { limits: this.attachmentLibrary.limits, usedBytes: [...this.attachmentLibrary.records.values()].reduce((sum, r) => sum + r.blob.size, 0), reservedBytes: 0, observedAt: new Date().toISOString() } }
+  async uploadAttachment(conversationId: string, file: Blob, options: UploadOptions): Promise<RemoteAttachmentView> { return (await this.attachmentLibrary.upload(conversationId, file, options)).remote }
+  async getAttachment(id: string): Promise<RemoteAttachmentView> { return this.attachmentLibrary.get(id).remote }
+  async deleteAttachment(id: string): Promise<AttachmentDeletedView> { return this.attachmentLibrary.remove(id) }
+  async getAttachmentContent(id: string): Promise<Blob> { return this.attachmentLibrary.get(id).blob }
+  async getAttachmentThumbnail(id: string): Promise<Blob> { return this.attachmentLibrary.thumbnail(id) }
+
   public importedNativeIds = new Set<string>()
   async listNativeSessions(workerId: string): Promise<RemoteNativeSessionPage> {
     return { items: nativeExamples(this.catalog.workspaces[0]?.workspaceId || 'workspace_demo').filter((item) => !this.importedNativeIds.has(item.nativeSessionId)).map((item) => ({ ...item, workerId, workerOnline: this.workerOnline })), hasMore: false }
@@ -140,7 +151,7 @@ export class MockRemoteGateway implements IRemoteGateway {
     },
   ]
 
-  public catalog: RemoteV3CatalogView = {
+  public catalog: RemoteV4CatalogView = {
     workerId: 'worker_demo',
     capabilityRevision: 2,
     observedAt: '2026-09-26T12:00:00Z',
@@ -541,7 +552,7 @@ export class MockRemoteGateway implements IRemoteGateway {
     }
   }
 
-  async getWorkerCatalog(workerId: string): Promise<RemoteV3CatalogView> {
+  async getWorkerCatalog(workerId: string): Promise<RemoteV4CatalogView> {
     const device = this.devices.find((d) => d.workerId === workerId)
     return { ...this.catalog, workerId, workerStoreId: device?.workerStoreId || this.catalog.workerStoreId }
   }
@@ -777,6 +788,7 @@ export class MockRemoteGateway implements IRemoteGateway {
       conversationId,
       role: 'user',
       text: input.text,
+      attachments: input.attachmentIds?.map((id) => { const record = this.attachmentLibrary.get(id); record.remote.state = 'attached'; return { ...record.remote.attachment } }),
       createdAt: new Date().toISOString(),
     })
 
@@ -1094,6 +1106,7 @@ export class MockRemoteGateway implements IRemoteGateway {
   }
 
   reset(): void {
+    this.attachmentLibrary.reset()
     this.importedNativeIds.clear()
     this.apiTokens = []
     this.tokenIntents.clear()

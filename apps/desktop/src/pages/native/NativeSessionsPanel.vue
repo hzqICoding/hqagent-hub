@@ -27,7 +27,7 @@ let readGeneration = 0
 let poll: ReturnType<typeof setTimeout> | undefined
 let alive = true
 let refreshTimer: ReturnType<typeof setInterval> | undefined
-const supported = computed(() => !props.remote || !props.revisions || props.revisions.includes(3))
+const supported = computed(() => !props.remote || !props.revisions || props.revisions.some((revision) => revision === 3 || revision === 4))
 const groups = computed(() => [...new Set(items.value.map((item) => item.workspaceId))].map((id) => ({ id, name: props.projects.find((p) => p.id === id)?.name || id, items: items.value.filter((item) => item.workspaceId === id) })))
 async function list(more = false) {
   if (!supported.value || (props.remote && !props.workerId)) return

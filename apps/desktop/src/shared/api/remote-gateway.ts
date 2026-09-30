@@ -1,5 +1,9 @@
+import { uploadAttachment as uploadBinary, attachmentBlob } from '@/shared/attachments/transport'
+import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
-  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV3CatalogView,
+  AttachmentDeletedView, RemoteAttachmentView, RemoteAttachmentLimitsView,
+  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV4CatalogView,
+  ErrorCode,
   ApiEnvelope,
   RemoteDevicePatchInput,
   RemoteDeviceDeletionView,
@@ -68,6 +72,20 @@ export class RemoteApiError extends Error {
 
 export class RemoteGateway implements IRemoteGateway {
   supportsDeviceManagement = false
+  private attachmentError = (code: ErrorCode, status: number, requestId?: string): Error => {
+    return new RemoteApiError({ code, status, requestId, message: getRemoteErrorMessage(code) })
+  }
+  getAttachmentLimits(): Promise<RemoteAttachmentLimitsView> { return this.fetchApi('/api/v2/attachments/limits') }
+  uploadAttachment(conversationId: string, file: Blob, options: UploadOptions): Promise<RemoteAttachmentView> {
+    return uploadBinary(`${this.baseUrl}/api/v2/conversations/${encodeURIComponent(conversationId)}/attachments`, file, options, this.csrfToken, this.attachmentError)
+  }
+  getAttachment(id: string): Promise<RemoteAttachmentView> { return this.fetchApi(`/api/v2/attachments/${encodeURIComponent(id)}`) }
+  deleteAttachment(id: string): Promise<AttachmentDeletedView> {
+    return this.fetchApi(`/api/v2/attachments/${encodeURIComponent(id)}`, { method: 'DELETE', idempotencyKey: crypto.randomUUID() })
+  }
+  getAttachmentContent(id: string, signal?: AbortSignal): Promise<Blob> { return attachmentBlob(`${this.baseUrl}/api/v2/attachments/${encodeURIComponent(id)}/content`, false, signal, this.attachmentError) }
+  getAttachmentThumbnail(id: string, signal?: AbortSignal): Promise<Blob> { return attachmentBlob(`${this.baseUrl}/api/v2/attachments/${encodeURIComponent(id)}/thumbnail`, true, signal, this.attachmentError) }
+
   private baseUrl: string
   // Kept in memory only. NEVER stored to localStorage/sessionStorage/IndexedDB!
   private csrfToken: string | null = null
@@ -294,8 +312,8 @@ export class RemoteGateway implements IRemoteGateway {
     )
   }
 
-  async getWorkerCatalog(workerId: string): Promise<RemoteV3CatalogView> {
-    return this.fetchApi<RemoteV3CatalogView>(`/api/v2/devices/${encodeURIComponent(workerId)}/catalog`, {
+  async getWorkerCatalog(workerId: string): Promise<RemoteV4CatalogView> {
+    return this.fetchApi<RemoteV4CatalogView>(`/api/v2/devices/${encodeURIComponent(workerId)}/catalog`, {
       method: 'GET',
     })
   }
