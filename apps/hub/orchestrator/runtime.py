@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from protocol.generated.python import (
     AdapterFailure,
@@ -123,16 +123,19 @@ class WorkflowRuntime:
         self.adapters = adapters
         self.events = events
 
+    def resolve_agent(self, request: ResolutionRequest, *, permission_binding=None):
+        """Side-effect-free selection shared by dispatch and capability previews."""
+        policy = self.permissions.role_policy(request.role_id, permission_binding)
+        approvals = self.permissions.effective_requires_approval(policy, request.requires_approval)
+        if len({agent.instance_id for agent in request.agents}) != len(request.agents):
+            return ResolutionGap(request.role_id, 'Agent实例标识不唯一，无法确定执行目标'), policy, approvals
+        return self.resolver.resolve(replace(request, requires_approval=approvals)), policy, approvals
+
     async def dispatch(
         self,
         request: NodeDispatchRequest,
     ) -> DispatchOutcome | ResolutionGap:
-        policy = self.permissions.role_policy(request.role_id, request.permission_binding)
-        requires_approval = self.permissions.effective_requires_approval(
-            policy,
-            request.requires_approval,
-        )
-        resolution = self.resolver.resolve(
+        resolution, policy, requires_approval = self.resolve_agent(
             ResolutionRequest(
                 role_id=request.role_id,
                 agents=request.agents,
@@ -141,9 +144,9 @@ class WorkflowRuntime:
                 global_profile=request.global_profile,
                 manual_agent_id=request.manual_agent_id,
                 required_capabilities=request.required_capabilities,
-                requires_approval=requires_approval,
+                requires_approval=request.requires_approval,
                 excluded_agent_ids=request.excluded_agent_ids,
-            )
+            ), permission_binding=request.permission_binding,
         )
         if isinstance(resolution, ResolutionGap):
             return resolution

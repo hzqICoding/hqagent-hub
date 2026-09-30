@@ -93,6 +93,8 @@ class AttachmentService:
                 self.worker.repo.seal(tx)
             async with asyncio.timeout(300):
                 rows = self.repo.message_rows(record['message_id'])
+                if any(json.loads(row['manifest_json'])['kind'] == 'image' for row in rows):
+                    await self.capabilities.refresh()
                 self.capabilities.require(record['conversation_id'], [json.loads(r['manifest_json']) for r in rows])
                 for row in rows:
                     if not row['file_key']:
@@ -121,6 +123,8 @@ class AttachmentService:
                             self.worker.repo.seal(tx)
                     await self.worker.native.io(self.library.check, self.repo.row(row['attachment_id']))
                 inputs = [AgentInputAttachment(attachment=json.loads(row['manifest_json']), localPath=await self.worker.native.io(self.library.check, row)) for row in self.repo.message_rows(record['message_id'])]
+                if any(value.attachment.kind == 'image' for value in inputs):
+                    await self.capabilities.refresh()
                 self.capabilities.require(record['conversation_id'], [v.attachment.model_dump(mode='json', by_alias=True) for v in inputs])
                 with self.library.db.transaction() as tx:
                     self.repo.transition(tx, run, 'ready')

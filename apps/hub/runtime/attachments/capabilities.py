@@ -1,11 +1,15 @@
 """Image verification is an operator-run, version/model/transport-bound fact."""
 import hashlib
+import asyncio
 import json
 from pathlib import Path
 from protocol.generated.python import ImageInputCapability, AttachmentTargetCapabilities
 from core.errors import HubError
 from runtime.remote.security import CredentialVault
 from storage.local_chat import now
+from orchestrator.domain import ProfileSnapshot, ResolutionRequest, ResolutionGap
+from runtime.execution_selection import scene_execution, native_execution_candidate
+from storage.idempotency import request_hash
 TRANSPORTS = {'claude': 'stream-json-image-v1', 'codex': 'app-server-localImage-v1'}
 REQUIRED_PROBES = frozenset({'new', 'resume', 'mixed-five', 'cancel', 'error'})
 
@@ -42,44 +46,95 @@ class ImageCapabilities:
         self.store = VerificationStore(worker.repo.witness.parent.parent)
         self.agents = {}
         self.values = {}
+        self.candidates = ()
+        self.fingerprint = ''
+        self.lock = asyncio.Lock()
 
     async def refresh(self):
+        async with self.lock:
+            await self._refresh()
+
+    def unknown(self, reason, kind=''):
+        return ImageInputCapability(support='unknown', cliEntry='unknown',
+            runtimeImplemented=kind in TRANSPORTS, verified=False, mimeTypes=[], maxBytes=0, reason=reason)
+
+    def selected(self, candidate, model):
+        view = self.agents.get(candidate.instance_id)
+        if view is None or str(view.status) != 'ready' or str(view.adapter_id) != str(candidate.adapter_id):
+            return self.unknown('解析到的Agent没有一致且可用的当前状态', str(candidate.adapter_id))
+        return self.store.capability(str(candidate.adapter_id), view.version, model)
+
+    async def _refresh(self):
         ports = self.worker.bridge.chat.ports
         try:
             values = await ports.agents.list_agents()
-            detect = getattr(type(ports.agents), 'detect', None)
-            if detect is not None:
-                current = {}
-                for agent in values:
-                    kind = str(agent.adapter_id)
-                    if kind not in current:
-                        descriptor = await ports.agents.detect(kind)
-                        current[kind] = getattr(descriptor, 'detected_version', '') or ''
-                values = [agent.model_copy(update={'version': current[str(agent.adapter_id)]}) for agent in values]
             self.agents = {a.id: a for a in values}
+            self.candidates = tuple(await ports.tasks.directory.list_candidates())
         except Exception:
             self.agents = {}
-        self.values = {}
+            self.candidates = ()
+        resolved = {}
         for scene in self.worker.bridge.chat.repository.scenes():
             roles = []
+            profile, overrides, options = scene_execution(scene, 'preview:' + str(scene.id))
+            snapshot = ProfileSnapshot.from_view(profile)
+            planner = None
             for role in scene.roles:
                 if not role.enabled:
                     continue
-                agent = self.agents.get(role.agent_instance_id)
-                kind = str(agent.adapter_id) if agent else ''
-                cap = self.store.capability(kind, agent.version, role.model_id_) if agent else self.store.capability('', '')
-                roles.append(dict(roleId=str(role.role_id), agentId=role.agent_instance_id or 'unresolved', imageInput=cap.model_dump(mode='json', by_alias=True, exclude_none=True)))
-            self.values[scene.id] = roles
+                identifier = 'unresolved'
+                try:
+                    candidates = self.candidates
+                    override = overrides.get(role.role_id)
+                    if str(scene.review_mode) == 'original_planner' and str(role.role_id) == 'reviewer':
+                        if planner is None:
+                            raise HubError('AGENT_IMAGE_UNSUPPORTED', '原规划验收的Agent尚不能确定')
+                        override = planner
+                        candidates = tuple(a for a in candidates if a.instance_id == planner)
+                    decision, _, _ = ports.tasks.runtime.resolve_agent(ResolutionRequest(
+                        role_id=str(role.role_id), agents=candidates, task_override_agent_id=override,
+                        global_profile=snapshot, requires_approval=None))
+                    if isinstance(decision, ResolutionGap):
+                        cap = self.unknown(decision.reason)
+                    else:
+                        identifier = decision.agent.instance_id
+                        cap = self.selected(decision.agent, options[role.role_id]['modelId'])
+                        if str(role.role_id) == 'planner':
+                            planner = identifier
+                except Exception:
+                    cap = self.unknown('当前角色执行目标无法确定')
+                roles.append(dict(roleId=str(role.role_id), agentId=identifier,
+                    imageInput=cap.model_dump(mode='json', by_alias=True, exclude_none=True)))
+            resolved[scene.id] = roles
+        self.values = resolved
+        # Only the digest is stored locally; model/configuration fields do not
+        # become new catalog DTO fields. Unknown-to-unknown version changes still
+        # invalidate the old capability revision.
+        self.fingerprint = request_hash({
+            'agents': sorted((a.id, a.version, str(a.status)) for a in self.agents.values()),
+            'nativeBindings': sorted((p.agent_type, p.runtime_id) for p in self.worker.native.plugins),
+        })
+        if self.worker.repo.get('identity').get('wireRevision', 1) >= 4 and self.worker.repo.get('link')['view']['state'] == 'paired':
+            await self.worker.projector.catalog()
 
-    def native(self, kind):
-        agents = [a for a in self.agents.values() if str(a.adapter_id) == kind]
-        caps = [self.store.capability(kind, a.version) for a in agents]
-        return dict(agentType=kind, imageInput=(caps[0] if len(caps) == 1 else self.store.capability('', '')).model_dump(mode='json', by_alias=True, exclude_none=True))
+    def native(self, kind, runtime_id=None):
+        bindings = {p.runtime_id for p in self.worker.native.plugins if p.agent_type == kind}
+        cap = self.unknown('原生Runtime绑定缺失或存在多个候选', kind)
+        if runtime_id is None and len(bindings) == 1:
+            runtime_id = next(iter(bindings))
+        if runtime_id in bindings:
+            try:
+                candidate = native_execution_candidate(self.candidates, runtime_id, self.worker.bridge.chat.ports.tasks.runtime)
+                cap = self.selected(candidate, None) if str(candidate.adapter_id) == kind else self.unknown('绑定的原生Runtime类型不一致', kind)
+            except HubError as error:
+                cap = self.unknown(error.message, kind)
+        return dict(agentType=kind, imageInput=cap.model_dump(mode='json', by_alias=True, exclude_none=True))
 
     def target(self, conversation):
         view = self.worker.bridge.chat.repository.conversation(conversation)
         native = str(view.conversation_kind) == 'native'
-        return AttachmentTargetCapabilities(conversationKind='native' if native else 'scenario', capabilityRevision=self.worker.projector.capability_revision(), roles=[] if native else self.values.get(str(view.scene_id), []), **{'native': self.native(str(view.agent_type))} if native else {})
+        runtime_id = self.worker.native.row(conversation, conversation=True)['runtime_id'] if native else None
+        return AttachmentTargetCapabilities(conversationKind='native' if native else 'scenario', capabilityRevision=self.worker.projector.capability_revision(), roles=[] if native else self.values.get(str(view.scene_id), []), **{'native': self.native(str(view.agent_type), runtime_id)} if native else {})
 
     def require(self, conversation, manifests):
         images = [m for m in manifests if m['kind'] == 'image']
