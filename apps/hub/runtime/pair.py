@@ -5,6 +5,7 @@ import argparse
 from datetime import datetime, timedelta
 from http.client import HTTPConnection
 import json
+import sys
 from pathlib import Path
 
 from protocol.generated.python import LocalConnectionCodeView
@@ -37,6 +38,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', type=Path)
     args = parser.parse_args()
+    if not sys.stdout.isatty():
+        raise SystemExit('连接短码只在交互终端显示，请使用 SSH -t，勿重定向到日志。')
     try:
         url, code = renew_code(args.data_dir)
     except Exception:

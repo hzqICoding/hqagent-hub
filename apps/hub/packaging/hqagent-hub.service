@@ -1,0 +1,17 @@
+[Unit]
+Description=HQAgent-Hub local agent service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/hqagent-hub/app/apps/hub
+ExecStart=%h/.local/share/hqagent-hub/venv/bin/python -B -m runtime.main
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+UMask=0077
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

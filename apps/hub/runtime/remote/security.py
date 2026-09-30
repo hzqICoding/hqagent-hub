@@ -68,8 +68,15 @@ class CredentialVault:
     def __init__(self, directory: Path) -> None:
         self.directory = directory
         self.path = directory / "device.credential"
+        self.posix = None
+        if os.name != 'nt':
+            from runtime.remote.keychain import PosixCredentialStore
+            self.posix = PosixCredentialStore(directory, atomic_write=self.atomic_write)
 
     def save(self, secret: str) -> None:
+        if self.posix is not None:
+            self.posix.save(secret)
+            return
         self.directory.mkdir(parents=True, exist_ok=True)
         if os.name != "nt":
             self.directory.chmod(0o700)
@@ -80,8 +87,13 @@ class CredentialVault:
     @staticmethod
     def atomic_write(path: Path, content: bytes) -> None:
         temporary = path.with_name(path.name + ".tmp")
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if os.name != 'nt':
+            flags |= os.O_NOFOLLOW
+        fd = os.open(temporary, flags, 0o600)
         with os.fdopen(fd, "wb") as stream:
+            if os.name != 'nt':
+                os.fchmod(stream.fileno(), 0o600)
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
@@ -90,6 +102,8 @@ class CredentialVault:
             path.chmod(0o600)
 
     def read(self) -> str:
+        if self.posix is not None:
+            return self.posix.read()
         try:
             content = self.path.read_bytes()
             return (_dpapi(content, decrypt=True) if os.name == "nt" else content).decode("ascii")
@@ -100,6 +114,9 @@ class CredentialVault:
         self.save(secrets.token_urlsafe(32))
 
     def delete(self) -> None:
+        if self.posix is not None:
+            self.posix.delete()
+            return
         try:
             self.path.unlink(missing_ok=True)
         except OSError:

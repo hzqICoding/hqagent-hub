@@ -3,6 +3,8 @@ from __future__ import annotations
 import fnmatch
 import re
 import shutil
+import os
+import shlex
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -52,8 +54,9 @@ _READ_ONLY_TOOLS = frozenset(
 
 
 class PathGuard:
-    def __init__(self, worktree_path: str, allowed_paths: Iterable[str]) -> None:
+    def __init__(self, worktree_path: str, allowed_paths: Iterable[str], *, platform: str | None = None) -> None:
         self.root = Path(worktree_path).resolve()
+        self.platform = platform or os.name
         self.patterns = tuple(self._normalise_pattern(item) for item in allowed_paths)
 
     @staticmethod
@@ -62,12 +65,12 @@ class PathGuard:
         return value or "__never_match__"
 
     def _relative(self, candidate: str) -> str | None:
-        path = Path(candidate)
-        if not path.is_absolute():
-            path = self.root / path
         try:
+            path = Path(candidate).expanduser()
+            if not path.is_absolute():
+                path = self.root / path
             relative = path.resolve(strict=False).relative_to(self.root)
-        except ValueError:
+        except (ValueError, OSError, RuntimeError):
             return None
         return relative.as_posix()
 
@@ -104,6 +107,8 @@ class PathGuard:
             return violations
         if tool_name.lower() in {"bash", "powershell", "shell", "exec_command"}:
             command = str(tool_input.get("command") or tool_input.get("cmd") or "")
+            if self.platform != 'nt':
+                return self._posix_command(command)
             command = self._shell_payload(command)
             absolute_paths = self._command_paths(command)
             violations = self.violations(absolute_paths)
@@ -111,6 +116,94 @@ class PathGuard:
                 return violations
             if _WRITE_COMMAND.search(command) and not absolute_paths:
                 return ["<unresolved shell write target>"]
+        return []
+
+    @staticmethod
+    def _trusted_program(value: str, names: tuple[str, ...]) -> bool:
+        # The actual PATH discovery is authoritative, not just a basename.
+        for name in names:
+            found = shutil.which(name)
+            if found and ((value == name) or Path(value).resolve() == Path(found).resolve()):
+                return True
+        return False
+
+    @classmethod
+    def _posix_payload(cls, command: str) -> str | None:
+        for _ in range(4):
+            try:
+                tokens = shlex.split(command, posix=True)
+            except ValueError:
+                return None
+            if not tokens:
+                return command
+            if Path(tokens[0]).name == 'env':
+                if not cls._trusted_program(tokens.pop(0), ('env',)):
+                    return None
+                while tokens and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=[^$`]*', tokens[0]):
+                    key = tokens.pop(0).split('=', 1)[0]
+                    if key in {'PATH','ENV','BASH_ENV','ZDOTDIR','SHELLOPTS','BASHOPTS','CDPATH','LD_PRELOAD','LD_LIBRARY_PATH'} or key.startswith('DYLD_'):
+                        return None
+                if not tokens:
+                    return None
+            launcher = tokens[0]
+            if Path(launcher).name not in {'bash','sh','zsh'}:
+                return command
+            if not cls._trusted_program(launcher, ('bash','sh','zsh')):
+                return None
+            # Unknown shell modes/flags cannot accidentally exempt a launcher.
+            if len(tokens) != 3 or tokens[1] != '-c':
+                return None
+            command = tokens[2]
+        return None
+
+    def _posix_command(self, command: str) -> list[str]:
+        payload = self._posix_payload(command)
+        if payload is None:
+            return ['<unresolved shell wrapper>']
+        # Shell expansion/cwd changes cannot be proven against this worktree.
+        if re.search(r'[$`]|(?:^|[;&|\s])(?:cd|eval|source|exec)\s|(?:^|[;&|\s])\.\s', payload):
+            return ['<unresolved shell write target>']
+        paths = []
+        # Include embedded quoted paths (e.g. node -e writeFileSync('/...')).
+        remainder = list(payload)
+        for match in re.finditer(r'''(["'])((?:/|~/|\.\./)[^\r\n]*?)\1''', payload):
+            paths.append(match.group(2))
+            remainder[match.start():match.end()] = ' '*(match.end()-match.start())
+        paths.extend(re.findall(r'''(?<![\w:])(?:/|~/|\.\./)[^\s"'|;&<>(),]+''', ''.join(remainder)))
+        for match in re.finditer(r'''(?:writeFileSync|appendFileSync|unlinkSync|open)\s*\(\s*(["'])(.*?)\1''', payload):
+            paths.append(match.group(2))
+        try:
+            lexer = shlex.shlex(payload, posix=True, punctuation_chars=';&|<>')
+            lexer.whitespace_split = True
+            tokens = list(lexer)
+        except ValueError:
+            return ['<unresolved shell write target>']
+        writing = False
+        start = True
+        redirect = False
+        for token in tokens:
+            if token in {';', '&&', '||', '|', '&'}:
+                start, writing = True, False
+                continue
+            if token in {'>', '>>', '<'}:
+                if redirect:
+                    return ['<unresolved shell write target>']
+                redirect = True
+                continue
+            if start:
+                writing = token in {'rm','mv','cp','touch','mkdir','rmdir','tee','truncate','install','chmod','chown','ln'}
+                start = False
+            elif redirect or (writing and not token.startswith('-')):
+                if any(c in token for c in '*?[]{}'):
+                    return ['<unresolved shell write target>']
+                paths.append(token)
+                redirect = False
+        paths = list(dict.fromkeys(paths))
+        violations = self.violations(paths)
+        if violations:
+            return violations
+        if redirect or ((_WRITE_COMMAND.search(payload) or re.search(r'\b(?:writeFileSync|appendFileSync|unlinkSync)\b',payload)) and not paths):
+            return ['<unresolved shell write target>']
         return []
 
     @staticmethod

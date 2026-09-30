@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 import time
 import uuid
 from pathlib import Path
@@ -440,7 +441,8 @@ def test_read_outside_the_worktree_is_still_blocked(tmp_path) -> None:
     from adapters.path_guard import PathGuard
 
     guard = PathGuard(str(tmp_path), [])
-    assert guard.inspect_tool_call("Read", {"file_path": "C:/Windows/System32/config/SAM"})
+    outside = "C:/Windows/System32/config/SAM" if os.name == 'nt' else '/etc/passwd'
+    assert guard.inspect_tool_call("Read", {"file_path": outside})
 
 
 def test_unknown_tools_are_treated_as_writes(tmp_path) -> None:
