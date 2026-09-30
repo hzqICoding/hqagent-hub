@@ -60,3 +60,10 @@ python -X utf8 -B -m pytest packages/protocol/tests scripts/protocol/tests -q -p
 - 01a0e638（high）与 P2 并行开发，交付 6ac9e12 / 49e4bc3：手机与电脑附件入口、限制值来自接口、增量 SHA-256（无新依赖，gzip 1.5KB）、raw 上传进度、图片能力发送前预检、缩略图只用服务端产物、下载 octet-stream、同步状态与本机可用分开显示；lint / typecheck / build 通过，vitest 61 文件 397 项通过。
 - 截图核对手机亮 / 暗、电脑各附件状态正确。合入 integration。
 - 后续项：手机暗色模式下顶栏设备名与按钮在截图中不可见，本包未改顶栏，属既有问题或截图环境所致，联调时真机确认。真实 Hub 附件链路待 P2 合入后联调。
+
+## 9. P2 合入与 CI 全绿、真实联调首轮（2026-09-30）
+
+- P2（01a0de45，high）交付 5f1129b / b4522ea / 836f71c：Hub 515 passed / 9 skipped，主代理 integration 复跑一致。smoke macOS RSS 小修（ce1a634）合入。CI run（34058ae）protocol / desktop / hub ×3 / server ×3 全绿。
+- 真实联调（joint/hub-data16 全新配对，r16joint.py）：直接协商修订 4；catalog 图片能力 unknown；手机上传 markdown 201 → 发送 202 → Worker 下载校验 → 交给 Agent 链路通，但 Agent 未读取附件（角色提示词禁止读取根目录外文件，附件路径被 JSON 转义）。
+- verify-image：Claude Code 2.1.285 五项全通过；codex-cli 0.159.2 new / error 通过，resume / mixed-five / cancel 失败（续接轮被提前终止、取消探测未启动第二会话、128px 探测图识别不稳）。另 Hub 日志有 GBK 解码后台线程异常。
+- 返修 1（01a0de45，medium）已派：提示词附件授权与原样路径、Codex 续接回合结束判定、取消探测、探测图放大、GBK 解码。
