@@ -2,16 +2,16 @@
 wp: R3-P2
 status: done
 scope_declared: [apps/hub/**, apps/server/server/replica.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, .hqagent/handoffs/R3-P2-hub.md]
-scope_touched: [apps/hub/tests/test_r3_history_shapes.py, apps/hub/tests/test_r3_directory_mixed.py, apps/hub/tests/test_r3_long_history.py, apps/hub/tests/test_r3_roots.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, apps/hub/tests/test_r3_upgrade_fences.py, apps/hub/tests/test_r3_upgrade_history.py, apps/hub/tests/test_r3_version_series.py, apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md, apps/hub/adapters/history_index.py, apps/hub/runtime/remote/security.py, apps/hub/storage/native_history.py, apps/hub/tests/test_native_filter_performance.py, apps/hub/tests/test_r3_history_performance.py]
+scope_touched: [apps/hub/tests/test_r3_restart_import.py, apps/hub/tests/test_r3_history_shapes.py, apps/hub/tests/test_r3_directory_mixed.py, apps/hub/tests/test_r3_long_history.py, apps/hub/tests/test_r3_roots.py, apps/server/server/service_sync.py, apps/server/tests/test_r3_guards.py, apps/hub/tests/test_r3_upgrade_fences.py, apps/hub/tests/test_r3_upgrade_history.py, apps/hub/tests/test_r3_version_series.py, apps/server/server/replica.py, apps/hub/adapters/history.py, apps/hub/api/app.py, apps/hub/api/local_chat.py, apps/hub/orchestrator/sessions.py, apps/hub/runtime/local_chat.py, apps/hub/runtime/native/activity.py, apps/hub/runtime/native/api.py, apps/hub/runtime/native/roots.py, apps/hub/runtime/native/service.py, apps/hub/runtime/remote/busy.py, apps/hub/runtime/remote/delivery.py, apps/hub/runtime/remote/projection.py, apps/hub/runtime/remote/queries.py, apps/hub/runtime/remote/resources.py, apps/hub/runtime/remote/sync.py, apps/hub/runtime/remote/window.py, apps/hub/runtime/remote/wire.py, apps/hub/runtime/remote/worker.py, apps/hub/runtime/tasks.py, apps/hub/runtime/workspaces.py, apps/hub/storage/local_chat.py, apps/hub/storage/migrations.py, apps/hub/storage/remote.py, apps/hub/storage/workspaces.py, apps/hub/tests/remote_support.py, apps/hub/tests/test_r15_joint_server.py, apps/hub/tests/test_r15_recovery.py, apps/hub/tests/test_r3_api_sync.py, apps/hub/tests/test_r3_guards.py, apps/hub/tests/test_r3_native.py, apps/hub/tests/test_r3_wire.py, apps/hub/tests/test_remote_worker.py, .hqagent/handoffs/R3-P2-hub.md, apps/hub/adapters/history_index.py, apps/hub/runtime/remote/security.py, apps/hub/storage/native_history.py, apps/hub/tests/test_native_filter_performance.py, apps/hub/tests/test_r3_history_performance.py]
 build: pass
 tests: pass
-commit: 28a4dd365aeca8320144a45a7bbc6144ae9a1953
+commit: 515f09841da30106452940b93e47bf4b786865da
 open_questions: 0
 ---
 
 # R3-P2 Hub / Worker 完成回执（协议 0.9.1）
 
-工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1–5 的修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
+工作区：`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；分支：`feat/remote-worker`。首次续作相对主代理合入的 `f3b86f5`；头部 scope_touched 合并了返修 1–6 的修复文件，其余说明以各阶段为准；commit 指最后实施及测试提交，回执另提交。已保留先前 `8687d15` 的根目录基础、`be82fd5` 的枚举夹具校验和原 15 项根目录测试。首次交付未修改 packages/protocol、apps/server、apps/desktop、docs 或共享根配置；返修 1 的服务端改动见后文；没有安装依赖、启动 Vitest、合并其它分支或合回 integration。
 
 ## Q1 已由 0.9.1 关闭
 
@@ -841,3 +841,136 @@ exit $LASTEXITCODE
 - `a143d1e`：等价的线性敏感行过滤与对照测试。
 - `28a4dd3`：持久增量元数据索引、偏移分页、线程生命周期和回归。
 - 回执另提交。每次提交后均执行 git log -1 --format=%B 自查，无署名/生成标记；未合回 integration。
+
+## 返修 6：重启后的原生导入收件与 conversationKind 核对
+
+本轮基线 c79f28f，feat/remote-worker；未再合并分支。只修改 Hub 的 NativeService、资源接单、Worker 上线时机和新增测试；没有修改协议、Server、桌面、期限常量、执行内核或模型适配器。
+
+### 问题 1：诊断结果与证据边界
+
+可以从原代码和复现确认：
+
+- ResourceCommands.validate 收件和 grant 各执行一次 `native.source()`；后者会进入 HistoryIndex.refresh。如果重启后冷索引需要重建、策略缓存失效或正在等待后台扫描的索引锁，收件路径会等待这个工作，然后在末尾再次判断期限。
+- DeliveryClock.check 的第二次检查会把已经耗尽的 deliverBy 正确拒绝；但调用方没有区分“冷准备工作导致错过本次送达”与“首次已经晚到”。receipt_json={} 正好符合 validate 失败后写 rejected 的路径。
+- DeliveryClock.upper 在 anchor=None 时本身也抛 REMOTE_DELIVERY_EXPIRED。ResourceCommands 没有其它把任意 HubError 转成该码的逻辑；receive 只是取原 error.code。周期 recover 的过期路径不符合此次空 receipt 的特征，因为它只处理已持久化的 provisional/admitted。
+- 原 Worker 在校时/恢复之前持久发布本机 link.online。实际消费协程在校时后才创建，所以**不能仅凭这个顺序就断言生产那次命令在校时前执行了**；本次把 online 移到完成校时与恢复准备之后，使状态表达更准确。
+
+新增测试在修复前的实际输出：
+
+```text
+ADMISSION_DIAGNOSTIC cold-index elapsed_s 0.0156 logical_elapsed_s 31.0 clock_errors [(131.0, 'REMOTE_DELIVERY_EXPIRED', '设备离线，发送失败')]
+ADMISSION_DIAGNOSTIC uncalibrated elapsed_s 0.0123 logical_elapsed_s 0.0 clock_errors [(100.0, 'REMOTE_DELIVERY_EXPIRED', '送达时钟尚未核对，命令不执行')]
+3 failed, 1 warning in 4.00s
+```
+
+第一项使用受控单调/墙钟同步推进 31 秒，注入点为 HistoryIndex.refresh；真实墙钟执行 0.0156 秒，**不是声称这台机器索引真的耗时 31 秒**。25 秒 deliverBy 的首次检查通过，原始异常来自 validate 尾部第二次 clock.check。第二项直接复现没有校准的 anchor，原始异常来自入口第一次 clock.check。第三项真实 P1 create_app + uvicorn TLS + 重建 System 在未修代码上成功导入，但发现收件/grant 合计调用两次 pre-admission refresh，与“收件不应构建索引”的断言冲突。
+
+**无法从主代理提供的一条 rejected 行反推出生产那次唯一根因或真实耗时。** 没有提供那次的源读取耗时/校时锚点日志，本轮没有伪造这一证据，也没有把注入测试等同于原环境重演。已定位并修复能导致相同持久状态的两个确定性缺陷路径，并提供后续安全阶段诊断。
+
+### 修复方式
+
+- NativeService.ready_source 是收件专用入口，只加载持久索引并核对文件身份、前缀、size/mtime 和精确绑定，**不进入 refresh / 全量解析 / 背景索引锁等待**。重启后即便内存缓存为空，也可直接利用返修 5 的持久索引。索引缺失返回可重试 REMOTE_STATE_NOT_READY 并触发后台准备；源已经改变仍报 NATIVE_SESSION_CHANGED，不能以旧确认通过。
+- 资源收件及 grant 都用 ready_source。工作区核验、sourceRevision/indexVersion、confirmation.requestId、当前活跃证据与精确写者互斥检查保留。源与活动校验使用 NativeService.io，目录选择核验也移至同一可取消的线程入口，不阻塞事件循环。
+- ResourceCommands.check_clock 只将“没有锚点/锚点已失去界限”的准备状态映射到现有可重试 REMOTE_STATE_NOT_READY，**不接单、不发 grant、不伪造服务器时间**。有有效界限且实际 deliverBy/expiresAt 已过，仍保持 REMOTE_DELIVERY_EXPIRED。30 秒格式限制、检查前后两道门、grantedAt 范围、显式 grant 摘要/store/receivedEventId 校验均不改。
+- 一旦已做出拒绝，同一 commandId 幂等返回同一结果；索引/时钟就绪后需新命令重试，不能悄悄把旧拒绝变成成功。正式 accepted 后的导入仍再次物理核对源并原子提交完整历史，没有从 admission 预检直接启动模型。
+- 校时与恢复准备完成后才记录本机 online。这里没有增加全量索引等待，不将在线状态与所有原生历史是否索引完成混为一谈。
+- 拒绝诊断增加固定阶段（clock_before、registered_workspace、ready_source、source_binding、activity_confirmation、directory_selection、clock_after）、从本次验证开始的 elapsed_ms、原 error.code。它是 INFO 日志，不记录正文、路径、标题、token、整个异常 message 或任意用户输入字段。发生真实问题时可直接定位入口校时、源核验还是尾部期限失败。
+
+### 问题 2：字段约定与两端验证
+
+R3-contract §4 明确：LocalConversationView、RemoteConversationView、RemoteV3SyncConversation 用 **conversationKind**（缺省 scenario）、agentType、nativeSessionId 区分；§11 本机导入返回 201 LocalConversationView，conversationKind=native。local-chat.json 的 LocalConversationView、remote-native.json 的同步与原生输入也使用 conversationKind。**没有名为 kind 的对话字段**，agentType 也不能替代 native 所需的 conversationKind。
+
+此次真实服务端回归在手机导入 completed 后断言：
+
+- 本机 GET /api/v2/conversations 的目标项 conversationKind=native、agentType=claude，响应无 kind 字段；
+- 服务端 GET /conversations 的目标项 conversationKind=native、agentType=claude，响应无 kind 字段。
+
+这两条真实投影断言通过。因此不向 Hub/Server 添加 kind 同义字段，不修改现有正确的 Mapper。调用端应读取 conversationKind；如果外部调试脚本访问 .get('kind') 得到 null，这是字段名不匹配，不是协议可选 kind 的语义。未更改前端代码。
+
+### 新增回归
+
+test_r3_restart_import.py，共 6 项：
+
+1. 冷持久索引缺失：拒绝为 retryable readiness，不能等待注入的 31 秒 refresh；后台准备后新命令完整导入，同 ID 仍重放原拒绝。
+2. 未校准 clock：同样拒执行但不误报真实过期；完成校准后可重试。
+3. 首次就已经过期仍拒绝。
+4. 源核验期间跨过期限仍在 clock_after 拒绝，不允许“到达时未过期”替代接单期限。
+5. grant 晚到仍拒绝。
+6. 真实 P1 + TLS + Worker：持久索引已同步，关闭并重建 System、保持冷内存索引且不启动扫描；link 刚 online 即手机导入，收件/grant 无 refresh、约 1.5 秒完成；同时核验本机/云端 conversationKind，导入未调用模型。
+
+定向验证（新增模块、R3 wire、既有送达守卫）：
+
+```text
+ADMISSION_DIAGNOSTIC cold-index elapsed_s 0.0133 logical_elapsed_s 0.0 clock_errors []
+ADMISSION_DIAGNOSTIC uncalibrated elapsed_s 0.0119 logical_elapsed_s 0.0 clock_errors []
+RESTART_IMPORT_COMPLETED elapsed_s 1.5146
+23 passed, 1 warning in 24.13s
+```
+
+没有修改任何既有测试断言。所用历史为合成文件，模型为 FakeAdapter；真实的是 P1 服务端/Worker/协议/TLS/SQLite 路径，不宣称实际 CLI 复测。
+
+### 最终验证
+
+全部串行，TEMP/TMP/--basetemp 位于 worktree/.tmp；未开并行 worker、未跑 Vitest、未安装依赖。协议未修改。
+
+Hub，cwd apps/hub：
+
+```powershell
+$env:TEMP='E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.tmp'
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair6-hub-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair6-hub-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 15%]
+........................................................................ [ 31%]
+........................................................................ [ 47%]
+........................................................................ [ 63%]
+........................................................................ [ 79%]
+........................................................................ [ 95%]
+远程送达预留清理暂未完成，将重试
+......................                                                   [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+454 passed, 4 warnings in 237.93s (0:03:57)
+```
+
+Server，cwd apps/server，TEMP/TMP/PYTHONIOENCODING 同上：
+
+```powershell
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/r3-repair6-server-final --tb=short 2>&1 | Tee-Object -FilePath ../../.tmp/r3-repair6-server-final.log
+exit $LASTEXITCODE
+```
+
+```text
+........................................................................ [ 31%]
+........................................................................ [ 62%]
+........................................................................ [ 93%]
+...............                                                          [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+231 passed, 1 warning in 86.35s (0:01:26)
+```
+
+退出码均 0，git diff --check 与范围检查通过。原依赖弃用 warning 和通用预留清理重试日志仍存在，不宣称本轮修复。未遇到 429、0xC0000142 或额度错误。没有重新生成或修改协议。
+
+
+本次提交：
+- `515f098`：原生资源收件使用已就绪索引、明确校时准备状态与重启/期限/字段回归。
+- 回执另提交。每次提交后执行 git log -1 --format=%B 自查，无署名/生成标记；未合回 integration。

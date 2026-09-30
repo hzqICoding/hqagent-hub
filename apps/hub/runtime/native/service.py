@@ -87,6 +87,25 @@ class NativeService:
             raise HubError("NATIVE_SESSION_CHANGED", "原生身份或目录已变化")
         return source
 
+    def ready_source(self, row):
+        """Admission may verify an index, but must not rebuild it under a deadline.
+
+        Persisted offsets are enough immediately after restart. File identity,
+        prefix and stat are still checked; actual import revalidates again.
+        """
+        stored = json.loads(row['source_json'])
+        index = self.index_for(self.plugin(row))
+        entry = index.load(stored['path'])
+        if entry is None or not entry.get('source'):
+            raise HubError('REMOTE_STATE_NOT_READY', '原生索引尚未就绪，请稍后重试')
+        stat = index.verify(entry)
+        if index.fingerprint(stat) != entry['fingerprint']:
+            raise HubError('NATIVE_SESSION_CHANGED', '原生来源变化，请刷新索引')
+        source = index.source(entry)
+        if source.vendor_id != stored['vendor_id'] or str(source.cwd) != stored['cwd']:
+            raise HubError('NATIVE_SESSION_CHANGED', '原生身份或目录已变化')
+        return source
+
     def cached_source(self, row):
         # Admission and view mapping cannot perform file IO while holding the
         # local transaction. Actual Session acquisition rechecks in a thread.

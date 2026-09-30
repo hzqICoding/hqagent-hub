@@ -274,9 +274,6 @@ class RemoteWorker:
                     self.repo.put("sync-work", {"phase":"pending"}, tx)
                     self.repo.seal(tx)
             self.repo.source_mapper = self.sync.source_event if revision >= 2 else self.projector.source_event
-            self.state("online", connected=True, frozen=hello["commandDelivery"] == "frozen",
-                code=hello.get("reason", {}).get("code") or (
-                    ("REMOTE_REVISION_REQUIRED" if self.peer_revision2 is False else "REMOTE_STATE_NOT_READY") if revision == 1 else ("REMOTE_REVISION_REQUIRED" if revision == 2 and 3 not in self.server_supported else None)))
             connection_id = hello["connectionId"]
             bridge = self.delivery if revision >= 2 else self.bridge
             if revision >= 2:
@@ -288,6 +285,9 @@ class RemoteWorker:
                 if revision == 3 and self.sync.settings().mirror_enabled:
                     self.native.request_scan()
                 self.sync.prepare()
+            self.state("online", connected=True, frozen=hello["commandDelivery"] == "frozen",
+                code=hello.get("reason", {}).get("code") or (
+                    ("REMOTE_REVISION_REQUIRED" if self.peer_revision2 is False else "REMOTE_STATE_NOT_READY") if revision == 1 else ("REMOTE_REVISION_REQUIRED" if revision == 2 and 3 not in self.server_supported else None)))
             window = SendWindow(self.repo, self.sync) if revision >= 2 else None
             heartbeat_sends = []
             last_server_time = hello["serverTime"]

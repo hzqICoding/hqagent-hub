@@ -1,6 +1,8 @@
 """Revision-3 resource command admission and idempotent, model-free commits."""
 import asyncio
 import json
+import logging
+import time
 
 from protocol.generated.python import RemoteNativeImportInput, AddWorkspaceInput
 from core.errors import HubError
@@ -48,21 +50,56 @@ class ResourceCommands:
         self.worker.delivery._check_connection(frame)
         if not self.worker.sync.settings().mirror_enabled:
             raise HubError("REMOTE_SYNC_DISABLED", "远程同步已关闭")
-        self.worker.delivery.clock.check(frame)
-        payload = frame["payload"]
-        if frame["type"] == "native.import":
-            row = self.native.row(payload["nativeSessionId"])
-            await self.native.registered(row)
-            source = await asyncio.to_thread(self.native.source, row)
-            if payload["expectedIndexVersion"] != json.loads(row["index_json"])["indexVersion"] or payload["sourceRevision"] != source.revision:
-                raise HubError("NATIVE_SESSION_CHANGED", "原生索引已变化")
-            if payload["confirmation"]["requestId"] != frame["requestId"]:
-                raise HubError("REMOTE_TARGET_MISMATCH", "确认请求身份不匹配")
-            self.native.check(row, source, payload["confirmation"])
-        else:
-            with self.roots.selected(payload["rootId"], payload["rootVersion"], payload["directoryToken"]):
-                pass
-        self.worker.delivery.clock.check(frame)
+        stage, started = 'clock_before', time.monotonic()
+        try:
+            self.check_clock(frame)
+            payload = frame["payload"]
+            if frame["type"] == "native.import":
+                stage = 'registered_workspace'
+                row = self.native.row(payload["nativeSessionId"])
+                await self.native.registered(row)
+                stage = 'ready_source'
+                try:
+                    source = await self.native.io(self.native.ready_source, row)
+                except HubError as error:
+                    if error.code in {'REMOTE_STATE_NOT_READY', 'NATIVE_SESSION_CHANGED'}:
+                        self.native.request_scan()
+                    raise
+                stage = 'source_binding'
+                if payload["expectedIndexVersion"] != json.loads(row["index_json"])["indexVersion"] or payload["sourceRevision"] != source.revision:
+                    raise HubError("NATIVE_SESSION_CHANGED", "原生索引已变化")
+                if payload["confirmation"]["requestId"] != frame["requestId"]:
+                    raise HubError("REMOTE_TARGET_MISMATCH", "确认请求身份不匹配")
+                stage = 'activity_confirmation'
+                await self.native.io(self.native.check, row, source, payload["confirmation"])
+            else:
+                stage = 'directory_selection'
+                def check_directory():
+                    with self.roots.selected(payload["rootId"], payload["rootVersion"], payload["directoryToken"]):
+                        pass
+                await self.native.io(check_directory)
+            stage = 'clock_after'
+            self.check_clock(frame)
+        except HubError as error:
+            # Fixed stage/code and duration only; no frame, paths, exception
+            # message, token, source text or arbitrary request ID in logs.
+            logging.getLogger(__name__).info(
+                "resource admission rejected stage=%s elapsed_ms=%.1f code=%s",
+                stage, (time.monotonic()-started)*1000, error.code)
+            raise
+
+    def check_clock(self, frame):
+        # A missing bound says nothing about actual expiry. It still forbids
+        # admission; never extend deliverBy or treat continuous ACK as a grant.
+        clock = self.worker.delivery.clock
+        if clock.anchor is None:
+            raise HubError('REMOTE_STATE_NOT_READY', '送达时钟尚未校准，请稍后重试')
+        try:
+            clock.check(frame)
+        except HubError as error:
+            if error.code == 'REMOTE_DELIVERY_EXPIRED' and clock.anchor is None:
+                raise HubError('REMOTE_STATE_NOT_READY', '送达时钟界限失效，请重新校准') from None
+            raise
 
     async def receive(self, frame):
         self.worker.delivery._check_connection(frame)
