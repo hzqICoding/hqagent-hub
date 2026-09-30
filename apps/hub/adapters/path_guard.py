@@ -128,6 +128,12 @@ class PathGuard:
             # 读操作只要不跑出 worktree 就放行。跑出去仍然拦——
             # 越界读同样是信息泄漏，不能因为「只是读」就不管。
             return [item for item in candidates if not self.contains(item)]
+        if self.input_files and tool_name.lower() in {"bash", "powershell", "shell", "exec_command"}:
+            command = str(tool_input.get("command") or tool_input.get("cmd") or "")
+            attachment_result = self._attachment_shell_read(command)
+            if attachment_result is not None:
+                return attachment_result + [item for item in candidates
+                    if not (self.allows(item) or self._exact_attachment_read(item))]
         violations = self.violations(candidates)
         if violations:
             return violations
@@ -143,6 +149,122 @@ class PathGuard:
             if _WRITE_COMMAND.search(command) and not absolute_paths:
                 return ["<unresolved shell write target>"]
         return []
+
+    def _exact_attachment_read(self, candidate: str) -> bool:
+        # Do not turn traversal, wildcard expansion or a directory into a grant.
+        if re.search(r'[*?\[\]{}]', candidate) or '..' in candidate.replace('\\', '/').split('/'):
+            return False
+        try:
+            path = Path(candidate).expanduser()
+            if not path.is_absolute():
+                path = self.root / path
+            key = os.path.normcase(str(path.resolve()))
+            return key in self.input_files and self.contains(candidate)
+        except (OSError, ValueError, RuntimeError):
+            return False
+
+    @staticmethod
+    def _windows_read_tokens(payload: str) -> list[str]:
+        # Preserve literal Windows backslashes; shlex(posix=True) removes them.
+        pattern = r"'[^']*'|\"[^\"]*\"|[^\s'\"]+"
+        matches = list(re.finditer(pattern, payload))
+        position = 0
+        result = []
+        for match in matches:
+            if payload[position:match.start()].strip():
+                raise ValueError('unsupported quoting')
+            value = match.group()
+            result.append(value[1:-1] if value[0] in "'\"" else value)
+            position = match.end()
+        if payload[position:].strip():
+            raise ValueError('unsupported quoting')
+        return result
+
+    def _attachment_shell_read(self, command: str) -> list[str] | None:
+        """A narrow read exception, never a general shell safety inference."""
+        uncertain = ['<unresolved attachment shell wrapper>'] if any(
+            Path(value.local_path).name.casefold() in command.casefold()
+            for value in self.input_files.values()) else None
+        if self.platform != 'nt':
+            try:
+                lexer = shlex.shlex(command, posix=True, punctuation_chars=';&|<>')
+                lexer.whitespace_split = True
+                outer = list(lexer)
+            except ValueError:
+                return None
+            if any(re.fullmatch(r'[;&|<>]+', token) for token in outer):
+                return uncertain  # Do not lose outer operators while unwrapping env/-c.
+            if outer and Path(outer[0]).name == 'env':
+                for token in outer[1:]:
+                    if '=' not in token:
+                        break
+                    key, value = token.split('=', 1)
+                    if key not in {'LANG', 'LC_ALL', 'LC_CTYPE', 'LC_MESSAGES', 'TERM'} or not re.fullmatch(r'[A-Za-z0-9_.@-]+', value):
+                        return uncertain
+        payload = self._shell_payload(command) if self.platform == 'nt' else self._posix_payload(command)
+        if payload is None:
+            return None  # Existing wrapper rejection remains authoritative.
+        if self.platform == 'nt' and payload != command:
+            payload = payload.strip()
+            if len(payload) >= 2 and payload[0] in "'\"" and payload[-1] == payload[0]:
+                payload = payload[1:-1]
+        try:
+            tokens = self._windows_read_tokens(payload) if self.platform == 'nt' else shlex.split(payload, posix=True)
+        except ValueError:
+            return ['<unresolved attachment shell access>']
+        if not tokens:
+            return None
+        verb = tokens[0].lower() if self.platform == 'nt' else tokens[0]
+        arguments = tokens[1:]
+        target = None
+        # No operators, substitutions, globbing, pipelines or embedded scripts.
+        if not re.search(r'[$`;&|<>\r\n*?\[\]{}()]', payload):
+            if verb in ({'cat', 'type', 'get-content', 'head'} if self.platform == 'nt' else {'cat', 'head'}):
+                if verb == 'get-content':
+                    positional = []
+                    index = 0
+                    while index < len(arguments):
+                        option = arguments[index].lower()
+                        if option == '-raw':
+                            index += 1
+                            continue
+                        if option in {'-literalpath', '-path'} and index + 1 < len(arguments):
+                            positional.append(arguments[index + 1])
+                            index += 2
+                            continue
+                        if option == '-encoding' and index + 1 < len(arguments) and arguments[index + 1].lower() in {
+                            'utf8', 'utf8bom', 'utf8nobom', 'unicode', 'bigendianunicode', 'utf32', 'ascii', 'default', 'oem'}:
+                            index += 2
+                            continue
+                        positional.append(arguments[index])
+                        index += 1
+                    arguments = positional
+                elif verb == 'head' and len(arguments) == 3 and arguments[0] == '-n' and arguments[1].isdigit():
+                    arguments = arguments[2:]
+                if len(arguments) == 1 and not arguments[0].startswith('-'):
+                    target = arguments[0]
+        if target is not None and self._exact_attachment_read(target):
+            return []
+        # Uncertain uses never inherit the read exception. Also check literal
+        # relative paths: the legacy Windows scanner only extracts drive paths.
+        paths = [v for v in tokens[1:] if not v.startswith('-') and
+                 ('/' in v or '\\' in v or self._exact_attachment_read(v))]
+        for candidate in paths:
+            try:
+                path = Path(candidate).expanduser()
+                path = (path if path.is_absolute() else self.root / path).resolve()
+                if any(path == Path(value.local_path).resolve().parent or
+                       Path(value.local_path).resolve().parent in path.parents
+                       for value in self.input_files.values()):
+                    return [candidate]
+            except (OSError, ValueError, RuntimeError):
+                return [candidate]
+        denied = self.violations(paths)
+        if denied:
+            return denied
+        if any(Path(value.local_path).name in payload for value in self.input_files.values()):
+            return ['<unresolved attachment shell access>']
+        return None
 
     @staticmethod
     def _trusted_program(value: str, names: tuple[str, ...]) -> bool:
