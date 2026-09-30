@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 import threading
 import time
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from protocol.generated import python as dto
 from server.common import uid
@@ -60,3 +63,10 @@ def attachment_smoke(client,conversation,pid):
     peak=max(samples);delta=peak-baseline
     assert delta < 16*1024*1024, 'Streaming RSS growth exceeded 16MiB budget'
     print(f'20MB streaming RSS: baseline={baseline} peak={peak} delta={delta} bytes; upload/download SHA256: PASS')
+
+
+if __name__ == '__main__':
+    # Reuse the real-process account/pairing/conversation setup. This entry point
+    # is runnable on its own and prints an independently measured 20MB result.
+    from smoke import main
+    main()
