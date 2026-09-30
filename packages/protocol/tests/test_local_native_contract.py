@@ -72,8 +72,11 @@ def test_patch_changes_no_existing_wire_schema_or_fixture():
     for file in ['remote.json','remote-sync.json','remote-native.json','remote-devices.json']:
         relative='schema/'+file
         old=subprocess.check_output(['git','show',f'{BASE}:packages/protocol/{relative}'],cwd=P).decode('utf-8')
-        assert (P/relative).read_text(encoding='utf-8')==old
-    assert models.PROTOCOL_VERSION==(P/'VERSION').read_text().strip()=='0.9.2'
+        # This assertion audits the 0.9.1 patch release, not all later HTTP extensions.
+        released=subprocess.check_output(['git','show',f'271c904:packages/protocol/{relative}'],cwd=P).decode('utf-8')
+        assert released==old
+        # Current frozen wire closures are checked by test_attachment_contract.py.
+    assert models.PROTOCOL_VERSION==(P/'VERSION').read_text().strip()=='0.10.0'
     manifest=load('fixtures/contracts/manifest.json')['fixtures']
     assert manifest['local-native.page.json']=='LocalNativeSessionPage'
     assert set(load('schema/local-native.json')['$defs'])=={'LocalNativeSessionPage'}

@@ -336,6 +336,13 @@
         },
         "createdAt": {
           "$ref": "common.json#/$defs/Timestamp"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "remote-attachments.json#/$defs/AttachmentManifestItem"
+          },
+          "maxItems": 5
         }
       }
     },
@@ -367,9 +374,19 @@
         },
         "nativeConfirmation": {
           "$ref": "remote-native.json#/$defs/NativeContinuationConfirmationInput"
+        },
+        "attachmentIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "maxItems": 5
         }
       },
-      "description": " Optional explicit re-confirmation for an imported native binding only; scenario rejects it. Native always resumes exact ID with sessionMode=continue."
+      "description": " Optional explicit re-confirmation for an imported native binding only; scenario rejects it. Native always resumes exact ID with sessionMode=continue.",
+      "x-wire-strict": true
     },
     "LocalRunView": {
       "type": "object",

@@ -1,11 +1,1388 @@
 openapi: 3.1.0
 info:
   title: HQAgent N0 Local Chat
-  version: 0.9.1
+  version: 0.10.0
   description: N0 additive contract. Responses use the existing ApiEnvelope; response
     schema below describes data, see x-envelope.
 x-envelope: ../schema/envelope.json#/$defs/ApiEnvelope
 paths:
+  /api/v2/attachments/{attachmentId}/thumbnail:
+    get:
+      operationId: getLocalAttachmentThumbnailV2
+      summary: 仅服务端重编码PNG缩略图，图片首帧且去元数据；非图片或生成失败409 THUMBNAIL_UNAVAILABLE，pending409 NOT_READY；不回退原文件
+      description: 仅代理已同步附件的服务端生成PNG缩略图，映射本机ID到既有服务器引用并以设备凭据请求variant=thumbnail；未配对/离线/尚未上传或生成失败返回ATTACHMENT_THUMBNAIL_UNAVAILABLE，不返回原始图片。响应attachment/nosniff/no-store。
+      security:
+      - localSession: []
+      x-auth-mode: local
+      parameters:
+      - name: X-Client-Request-Id
+        in: header
+        required: false
+        description: 可选小写UUIDv4，仅关联日志，不替代服务端requestId；不回显原值到错误。
+        schema:
+          type: string
+          minLength: 36
+          maxLength: 36
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+        example: 12345678-1234-4234-9234-123456789abc
+      - name: attachmentId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: attachment_demo
+      responses:
+        '200':
+          description: Authenticated streaming bytes, not ApiEnvelope; errors before streaming use JSON error envelope. No
+            range support in this release.
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            Content-Disposition:
+              schema:
+                type: string
+                pattern: ^attachment;
+              example: attachment; filename="preview.png"
+            X-Content-Type-Options:
+              schema:
+                type: string
+                const: nosniff
+            Content-Length:
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+              example: <synthetic PNG bytes>
+        '409':
+          description: Local ApiEnvelope.error; UNAUTHORIZED, NOT_FOUND, ATTACHMENT_NOT_READY, ATTACHMENT_THUMBNAIL_UNAVAILABLE
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '404':
+          description: Local ApiEnvelope.error; UNAUTHORIZED, NOT_FOUND, ATTACHMENT_NOT_READY, ATTACHMENT_THUMBNAIL_UNAVAILABLE
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '401':
+          description: Local ApiEnvelope.error; UNAUTHORIZED, NOT_FOUND, ATTACHMENT_NOT_READY, ATTACHMENT_THUMBNAIL_UNAVAILABLE
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+      x-error-codes:
+      - UNAUTHORIZED
+      - NOT_FOUND
+      - ATTACHMENT_NOT_READY
+      - ATTACHMENT_THUMBNAIL_UNAVAILABLE
+      x-binary-download: true
+  /api/v2/attachments/limits:
+    get:
+      operationId: localGetAttachmentLimitsV2
+      summary: 读取固定上传限制与本账号逻辑已用/预留配额；不查询文件正文
+      description: 本机受控附件库：Cookie/Bearer及本机Origin、幂等保护；不依赖配对/暂停/sync开关，cloud账号配额仅在同步上传时核算；本机沿单文件/数量白名单限制。文件不执行，ID替代路径。缩略图不在本机生成；thumbnail仅代理服务端生成结果，未同步时只显示图标。
+      security:
+      - localSession: []
+      x-auth-mode: local
+      parameters:
+      - name: X-Client-Request-Id
+        in: header
+        required: false
+        description: 可选小写UUIDv4，仅关联日志，不替代服务端requestId；不回显原值到错误。
+        schema:
+          type: string
+          minLength: 36
+          maxLength: 36
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+        example: 12345678-1234-4234-9234-123456789abc
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      imageMaxBytes: 10000000
+                      fileMaxBytes: 20000000
+                      messageMaxCount: 5
+                      accountQuotaBytes: 5000000000
+                      unattachedTtlSeconds: 86400
+                      imageMimeTypes:
+                      - image/jpeg
+                      - image/png
+                      - image/webp
+                      - image/gif
+                      fileExtensions:
+                      - .pdf
+                      - .txt
+                      - .md
+                      - .json
+                      - .c
+                      - .h
+                      - .cpp
+                      - .hpp
+                      - .cc
+                      - .cxx
+                      - .py
+                      - .js
+                      - .ts
+                      - .jsx
+                      - .tsx
+                      - .java
+                      - .kt
+                      - .kts
+                      - .go
+                      - .rs
+                      - .swift
+                      - .m
+                      - .mm
+                      - .cs
+                      - .rb
+                      - .php
+                      - .sh
+                      - .ps1
+                      - .sql
+                      - .yaml
+                      - .yml
+                      - .toml
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.10.0
+          x-dataSchema:
+            $ref: ../schema/remote-attachments.json#/$defs/AttachmentLimits
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Local ApiEnvelope.error; BAD_REQUEST
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '500':
+          description: Local ApiEnvelope.error; INTERNAL
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '404':
+          description: Local ApiEnvelope.error; NOT_FOUND
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '403':
+          description: Local ApiEnvelope.error; ORIGIN_NOT_ALLOWED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '401':
+          description: Local ApiEnvelope.error; UNAUTHORIZED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '422':
+          description: Local ApiEnvelope.error; VALIDATION_FAILED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+      x-error-codes:
+      - BAD_REQUEST
+      - INTERNAL
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - UNAUTHORIZED
+      - ORIGIN_NOT_ALLOWED
+  /api/v2/conversations/{conversationId}/attachments:
+    post:
+      operationId: localUploadAttachmentV2
+      summary: 浏览器raw body流式上传
+      description: 本机受控附件库：Cookie/Bearer及本机Origin、幂等保护；不依赖配对/暂停/sync开关，cloud账号配额仅在同步上传时核算；本机沿单文件/数量白名单限制。文件不执行，ID替代路径。缩略图不在本机生成；thumbnail仅代理服务端生成结果，未同步时只显示图标。
+        同一对话已存在附件方可随本机消息提交。
+      security:
+      - localSession: []
+      x-auth-mode: local
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+        example: request-example-001
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Cookie/登录写请求必须等于部署Origin；PAT请求不检查Origin。
+        x-required-for-security:
+        - remoteSession
+        example: https://hub.example.invalid
+      - name: X-Client-Request-Id
+        in: header
+        required: false
+        description: 可选小写UUIDv4，仅关联日志，不替代服务端requestId；不回显原值到错误。
+        schema:
+          type: string
+          minLength: 36
+          maxLength: 36
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+        example: 12345678-1234-4234-9234-123456789abc
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: conversation_demo
+      - name: Content-Length
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 20000000
+        example: 15
+      - name: X-File-Name
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 512
+        example: example.txt
+      - name: X-Content-Sha256
+        in: header
+        required: true
+        schema:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        example: e2dbfe68423abd2a4aae75a697a9f47ef0298a44f8b40def76f878ee228a9e8d
+      responses:
+        '201':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      attachment:
+                        attachmentId: attachment_demo
+                        fileName: example.txt
+                        kind: file
+                        mimeType: text/plain
+                        sizeBytes: 15
+                        sha256: e2dbfe68423abd2a4aae75a697a9f47ef0298a44f8b40def76f878ee228a9e8d
+                      conversationId: conversation_demo
+                      state: uploaded
+                      createdAt: '2026-09-30T12:00:00Z'
+                      expiresAt: '2026-10-01T12:00:00Z'
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.10.0
+          x-dataSchema:
+            $ref: ../schema/remote-attachments.json#/$defs/LocalAttachmentView
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '422':
+          description: Local ApiEnvelope.error; ATTACHMENT_HASH_MISMATCH, VALIDATION_FAILED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '409':
+          description: Local ApiEnvelope.error; IDEMPOTENCY_MISMATCH
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '413':
+          description: Local ApiEnvelope.error; ATTACHMENT_TOO_LARGE
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '415':
+          description: Local ApiEnvelope.error; ATTACHMENT_TYPE_UNSUPPORTED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '400':
+          description: Local ApiEnvelope.error; BAD_REQUEST
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '500':
+          description: Local ApiEnvelope.error; INTERNAL
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '404':
+          description: Local ApiEnvelope.error; NOT_FOUND
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '403':
+          description: Local ApiEnvelope.error; ORIGIN_NOT_ALLOWED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '401':
+          description: Local ApiEnvelope.error; UNAUTHORIZED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+      x-error-codes:
+      - ATTACHMENT_HASH_MISMATCH
+      - ATTACHMENT_TOO_LARGE
+      - ATTACHMENT_TYPE_UNSUPPORTED
+      - BAD_REQUEST
+      - IDEMPOTENCY_MISMATCH
+      - INTERNAL
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - UNAUTHORIZED
+      - ORIGIN_NOT_ALLOWED
+      x-streaming-upload: true
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+            examples:
+              request:
+                summary: Synthetic 15-byte UTF-8 stream, not base64
+                value: 'synthetic file
+
+                  '
+  /api/v2/attachments/{attachmentId}:
+    get:
+      operationId: localGetAttachmentV2
+      summary: 查询附件元数据和可用状态；pc_only/删除/过期/跨owner均NOT_FOUND；暂停可读
+      description: 本机受控附件库：Cookie/Bearer及本机Origin、幂等保护；不依赖配对/暂停/sync开关，cloud账号配额仅在同步上传时核算；本机沿单文件/数量白名单限制。文件不执行，ID替代路径。缩略图不在本机生成；thumbnail仅代理服务端生成结果，未同步时只显示图标。
+      security:
+      - localSession: []
+      x-auth-mode: local
+      parameters:
+      - name: X-Client-Request-Id
+        in: header
+        required: false
+        description: 可选小写UUIDv4，仅关联日志，不替代服务端requestId；不回显原值到错误。
+        schema:
+          type: string
+          minLength: 36
+          maxLength: 36
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+        example: 12345678-1234-4234-9234-123456789abc
+      - name: attachmentId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: attachment_demo
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      attachment:
+                        attachmentId: attachment_demo
+                        fileName: example.txt
+                        kind: file
+                        mimeType: text/plain
+                        sizeBytes: 15
+                        sha256: e2dbfe68423abd2a4aae75a697a9f47ef0298a44f8b40def76f878ee228a9e8d
+                      conversationId: conversation_demo
+                      state: uploaded
+                      createdAt: '2026-09-30T12:00:00Z'
+                      expiresAt: '2026-10-01T12:00:00Z'
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.10.0
+          x-dataSchema:
+            $ref: ../schema/remote-attachments.json#/$defs/LocalAttachmentView
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Local ApiEnvelope.error; BAD_REQUEST
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '500':
+          description: Local ApiEnvelope.error; INTERNAL
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '404':
+          description: Local ApiEnvelope.error; NOT_FOUND
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '403':
+          description: Local ApiEnvelope.error; ORIGIN_NOT_ALLOWED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '401':
+          description: Local ApiEnvelope.error; UNAUTHORIZED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '422':
+          description: Local ApiEnvelope.error; VALIDATION_FAILED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+      x-error-codes:
+      - BAD_REQUEST
+      - INTERNAL
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - UNAUTHORIZED
+      - ORIGIN_NOT_ALLOWED
+    delete:
+      operationId: localDeleteUnsentAttachmentV2
+      summary: 仅删除未发送且未被命令pin的附件；attached/reserved返回ATTACHMENT_IN_USE
+      description: 本机受控附件库：Cookie/Bearer及本机Origin、幂等保护；不依赖配对/暂停/sync开关，cloud账号配额仅在同步上传时核算；本机沿单文件/数量白名单限制。文件不执行，ID替代路径。缩略图不在本机生成；thumbnail仅代理服务端生成结果，未同步时只显示图标。
+      security:
+      - localSession: []
+      x-auth-mode: local
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+        example: request-example-001
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Cookie/登录写请求必须等于部署Origin；PAT请求不检查Origin。
+        x-required-for-security:
+        - remoteSession
+        example: https://hub.example.invalid
+      - name: X-Client-Request-Id
+        in: header
+        required: false
+        description: 可选小写UUIDv4，仅关联日志，不替代服务端requestId；不回显原值到错误。
+        schema:
+          type: string
+          minLength: 36
+          maxLength: 36
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+        example: 12345678-1234-4234-9234-123456789abc
+      - name: attachmentId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: attachment_demo
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      attachmentId: synthetic_attachmentId
+                      deleted: true
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.10.0
+          x-dataSchema:
+            $ref: ../schema/remote-attachments.json#/$defs/AttachmentDeletedView
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '409':
+          description: Local ApiEnvelope.error; ATTACHMENT_IN_USE, IDEMPOTENCY_MISMATCH
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '400':
+          description: Local ApiEnvelope.error; BAD_REQUEST
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '500':
+          description: Local ApiEnvelope.error; INTERNAL
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '404':
+          description: Local ApiEnvelope.error; NOT_FOUND
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '403':
+          description: Local ApiEnvelope.error; ORIGIN_NOT_ALLOWED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '401':
+          description: Local ApiEnvelope.error; UNAUTHORIZED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '422':
+          description: Local ApiEnvelope.error; VALIDATION_FAILED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+      x-error-codes:
+      - ATTACHMENT_IN_USE
+      - BAD_REQUEST
+      - IDEMPOTENCY_MISMATCH
+      - INTERNAL
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - UNAUTHORIZED
+      - ORIGIN_NOT_ALLOWED
+  /api/v2/attachments/{attachmentId}/content:
+    get:
+      operationId: localDownloadAttachmentV2
+      summary: 下载原文件，一律attachment/nosniff/no-store
+      description: 本机受控附件库：Cookie/Bearer及本机Origin、幂等保护；不依赖配对/暂停/sync开关，cloud账号配额仅在同步上传时核算；本机沿单文件/数量白名单限制。文件不执行，ID替代路径。缩略图不在本机生成；thumbnail仅代理服务端生成结果，未同步时只显示图标。
+      security:
+      - localSession: []
+      x-auth-mode: local
+      parameters:
+      - name: X-Client-Request-Id
+        in: header
+        required: false
+        description: 可选小写UUIDv4，仅关联日志，不替代服务端requestId；不回显原值到错误。
+        schema:
+          type: string
+          minLength: 36
+          maxLength: 36
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+        example: 12345678-1234-4234-9234-123456789abc
+      - name: attachmentId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: attachment_demo
+      responses:
+        '200':
+          description: Authenticated streaming bytes, not ApiEnvelope; errors before streaming use JSON error envelope. No
+            range support in this release.
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            Content-Disposition:
+              schema:
+                type: string
+                pattern: ^attachment;
+              example: attachment; filename="example.txt"
+            X-Content-Type-Options:
+              schema:
+                type: string
+                const: nosniff
+            Content-Length:
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+              example: 'synthetic file
+
+                '
+        '409':
+          description: Local ApiEnvelope.error; ATTACHMENT_NOT_READY
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '400':
+          description: Local ApiEnvelope.error; BAD_REQUEST
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '500':
+          description: Local ApiEnvelope.error; INTERNAL
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '404':
+          description: Local ApiEnvelope.error; NOT_FOUND
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '403':
+          description: Local ApiEnvelope.error; ORIGIN_NOT_ALLOWED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '401':
+          description: Local ApiEnvelope.error; UNAUTHORIZED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+        '422':
+          description: Local ApiEnvelope.error; VALIDATION_FAILED
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+          x-errorSchema:
+            $ref: ../schema/remote-devices.json#/$defs/RemoteHttpError
+      x-error-codes:
+      - ATTACHMENT_NOT_READY
+      - BAD_REQUEST
+      - INTERNAL
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - UNAUTHORIZED
+      - ORIGIN_NOT_ALLOWED
+      x-binary-download: true
+  /api/v2/conversations/{conversationId}/attachment-capabilities:
+    get:
+      operationId: getLocalAttachmentCapabilitiesV2
+      summary: 读取固定上传限制与本账号逻辑已用/预留配额；不查询文件正文
+      description: Selected conversation actual Runtime/model image capabilities; missing/unknown blocks images locally. Uses
+        no cloud credential.
+      security:
+      - localSession: []
+      x-auth-mode: local
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: conversation_demo
+      responses:
+        '200':
+          description: ApiEnvelope data; no raw authentication credential in JSON.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      conversationKind: scenario
+                      capabilityRevision: 1
+                      roles:
+                      - roleId: analyst
+                        agentId: local.example
+                        imageInput:
+                          support: unknown
+                          cliEntry: unknown
+                          runtimeImplemented: false
+                          verified: false
+                          mimeTypes: []
+                          maxBytes: 0
+                          reason: 实际传输尚未验证
+                    requestId: req_0123456789abcdef01234567
+                    protocolVersion: 0.10.0
+          x-dataSchema:
+            $ref: ../schema/remote-attachments.json#/$defs/AttachmentTargetCapabilities
+          headers:
+            X-Request-Id:
+              description: 服务端为该请求生成；与信封requestId相同。
+              schema:
+                type: string
+                minLength: 16
+                maxLength: 128
+                pattern: ^[A-Za-z0-9_-]+$
+              example: req_0123456789abcdef01234567
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
   /api/v2/native-sessions:
     get:
       operationId: listLocalNativeSessionV2

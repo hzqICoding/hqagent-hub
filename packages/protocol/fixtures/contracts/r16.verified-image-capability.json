@@ -1,0 +1,11 @@
+{
+  "support": "supported",
+  "cliEntry": "supported",
+  "runtimeImplemented": true,
+  "verified": true,
+  "mimeTypes": [
+    "image/png"
+  ],
+  "maxBytes": 10000000,
+  "reason": "合成已验证场景，不代表本机CLI实测"
+}

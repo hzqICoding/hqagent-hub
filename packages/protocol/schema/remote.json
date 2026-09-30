@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "remote.json",
   "title": "R1 remote communication contract",
-  "description": "Protocol package 0.6.1; Worker/Server wire revision 1. D40/D41 preserve current execution identity and TaskStatus. No model credentials, model invocation, attachments, native history, notification channels or signed approvals.",
+  "description": "Legacy revision 1 wire DTOs and shared browser HTTP models. Older wire closures remain frozen; R1.6 HTTP attachment extensions reference remote-attachments.json. No operational model credentials or model invocation on the server.",
   "$defs": {
     "RemoteError": {
       "type": "object",
@@ -2509,6 +2509,13 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "remote-attachments.json#/$defs/MessageAttachmentView"
+          },
+          "maxItems": 5
         }
       }
     },
@@ -3293,6 +3300,15 @@
         },
         "nativeConfirmation": {
           "$ref": "remote-native.json#/$defs/NativeContinuationConfirmationInput"
+        },
+        "attachmentIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "maxItems": 5
         }
       },
       "description": "Computer orders messages. Offline rejects immediately; revision 2 requires a 30-second delivery grant. Legacy expiresAt cannot extend delivery deadline. Optional explicit re-confirmation for an imported native binding only; scenario rejects it. Native always resumes exact ID with sessionMode=continue."
@@ -3536,7 +3552,7 @@
           "$ref": "remote.json#/$defs/RemoteResultRef"
         },
         "controlResult": {
-          "$ref": "remote-sync.json#/$defs/RemoteV2ControlResult"
+          "$ref": "remote-attachments.json#/$defs/RemoteV4ControlResult"
         },
         "error": {
           "$ref": "remote.json#/$defs/RemoteError"
