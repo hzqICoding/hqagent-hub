@@ -43,3 +43,8 @@ python -X utf8 -B -m pytest packages/protocol/tests scripts/protocol/tests -q -p
 ## 变更记录
 
 - 2026-09-30：Q1 裁决；0.10.0 审核通过，本地合入 integration；R1.6-P1 服务端派给 01a0ddec（high），预装 Pillow 12.3.0。
+
+## 6. P1 服务端首次审核（2026-09-30）
+
+- 交付 f9cfbe6 / a8c5b82 / 6c0b52c：8 个附件操作、wireRevision 4、内容寻址存储、配额、缩略图隔离子进程（POSIX rlimit / Windows Job Object）、删除联动；server 264 passed，smoke 通过，20MB 真实网络上传下载 RSS 增量约 0.91MiB。
+- 返修 1（medium，01a0ddec）：①OSS 预留 §7.1 六条（业务代码仍直接用 store.temp / cas / path / stage.path，后端写死，删除意图 DB 与文件系统双份）；②maintain 每 5 秒全量扫附件与 CAS，改为到期清理 60 秒、孤儿扫描启动加每小时；③附件相关模块分号连写，按现有模块风格重排；④nginx 示例 proxy_pass 端口改为与站点一致（serverD 为 18090）。
