@@ -253,6 +253,8 @@ def create_app(settings=None):
                     value = tx.get(owner, "run", path[name]) or tx.get(owner, "run-ref", path[name])
                     require(value is not None, "NOT_FOUND")
                     service.browser_get(tx, owner, 'conversation', value['conversationId'])
+                elif kind == 'native-index' and operation in {'native_detail', 'native_read'}:
+                    value = service.native_get(tx, owner, path[name], check_sync=True)
                 else:
                     value = service.browser_get(tx, owner, kind, path[name])  # authorize before cache replay
                 workers.add(value.get("targetWorkerId", value.get("workerId", value.get("_worker"))))
@@ -281,7 +283,7 @@ def create_app(settings=None):
         if operation == 'native_list':
             return service.native_page(tx, owner, path['workerId'], request.query_params)
         if operation == 'native_detail':
-            return service.native_view(owner, service.native_get(tx, owner, path['nativeSessionId']))
+            return service.native_view(owner, service.native_get(tx, owner, path['nativeSessionId'], check_sync=True))
         if operation in {'native_import','workspace_register'}:
             worker = value['workerId']
             service.r3_ready(tx, owner, worker)

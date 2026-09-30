@@ -244,7 +244,7 @@ class SessionManager:
         await self.repository.save(closed)
         native = getattr(getattr(self.repository, "database", None), "native_service", None)
         if native is not None:
-            native.release_session(session_id, safe=False)
+            await native.io(native.release_session, session_id, safe=False)
         return closed
 
     async def finish_cancelled(self, session_id: str, task_id: str, result: CancelResult) -> SessionView:
@@ -287,5 +287,5 @@ class SessionManager:
         await self.repository.save(finished)
         native = getattr(getattr(self.repository, "database", None), "native_service", None)
         if native is not None:
-            native.release_session(session_id, safe=True)
+            await native.io(native.release_session, session_id, safe=True)
         return finished

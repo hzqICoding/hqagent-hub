@@ -58,6 +58,7 @@ def test_cli_uses_loopback_and_never_prints_operator_credential(tmp_path, monkey
             captured['closed'] = True
 
     monkeypatch.setattr(pair, 'HTTPConnection', Connection)
+    monkeypatch.setattr(pair.sys.stdout, 'isatty', lambda: True)
     monkeypatch.setattr('sys.argv', ['pair', '--data-dir', str(tmp_path)])
     pair.main()
     output = capsys.readouterr().out

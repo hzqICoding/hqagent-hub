@@ -80,7 +80,8 @@ async def run(data_dir: Path | None = None, environment: str = "production", *, 
         application.app.mount("/", LocalWebFiles(directory=str(web_dir.resolve()), html=True), name="local-web")
     code = application.local_auth.issue_code()
     print(f"Local Hub: http://127.0.0.1:{port}", flush=True)
-    print(f"Local connection code (one use, 10 minutes): {code}", flush=True)
+    if sys.stdout.isatty():
+        print(f"Local connection code (one use, 10 minutes): {code}", flush=True)
     descriptor = HubRuntimeDescriptor.model_validate(
         {
             "schemaVersion": 1,

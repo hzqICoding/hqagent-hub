@@ -12,14 +12,14 @@ from orchestrator.sessions import SessionManager
 from remote_support import System, FakeRemoteServer, until
 from runtime.remote.queries import QueryChannel
 from storage.local_chat import now
-from test_r3_native import fixture_history, setup_native
+from test_r3_native import fixture_history, setup_native, indexed_listing
 from test_r3_wire import query
 
 
 async def imported(system,tmp_path):
     root=tmp_path/'records'; path=fixture_history(root,tmp_path)
     native=setup_native(system,root)
-    item=(await native.listing()).items[0]
+    item=(await indexed_listing(native)).items[0]
     value=RemoteNativeImportInput(terminalClosedConfirmed=True,expectedIndexVersion=item.index_version,sourceRevision=item.source_revision)
     view=await native.import_session(item.native_session_id,value,'import','request')
     return native,item,value,view,path
@@ -41,7 +41,7 @@ def test_import_is_idempotent_and_failed_commit_is_atomic(tmp_path):
             other=tmp_path/'other'; fixture_history(other,tmp_path,identifier='00000000-0000-4000-8000-000000000002')
             from adapters.history import FileHistory
             native.plugins.append(FileHistory('codex',other,runtime_id='agent'))
-            target=(await native.listing()).items[0]
+            target=(await indexed_listing(native)).items[0]
             original=native.audit
             def crash(*args,**kwargs):
                 raise RuntimeError('synthetic commit failure')
@@ -93,7 +93,7 @@ def test_source_snapshot_append_is_stable_but_changed_prefix_is_rejected(tmp_pat
         system=System(tmp_path)
         try:
             root=tmp_path/'records'; path=fixture_history(root,tmp_path,text='x'*40000)
-            native=setup_native(system,root); item=(await native.listing()).items[0]
+            native=setup_native(system,root); item=(await indexed_listing(native)).items[0]
             first=await native.read(item.native_session_id,limit=1)
             assert first.has_more
             with path.open('a',encoding='utf-8') as stream:
@@ -208,7 +208,7 @@ def test_ephemeral_query_faults_never_persist_body_or_allocate_outbox(tmp_path,f
                 # reliable publisher running, so no background writes mask it.
                 system.worker.closed=False
                 system.worker.delivery.clock.calibrate(now(),system.worker.delivery.clock.monotonic())
-                frame=query(system,server,'query.native.messages',{'nativeSessionId':(await native.listing()).items[0].native_session_id,'limit':50})
+                frame=query(system,server,'query.native.messages',{'nativeSessionId':(await indexed_listing(native)).items[0].native_session_id,'limit':50})
                 async def send(value):
                     sent.append(value)
                 channel=QueryChannel(system.worker,server.connection_id,send)

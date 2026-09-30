@@ -5,7 +5,7 @@ import pytest
 from protocol.generated.python import LocalNativeSessionPage, LocalAuthorizedRootsInput, DirectoryListingInput
 from remote_support import System, FakeRemoteServer, until, command_events, TOKEN
 from test_remote_cookie_routes import login, ORIGIN
-from test_r3_native import fixture_history, setup_native
+from test_r3_native import fixture_history, setup_native, indexed_listing
 from test_r3_wire import resource, permission
 from test_r15_sync import settings
 
@@ -16,6 +16,7 @@ def test_local_native_cookie_and_bearer_routes_work_without_pairing_or_sync(tmp_
         try:
             root=tmp_path/'records'; fixture_history(root,tmp_path)
             native=setup_native(system,root)
+            await native.scan()
             settings(system,False,'local-off')
             await login(system)
             listed=await system.local.get('/api/v2/native-sessions')
@@ -68,7 +69,7 @@ def test_native_index_erasure_and_sync_switch_do_not_delete_local_source(tmp_pat
                     start=len(server.frames)
                     await asyncio.sleep(.3)
                     assert not [f for f in server.frames[start:] if f['type']=='native.index.upserted']
-                    assert (await native.listing()).items  # Local-only access is independent.
+                    assert (await indexed_listing(native)).items  # Local-only access is independent.
                 elif operation=='revoke':
                     await server.ws.close(code=4403)
                     await until(lambda:system.repo.get('link')['view']['state']=='revoked')
@@ -78,7 +79,7 @@ def test_native_index_erasure_and_sync_switch_do_not_delete_local_source(tmp_pat
                     system.ports.workspaces.items=[]
                     await until(lambda:any(f['type']=='native.index.deleted' for f in server.frames),timeout=8)
                     assert next(f for f in server.frames if f['type']=='native.index.deleted')['reason']=='workspace_removed'
-                    assert not (await native.listing()).items
+                    assert not (await indexed_listing(native)).items
                 assert source.is_file() and not server.errors
         finally:
             await system.close()

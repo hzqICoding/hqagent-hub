@@ -12,6 +12,8 @@ from runtime.remote.commands import CommandBridge, control_result, error_view
 from runtime.remote.deadline import DeliveryClock, instant
 from runtime.remote.wire import canonical, CODECS
 
+FINAL_STATES = ("completed", "failed", "rejected", "unconfirmed")
+
 
 class DeliveryBridge(CommandBridge):
     def __init__(self, repository, chat, link, busy, sync):
@@ -92,7 +94,7 @@ class DeliveryBridge(CommandBridge):
                 if frame["wireRevision"] != 3 or payload.get("conversationKind") != "native" or payload.get("nativeSessionId") != conversation.native_session_id or payload.get("agentType") != str(conversation.agent_type) or payload["sessionMode"] != "continue" or "sceneId" in payload or "sceneVersion" in payload:
                     raise HubError("REMOTE_TARGET_MISMATCH", "原生会话绑定不匹配")
                 binding = self.chat.native.row(local,conversation=True)
-                self.chat.native.check(binding,self.chat.native.source(binding),payload.get("nativeConfirmation"))
+                self.chat.native.check(binding,self.chat.native.cached_source(binding),payload.get("nativeConfirmation"),observe=False)
             if kind == "run.submit" and (conversation.workspace_id != payload["workspaceId"] or (not native and str(conversation.scene_id) != payload.get("sceneId"))):
                 raise HubError("REMOTE_TARGET_MISMATCH", "对话执行目标不匹配")
             if kind == "conversation.update":
@@ -242,6 +244,17 @@ class DeliveryBridge(CommandBridge):
         frame = CODECS[raw["wireRevision"]][1].model_validate(raw).model_dump(mode="json", by_alias=True, exclude_none=True)
         self._check_connection(frame)
         workspaces = {w.id for w in await self.chat.ports.workspaces.list_workspaces(None, None)}
+        original = frame
+        if frame['type'] == 'command.delivery_granted':
+            row = self.row(frame['commandId'])
+            original = json.loads(row['command_json']) if row and row['command_json'] else {}
+        if original.get('type') == 'run.submit':
+            try:
+                await self.chat.native.prepare_send(original['localConversationId'])
+            except HubError:
+                # The cached structured error is consumed by _validate inside
+                # the atomic rejection transaction, never a connection error.
+                pass
         async with self.lock:
             self._check_connection(frame)
             if frame["type"] == "command.delivery_granted":
@@ -425,9 +438,42 @@ class DeliveryBridge(CommandBridge):
         return {"runId": record["run_id"], **({"executionTaskId": record["task_id"]} if record["task_id"] else {})}
 
     def _cache(self, tx, frame, event, state):
-        self.repo.patch_inbox(tx, frame["commandId"], status=state)
+        self.repo.patch_inbox(tx, frame["commandId"], status=state, receipt_json=canonical(event))
         tx.connection.execute("UPDATE remote2_delivery SET state=?,result_json=? WHERE worker_id=? AND store_id=? AND command_id=?",
             (state, canonical(event), *self.scope(), frame["commandId"]))
+
+    def reconcile_results(self, tx):
+        """Repair legacy split ledgers from original durable results, not labels.
+
+        No new event/seq is allocated: an ACKed result must never be fabricated
+        or emitted again with another identity during an upgrade.
+        """
+        rows = tx.connection.execute("SELECT d.*,i.status AS inbox_status,i.receipt_json FROM remote2_delivery d "
+            "JOIN remote_inbox i ON i.worker_id=d.worker_id AND i.command_id=d.command_id "
+            "LEFT JOIN local_runs r ON r.run_id=d.run_id WHERE d.worker_id=? AND d.store_id=? AND d.state='accepted' "
+            "AND (i.status IN ('completed','failed','rejected','unconfirmed') OR r.status IN ('succeeded','failed','cancelled'))",
+            self.scope()).fetchall()
+        for row in rows:
+            candidates = [json.loads(row[key] or '{}') for key in ('result_json', 'receipt_json')]
+            # Older versions updated only Inbox; the original result survives
+            # in the shared event journal after reliable Outbox pruning.
+            candidates.extend(json.loads(r[0]) for r in tx.connection.execute(
+                "SELECT payload_json FROM events WHERE type IN ('command.completed','command.failed','command.control_result') "
+                "AND json_extract(payload_json,'$.workerStoreId')=? AND json_extract(payload_json,'$.workerId')=? "
+                "AND json_extract(payload_json,'$.commandId')=? ORDER BY seq DESC LIMIT 2",
+                (row['store_id'], row['worker_id'], row['command_id'])))
+            for event in candidates:
+                # A rejected *variant* of this ID can coexist with an admitted
+                # original. It is never evidence that the original finished.
+                state = {'command.completed':'completed', 'command.failed':'failed'}.get(event.get('type'))
+                if event.get('type') == 'command.control_result' and event.get('controlResult', {}).get('outcome') == 'unconfirmed':
+                    state = 'unconfirmed'
+                if state is None or any(event.get(k) != row[column] for k, column in (
+                    ('commandId','command_id'), ('workerId','worker_id'), ('workerStoreId','store_id'), ('conversationId','public_id'))):
+                    continue
+                CODECS[event['wireRevision']][0].model_validate(event)
+                self._cache(tx, {'commandId': row['command_id']}, event, state)
+                break
 
     def _completed(self, frame, ref, status):
         if not self._same_binding(frame):
@@ -466,6 +512,7 @@ class DeliveryBridge(CommandBridge):
         async with self.lock:
             with self.repo.database.transaction() as tx:
                 self.expire(tx)
+                self.reconcile_results(tx)
                 rows = tx.connection.execute("SELECT command_json FROM remote2_delivery WHERE worker_id=? AND store_id=? AND state='waiting' ORDER BY rowid", self.scope()).fetchall()
                 for row in rows:
                     frame = json.loads(row[0])
@@ -484,6 +531,7 @@ class DeliveryBridge(CommandBridge):
         async with self.lock:
             with self.repo.database.transaction() as tx:
                 self.expire(tx, recovery=True)
+                self.reconcile_results(tx)
                 self.repo.seal(tx)
             with self.repo.database.locked_connection() as db:
                 rows = [dict(r) for r in db.execute("SELECT i.status,i.run_id,d.execution_json FROM remote_inbox i JOIN remote2_delivery d "

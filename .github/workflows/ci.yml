@@ -1,0 +1,91 @@
+# R3.5 跨平台 CI：协议校验 + Hub / Server 在 Windows、Ubuntu、macOS 上的全量测试 + 前端检查。
+# macOS 分钟数按 10 倍计费，只在 integration/phase1、main 的 push 和手动触发时跑；PR 只跑 Windows + Ubuntu。
+name: ci
+
+on:
+  push:
+    branches: [integration/phase1, main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Protocol freeze tests compare against historical commits via git show.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install protocol tooling
+        run: python -m pip install pyyaml "pydantic>=2.11,<3" pytest==8.4.2 httpx==0.28.1 hatchling -e packages/protocol
+      - name: Validate protocol and generated code
+        run: pwsh scripts/protocol/validate.ps1 -CheckGenerated
+      - name: Verify API contract document
+        run: python -X utf8 -B packages/protocol/remote/api-contract.py
+      - name: Protocol tests
+        run: python -X utf8 -B -m pytest packages/protocol/tests scripts/protocol/tests -q -p no:cacheprovider
+
+  hub:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Hub dependencies
+        run: python -m pip install -r apps/hub/requirements.local-lock.txt pyyaml hatchling -e packages/protocol
+      - name: Hub tests
+        working-directory: apps/hub
+        run: python -X utf8 -B -m pytest -q -p no:cacheprovider
+
+  server:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install server dependencies
+        run: python -m pip install -r apps/server/requirements.txt pytest==8.4.2 httpx==0.28.1 PyYAML==6.0.3 hatchling -e packages/protocol
+      - name: Server tests
+        working-directory: apps/server
+        run: python -X utf8 -B -m pytest -q -p no:cacheprovider
+      - name: Server smoke
+        working-directory: apps/server
+        run: python -X utf8 -B scripts/smoke.py
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @hqagent/desktop lint
+      - run: pnpm --filter @hqagent/desktop typecheck
+      - run: pnpm --filter @hqagent/desktop exec vitest run
+      - run: pnpm --filter @hqagent/desktop build
