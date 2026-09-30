@@ -1,0 +1,16 @@
+{
+  "type": "sync.backfill.progress",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "wireRevision": 4,
+  "syncGeneration": 1,
+  "backfillId": "backfill_demo",
+  "batchIndex": 0,
+  "batchEventCount": 3,
+  "snapshotHighWater": 4,
+  "complete": true
+}

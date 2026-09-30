@@ -1,0 +1,52 @@
+{
+  "limits": {
+    "imageMaxBytes": 10000000,
+    "fileMaxBytes": 20000000,
+    "messageMaxCount": 5,
+    "accountQuotaBytes": 5000000000,
+    "unattachedTtlSeconds": 86400,
+    "imageMimeTypes": [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif"
+    ],
+    "fileExtensions": [
+      ".pdf",
+      ".txt",
+      ".md",
+      ".json",
+      ".c",
+      ".h",
+      ".cpp",
+      ".hpp",
+      ".cc",
+      ".cxx",
+      ".py",
+      ".js",
+      ".ts",
+      ".jsx",
+      ".tsx",
+      ".java",
+      ".kt",
+      ".kts",
+      ".go",
+      ".rs",
+      ".swift",
+      ".m",
+      ".mm",
+      ".cs",
+      ".rb",
+      ".php",
+      ".sh",
+      ".ps1",
+      ".sql",
+      ".yaml",
+      ".yml",
+      ".toml"
+    ]
+  },
+  "usedBytes": 0,
+  "reservedBytes": 0,
+  "observedAt": "2026-09-30T12:00:00Z"
+}

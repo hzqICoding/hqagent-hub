@@ -1,0 +1,23 @@
+{
+  "type": "native.import",
+  "wireRevision": 4,
+  "commandId": "synthetic_commandId",
+  "targetWorkerId": "synthetic_targetWorkerId",
+  "expectedWorkerStoreId": "synthetic_expectedWorkerStoreId",
+  "createdAt": "2026-09-28T12:00:00Z",
+  "expiresAt": "2026-09-28T12:00:20Z",
+  "deliverBy": "2026-09-28T12:00:20Z",
+  "requestId": "synthetic_requestId",
+  "payload": {
+    "nativeSessionId": "synthetic_nativeSessionId",
+    "expectedIndexVersion": 1,
+    "sourceRevision": "270c0d536da1e328c882cda409fc95a131d86851b817f538836313cad3b9ed03",
+    "confirmation": {
+      "confirmationId": "synthetic_confirmationId",
+      "confirmedAt": "2026-09-28T12:00:00Z",
+      "requestId": "synthetic_requestId",
+      "sourceRevision": "270c0d536da1e328c882cda409fc95a131d86851b817f538836313cad3b9ed03",
+      "terminalClosedConfirmed": true
+    }
+  }
+}
