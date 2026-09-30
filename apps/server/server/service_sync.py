@@ -19,6 +19,8 @@ class SyncService(NativeService, DeviceManagement, Service):
         self.queries = Queries(self)
         from .native_events import NativeEvents
         self.native_events = NativeEvents(self)
+        from .attachments import Attachments
+        self.attachments = Attachments(self)
         with repo.transaction() as tx:
             for account in tx.auth_list('account:'):
                 owner = account['owner']
@@ -36,7 +38,7 @@ class SyncService(NativeService, DeviceManagement, Service):
             def pending_command(command):
                 if command['_frame']['wireRevision'] == requested:
                     return False
-                if previous == 2 and requested == 3 and command['_frame']['wireRevision'] == 2:
+                if (previous == 2 and requested == 3 and command['_frame']['wireRevision'] == 2) or (requested == 4 and command['_frame']['wireRevision'] in {2,3}):
                     # The control attempt has a durable final observation even
                     # when its execution outcome remains unknown. Keep its
                     # status/evidence unchanged; ACK/outbox fences still apply.
@@ -222,7 +224,9 @@ class SyncService(NativeService, DeviceManagement, Service):
         require(order['next'] <= MAX_SEQ, 'REMOTE_SYNC_RESOURCE_LIMIT')
         payload = {k: body[k] for k in ('clientMessageId', 'text', 'sessionMode')}
         payload.update(self.submit_metadata(tx, owner, conv, body))
+        payload.update(self.attachments.prepare_send(tx,owner,conv,body))
         receipt = self.enqueue_v2(tx, owner, conv, 'run.submit', payload, body.get('expiresAt'), sequence=order['next'])
+        self.attachments.reserve_send(tx,owner,receipt,body.get('attachmentIds',[]))
         tx.put(owner, 'remote-order', identifier, dict(next=order['next'] + 1), worker=conn.worker, store=conn.store, parent=identifier)
         tx.put(owner, 'message-intent', key, dict(content=digest(body), receipt=receipt), worker=conn.worker, store=conn.store, parent=identifier)
         return receipt
@@ -323,6 +327,7 @@ class SyncService(NativeService, DeviceManagement, Service):
                 return
         require(value['_dispatch'], 'REMOTE_EVENT_CONFLICT')
         value.update(_granted=True, deliveryState='granted')
+        self.attachments.grant(tx,owner,value)
         self.save(tx, owner, 'command', value['commandId'], value)
         grant = wire.encode(dict(type='command.delivery_granted', commandId=value['commandId'], **({'conversationId': value['conversationId']} if 'conversationId' in value else {}),
             targetWorkerId=value['targetWorkerId'], expectedWorkerStoreId=event['workerStoreId'], receivedEventId=event['eventId'], commandDigest=value['_digest'], deliverBy=event['deliverBy'], grantedAt=stamp(received_now)), frame['wireRevision'])
@@ -344,6 +349,7 @@ class SyncService(NativeService, DeviceManagement, Service):
         return result
 
     def erase_replica(self, tx, owner, worker, store, conversation=None, permanent=False, through_generation=None):
+        self.attachments.erase(tx,owner,worker,store,conversation)
         if conversation is None:
             tx.erase_native(owner, worker, store, generation=through_generation)
             tx.after_commit(('queries', owner, worker, store), lambda: self.queries.invalidate(owner, worker, store, 'REMOTE_SYNC_DISABLED'))

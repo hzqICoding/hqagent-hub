@@ -9,7 +9,7 @@ class NativeService:
     def r3_ready(self, tx, owner, worker, *, read=False):
         device = self.get(tx, owner, 'device', worker)
         connection = self.ready(tx, owner, worker, device['workerStoreId'], exempt=read)
-        require(connection.revision == 3, 'REMOTE_REVISION_REQUIRED')
+        require(connection.revision >= 3, 'REMOTE_REVISION_REQUIRED')
         return connection
 
     def workspace_public(self, tx, owner, worker, store, local):
@@ -94,7 +94,7 @@ class NativeService:
     def enqueue_resource(self, tx, owner, connection, kind, payload, request_id):
         identifier = uid(); now = self.now(); deadline = stamp(self.settings.clock()+30)
         frame = wire.command(dict(type=kind, commandId=identifier, targetWorkerId=connection.worker, expectedWorkerStoreId=connection.store,
-                                  createdAt=now, expiresAt=deadline, deliverBy=deadline, requestId=request_id, payload=payload), 3)
+                                  createdAt=now, expiresAt=deadline, deliverBy=deadline, requestId=request_id, payload=payload), connection.revision)
         receipt = dict(commandId=identifier, targetWorkerId=connection.worker, type=kind, status='queued', deliveryState='queued_online', workerOnline=True, expiresAt=deadline)
         value = dict(receipt, withdrawalState='none', observedAt=now, createdAt=now, deliverBy=deadline,
                      _frame=frame, _digest=digest(frame), _receipt=receipt, _dispatch=False, _granted=False)
@@ -106,7 +106,7 @@ class NativeService:
         return receipt
 
     def native_command_payload(self, tx, owner, frame):
-        if self.connections[(owner, frame['targetWorkerId'])].revision != 3:
+        if self.connections[(owner, frame['targetWorkerId'])].revision < 3:
             return frame
         payload = dict(frame['payload'])
         if 'workspaceId' in payload:
@@ -117,7 +117,7 @@ class NativeService:
         if conv.get('conversationKind', 'scenario') != 'native':
             require('nativeConfirmation' not in body)
             return {k: conv[k] for k in ('workspaceId','sceneId','sceneVersion')}
-        require(self.connections[(owner, conv['targetWorkerId'])].revision == 3, 'REMOTE_REVISION_REQUIRED')
+        require(self.connections[(owner, conv['targetWorkerId'])].revision >= 3, 'REMOTE_REVISION_REQUIRED')
         require(body['sessionMode'] == 'continue', 'SESSION_NOT_RESUMABLE')
         evidence = conv.get('nativeActivity', {})
         require(evidence.get('processMatch') != 'present' and evidence.get('activity') != 'likely_active', 'NATIVE_SESSION_ACTIVE')

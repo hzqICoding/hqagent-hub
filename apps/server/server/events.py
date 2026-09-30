@@ -75,6 +75,9 @@ class Events:
             require(bool(ref.get("executionTaskId")), "REMOTE_EVENT_CONFLICT")
         if kind in {"run.pause", "run.resume", "run.cancel", "command.withdraw"}:
             require(control is not None and control["outcome"] == "confirmed", "REMOTE_EVENT_CONFLICT")
+            if kind=='run.cancel' and command['_frame']['wireRevision']==4 and control['evidence']=='input_preparation_cancelled':
+                require(not control['executionMayStillBeRunning'] and not control['orphanProcessIds'],'REMOTE_EVENT_CONFLICT')
+                return
             evidence = {"run.pause": {"node_boundary_paused"}, "run.resume": {"supervisor_resumed"},
                         "run.cancel": {"adapter_confirmed", "already_terminal"},
                         "command.withdraw": {"inbox_tombstone"} if result == "withdrawn" else {"adapter_confirmed", "already_terminal"}}

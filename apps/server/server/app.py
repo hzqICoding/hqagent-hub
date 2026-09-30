@@ -59,7 +59,7 @@ ROUTES = [
     ("PATCH", "/devices/{workerId}", "patch_device", "RemoteDevicePatchInput", "RemoteDeviceView", 200),
     ("DELETE", "/devices/{workerId}", "delete_device", None, "RemoteDeviceDeletionView", 200),
     ("POST", "/devices/{workerId}/revocations", "revoke", "RemoteDeviceRevokeInput", "RemoteDeviceRevocationView", 200),
-    ("GET", "/devices/{workerId}/catalog", "catalog", None, "RemoteV3CatalogView", 200),
+    ("GET", "/devices/{workerId}/catalog", "catalog", None, "RemoteV4CatalogView", 200),
     ("GET", "/conversations", "conversations", None, "RemoteConversationPage", 200),
     ("POST", "/conversations", "create_conversation", "RemoteCreateConversationInput", "RemoteQueuedReceipt", 202),
     ("GET", "/conversations/{conversationId}", "conversation", None, "RemoteConversationView", 200),
@@ -86,6 +86,14 @@ ROUTES = [
     ('POST', '/native-sessions/{nativeSessionId}/imports', 'native_import', 'RemoteNativeImportInput', 'RemoteResourceQueuedReceipt', 202),
     ('POST', '/devices/{workerId}/directory-listings', 'directory_list', 'DirectoryListingInput', 'DirectoryListingPage', 200),
     ('POST', '/devices/{workerId}/workspaces', 'workspace_register', 'RemoteWorkspaceRegisterInput', 'RemoteResourceQueuedReceipt', 202),
+    ('GET','/attachments/limits','attachment_limits',None,'RemoteAttachmentLimitsView',200),
+    ('POST','/conversations/{conversationId}/attachments','attachment_upload',None,'RemoteAttachmentView',201),
+    ('GET','/attachments/{attachmentId}','attachment_metadata',None,'RemoteAttachmentView',200),
+    ('DELETE','/attachments/{attachmentId}','attachment_delete',None,'AttachmentDeletedView',200),
+    ('GET','/attachments/{attachmentId}/content','attachment_content',None,None,200),
+    ('GET','/attachments/{attachmentId}/thumbnail','attachment_thumbnail',None,None,200),
+    ('POST','/worker/attachments','worker_attachment_upload',None,'RemoteAttachmentView',201),
+    ('GET','/worker/attachments/{attachmentId}/content','worker_attachment_content',None,None,200),
 ]
 
 
@@ -138,6 +146,8 @@ def create_app(settings=None):
             write = request.method in {"POST", "PATCH", "DELETE"}
             peer = request.client.host if request.client else "unknown"
             require(request.url.scheme == "https", "REMOTE_AUTH_REQUIRED")
+            if operation.startswith(('attachment_', 'worker_attachment_')):
+                return await service.attachments.http(request,operation)
             authorization = request.headers.get('authorization')
             pat = authorization is not None and operation not in {'pair_request', 'pair_status'}
             if pat:
@@ -165,6 +175,8 @@ def create_app(settings=None):
                         raise Fault('BAD_REQUEST') from None
                 require(isinstance(body, dict))
                 if input_model:
+                    if operation=='send' and isinstance(body.get('attachmentIds'),list):
+                        require(len(body['attachmentIds'])<=5,'ATTACHMENT_COUNT_EXCEEDED')
                     validated(input_model, body)  # no injected defaults in request hash
                 else:
                     require(not body)
