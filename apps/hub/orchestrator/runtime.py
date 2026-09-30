@@ -76,6 +76,7 @@ class NodeDispatchRequest:
     model_id: str | None = None
     reasoning_effort: str | None = None
     role_instructions: str | None = None
+    input_attachments: tuple = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +171,9 @@ class WorkflowRuntime:
         if not policy.read_only and task_paths and not scope.adapter_patterns:
             raise PathNotAllowedError(tuple(task_paths), policy.writable_paths)
 
+        attachments = getattr(getattr(self.sessions.repository, 'database', None), 'attachment_service', None)
+        if attachments and request.input_attachments:
+            await attachments.check_execution(resolution.agent, request.model_id, request.input_attachments)
         plan = await self.sessions.plan(
             reuse_policy=request.reuse_policy,
             resume_session_id=request.resume_session_id,
@@ -193,6 +197,7 @@ class WorkflowRuntime:
                 plan.resume_session,
                 request.objective,
                 list(request.acceptance) or None,
+                input_attachments=list(request.input_attachments),
             )
             task_spec = None
         else:
@@ -224,6 +229,7 @@ class WorkflowRuntime:
                     "modelId": request.model_id,
                     "reasoningEffort": request.reasoning_effort,
                     "roleInstructions": request.role_instructions,
+                    "inputAttachments": list(request.input_attachments) or None,
                 }
             )
             # The recovery input must exist before the Adapter can create any

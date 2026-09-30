@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from datetime import datetime, timezone
 from http.client import HTTPConnection
 import json
@@ -134,7 +135,11 @@ def parser():
     workspace = groups.add_parser('workspace').add_subparsers(dest='action', required=True)
     workspace.add_parser('add').add_argument('path', type=Path)
     workspace.add_parser('list')
-    groups.add_parser('agents').add_subparsers(dest='action', required=True).add_parser('discover')
+    agents = groups.add_parser('agents').add_subparsers(dest='action', required=True)
+    agents.add_parser('discover')
+    verify = agents.add_parser('verify-image', help='显式调用真实模型验证图片输入，会产生模型用量')
+    verify.add_argument('--agent', choices=('claude', 'codex'), required=True)
+    verify.add_argument('--model')
     roots = groups.add_parser('roots').add_subparsers(dest='action', required=True)
     roots.add_parser('list')
     roots.add_parser('add').add_argument('path', type=Path)
@@ -158,6 +163,10 @@ def execute(args, client, out):
         )
     elif args.group == 'agents':
         data = client.request('POST', '/agents/discovery')
+        if args.action == 'verify-image':
+            from runtime.attachments.verification import verify_images
+            record = asyncio.run(verify_images(HubPaths.resolve(args.data_dir).root, args.agent, args.model))
+            data = {k: record[k] for k in ('agent', 'version', 'model', 'observedAt', 'passed', 'probes')}
     else:
         data = LocalAuthorizedRootsView.model_validate(
             client.request('GET', '/remote/authorized-roots')

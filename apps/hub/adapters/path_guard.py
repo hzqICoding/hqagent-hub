@@ -5,6 +5,7 @@ import re
 import shutil
 import os
 import shlex
+import hashlib
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -54,10 +55,12 @@ _READ_ONLY_TOOLS = frozenset(
 
 
 class PathGuard:
-    def __init__(self, worktree_path: str, allowed_paths: Iterable[str], *, platform: str | None = None) -> None:
+    def __init__(self, worktree_path: str, allowed_paths: Iterable[str], *, platform: str | None = None, input_attachments=None) -> None:
         self.root = Path(worktree_path).resolve()
         self.platform = platform or os.name
         self.patterns = tuple(self._normalise_pattern(item) for item in allowed_paths)
+        from adapters.attachment_input import checked_inputs
+        self.input_files = {os.path.normcase(str(Path(v.local_path).resolve())): v for v in checked_inputs(input_attachments)}
 
     @staticmethod
     def _normalise_pattern(pattern: str) -> str:
@@ -75,6 +78,14 @@ class PathGuard:
         return relative.as_posix()
 
     def allows(self, candidate: str) -> bool:
+        try:
+            path = Path(candidate).expanduser()
+            if not path.is_absolute():
+                path = self.root / path
+            if os.path.normcase(str(path.resolve())) in self.input_files:
+                return False
+        except (OSError, ValueError, RuntimeError):
+            return False
         relative = self._relative(candidate)
         if relative is None:
             return False
@@ -94,7 +105,22 @@ class PathGuard:
 
     def contains(self, candidate: str) -> bool:
         """路径是否落在 worktree 内。只读工具用这个，不看可写白名单。"""
-        return self._relative(candidate) is not None
+        try:
+            path = Path(candidate).expanduser()
+            if not path.is_absolute():
+                path = self.root / path
+            entry = self.input_files.get(os.path.normcase(str(path.resolve())))
+            if entry is None:
+                return self._relative(candidate) is not None
+            if path.is_symlink():
+                return False
+            from adapters.attachment_input import checked_inputs
+            checked_inputs([entry])
+            return True
+        except (OSError, ValueError, RuntimeError):
+            return False
+        except Exception:
+            return False
 
     def inspect_tool_call(self, tool_name: str, tool_input: dict[str, Any]) -> list[str]:
         candidates = list(self._extract_paths(tool_input))
