@@ -13,4 +13,4 @@ def test_test_extra_is_declared_and_matches_available_hub_lock_pins():
         existing = [entry for entry in locked if entry.lower().startswith(name + '==')]
         if name in {'pytest', 'httpx'} or existing:
             assert existing == [pin]
-    assert project['dependencies'] == ['fastapi>=0.141.1', 'uvicorn', 'websockets', 'pydantic>=2']
+    assert project['dependencies'] == ['fastapi>=0.141.1', 'uvicorn', 'websockets', 'pydantic>=2', 'Pillow==12.3.0']

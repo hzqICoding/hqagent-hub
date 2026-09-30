@@ -1,3 +1,4 @@
+import { preflightAttachments } from '@/shared/attachments/preflight'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type {
@@ -9,7 +10,7 @@ import type {
   RemoteRunView,
   RemoteCommandView,
   RemoteApprovalView,
-  RemoteV3CatalogView,
+  RemoteV4CatalogView,
   RemoteQueuedReceipt,
   RemoteCreateConversationInput,
   RemoteBrowserEvent,
@@ -91,12 +92,13 @@ export function mergeRemoteMessages(
 }
 
 export const useRemoteChatStore = defineStore('remoteChat', () => {
+  const attachmentSendIntents = new Map<string, string>()
   // Devices
   const devices = ref<RemoteDeviceView[]>([])
   const selectedWorkerId = ref<string | null>(null)
   const isLoadingDevices = ref(false)
   const deviceError = ref<string | null>(null)
-  const catalog = ref<RemoteV3CatalogView | null>(null)
+  const catalog = ref<RemoteV4CatalogView | null>(null)
   const isLoadingCatalog = ref(false)
   const catalogError = ref<string | null>(null)
   let catalogRequest = 0
@@ -175,7 +177,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     if (!d || d.status === 'revoked' || d.remoteAccess === 'suspended') return false
     if (d.online !== true && d.status !== 'online') return false
     if (d.status === 'reconciliation_required') return false
-    if (d.supportedWireRevisions && !d.supportedWireRevisions.some((revision) => revision === 2 || revision === 3)) return false
+    if (d.supportedWireRevisions && !d.supportedWireRevisions.some((revision) => revision === 2 || revision === 3 || revision === 4)) return false
     if (d.busySnapshotFresh === false) return false
     return true
   })
@@ -681,7 +683,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
   // --- Messaging & Queueing ---
 
-  async function sendMessage(text: string, sessionMode: 'new' | 'continue' = 'continue', nativeConfirmation?: NativeContinuationConfirmationInput): Promise<RemoteQueuedReceipt | null> {
+  async function sendMessage(text: string, sessionMode: 'new' | 'continue' = 'continue', nativeConfirmation?: NativeContinuationConfirmationInput, attachmentIds: string[] = []): Promise<RemoteQueuedReceipt | null> {
     if (!activeConversationId.value) return null
 
     // R1.5 Offline check: immediate failure, no queuing
@@ -697,7 +699,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
     const d = activeDevice.value
     // F5: 电脑端版本过旧提示
-    if (d?.supportedWireRevisions && !(activeConversation.value?.conversationKind === 'native' ? d.supportedWireRevisions.includes(3) : d.supportedWireRevisions.some((revision) => revision === 2 || revision === 3))) {
+    if (d?.supportedWireRevisions && !(activeConversation.value?.conversationKind === 'native' ? d.supportedWireRevisions.some((revision) => revision === 3 || revision === 4) : d.supportedWireRevisions.some((revision) => revision === 2 || revision === 3 || revision === 4))) {
       sendError.value = '电脑端版本过旧，请升级 HQAgent'
       throw new RemoteApiError({
         message: '电脑端版本过旧，请升级 HQAgent',
@@ -729,7 +731,9 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     sendError.value = null
 
     const convId = activeConversationId.value
-    const clientMessageId = `cmsg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const intent = JSON.stringify([convId, text, attachmentIds, nativeConfirmation])
+    const clientMessageId = attachmentIds.length ? (attachmentSendIntents.get(intent) || crypto.randomUUID()) : `cmsg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    if (attachmentIds.length) attachmentSendIntents.set(intent, clientMessageId)
 
     // Optimistic user message in UI
     const optimisticMsg: RemoteMessageView = {
@@ -743,12 +747,21 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
     try {
       const gateway = getRemoteGateway()
+      if (attachmentIds.length && !d?.supportedWireRevisions?.includes(4)) throw new RemoteApiError({ code: 'REMOTE_REVISION_REQUIRED', status: 409, message: '电脑端不支持附件，请升级并等待修订 4 连接就绪' })
+      if (attachmentIds.length) {
+        await preflightAttachments(true, convId, attachmentIds, activeConversation.value || undefined)
+        if (activeConversationId.value !== convId) throw new Error('对话已切换，请返回原对话重试')
+        assertRemoteAllowed(false, true)
+        if (!isWorkerOnline.value) throw new RemoteApiError({ code: 'REMOTE_DEVICE_OFFLINE', status: 409, message: '设备离线，发送失败' })
+      }
       const receipt = await gateway.sendMessage(convId, {
         clientMessageId,
         text,
         sessionMode: activeConversation.value?.conversationKind === 'native' ? 'continue' : sessionMode,
         ...(nativeConfirmation ? { nativeConfirmation } : {}),
-      })
+        ...(attachmentIds.length ? { attachmentIds } : {}),
+      }, ...(attachmentIds.length ? [clientMessageId] : []))
+      attachmentSendIntents.delete(intent)
 
       // Update command representation in memory
       commands.value.push({
@@ -768,6 +781,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
       return receipt
     } catch (err: unknown) {
+      if (err instanceof RemoteApiError && err.status >= 400 && err.status < 500 && err.status !== 408 && err.status !== 429) attachmentSendIntents.delete(intent)
       await refreshOnSuspended(err)
       if (err instanceof RemoteApiError && err.code === 'NATIVE_SESSION_CHANGED') await fetchConversations(selectedWorkerId.value || undefined)
       // Remove optimistic message on failure
@@ -1328,6 +1342,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   }
 
   function reset(): void {
+    attachmentSendIntents.clear()
     deviceListRequest++
     revokedListRequest++
     stopPolling()

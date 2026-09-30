@@ -13,8 +13,9 @@ from .common import Fault, canonical, seconds, stamp
 from .repository_sync import SYNC_MIGRATION, SyncRepository
 from .repository_devices import DeviceRepository
 from .repository_native import NativeRepository
+from .repository_attachments import AttachmentRepository
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 MIGRATIONS = {1: """
 CREATE TABLE auth (key TEXT PRIMARY KEY, owner TEXT NOT NULL, body TEXT NOT NULL);
 CREATE TABLE records (
@@ -53,7 +54,18 @@ CREATE INDEX browser_retention_time ON browser_outbox(owner,recorded_at,ordinal)
 CREATE TABLE browser_retention (
  owner TEXT PRIMARY KEY CHECK(length(owner)>0),
  pruned_through INTEGER NOT NULL, generation INTEGER NOT NULL);
-""", 4: SYNC_MIGRATION}
+""", 4: SYNC_MIGRATION, 5: """
+ALTER TABLE records ADD COLUMN attachment_state TEXT;
+ALTER TABLE records ADD COLUMN attachment_due REAL;
+UPDATE records SET attachment_state=json_extract(body,'$.state'),
+ attachment_due=CASE json_extract(body,'$.state')
+ WHEN 'uploaded' THEN ROUND((julianday(json_extract(body,'$.expiresAt'))-2440587.5)*86400,3)
+ WHEN 'reserved' THEN COALESCE(json_extract(body,'$._pin'),0) ELSE NULL END
+ WHERE kind='attachment';
+UPDATE records SET attachment_due=json_extract(body,'$.deadline') WHERE kind='upload';
+CREATE INDEX attachment_due ON records(kind,attachment_state,attachment_due);
+CREATE INDEX upload_due ON records(kind,attachment_due);
+"""}
 
 
 class Repository:
@@ -114,7 +126,7 @@ class Repository:
             self.connection.close()
 
 
-class UnitOfWork(NativeRepository, DeviceRepository, SyncRepository):
+class UnitOfWork(AttachmentRepository, NativeRepository, DeviceRepository, SyncRepository):
     def __init__(self, connection):
         self.db = connection
         self.commit_callbacks = {}
@@ -151,6 +163,14 @@ class UnitOfWork(NativeRepository, DeviceRepository, SyncRepository):
                         (owner, kind, identifier, worker, store, parent, canonical(body), status, due_at, done, body.get('messageSequence') if kind == 'message' else None))
         if kind == 'message' and 'messageSequence' not in body:
             self.db.execute("UPDATE records SET message_sequence=ordinal WHERE owner=? AND kind='message' AND id=? AND message_sequence IS NULL", (owner, identifier))
+        if kind in {'attachment', 'upload'}:
+            state = body.get('state') if kind == 'attachment' else None
+            due = body['deadline'] if kind == 'upload' else (
+                seconds(body['expiresAt']) if state == 'uploaded' else
+                body.get('_pin', 0) if state == 'reserved' else None)
+            self.db.execute(
+                'UPDATE records SET attachment_state=?,attachment_due=? WHERE owner=? AND kind=? AND id=?',
+                (state, due, owner, kind, identifier))
 
     def due_workers(self, owner, now):
         return [r[0] for r in self.db.execute("SELECT DISTINCT worker FROM records WHERE owner=? AND kind='command' AND command_status='queued' AND due_at<=?", (owner, stamp(now)))]

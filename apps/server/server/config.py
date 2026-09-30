@@ -26,10 +26,13 @@ class Settings:
     sync_staging_bytes: int = 128 * 1024 * 1024
     rate_limit: int = 30
     rate_window: int = 60
+    blob_backend: str = 'local'
     clock: Callable[[], float] = field(default=time.time, repr=False)
     monotonic: Callable[[], float] = field(default=time.monotonic, repr=False)
 
     def __post_init__(self):
+        from .blobstore import validate_backend
+        validate_backend(self.blob_backend)
         parsed = urlsplit(self.origin)
         if len(self.key) < 32 or parsed.scheme != "https" or not parsed.netloc or parsed.path or parsed.query or parsed.fragment or parsed.username:
             raise ValueError("Invalid server security configuration")
@@ -56,4 +59,5 @@ class Settings:
                    browser_retention_seconds=int(os.environ.get("HQREMOTE_BROWSER_RETENTION_SECONDS", "604800")),
                    sync_message_bytes=int(os.environ.get('HQREMOTE_SYNC_MESSAGE_BYTES', '16777216')),
                    sync_staging_bytes=int(os.environ.get('HQREMOTE_SYNC_STAGING_BYTES', '134217728')),
+                   blob_backend=os.environ.get('HQREMOTE_BLOB_BACKEND', 'local'),
                    rate_limit=int(os.environ.get("HQREMOTE_RATE_LIMIT", "30")))

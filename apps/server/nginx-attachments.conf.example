@@ -1,0 +1,33 @@
+# Include inside the existing TLS server {}. This only changes attachment uploads.
+location ~ ^/api/v2/(conversations/[^/]+/attachments|worker/attachments)$ {
+    client_max_body_size 20000000;
+    client_body_buffer_size 64k;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_max_temp_file_size 0;
+    proxy_cache off;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_read_timeout 125s;
+    proxy_send_timeout 30s;
+    client_body_timeout 30s;
+    # Replace the placeholder with the site's EXISTING proxy_pass upstream.
+    # serverD currently uses http://127.0.0.1:18090; do not change other locations.
+    proxy_pass http://REPLACE_WITH_EXISTING_SITE_UPSTREAM;
+    # Do not intercept upstream envelopes or buffer bodies for access/APM logs.
+    proxy_intercept_errors off;
+    access_log off;
+    error_log /dev/null crit;
+    error_page 413 = @attachment_too_large;
+}
+
+location @attachment_too_large {
+    internal;
+    default_type application/json;
+    add_header X-Request-Id $request_id always;
+    add_header Cache-Control no-store always;
+    add_header X-Content-Type-Options nosniff always;
+    return 413 '{"success":false,"error":{"code":"ATTACHMENT_TOO_LARGE","message":"附件超过大小限制","retryable":false},"requestId":"$request_id","protocolVersion":"0.10.0"}';
+}

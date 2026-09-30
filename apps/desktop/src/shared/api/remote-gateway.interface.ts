@@ -1,5 +1,7 @@
+import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
-  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV3CatalogView,
+  AttachmentDeletedView, RemoteAttachmentView, RemoteAttachmentLimitsView,
+  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV4CatalogView,
   RemoteDevicePatchInput,
   RemoteDeviceDeletionView,
   RemoteApiTokenCreateInput,
@@ -40,6 +42,13 @@ import type {
 export type RemoteDeviceFilters = Pick<RemoteDeviceView, 'remoteAccess' | 'online'> & { includeRevoked?: boolean }
 
 export interface IRemoteGateway {
+  getAttachmentLimits(): Promise<RemoteAttachmentLimitsView>
+  uploadAttachment(conversationId: string, file: Blob, options: UploadOptions): Promise<RemoteAttachmentView>
+  getAttachment(id: string): Promise<RemoteAttachmentView>
+  deleteAttachment(id: string): Promise<AttachmentDeletedView>
+  getAttachmentContent(id: string, signal?: AbortSignal): Promise<Blob>
+  getAttachmentThumbnail(id: string, signal?: AbortSignal): Promise<Blob>
+
   listNativeSessions(workerId: string, cursor?: string): Promise<RemoteNativeSessionPage>
   getNativeSession(id: string): Promise<RemoteNativeSessionView>
   readNativeMessages(id: string, before?: string): Promise<NativeMessagePage>
@@ -65,7 +74,7 @@ export interface IRemoteGateway {
   listDevices(cursor?: string, limit?: number, filters?: RemoteDeviceFilters): Promise<RemoteDevicePage>
   getDevice(workerId: string): Promise<RemoteDeviceView>
   revokeDevice(workerId: string, input: RemoteDeviceRevokeInput, idempotencyKey?: string): Promise<RemoteDeviceRevocationView>
-  getWorkerCatalog(workerId: string): Promise<RemoteV3CatalogView>
+  getWorkerCatalog(workerId: string): Promise<RemoteV4CatalogView>
 
   // Conversations
   listConversations(params?: {

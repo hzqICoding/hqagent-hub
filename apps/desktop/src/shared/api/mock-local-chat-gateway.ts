@@ -1,4 +1,7 @@
+import { MockAttachmentLibrary } from '@/shared/attachments/mock-library'
+import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
+  AttachmentLimits, AttachmentDeletedView, LocalAttachmentView, AttachmentTargetCapabilities,
   LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
   LocalAuthInput,
@@ -49,6 +52,15 @@ import analyzeSceneFixture from '@hqagent/fixtures/local-scene.analyze.json'
 import agentsDiscoveryFixture from '@hqagent/fixtures/agents.discovery-partial.json'
 
 export class MockLocalChatGateway implements LocalChatGateway {
+  public attachmentLibrary = new MockAttachmentLibrary()
+  async getAttachmentLimits(): Promise<AttachmentLimits> { return this.attachmentLibrary.limits }
+  async uploadAttachment(conversationId: string, file: Blob, options: UploadOptions): Promise<LocalAttachmentView> { return (await this.attachmentLibrary.upload(conversationId, file, options)).local }
+  async getAttachment(id: string): Promise<LocalAttachmentView> { return this.attachmentLibrary.get(id).local }
+  async deleteAttachment(id: string): Promise<AttachmentDeletedView> { return this.attachmentLibrary.remove(id) }
+  async getAttachmentContent(id: string): Promise<Blob> { return this.attachmentLibrary.get(id).blob }
+  async getAttachmentThumbnail(id: string): Promise<Blob> { return this.attachmentLibrary.thumbnail(id) }
+  async getAttachmentCapabilities(): Promise<AttachmentTargetCapabilities> { return this.attachmentLibrary.capabilities }
+
   public authorizedRoots: LocalAuthorizedRootsView = { version: 1, roots: [] }
   public importedNativeIds = new Set<string>()
   async listNativeSessions(): Promise<LocalNativeSessionPage> {
@@ -112,6 +124,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
   }
 
   reset(): void {
+    this.attachmentLibrary.reset()
     this.authorizedRoots = { version: 1, roots: [] }
     this.importedNativeIds.clear()
     this.authenticated = true
@@ -1248,6 +1261,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
       sequence: nextSeq,
       role: 'user',
       text: input.text,
+      attachments: input.attachmentIds?.map((id) => { const record = this.attachmentLibrary.get(id); record.local.state = 'attached'; return { ...record.local.attachment } }),
       createdAt: new Date().toISOString(),
     }
     list.push(userMessage)

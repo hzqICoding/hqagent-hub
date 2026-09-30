@@ -39,6 +39,8 @@ class Service:
         tx.after_commit((owner, worker), wake)
 
     def save(self, tx, owner, kind, identifier, value, *, management=False):
+        if kind=='command' and hasattr(self,'attachments'):
+            self.attachments.release_failed(tx,owner,value)
         if kind == 'device':
             current = tx.get(owner, kind, identifier)
             if current and current.get('_deleted'):
@@ -337,6 +339,8 @@ class Service:
 
     def maintain(self):
         """Low-frequency expiry/retention work; never invoked by HTTP handlers."""
+        if hasattr(self, 'attachments'):
+            self.attachments.maintain()
         now = self.settings.clock()
         with self.repo.transaction() as tx:
             tx.cleanup_auth(now)

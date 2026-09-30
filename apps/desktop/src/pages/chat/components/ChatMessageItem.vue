@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MessageAttachments from '@/shared/attachments/MessageAttachments.vue'
 import { ref, computed } from 'vue'
 import type { LocalMessageView } from '@hqagent/protocol'
 import { HqMarkdown } from '@/shared/ui'
@@ -54,7 +55,7 @@ async function copyText(text: string) {
   <div class="py-2.5 px-2 sm:px-4 transition-colors">
     <!-- User Message (Clean right-aligned bubble) -->
     <div v-if="message.role === 'user'" class="flex justify-end max-w-3xl mx-auto">
-      <div class="max-w-[92%] sm:max-w-[85%] space-y-1 group">
+      <div class="min-w-0 max-w-[92%] sm:max-w-[85%] space-y-1 group">
         <div class="flex items-center justify-end gap-2 text-[11px] text-text-muted select-none">
           <button
             type="button"
@@ -72,6 +73,7 @@ async function copyText(text: string) {
 
         <div class="bg-primary/10 text-text p-3 px-4 rounded-2xl rounded-tr-xs text-xs leading-relaxed whitespace-pre-wrap break-words select-text border border-primary/20 shadow-xs">
           {{ message.text }}
+          <MessageAttachments v-if="message.attachments?.length" :attachments="message.attachments" />
         </div>
       </div>
     </div>
