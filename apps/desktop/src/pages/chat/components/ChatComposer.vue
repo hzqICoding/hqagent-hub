@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import AttachmentDrafts from '@/shared/attachments/AttachmentDrafts.vue'
+import { attachmentErrorText } from '@/shared/attachments/transport'
+import { Paperclip } from 'lucide-vue-next'
 import { closureText, nativeFailure } from '@/pages/native/native-utils'
 import { ref, computed, nextTick, watch } from 'vue'
 import { useChatStore } from '@/stores/chat.store'
@@ -30,11 +33,14 @@ const inputText = computed({
     }
   },
 })
+const attachmentDrafts = ref<InstanceType<typeof AttachmentDrafts> | null>(null)
+const attachmentsBlocked = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const canSend = computed(() => {
   return (
     (chatStore.activeConversation?.conversationKind !== 'native' || chatStore.activeConversation.nativeActivity?.activity === 'closed_confirmed' || (nativeConfirmed.value && Boolean(chatStore.activeConversation.nativeSourceRevision))) &&
+    !attachmentsBlocked.value &&
     !chatStore.isConversationBusy &&
     inputText.value.trim().length > 0 &&
     !chatStore.isActiveConversationArchived &&
@@ -61,17 +67,21 @@ async function handleSend() {
   const conversationId = chatStore.activeConversationId
   if (!conversationId) return
   const text = inputText.value.trim()
+  const drafts = attachmentDrafts.value
+  const attachmentIds = drafts?.ids() || []
   chatStore.setConversationDraft(conversationId, '')
   const clearedDraftRevision = chatStore.getConversationDraftRevision(conversationId)
   const revision = chatStore.activeConversation?.nativeSourceRevision
-  const sendPromise = chatStore.sendMessage(text, undefined, nativeConfirmed.value && revision ? { terminalClosedConfirmed: true, sourceRevision: revision } : undefined)
+  const sendPromise = chatStore.sendMessage(text, undefined, nativeConfirmed.value && revision ? { terminalClosedConfirmed: true, sourceRevision: revision } : undefined, attachmentIds)
   await nextTick()
   if (chatStore.activeConversationId === conversationId) adjustHeight()
 
   try {
     await sendPromise
+    drafts?.sent()
     nativeConfirmed.value = false
   } catch (err) {
+    if (attachmentIds.length && chatStore.activeConversationId === conversationId) chatStore.sendError = attachmentErrorText(err)
     if (chatStore.activeConversation?.conversationKind === 'native') { nativeError.value = nativeFailure(err); nativeConfirmed.value = false }
     // Restore only the original conversation's still-empty draft. A newer draft wins.
     if (chatStore.getConversationDraftRevision(conversationId) === clearedDraftRevision) {
@@ -185,6 +195,7 @@ function handleStopRun() {
         </HqButton>
       </div>
 
+      <AttachmentDrafts v-if="chatStore.activeConversationId" :key="chatStore.activeConversationId" ref="attachmentDrafts" :conversation-id="chatStore.activeConversationId" :disabled="chatStore.isSending || chatStore.isActiveConversationArchived" @blocked="attachmentsBlocked = $event" />
       <!-- 4. Generic Send Error Alert -->
       <div
         v-if="chatStore.sendError"
@@ -217,15 +228,16 @@ function handleStopRun() {
         class="bg-panel border border-border/80 focus-within:border-primary/60 rounded-2xl shadow-sm focus-within:shadow-md transition-all duration-200 overflow-hidden"
       >
         <!-- Textarea input -->
-        <div class="px-3.5 pt-3 pb-1">
-          <textarea
+        <div class="px-2 pt-3 pb-1 flex items-start gap-2 min-w-0">
+          <button type="button" aria-label="添加附件" class="min-w-[44px] min-h-[44px] shrink-0 flex items-center justify-center text-content-muted" :disabled="chatStore.isSending || chatStore.isActiveConversationArchived || !chatStore.activeConversationId" @click="attachmentDrafts?.open()"><Paperclip class="w-5 h-5" /></button>
+        <textarea
             ref="textareaRef"
             v-model="inputText"
             :maxlength="32000"
             rows="1"
             :disabled="chatStore.isConversationBusy || chatStore.isActiveConversationArchived"
             :placeholder="chatStore.isConversationBusy ? '对话正在进行，结束后再继续' : '向角色团队输入任务目标或补充要求... (Enter 发送，Shift + Enter 换行)'"
-            class="w-full bg-transparent text-xs text-text placeholder-text-muted/50 resize-none outline-none focus:ring-0 leading-relaxed max-h-44 min-h-[44px] disabled:opacity-60 disabled:cursor-not-allowed"
+            class="flex-1 min-w-0 bg-transparent text-xs text-text placeholder-text-muted/50 resize-none outline-none focus:ring-0 leading-relaxed max-h-44 min-h-[44px] disabled:opacity-60 disabled:cursor-not-allowed"
             @input="handleInput"
             @keydown="handleKeyDown"
           />
@@ -254,7 +266,7 @@ function handleStopRun() {
             <button
               v-if="chatStore.isCurrentRunActive && inputText.trim().length === 0"
               type="button"
-              class="w-9 h-9 sm:w-8 sm:h-8 min-w-[36px] min-h-[36px] rounded-full flex items-center justify-center transition-all bg-danger/15 text-danger hover:bg-danger/25 active:scale-95 cursor-pointer shadow-xs"
+              class="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition-all bg-danger/15 text-danger hover:bg-danger/25 active:scale-95 cursor-pointer shadow-xs"
               title="中止当前执行轮次"
               aria-label="中止当前执行轮次"
               @click="handleStopRun"
@@ -266,7 +278,7 @@ function handleStopRun() {
             <button
               v-else
               type="button"
-              class="w-9 h-9 sm:w-8 sm:h-8 min-w-[36px] min-h-[36px] rounded-full flex items-center justify-center transition-all shadow-xs"
+              class="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition-all shadow-xs"
               :class="
                 canSend
                   ? 'bg-primary text-white hover:bg-primary-hover active:scale-95 cursor-pointer'
