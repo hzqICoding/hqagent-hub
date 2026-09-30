@@ -112,9 +112,14 @@ class RealPair:
 
     async def __aenter__(self):
         from server.app import create_app
+        from server import wire
+        from server.repository import MIGRATIONS
+        self.wire_patch = pytest.MonkeyPatch()
+        if max(wire.CODECS) > self.revision:
+            self.wire_patch.setattr(wire, 'CODECS', {r:c for r,c in wire.CODECS.items() if r<=self.revision})
         self.app = create_app(self.settings)
         self.service = self.app.state.service
-        assert self.service.repo.connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert self.service.repo.connection.execute("PRAGMA user_version").fetchone()[0] == max(MIGRATIONS)
         config = uvicorn.Config(self.app, log_config=None, access_log=False, log_level="critical",
             ssl_certfile=str(TLS_FILES / "test-cert.pem"), ssl_keyfile=str(TLS_FILES / "test-key.pem"),
             ws="websockets-sansio", lifespan="on")
@@ -156,10 +161,10 @@ class RealPair:
         await until(lambda: any(f["type"] == "worker.hello_ack" for f in self.received))
         assert next(f for f in self.received if f["type"] == "worker.hello_ack")["wireRevision"] == self.revision
         assert self.system.repo.get("identity")["wireRevision"] == self.revision
-        if self.revision == 2:
+        if self.revision < 4:
             rejected = next(f for f in self.received if f["type"] == "worker.hello_rejected")
             assert rejected["error"]["code"] == "REMOTE_PROTOCOL_UNSUPPORTED"
-            assert rejected["supportedWireRevisions"] == [1, 2]
+            assert rejected["supportedWireRevisions"] == list(range(1,self.revision+1))
         else:
             assert not any(f["type"] == "worker.hello_rejected" for f in self.received)
         return self
@@ -206,6 +211,7 @@ class RealPair:
         self.server.should_exit = True
         await asyncio.wait_for(self.server_job, 5)
         self.socket.close()
+        self.wire_patch.undo()
 
     def cloud_conversation(self, local):
         with self.service.repo.transaction() as tx:
@@ -243,7 +249,7 @@ class RealPair:
 @pytest.fixture
 def all_server_codecs(server_source):
     from server import wire
-    return dict(wire.CODECS)
+    return {r:c for r,c in wire.CODECS.items() if r<=3}  # Historical R3 upgrade fixtures stay explicitly R3.
 
 
 @pytest.fixture(params=[2, 3])

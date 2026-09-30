@@ -481,11 +481,33 @@ class CommandBridge:
                 **({"nodeId": frame["payload"]["nodeId"]} if frame["payload"].get("nodeId") else {})}), "remote:" + frame["commandId"])
             updated = self.chat.repository.run_record(view.id)
             after = self._observation(updated)
+            attachments = getattr(self.chat, 'attachments', None)
+            preparation = attachments.repo.preparation(view.id) if attachments else None
+            if action == 'cancel' and frame['wireRevision'] >= 4 and preparation and preparation['state'] == 'cancelled' and preparation['evidence_json']:
+                self._finish(frame, {'runId': view.id}, json.loads(preparation['evidence_json']), 'cancelled')
+                return
             ref = {"runId": view.id, **({"executionTaskId": view.task_id} if view.task_id else {})}
             if view.task and view.task.parent_task_id:
                 ref["parentExecutionTaskId"] = view.task.parent_task_id
             if action == "retry":
-                if not view.task_id:
+                if preparation and view.id != record['run_id'] and preparation['state'] in {'pending', 'preparing', 'ready'}:
+                    # R1 control completion requires an actual executionTaskId.
+                    # A preparation retry has no prior Task to create a child
+                    # from; wait in this background control job for its first
+                    # real Task, never fabricate an execution reference.
+                    async with asyncio.timeout(305):
+                        while True:
+                            retried = self.chat.repository.run_record(view.id)
+                            if retried['task_id']:
+                                ref['executionTaskId'] = retried['task_id']
+                                break
+                            prep = attachments.repo.preparation(view.id)
+                            if prep['state'] in {'failed', 'cancelled'}:
+                                self._failed(frame, {'runId': record['run_id']}, prep['error_code'] or 'ATTACHMENT_NOT_READY')
+                                return
+                            await asyncio.sleep(0.05)
+                    self._completed(frame, ref, 'retry_enqueued')
+                elif not view.task_id:
                     self._finish(frame, ref, control_result({}, {}), str(view.status))
                 else:
                     self._completed(frame, ref, "retry_enqueued")

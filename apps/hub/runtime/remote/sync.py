@@ -47,6 +47,9 @@ class SyncService:
                        "syncGeneration": old["syncGeneration"] + 1}
             self.repo.put("sync-settings", changed, tx)
             tx.after_commit(self.cancel_queries)
+            if not value.mirror_enabled:
+                tx.after_commit(self.chat.attachments.sync.cancel_pending)
+                tx.connection.execute("UPDATE local_attachments SET sync_json='{}'")
             tx.connection.execute("DELETE FROM remote_sync_items")
             self.repo.put("sync-work", {"phase": "pending", "resetPending": not value.mirror_enabled}, tx)
             if self.active() and self.repo.get("link", tx)["view"].get("workerId"):
@@ -92,10 +95,25 @@ class SyncService:
         elif kind == "message":
             resource = row["message_id"]
             text = self.link.sanitized(row["text"])
+            text = self.chat.attachments.library.public_text(text)
             payload = {"messageId": resource, "conversationId": row["conversation_id"],
                 "messageSequence": row["sequence"], "role": row["role"], "createdAt": row["created_at"]}
             if row["run_id"]:
                 payload["runId"] = row["run_id"]
+            attachments = self.chat.attachments
+            if attachments.repo.message_rows(resource):
+                if self.repo.get('identity',tx).get('wireRevision',1)<4:
+                    return
+                sources = attachments.repo.message_rows(resource)
+                original = attachments.repo.source(resource, tx)
+                for source in sources:
+                    if source['source_command_id'] and original.get('store') == store and original.get('generation') == generation:
+                        delivery = self.delivery.row(source['source_command_id'], tx)
+                        if not delivery or not delivery['grant_json']:
+                            return
+                manifest,command = attachments.sync.manifest(tx,resource)
+                payload['attachments']=manifest
+                if command: payload['sourceCommandId']=command
         elif kind == "approval":
             resource = row["approval_id"]
             approval = ApprovalView.model_validate_json(row["payload_json"])
@@ -231,6 +249,8 @@ class SyncService:
 
     def discard_binding(self, tx):
         tx.after_commit(self.cancel_queries)
+        tx.after_commit(self.chat.attachments.sync.cancel_pending)
+        tx.connection.execute("UPDATE local_attachments SET sync_json='{}'")
         if not self.active():
             return
         if self.delivery is not None and self.repo.get("link", tx)["view"].get("workerId"):
@@ -342,7 +362,9 @@ class SyncService:
                 frame_size = len(encode(projected).encode("utf-8"))
                 if size + frame_size + 4096 > WINDOW_BYTES - unacked[1]:
                     break
-                self.repo.emit(tx, kind, **extra, payload=payload)
+                emitted = self.repo.emit(tx, kind, **extra, payload=payload)
+                if row['kind']=='message' and row['segment_index']+1==row['segment_count']:
+                    self.chat.attachments.sync.allocated(tx,payload['messageId'],emitted['seq'],payload)
                 size += frame_size
                 count += 1
                 if row["kind"] == "message" and row["segment_index"] + 1 < row["segment_count"]:
@@ -350,7 +372,7 @@ class SyncService:
                 else:
                     tx.connection.execute("DELETE FROM remote_sync_items WHERE item_id=?", (row["item_id"],))
             pending = tx.connection.execute("SELECT 1 FROM remote_sync_items WHERE backfill_id=? LIMIT 1", (work["backfillId"],)).fetchone()
-            complete = work["phase"] == "backfilling" and pending is None and count == 0
+            complete = work["phase"] == "backfilling" and pending is None and count == 0 and not self.chat.attachments.sync.pending(tx)
             if count or complete:
                 event = self.repo.emit(tx, "sync.backfill.progress", syncGeneration=self.settings().sync_generation,
                     backfillId=work["backfillId"], batchIndex=work["batch"], batchEventCount=count,
@@ -387,7 +409,7 @@ class SyncService:
                         self._stage(tx, work["backfillId"], "approval", approval)
 
     def prune_native(self):
-        if self.repo.get("identity").get("wireRevision") != 3 or not self.settings().mirror_enabled:
+        if self.repo.get("identity").get("wireRevision", 1) < 3 or not self.settings().mirror_enabled:
             return
         with self.repo.database.transaction() as tx:
             store, generation = self.context()
@@ -412,7 +434,7 @@ class SyncService:
                         envelope = json.loads(record["envelope_json"]); envelope["payload"] = {}
                         tx.connection.execute("UPDATE events SET payload_json='{}',envelope_json=? WHERE seq=?", (canonical(envelope),record["seq"]))
                 for start in range(0,len(slots),100):
-                    proof = {"type":"sync.content.redaction","wireRevision":3,"redactionId":uid("redaction"),
+                    proof = {"type":"sync.content.redaction","wireRevision":self.repo.get("identity",tx)["wireRevision"],"redactionId":uid("redaction"),
                         **{k:deletion[k] for k in ("workerId","workerStoreId","workerEpoch","syncGeneration","nativeSessionId")},
                         "deletionEventId":deletion["eventId"],"deletionSeq":deletion["seq"],"slots":slots[start:start+100]}
                     tx.connection.execute("INSERT INTO remote_sync_redactions VALUES(?,?,?,?)", (store,deletion["seq"],proof["redactionId"],encode(proof)))
@@ -420,7 +442,7 @@ class SyncService:
             self.repo.seal(tx)
 
     def source_event(self, tx, row):
-        if self.repo.get("identity",tx).get("wireRevision") == 3 and row["type"] == "native.closure.confirmed":
+        if self.repo.get("identity",tx).get("wireRevision", 1) >= 3 and row["type"] == "native.closure.confirmed":
             payload = json.loads(row["payload_json"])
             if payload.get("commandId") and payload.get("_storeId") == self.repo.get("identity",tx)["store"] and payload.get("_workerId") == self.repo.get("link",tx)["view"].get("workerId"):
                 return "native.closure.confirmed",{k:payload[k] for k in ("commandId","nativeSessionId","confirmation")}
