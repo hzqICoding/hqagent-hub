@@ -259,11 +259,8 @@ class LocalChatService:
         conversation = self.repository.conversation(record["conversation_id"])
         roles = [r for r in scene.roles if r.enabled]
         profile_id = f"local-profile:{record['run_id']}"
-        profile = SaveTeamProfileInput.model_validate({
-            "id": profile_id, "name": f"{scene.name} · 本轮快照", "scope": "global", "isDefault": False,
-            "roleBindings": {r.role_id: {"roleId": r.role_id, "roleName": r.role_name or r.role_id,
-                "primaryAgentId": r.agent_instance_id, "fallbackAgentIds": []} for r in roles},
-        })
+        from runtime.execution_selection import scene_execution
+        profile, overrides, options = scene_execution(scene, profile_id)
         await self.ports.team_profiles.save_profile(profile_id, profile)
         resume_sessions = {}
         if record["session_mode"] == "continue":
@@ -302,9 +299,8 @@ class LocalChatService:
         return CreateTaskInput.model_validate({
             "objective": self.repository.run_text(record["run_id"]), "workspaceId": conversation.workspace_id,
             "profileId": profile_id, "source": "desktop", "workflowRoles": [r.role_id for r in roles],
-            "roleOverrides": {r.role_id: r.agent_instance_id for r in roles if r.agent_instance_id},
-            "roleExecutions": {r.role_id: {"modelId": r.model_id_, "reasoningEffort": r.reasoning_effort,
-                "instructions": r.instructions} for r in roles},
+            "roleOverrides": overrides,
+            "roleExecutions": options,
             "resumeSessions": resume_sessions or None,
             "reviewMode": scene.review_mode or "independent",
         })
