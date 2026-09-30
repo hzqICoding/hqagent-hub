@@ -51,7 +51,7 @@ class NativeEvents:
         if kind == 'native.closure.confirmed':
             command = self.s.get(tx, owner, 'command', event['commandId'])
             frame = command['_frame']; payload = frame.get('payload', {})
-            require(frame['wireRevision'] == 3 and command['targetWorkerId'] == worker and frame['expectedWorkerStoreId'] == store, 'REMOTE_TARGET_MISMATCH')
+            require(frame['wireRevision'] >= 3 and command['targetWorkerId'] == worker and frame['expectedWorkerStoreId'] == store, 'REMOTE_TARGET_MISMATCH')
             require(payload.get('nativeSessionId', command.get('_nativeId')) == event['nativeSessionId'] and payload.get('confirmation', payload.get('nativeConfirmation', command.get('_closureConfirmation'))) == event['confirmation'], 'REMOTE_EVENT_CONFLICT')
             tx.put(owner, 'native-confirmation', event['confirmation']['confirmationId'], dict(commandId=event['commandId'], nativeSessionId=event['nativeSessionId'], confirmation=event['confirmation']), worker=worker, store=store)
             return
@@ -92,7 +92,7 @@ class NativeEvents:
 
     def resource(self, tx, owner, event, command):
         frame = command['_frame']; kind = event['type']; worker, store = event['workerId'],event['workerStoreId']
-        require(frame['wireRevision'] == event['wireRevision'] == 3 and command['type'] in RESOURCES and
+        require(frame['wireRevision'] == event['wireRevision'] and frame['wireRevision'] >= 3 and command['type'] in RESOURCES and
                 command['targetWorkerId'] == worker and frame['expectedWorkerStoreId'] == store and
                 'conversationId' not in event and 'resultRef' not in event, 'REMOTE_TARGET_MISMATCH')
         if command['status'] in TERMINAL:

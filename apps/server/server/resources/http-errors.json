@@ -403,5 +403,60 @@
     "status": 409,
     "retryable": false,
     "message": "目录授权或目录内容已变化"
+  },
+  "ATTACHMENT_TOO_LARGE": {
+    "status": 413,
+    "retryable": false,
+    "message": "附件超过大小限制"
+  },
+  "ATTACHMENT_TYPE_UNSUPPORTED": {
+    "status": 415,
+    "retryable": false,
+    "message": "不支持此附件类型"
+  },
+  "ATTACHMENT_COUNT_EXCEEDED": {
+    "status": 422,
+    "retryable": false,
+    "message": "每条消息最多五个附件"
+  },
+  "ATTACHMENT_QUOTA_EXCEEDED": {
+    "status": 409,
+    "retryable": false,
+    "message": "附件存储配额不足"
+  },
+  "ATTACHMENT_HASH_MISMATCH": {
+    "status": 422,
+    "retryable": false,
+    "message": "附件大小或哈希校验失败"
+  },
+  "AGENT_IMAGE_UNSUPPORTED": {
+    "status": 422,
+    "retryable": false,
+    "message": "目标Agent尚不支持此图片输入"
+  },
+  "ATTACHMENT_DOWNLOAD_FAILED": {
+    "status": 502,
+    "retryable": true,
+    "message": "附件下载失败"
+  },
+  "ATTACHMENT_NOT_READY": {
+    "status": 409,
+    "retryable": false,
+    "message": "附件尚不可用"
+  },
+  "ATTACHMENT_IN_USE": {
+    "status": 409,
+    "retryable": false,
+    "message": "附件已被消息或在途命令引用"
+  },
+  "ATTACHMENT_THUMBNAIL_UNAVAILABLE": {
+    "status": 409,
+    "retryable": false,
+    "message": "附件缩略图不可用"
+  },
+  "ATTACHMENT_PREPARATION_INTERRUPTED": {
+    "status": 409,
+    "retryable": false,
+    "message": "附件准备被中断，请重新尝试"
   }
 }

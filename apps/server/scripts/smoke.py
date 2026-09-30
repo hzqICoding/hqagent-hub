@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from server.common import digest, stamp, uid
 from smoke_native import native_smoke
+from smoke_attachments import attachment_smoke
 
 
 def main():
@@ -38,7 +39,9 @@ def main():
     # local file rather than blocking the server until the end of the smoke.
     log_path = data / 'server.log'
     log_output = log_path.open('w', encoding='utf-8')
-    process = subprocess.Popen([sys.executable, "-m", "server"], cwd=ROOT, env=env, stdout=log_output, stderr=subprocess.STDOUT, text=True)
+    env['SMOKE_PID_FILE']=str(data/'pid')
+    boot="import os; from pathlib import Path; Path(os.environ['SMOKE_PID_FILE']).write_text(str(os.getpid())); from server.__main__ import main; main()"
+    process = subprocess.Popen([sys.executable, '-c', boot], cwd=ROOT, env=env, stdout=log_output, stderr=subprocess.STDOUT, text=True)
     secret, store, epoch = secrets.token_urlsafe(32), uid(), uid()
     try:
         headers = {"Origin": origin, "X-Forwarded-Proto": "https"}
@@ -131,6 +134,7 @@ def main():
             request("GET", "/conversations/" + conv + "/snapshot", model="RemoteConversationSnapshot")
             assert request("GET", "/commands/" + queued["commandId"], model="RemoteCommandView").json()["data"]["status"] == "accepted"
             print("fake Worker revision 2, create/grant/sync, offline refusal and reconnect: PASS")
+            attachment_smoke(client,conv,int((data/'pid').read_text()))
             native_sensitive = native_smoke(client, port, request)
             import sqlite3
             with sqlite3.connect(data / 'hub.sqlite3') as database:
