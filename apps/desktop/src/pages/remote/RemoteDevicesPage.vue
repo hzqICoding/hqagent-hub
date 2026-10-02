@@ -123,7 +123,7 @@ async function logout() {
           </div>
           <p class="text-[11px] text-text-muted my-2">{{ device.platform }} · {{ device.architecture }}</p>
           <div class="flex flex-wrap gap-2">
-            <HqBadge :variant="(device.online ?? device.status === 'online') ? 'success' : 'neutral'">{{ (device.online ?? device.status === 'online') ? '电脑在线' : '电脑离线' }}</HqBadge>
+            <HqBadge :variant="(device.online ?? device.status === 'online') ? 'success' : 'warning'">{{ (device.online ?? device.status === 'online') ? '电脑在线' : '电脑离线' }}</HqBadge>
             <HqBadge :variant="device.remoteAccess === 'suspended' ? 'warning' : 'info'">{{ device.remoteAccess === 'suspended' ? '远程操作已暂停' : '远程可用' }}</HqBadge>
             <HqBadge v-if="device.supportedWireRevisions?.includes(2)" variant="primary">支持互通 (v2)</HqBadge>
           </div>
