@@ -32,6 +32,8 @@ class LocalChatService:
 
     async def start(self) -> None:
         self._closed = False
+        if getattr(self, 'attachments', None):
+            await self.attachments.recover()
         if self._supervisor is None:
             self._supervisor = asyncio.create_task(self._supervise())
 
@@ -108,6 +110,15 @@ class LocalChatService:
 
     async def _control(self, record: dict, value: TaskActionInput, key: str):
         run_id = record["run_id"]
+        attachments = getattr(self, 'attachments', None)
+        if str(value.action) == 'cancel' and attachments and await attachments.cancel(run_id):
+            return await self.run(run_id)
+        if str(value.action) == 'retry' and attachments and not record['task_id']:
+            preparation = attachments.repo.preparation(run_id)
+            if preparation and preparation['state'] == 'failed':
+                # No Task ever existed before preparation failed. An explicit
+                # retry admits a new LocalRun/first Task; never auto-replays it.
+                return await self.run(attachments.retry_preparation(record, key))
         if str(value.action) == "append_instruction":
             if not value.instruction:
                 raise HubError("VALIDATION_FAILED", "追加内容不能为空")
@@ -216,8 +227,10 @@ class LocalChatService:
                 if current["status"] == "cancelled":
                     return
                 self.repository.update_run(run_id, "running")
+                attachments = getattr(self, 'attachments', None)
+                inputs = await attachments.prepare(record) if attachments else []
                 spec = await self._task_input(record)
-                task = await self.ports.tasks.create_task(spec, f"local-run:{run_id}")
+                task = await attachments.start_task(record, inputs, spec) if attachments else await self.ports.tasks.create_task(spec, f"local-run:{run_id}")
                 task_id = task.id
                 self.repository.update_run(run_id, "running", task_id=task_id)
                 if self.repository.cancel_requested(run_id) and str(task.status) not in TERMINAL:
@@ -246,11 +259,8 @@ class LocalChatService:
         conversation = self.repository.conversation(record["conversation_id"])
         roles = [r for r in scene.roles if r.enabled]
         profile_id = f"local-profile:{record['run_id']}"
-        profile = SaveTeamProfileInput.model_validate({
-            "id": profile_id, "name": f"{scene.name} · 本轮快照", "scope": "global", "isDefault": False,
-            "roleBindings": {r.role_id: {"roleId": r.role_id, "roleName": r.role_name or r.role_id,
-                "primaryAgentId": r.agent_instance_id, "fallbackAgentIds": []} for r in roles},
-        })
+        from runtime.execution_selection import scene_execution
+        profile, overrides, options = scene_execution(scene, profile_id)
         await self.ports.team_profiles.save_profile(profile_id, profile)
         resume_sessions = {}
         if record["session_mode"] == "continue":
@@ -289,9 +299,8 @@ class LocalChatService:
         return CreateTaskInput.model_validate({
             "objective": self.repository.run_text(record["run_id"]), "workspaceId": conversation.workspace_id,
             "profileId": profile_id, "source": "desktop", "workflowRoles": [r.role_id for r in roles],
-            "roleOverrides": {r.role_id: r.agent_instance_id for r in roles if r.agent_instance_id},
-            "roleExecutions": {r.role_id: {"modelId": r.model_id_, "reasoningEffort": r.reasoning_effort,
-                "instructions": r.instructions} for r in roles},
+            "roleOverrides": overrides,
+            "roleExecutions": options,
             "resumeSessions": resume_sessions or None,
             "reviewMode": scene.review_mode or "independent",
         })

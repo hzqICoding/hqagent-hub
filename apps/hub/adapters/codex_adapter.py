@@ -90,6 +90,8 @@ class _CodexConnection:
         self._write_lock = asyncio.Lock()
         self._reader_failure_lock = asyncio.Lock()
         self._reader_failure_reported = False
+        self._close_lock = asyncio.Lock()
+        self.server_tasks: set[asyncio.Task[Any]] = set()
         self.reader_task = asyncio.create_task(self._reader())
         self.stderr_task = asyncio.create_task(self._drain_stderr())
 
@@ -114,8 +116,17 @@ class _CodexConnection:
         await self._write({"id": request_id, "result": result})
 
     async def force_close(self) -> None:
-        if self.process.returncode is None:
-            await terminate_process_tree(self.process)
+        async with self._close_lock:
+            if self.process.returncode is None:
+                await terminate_process_tree(self.process)
+            if self.process.returncode is None:
+                return  # Keep observing a process whose termination is unconfirmed.
+            current = asyncio.current_task()
+            tasks = [task for task in (self.reader_task, self.stderr_task, *self.server_tasks)
+                     if task is not current]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _write(self, value: dict[str, Any]) -> None:
         if self.process.stdin is None or self.process.returncode is not None:
@@ -140,7 +151,9 @@ class _CodexConnection:
                         future.set_result(message)
                     continue
                 if request_id is not None and "method" in message:
-                    asyncio.create_task(self.on_server_request(message))
+                    task = asyncio.create_task(self.on_server_request(message))
+                    self.server_tasks.add(task)
+                    task.add_done_callback(self.server_tasks.discard)
                     continue
                 if "method" in message:
                     await self.on_notification(message)
@@ -375,7 +388,7 @@ class CodexAdapter(AgentAdapter):
             session_id=spec.session_id,
             external_session_id=spec.resume_session_id or "",
             spec=spec,
-            guard=PathGuard(spec.worktree_path or "", spec.allowed_paths),
+            guard=PathGuard(spec.worktree_path or "", spec.allowed_paths, input_attachments=spec.input_attachments),
         )
         opened = await self._open_turn(
             state,
@@ -432,6 +445,7 @@ class CodexAdapter(AgentAdapter):
         executable = self.runner.find("codex")
         if not executable:
             return failure(AdapterFailureKind.NOT_INSTALLED, "未找到 Codex CLI", retryable=False)
+        stage = "process.start"
         try:
             process = await self.runner.start(
                 executable_args(executable, "app-server", "--listen", "stdio://"),
@@ -439,13 +453,17 @@ class CodexAdapter(AgentAdapter):
                 env=command_environment("codex"),
             )
             state.process = process
+            async def current_connection(callback, *args):
+                if state.connection is connection:
+                    await callback(state, *args)
             connection = _CodexConnection(
                 process,
-                on_notification=lambda value: self._handle_notification(state, value),
-                on_server_request=lambda value: self._handle_server_request(state, value),
-                on_disconnect=lambda alive, detail: self._handle_disconnect(state, alive, detail),
+                on_notification=lambda value: current_connection(self._handle_notification, value),
+                on_server_request=lambda value: current_connection(self._handle_server_request, value),
+                on_disconnect=lambda alive, detail: current_connection(self._handle_disconnect, alive, detail),
             )
             state.connection = connection
+            stage = "initialize"
             await connection.request(
                 "initialize",
                 {
@@ -455,6 +473,7 @@ class CodexAdapter(AgentAdapter):
             )
             await connection._write({"method": "initialized"})
             if state.spec.model_id_ or state.spec.reasoning_effort:
+                stage = "model/list"
                 rows = await self._model_rows(connection)
                 selected = next((r for r in rows if (r.get("model") or r.get("id")) == state.spec.model_id_), None) if state.spec.model_id_ else next((r for r in rows if r.get("isDefault")), None)
                 if selected is None:
@@ -463,6 +482,7 @@ class CodexAdapter(AgentAdapter):
                 if state.spec.reasoning_effort and state.spec.reasoning_effort not in efforts:
                     raise RuntimeError("该模型不支持指定的推理等级")
             if resume:
+                stage = "thread/resume"
                 thread_result = await connection.request(
                     "thread/resume",
                     {
@@ -474,6 +494,7 @@ class CodexAdapter(AgentAdapter):
                     },
                 )
             else:
+                stage = "thread/start"
                 thread_result = await connection.request(
                     "thread/start",
                     {
@@ -491,11 +512,14 @@ class CodexAdapter(AgentAdapter):
                 raise RuntimeError("Codex 没有返回预期 thread.id")
             state.external_session_id = str(external_id)
             await self._emit_started(state)
+            from adapters.attachment_input import codex_input
+            input_items = await asyncio.to_thread(codex_input, message, state.spec.input_attachments)
+            stage = "turn/start"
             turn_result = await connection.request(
                 "turn/start",
                 {
                     "threadId": state.external_session_id,
-                    "input": [{"type": "text", "text": message}],
+                    "input": input_items,
                     "outputSchema": AgentResult.model_json_schema(by_alias=True),
                     **({"model": state.spec.model_id_} if state.spec.model_id_ else {}),
                     **({"effort": state.spec.reasoning_effort} if state.spec.reasoning_effort else {}),
@@ -512,7 +536,8 @@ class CodexAdapter(AgentAdapter):
                 AdapterFailureKind.TRANSPORT_ERROR,
                 f"Codex模型或会话启动失败：{str(exc)[:300]}",
                 retryable=True,
-                raw=exc,
+                raw={"startupStage": stage, "exceptionType": type(exc).__name__,
+                     "osError": getattr(exc, 'errno', None), "winError": getattr(exc, 'winerror', None)},
             )
 
     async def resume(self, request: ResumeRequest) -> OperationResult:
@@ -525,7 +550,7 @@ class CodexAdapter(AgentAdapter):
             if preflight is not None:
                 return preflight
             state = AdapterSessionState(session_id=request.session_id, external_session_id=request.external_session_id,
-                spec=spec, guard=PathGuard(spec.worktree_path or "", spec.allowed_paths))
+                spec=spec, guard=PathGuard(spec.worktree_path or "", spec.allowed_paths, input_attachments=spec.input_attachments))
             self.registry.add(state)
         if state is None:
             return failure(
@@ -541,6 +566,20 @@ class CodexAdapter(AgentAdapter):
             )
         if state.process is not None and state.process.returncode is None and not state.finished.is_set():
             return failure(AdapterFailureKind.AGENT_ERROR, "Codex turn 仍在运行", retryable=False)
+        if state.connection is not None:
+            await state.connection.force_close()
+            if state.process is not None and state.process.returncode is None:
+                return failure(AdapterFailureKind.TRANSPORT_ERROR, "上一轮 App Server 清理未确认，不能续接", retryable=False)
+        if request.task_spec is not None:
+            spec = request.task_spec
+            if spec.session_id != request.session_id:
+                return failure(AdapterFailureKind.AGENT_ERROR, "恢复规格与明确会话ID不匹配", retryable=False)
+            preflight = await self._preflight(spec)
+            if preflight is not None:
+                return preflight
+            state.spec = spec
+            state.guard = await asyncio.to_thread(PathGuard, spec.worktree_path or '',
+                spec.allowed_paths, input_attachments=spec.input_attachments)
         state.queue = asyncio.Queue()
         state.result = None
         state.failure = None

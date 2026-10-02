@@ -110,7 +110,7 @@ def test_revision2_defers_native_history_then_revision3_backfills(tmp_path):
             async with FakeRemoteServer(revision=2) as server:
                 await system.pair(server,start=True)
                 await until(lambda:system.repo.get('sync-work')['phase']=='synced')
-                assert server.requested_revisions[:2]==[3,2]
+                assert server.requested_revisions[:2]==[4,2]
                 assert system.repo.get('link')['view']['lastErrorCode']=='REMOTE_REVISION_REQUIRED'
                 assert 'native-private-before-rev3' not in json.dumps(server.frames)
                 assert not any(f.get('payload',{}).get('conversationKind')=='native' for f in server.frames)

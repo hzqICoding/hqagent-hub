@@ -89,9 +89,13 @@ class DeliveryBridge(CommandBridge):
                 raise HubError("CONFLICT", "本机对话标识已使用")
         else:
             conversation = self.chat.repository.conversation(local)
+            if kind == 'run.submit' and payload.get('attachments'):
+                self.chat.attachments.capabilities.require(local, payload['attachments'])
+                if any(m['kind']=='image' for m in payload['attachments']) and payload.get('attachmentCapabilityRevision') != self.chat.attachments.worker.projector.capability_revision():
+                    raise HubError('AGENT_IMAGE_UNSUPPORTED', '图片输入能力已变化，请刷新')
             native = str(conversation.conversation_kind) == "native"
             if kind == "run.submit" and native:
-                if frame["wireRevision"] != 3 or payload.get("conversationKind") != "native" or payload.get("nativeSessionId") != conversation.native_session_id or payload.get("agentType") != str(conversation.agent_type) or payload["sessionMode"] != "continue" or "sceneId" in payload or "sceneVersion" in payload:
+                if frame["wireRevision"] < 3 or payload.get("conversationKind") != "native" or payload.get("nativeSessionId") != conversation.native_session_id or payload.get("agentType") != str(conversation.agent_type) or payload["sessionMode"] != "continue" or "sceneId" in payload or "sceneVersion" in payload:
                     raise HubError("REMOTE_TARGET_MISMATCH", "原生会话绑定不匹配")
                 binding = self.chat.native.row(local,conversation=True)
                 self.chat.native.check(binding,self.chat.native.cached_source(binding),payload.get("nativeConfirmation"),observe=False)
@@ -176,6 +180,8 @@ class DeliveryBridge(CommandBridge):
             if receipt.duplicate:
                 raise HubError("IDEMPOTENCY_MISMATCH", "消息已由其它命令提交")
             run_id = receipt.run_id
+            if frame['payload'].get('attachments'):
+                self.chat.attachments.bind_remote(tx, frame, receipt)
             tx.connection.execute("INSERT INTO remote2_gates VALUES(?,'provisional')", (run_id,))
         event = self.repo.emit(tx, "command.received", commandId=frame["commandId"], conversationId=frame["conversationId"],
             commandDigest=request_hash(frame), deliverBy=frame["deliverBy"], receivedAt=now())
@@ -249,6 +255,8 @@ class DeliveryBridge(CommandBridge):
             row = self.row(frame['commandId'])
             original = json.loads(row['command_json']) if row and row['command_json'] else {}
         if original.get('type') == 'run.submit':
+            if any(item['kind'] == 'image' for item in original.get('payload', {}).get('attachments', [])):
+                await self.chat.attachments.capabilities.refresh()
             try:
                 await self.chat.native.prepare_send(original['localConversationId'])
             except HubError:
@@ -373,10 +381,14 @@ class DeliveryBridge(CommandBridge):
             accepted = self.repo.emit(tx, "command.accepted", **fields)
             if frame["type"] == "run.submit":
                 tx.connection.execute("UPDATE remote2_gates SET state='granted' WHERE run_id=?", (run_id,))
+                tx.connection.execute("UPDATE attachment_preparations SET state='pending' WHERE run_id=? AND state='ungranted'", (run_id,))
             state = "accepted" if frame["type"] == "run.submit" else "admitted"
             self.repo.patch_inbox(tx, frame["commandId"], status=state, run_id=run_id, receipt_json=canonical(accepted))
             tx.connection.execute("UPDATE remote2_delivery SET state='accepted',grant_json=?,result_json=?,run_id=? WHERE worker_id=? AND store_id=? AND command_id=?",
                 (canonical(grant), canonical(accepted), run_id, *self.scope(), frame["commandId"]))
+            if frame['type'] == 'run.submit' and frame['payload'].get('attachments'):
+                message = tx.connection.execute('SELECT message_id FROM local_runs WHERE run_id=?', (run_id,)).fetchone()
+                self.chat.attachments.repo.touch_message(tx, message[0])
             self._consume_slot(tx, frame["commandId"])
             if frame["type"] in {"conversation.create", "conversation.update", "command.withdraw"}:
                 if frame["type"] != "command.withdraw":

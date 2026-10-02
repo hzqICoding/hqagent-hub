@@ -66,6 +66,8 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
     router = APIRouter(prefix="/api/v2", dependencies=[Depends(require_auth)])
     from runtime.native.api import native_router
     router.include_router(native_router(service.native))
+    from runtime.attachments.api import attachment_router
+    router.include_router(attachment_router(service.attachments))
     if remote_router is not None:
         router.include_router(remote_router)
 
@@ -172,6 +174,8 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
     @router.post("/conversations/{conversation_id}/messages")
     async def send_message(conversation_id: str, value: SendLocalMessageInput,
                            idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+        if value.attachment_ids:
+            await service.attachments.capabilities.refresh()
         if getattr(service, 'native', None) is not None:
             await service.native.prepare_send(conversation_id)
         return success_response(service.send(conversation_id, value, require_key(idempotency_key)), 202)

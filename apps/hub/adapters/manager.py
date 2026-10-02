@@ -68,6 +68,8 @@ class AdapterManager:
         self._detect_ttl = detect_ttl_seconds
         self._detect_cache: dict[str, tuple[float, AdapterDescriptor | AdapterFailure]] = {}
         self._last_agents: list[AgentView] = []
+        self._last_discovery = None
+        self._discovery_lock = asyncio.Lock()
 
     def get(self, adapter_id: str) -> AgentAdapter | None:
         return self._adapters.get(adapter_id)
@@ -92,18 +94,23 @@ class AdapterManager:
         return value
 
     async def list_agents(self) -> list[AgentView]:
-        if not self._last_agents:
-            await self.discover()
+        if self._last_discovery is None or time.monotonic() - self._last_discovery >= self._detect_ttl:
+            async with self._discovery_lock:
+                if self._last_discovery is None or time.monotonic() - self._last_discovery >= self._detect_ttl:
+                    await self._discover()
         return list(self._last_agents)
 
     async def discover(self) -> AgentDiscoveryResult:
+        async with self._discovery_lock:
+            return await self._discover()
+
+    async def _discover(self) -> AgentDiscoveryResult:
         started = time.monotonic()
-        rows = await asyncio.gather(
-            *(self._discover_one(adapter) for adapter in self._adapters.values())
-        )
+        rows = [await self._discover_one(adapter) for adapter in self._adapters.values()]
         agents = [item[0] for item in rows if item[0] is not None]
         errors = [item[1] for item in rows if item[1] is not None]
         self._last_agents = agents
+        self._last_discovery = time.monotonic()
         return AgentDiscoveryResult.model_validate(
             {
                 "discovered": agents,
