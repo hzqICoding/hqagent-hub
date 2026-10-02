@@ -29,8 +29,9 @@ import {
 const remoteLinkStore = useRemoteLinkStore()
 const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null)
 
-// Unpaired Form Inputs
-const inputServerOrigin = ref('https://hub.example.com')
+// Unpaired Form Inputs. The deployed HQRemote server is the default; override with VITE_DEFAULT_REMOTE_SERVER at build time.
+const DEFAULT_REMOTE_SERVER = import.meta.env.VITE_DEFAULT_REMOTE_SERVER || 'https://hqremote.hylucky.top'
+const inputServerOrigin = ref(DEFAULT_REMOTE_SERVER)
 const inputDeviceName = ref('我的电脑')
 const formError = ref<string | null>(null)
 
@@ -305,7 +306,7 @@ async function copyPairCode() {
               <input
                 v-model="inputServerOrigin"
                 type="text"
-                placeholder="https://hub.example.com"
+                :placeholder="DEFAULT_REMOTE_SERVER"
                 class="w-full pl-9 pr-3 py-2 text-xs bg-bg-app border border-border rounded-xl text-text placeholder-text-muted/50 focus:outline-none focus:border-primary transition-colors font-mono"
               />
             </div>

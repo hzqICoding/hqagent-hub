@@ -107,15 +107,24 @@ class Projector:
                 "vcs": str(w.vcs), "canWrite": bool(w.capabilities and w.capabilities.can_run_write_tasks)} for w in workspaces],
             "scenes": [{"sceneId": s.id, "name": self.link.sanitized(s.name), "version": s.version, "readOnly": s.read_only} for s in scenes]}
         try:
-            if self.repo.get("identity").get("wireRevision", 1) == 3:
+            if self.repo.get("identity").get("wireRevision", 1) >= 3:
                 value["authorizedRoots"] = [{**r,"displayName":self.link.sanitized(r["displayName"])} for r in self.roots.catalog()]
-                RemoteV3CatalogView.model_validate(value)
+                if self.repo.get('identity')['wireRevision'] >= 4:
+                    from protocol.generated.python import RemoteV4CatalogView
+                    capabilities = self.chat.attachments.capabilities
+                    for scene in value['scenes']:
+                        scene['roleImageCapabilities'] = capabilities.values.get(scene['sceneId'], [])
+                    value['nativeImageCapabilities'] = [capabilities.native(kind) for kind in ('claude','codex')]
+                    RemoteV4CatalogView.model_validate(value)
+                else:
+                    RemoteV3CatalogView.model_validate(value)
             else:
                 RemoteCatalogView.model_validate(value)
         except Exception:
             raise HubError("REMOTE_FRAME_TOO_LARGE", "已登记目录索引超过协议边界，未上传不完整快照") from None
         with self.repo.database.transaction() as tx:
-            digest = request_hash({k: v for k, v in value.items() if k not in {"observedAt", "capabilityRevision"}})
+            contents = {k: v for k, v in value.items() if k not in {"observedAt", "capabilityRevision"}}
+            digest = request_hash({'catalog': contents, 'imageResolution': self.chat.attachments.capabilities.fingerprint}) if self.repo.get('identity', tx).get('wireRevision', 1) >= 4 else request_hash(contents)
             previous = self.repo.get("catalog", tx) or {}
             if previous.get("store") != value["workerStoreId"] or previous.get("digest") != digest:
                 value["capabilityRevision"] = previous["revision"] + 1 if previous.get("store") == value["workerStoreId"] else 1

@@ -9,6 +9,7 @@ declare module '*.vue' {
 interface ImportMetaEnv {
   readonly VITE_GATEWAY_MODE?: 'mock' | 'local' | 'remote'
   readonly VITE_REMOTE_MOCK?: string
+  readonly VITE_DEFAULT_REMOTE_SERVER?: string
 }
 
 interface ImportMeta {

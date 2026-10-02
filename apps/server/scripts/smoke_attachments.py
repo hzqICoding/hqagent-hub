@@ -6,6 +6,7 @@ from pathlib import Path
 import threading
 import time
 import sys
+import subprocess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -28,6 +29,18 @@ def rss(pid):
             if not psapi.GetProcessMemoryInfo(handle,ctypes.byref(result),result.cb):raise OSError('Cannot measure server RSS')
             return result.working
         finally:kernel.CloseHandle(handle)
+    if sys.platform == 'darwin':
+        # macOS ps reports resident memory in KiB; /proc is Linux-specific.
+        try:
+            result = subprocess.run(
+                ['/bin/ps', '-o', 'rss=', '-p', str(pid)],
+                check=True, capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            raise OSError('Cannot measure server RSS on macOS') from None
+        value = result.stdout.strip()
+        if not value.isascii() or not value.isdigit() or int(value) <= 0:
+            raise OSError('Invalid or missing server RSS on macOS')
+        return int(value) * 1024
     for line in Path(f'/proc/{pid}/status').read_text().splitlines():
         if line.startswith('VmRSS:'):return int(line.split()[1])*1024
     raise OSError('RSS unavailable')
@@ -41,9 +54,12 @@ def attachment_smoke(client,conversation,pid):
             piece=block[:min(remaining,len(block))];remaining-=len(piece);yield piece
     expected=hashlib.sha256()
     for chunk in chunks():expected.update(chunk)
-    baseline=rss(pid);samples=[baseline];stop=threading.Event()
+    baseline=rss(pid);samples=[baseline];stop=threading.Event();sample_errors=[]
     def sample():
-        while not stop.wait(.01):samples.append(rss(pid))
+        try:
+            while not stop.wait(.01):samples.append(rss(pid))
+        except Exception as exc:
+            sample_errors.append(exc)
     monitor=threading.Thread(target=sample);monitor.start()
     try:
         response=client.post('/api/v2/conversations/'+conversation+'/attachments',content=chunks(),headers={
@@ -59,7 +75,9 @@ def attachment_smoke(client,conversation,pid):
         samples.append(rss(pid))
         deleted=client.delete('/api/v2/attachments/'+identifier,headers={'Idempotency-Key':uid()})
         assert deleted.status_code==200
-    finally:stop.set();monitor.join(timeout=2)
+    finally:stop.set();monitor.join(timeout=6)
+    if monitor.is_alive() or sample_errors:
+        raise OSError('Server RSS sampling did not complete successfully')
     peak=max(samples);delta=peak-baseline
     assert delta < 16*1024*1024, 'Streaming RSS growth exceeded 16MiB budget'
     print(f'20MB streaming RSS: baseline={baseline} peak={peak} delta={delta} bytes; upload/download SHA256: PASS')

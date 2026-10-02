@@ -232,7 +232,7 @@ class ResourceCommands:
                 self.repo.seal(tx)
 
     async def recover(self, *, restart=False):
-        if self.repo.get("identity").get("wireRevision") != 3 or not self.repo.get("link")["view"].get("workerId"):
+        if self.repo.get("identity").get("wireRevision", 1) < 3 or not self.repo.get("link")["view"].get("workerId"):
             return
         with self.repo.database.transaction() as tx:
             rows = list(tx.connection.execute("SELECT * FROM native_commands WHERE worker_id=? AND store_id=? AND state IN ('provisional','admitted')", self.worker.delivery.scope()))

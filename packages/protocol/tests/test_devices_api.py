@@ -167,7 +167,7 @@ def test_spec_bundle_auth_examples_and_error_table_do_not_drift():
     guidance=yaml.safe_load((P/'remote/http-error-guidance.yaml').read_text(encoding='utf-8'))['errors']
     bundle=module.bundled(API,registry)
     runtime_count,total=module.check(API,registry,guidance,bundle)
-    assert total==47 and runtime_count==39  # Eight R1.6 operations are specified, not yet implemented.
+    assert total==47 and runtime_count==47  # All eight R1.6 operations are now implemented in integration.
     assert bundle==json.loads((P/'openapi/remote-hub.v2.bundle.json').read_text(encoding='utf-8'))
     guide=(P/'remote/api-guide.md').read_text(encoding='utf-8')
     for name,block in module.table_blocks(API,registry,guidance).items():

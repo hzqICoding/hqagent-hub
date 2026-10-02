@@ -54,3 +54,24 @@ python -X utf8 -B -m pytest packages/protocol/tests scripts/protocol/tests -q -p
 - protocol：`test_devices_api.py:170` 写死 `runtime_count==39`（8 个附件操作未实现），服务端实现后为 47。排在 P2 之后交协议会话 01a0ceda（low）改为 47。
 - server macOS：`test_image_thumbnail_and_capability_fail_closed`、`test_business_uses_only_blobstore_interface` 缩略图为 unavailable。推断 `thumbnail_child.py` 在 darwin 上 `setrlimit(RLIMIT_AS)` 不受支持，子进程 fail-closed 退出。部署目标 Linux 不受影响。排在 P2 之后交服务端会话 01a0ddec（medium）。
 - hub 三平台 11 项 `assert 5 == 4`：`tests/test_r15_joint_server.py:117` 写死服务端 `PRAGMA user_version == 4`，P1 迁移后为 5。P2（正在跑，已合入 cc17608）应顺带修正，审核时核对。
+
+## 8. P3 前端审核（2026-09-30）
+
+- 01a0e638（high）与 P2 并行开发，交付 6ac9e12 / 49e4bc3：手机与电脑附件入口、限制值来自接口、增量 SHA-256（无新依赖，gzip 1.5KB）、raw 上传进度、图片能力发送前预检、缩略图只用服务端产物、下载 octet-stream、同步状态与本机可用分开显示；lint / typecheck / build 通过，vitest 61 文件 397 项通过。
+- 截图核对手机亮 / 暗、电脑各附件状态正确。合入 integration。
+- 后续项：手机暗色模式下顶栏设备名与按钮在截图中不可见，本包未改顶栏，属既有问题或截图环境所致，联调时真机确认。真实 Hub 附件链路待 P2 合入后联调。
+
+## 9. P2 合入与 CI 全绿、真实联调首轮（2026-09-30）
+
+- P2（01a0de45，high）交付 5f1129b / b4522ea / 836f71c：Hub 515 passed / 9 skipped，主代理 integration 复跑一致。smoke macOS RSS 小修（ce1a634）合入。CI run（34058ae）protocol / desktop / hub ×3 / server ×3 全绿。
+- 真实联调（joint/hub-data16 全新配对，r16joint.py）：直接协商修订 4；catalog 图片能力 unknown；手机上传 markdown 201 → 发送 202 → Worker 下载校验 → 交给 Agent 链路通，但 Agent 未读取附件（角色提示词禁止读取根目录外文件，附件路径被 JSON 转义）。
+- verify-image：Claude Code 2.1.285 五项全通过；codex-cli 0.159.2 new / error 通过，resume / mixed-five / cancel 失败（续接轮被提前终止、取消探测未启动第二会话、128px 探测图识别不稳）。另 Hub 日志有 GBK 解码后台线程异常。
+- 返修 1（01a0de45，medium）已派：提示词附件授权与原样路径、Codex 续接回合结束判定、取消探测、探测图放大、GBK 解码。
+
+## 10. 联调第二、三轮（2026-09-30 ~ 10-01）
+
+- 返修 1 后：手机发 markdown，Agent（Codex）读出暗号与端口，附件读取修复确认；GBK 异常消失；Codex verify-image new / resume / cancel 通过，mixed-five 因 shell 读取附件被 PathGuard 判 PATH_NOT_ALLOWED。
+- 同轮验收通过：图片上传生成缩略图（ready，attachment + nosniff）；未验证 Agent 发送前 422 AGENT_IMAGE_UNSUPPORTED；exe 改名 .txt 与 SVG 上传 415；限制值由接口下发。
+- 返修 2（cd5cc32，精确附件只读 shell 放行）合入后：Codex verify-image 五项全通过；catalog native 两个 Agent 均 supported。
+- 新发现：默认场景角色未绑定 Agent，能力解析与执行解析不一致，场景图片能力恒为 unknown。返修 3（01a0de45，medium）已派。
+- 主代理脚本修正：r16joint.send_and_wait 改为只认发送后新出现的回复（首次复测曾误读上一轮旧回复）。

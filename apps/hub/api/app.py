@@ -89,7 +89,7 @@ class LocalBoundaryMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        if scope["path"].startswith(("/api/v1/remote/", "/api/v2/remote/", "/api/v1/native-sessions", "/api/v2/native-sessions")):
+        if scope["path"].startswith(("/api/v1/remote/", "/api/v2/remote/", "/api/v1/native-sessions", "/api/v2/native-sessions", '/api/v1/attachments', '/api/v2/attachments')) or '/attachments' in scope['path'] or scope['path'].endswith('/attachment-capabilities'):
             original_send = send
             async def send_no_store(message: dict[str, Any]) -> None:
                 if message["type"] == "http.response.start":
@@ -229,6 +229,8 @@ def create_application(
     remote_router = install_remote_routes(app, remote_worker.link, remote_worker.sync, remote_worker.roots)
     from runtime.native.api import native_router
     app.include_router(native_router(remote_worker.native), prefix="/api/v1")
+    from runtime.attachments.api import attachment_router
+    app.include_router(attachment_router(remote_worker.attachments), prefix='/api/v1')
     install_local_routes(app, local_chat, local_auth, resolved_ports, event_store, token,
                          remote_router=remote_router)
 
@@ -264,6 +266,8 @@ def create_application(
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        if any('attachmentIds' in item.get('loc',()) and item.get('type')=='too_long' for item in exc.errors()):
+            return error_response(HubError('ATTACHMENT_COUNT_EXCEEDED', '每条消息最多5个附件'))
         # FastAPI's RequestValidationError is not Pydantic's ValidationError:
         # errors() takes no keyword arguments. Explicitly project safe fields
         # so rejected request values and validator context are never echoed.

@@ -12,6 +12,7 @@ from protocol.generated.python import (
     RoleBindingView,
     RoleId,
     TeamProfileView,
+    SaveTeamProfileInput,
 )
 
 
@@ -87,7 +88,7 @@ class ProfileSnapshot:
     missing_agent_strategy: str = "fallback_then_ask"
 
     @classmethod
-    def from_view(cls, value: TeamProfileView) -> "ProfileSnapshot":
+    def from_view(cls, value: TeamProfileView | SaveTeamProfileInput) -> "ProfileSnapshot":
         bindings = {
             role_id: binding
             for role_id, raw in value.role_bindings.items()

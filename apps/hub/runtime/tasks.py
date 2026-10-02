@@ -85,6 +85,11 @@ def _purpose(role_id: str) -> SessionPurpose:
 
 
 class TaskService:
+    @staticmethod
+    def _current_inputs():
+        from runtime.attachments.service import CURRENT_INPUTS
+        return [v.model_dump(mode='json', by_alias=True) for v in CURRENT_INPUTS.get()]
+
     available = True
     unavailable_reason = None
 
@@ -524,6 +529,9 @@ class TaskService:
                 workflow,
                 blocked_by_parent=parent_task_id if blocked else None,
             )
+            child_spec = self.state.get(f'task_spec:{child_id}')
+            child_spec['inputAttachments'] = parent_spec.get('inputAttachments', [])
+            self.state.put(f'task_spec:{child_id}', child_spec, transaction)
             return {"taskId": child_id}
 
         receipt = self.idempotency.execute(
@@ -603,6 +611,7 @@ class TaskService:
                 "worktrees": {},
                 "nodeResults": {},
                 "createdAt": now,
+                "inputAttachments": self._current_inputs(),
             },
             transaction,
         )
@@ -723,6 +732,7 @@ class TaskService:
             model_id=role_options.model_id_ if role_options else None,
             reasoning_effort=role_options.reasoning_effort if role_options else None,
             role_instructions=role_options.instructions if role_options else None,
+            input_attachments=tuple(spec.get('inputAttachments', ())),
         )
         try:
             outcome = await self.runtime.dispatch(request)
