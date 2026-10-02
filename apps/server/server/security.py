@@ -24,13 +24,31 @@ class Security(ApiTokens):
         hashed = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt), n=16384, r=8, p=1).hex()
         return {"salt": salt, "hash": hashed}
 
+    @staticmethod
+    def validate_password(password):
+        require(12 <= len(password) <= 1024)
+
     def create_account(self, name, password, display):
-        require(1 <= len(name) <= 128 and 1 <= len(display) <= 120 and 12 <= len(password) <= 1024)
+        require(1 <= len(name) <= 128 and 1 <= len(display) <= 120)
+        self.validate_password(password)
         with self.repo.transaction() as tx:
             key = "account:" + self.mac("login", name)
             require(tx.auth_get(key) is None, "IDEMPOTENCY_MISMATCH")
             account = dict(owner=uid(), loginName=name, displayName=display, password=self.password_hash(password))
             tx.auth_put(key, account, account["owner"])
+
+    def set_password(self, name, password):
+        require(1 <= len(name) <= 128)
+        self.validate_password(password)
+        with self.repo.transaction() as tx:
+            key = "account:" + self.mac("login", name)
+            account = tx.auth_get(key)
+            require(account is not None, "NOT_FOUND")
+            account["password"] = self.password_hash(password)
+            tx.auth_put(key, account, account["owner"])
+            # Delete instead of marking revoked: authenticated logout replay
+            # must not revive any pre-change session either. PATs are separate.
+            tx.delete_browser_sessions(account["owner"])
 
     def rate(self, bucket):
         # Separate transaction: failed authentication must still consume rate quota.

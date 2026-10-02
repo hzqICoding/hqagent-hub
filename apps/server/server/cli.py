@@ -16,6 +16,9 @@ def main():
     account.add_argument("--login", required=True)
     account.add_argument("--display-name", required=True)
     account.add_argument("--password-stdin", action="store_true")
+    password_command = commands.add_parser("set-password")
+    password_command.add_argument("--login", required=True)
+    password_command.add_argument("--password-stdin", action="store_true")
     commands.add_parser("migrate")
     backup = commands.add_parser("backup")
     backup.add_argument("destination")
@@ -24,10 +27,15 @@ def main():
     try:
         settings = Settings.from_env()
         repo = Repository(settings.database)
-        if args.command == "create-account":
+        if args.command in {"create-account", "set-password"}:
             password = sys.stdin.readline(4098).rstrip("\r\n") if args.password_stdin else getpass.getpass("Account password: ")
-            Security(repo, settings).create_account(args.login, password, args.display_name)
-            print("Account created")
+            security = Security(repo, settings)
+            if args.command == "create-account":
+                security.create_account(args.login, password, args.display_name)
+                print("Account created")
+            else:
+                security.set_password(args.login, password)
+                print("Password updated; browser sessions invalidated")
         elif args.command == "backup":
             repo.backup(args.destination)
             print("Consistent backup created")

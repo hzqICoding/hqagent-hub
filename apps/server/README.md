@@ -79,6 +79,16 @@ $env:HQREMOTE_ORIGIN = 'https://hub.example.com'
 
 创建账号时交互输入口令，最少 12 字符，最多 1024 字符。自动化使用 `--password-stdin`，只从标准输入第一行读取。没有 `--password` 参数、公开注册路由或默认账号密码。不要把口令写入 shell 历史、命令参数、CI 日志或项目文件。
 
+修改已有账号密码（使用与服务相同的 `HQREMOTE_DATA_DIR` 和 `server.key`）：
+
+```sh
+python -m server.cli set-password --login alice
+# 自动化可加 --password-stdin，由安全的标准输入提供新密码；只读取一行。
+python -m server.cli set-password --login alice --password-stdin
+```
+
+交互输入使用getpass，不回显。账号必须已存在，密码沿用12–1024字符规则与scrypt哈希；成功只打印固定提示，不输出口令、哈希或盐。失败返回退出码1和既有笼统错误提示，不创建账号。密码更新与该账号全部浏览器会话失效在同一事务提交，原Cookie和旧登出重放均不能继续使用，需重新登录；其它账号不受影响。PAT与设备凭据保留：它们独立签发、鉴权和撤销，不是由账号密码派生。如此次改密用于处置泄露，请另外通过令牌管理吊销相关PAT、按需撤销设备。命令可在服务运行时执行，使用SQLite事务保证一致性，无需重启服务。
+
 | 环境变量 | 默认值 | 用途 |
 | --- | --- | --- |
 | `HQREMOTE_ORIGIN` | `https://localhost` | 浏览器精确 Origin，必须 HTTPS，不含路径、查询或末尾 `/` |
