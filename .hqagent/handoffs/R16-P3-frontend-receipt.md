@@ -197,3 +197,191 @@ browser errors: 0
 8. Safari/移动浏览器的Blob下载和生成缩略图解码；下载URL在触发后延迟释放需在真实下载管理器复验。用户主动下载的文件由浏览器保存，不是应用Web Storage缓存。
 
 当前无新增协议字段或依赖变更请求。本轮没有部署或P2真实联调。每次提交后均执行 `git log -1 --format=%B` 自查；提交信息无署名尾注。
+
+## 返修 1：统一表单暗色适配与页面内扫码配对
+
+### 基线、范围与提交
+
+- 基线 `0a2b1b1`；工作区仍为 `r15-web` / `feat/r15-web`。
+- `8615a72`：统一表单主题、原生控件共享类、顶栏颜色和对比度测试。
+- `fac5125`：同源扫码配对、摄像头生命周期、懒加载解码及测试。
+- 验收证据与本节另行提交。没有合并 integration 或部署。
+- 没有修改依赖清单、根 lockfile 或 env.d.ts；使用主代理已安装的 jsqr@1.4.0。RemoteLinkPage 的默认地址仍为 `import.meta.env.VITE_DEFAULT_REMOTE_SERVER || 'https://hqremote.hylucky.top'`，该文件本轮只给两处原生输入加共享主题类。
+- 修改范围仅 `apps/desktop/**` 与 `.hqagent/handoffs/**`。测试/构建串行，TEMP/TMP 使用 worktree 的已忽略 `.tmp`。没有出现实际429、0xC0000142或额度错误。
+
+### 1. 统一主题修复
+
+根因包括页面使用了未定义的旧颜色 utility（text-text / bg-bg-app 等），以及共享控件用整块opacity降低禁用态文字对比度。
+
+- 新增 `shared/theme/forms.css`：统一输入背景、正文、占位符、边框、焦点、错误、readonly、disabled；使用既有主题颜色变量，新增的 `--hq-field-*` 只作控件语义映射。
+- 页面中的原生 input / textarea / select 全部迁移到共享 hq-form-control；checkbox/radio等使用hq-form-choice。保留页面自己的布局、尺寸和事件，没有逐页补颜色。
+- HqInput / HqTextarea 使用共享外框和嵌入式控件；HqSelect / HqCombobox 的触发器、占位、禁用选项及搜索输入一并处理。HqCheckbox / HqRadioGroup / HqSwitch 的禁用文字使用语义色，移除整块半透明。
+- 设置根color-scheme并处理native select选项、浏览器默认控件；Chromium/Safari自动填充使用主题text-fill/caret与inset背景，避免UA自动填充文字/背景冲突。
+- 在desktop自己的Tailwind配置中将旧utility映射至现有content/bg/status变量，修复手机顶栏设备名、菜单和退出图标，并统一旧页面同类颜色。没有建立第二套配色。
+- `forms.test.ts` 静态检查所有Vue原生可编辑控件均接入共享类；浏览器fixture实际渲染共享组件和text/password/email/search/number/url/tel/date/time/datetime-local/month/week、textarea、select及选择控件，覆盖正常、占位、只读、禁用、错误、聚焦及强制autofill伪态。
+
+计算样式验证将透明背景和祖先opacity合成后按WCAG相对亮度计算对比度，断言所有检查项 >=4.5:1。最终共580个文字/占位符检查（页面、顶栏与共享fixture合计）：
+
+| 检查范围 | 亮色最低 | 暗色最低 |
+| --- | ---: | ---: |
+| 要求截图中的主要表单 | 6.92:1 | 8.21:1 |
+| 手机顶栏设备名/菜单/退出 | 4.76:1 | 5.10:1 |
+| 共享控件正常/聚焦（含只读、禁用、占位等） | 6.92:1 | 8.21:1 |
+| Chromium强制autofill伪态 | 6.61:1 | 6.00:1 |
+
+这里的autofill是通过CDP强制伪态验证CSS，不是读取用户保存的账号密码；Safari/密码管理器的实际填充仍列为真机复验项。
+
+### 2. 页面内扫码
+
+- 配对码输入框旁增加44px「扫码」入口，打开独立全屏对话框，调用getUserMedia的environment后置摄像头偏好。video使用autoplay/muted/playsinline，扫码关闭控件和错误重试均可触控与键盘访问，Esc可关闭，并约束焦点在扫码视图内。
+- 查询原生BarcodeDetector支持格式，含qr_code时优先使用；无原生支持或原生解码拒绝画面时，再执行 `import('jsqr')`。扫码组件本身也通过defineAsyncComponent按需加载。
+- 画面最长边640px，串行解码结束后至少等待125ms，最多8次/秒，不并发扫描；销毁时清空canvas像素，切后台主动停摄像头。
+- 纯函数parsePairingQr只接受合法8位ASCII字母数字短码，或与location.origin严格同源、pathname精确为 `/remote/pair`、fragment中只有一个合法code值的HTTP(S)链接。额外拒绝userinfo、query、外站、错误路径、重复code、非法字符和超长输入；大小写短码规范为大写。
+- 扫描结果从不用于跳转。非法内容只显示固定提示「不是本服务的配对二维码」，不回显扫描原文。
+- 成功后先停止轨道，再向配对页传递已验证短码；填码后仅调用现有preview流程，仍需用户点击确认绑定。未改现有系统相机打开链接后的hash填码流程。
+- 权限拒绝、没有摄像头、设备被占用、安全限制、非安全上下文、缺失浏览器能力均给明确说明，提示系统相机或手动输入；不将所有微信环境一律判定不可用，而是在API缺失/失败时提供系统浏览器替代说明。
+- 关闭、成功、离开页面、切后台、权限结果晚到、正在解码时关闭都释放所有轨道、清srcObject、取消定时器并忽略迟到结果。不会把扫码内容写入Web Storage、日志或URL查询。
+
+### 3. 测试与分包证明
+
+新增46项测试：
+
+- pairing-qr.test.ts：29项，同源/默认端口/纯短码、外站、协议/端口/路径、缺code、重复/非法code、query、userinfo、控制字符等。
+- PairingScanner.test.ts：16项，后置参数、原生优先、640px降采样、成功填码且不绑定、外站拒绝、四类摄像头错误、不安全/不支持环境、关闭/卸载/后台/迟到清理、8fps、jsqr回退及原生失败回退。
+- forms.test.ts：1项，原生可输入控件共享类覆盖。
+
+既有测试断言没有修改、删除或跳过。初轮扫码测试修正了jsdom无srcObject默认值的断言，以及先卸载组件再恢复media mocks的清理顺序；没有用jsdom的媒体实现缺失来放宽摄像头stop断言。
+
+浏览器还使用合成二维码canvas MediaStream触发真实jsqr解码（不访问真实摄像头）：识别后填码/待绑定、没有自动确认、轨道stop、存储与URL不含测试短码均通过。Resource Timing断言打开扫码前没有jsqr请求，打开后才出现。
+
+构建真实产物：`jsQR-UMIdgYmG.js`，130.80 kB，Vite报告gzip 47.46 kB；扫码视图 `PairingScanner-BeDj4J-3.js`，6.26 kB / gzip 3.41 kB。脚本遍历构建产物的静态import闭包，确认jsqr既不在首屏也不在配对页静态依赖中，HTML没有预加载该chunk：
+
+```text
+python .hqagent/handoffs/r16-p3-fix1-validation/check_chunks.py
+{"jsqrChunks": [{"file": "jsQR-UMIdgYmG.js", "bytes": 130799}], "entryStaticChunkCount": 2, "jsqrInEntryStaticGraph": false, "jsqrInPairingStaticGraph": false, "jsqrPreloadedByHtml": false, "scannerChunks": ["PairingScanner-BeDj4J-3.js"]}
+```
+
+### 4. 最终验收真实输出
+
+从worktree根运行，依次执行，完整stdout/stderr见 [r16-p3-fix1-validation](r16-p3-fix1-validation/)；只规范化换行和行尾空白。
+
+**lint，退出码0**
+
+```text
+pnpm --filter @hqagent/desktop lint
+$ eslint src
+```
+
+**typecheck，退出码0**
+
+```text
+pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+```
+
+**vitest，退出码0**
+
+```text
+pnpm --filter @hqagent/desktop exec vitest run --minWorkers=1 --maxWorkers=2
+Test Files  64 passed (64)
+      Tests  443 passed (443)
+   Start at  01:09:11
+   Duration  37.36s (transform 2.50s, setup 0ms, collect 17.16s, tests 14.68s, environment 26.95s, prepare 4.08s)
+```
+
+**build，退出码0**
+
+```text
+pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1848 modules transformed.
+Generated an empty chunk: "echarts".
+rendering chunks...
+computing gzip size...
+dist/index.html                                                                    2.56 kB │ gzip:  1.04 kB
+dist/assets/ChatPage-DQ8nlvA7.css                                                  0.24 kB │ gzip:  0.17 kB
+dist/assets/index-Djx9XYkk.css                                                    60.34 kB │ gzip: 11.08 kB
+dist/assets/echarts-l0sNRNKZ.js                                                    0.00 kB │ gzip:  0.02 kB
+dist/assets/RemoteRequestNotice.vue_vue_type_script_setup_true_lang-H7flQrSl.js    0.92 kB │ gzip:  0.60 kB
+dist/assets/HqEmptyState.vue_vue_type_script_setup_true_lang-C1f1P-UW.js           1.17 kB │ gzip:  0.63 kB
+dist/assets/LoadingState.vue_vue_type_script_setup_true_lang-aQ3AtW7f.js           1.55 kB │ gzip:  0.75 kB
+dist/assets/PlaceholderPage-B6C3qwvG.js                                            1.74 kB │ gzip:  1.10 kB
+dist/assets/HqTextarea.vue_vue_type_script_setup_true_lang-BRfqjuBA.js             1.88 kB │ gzip:  0.89 kB
+dist/assets/HqDialog.vue_vue_type_script_setup_true_lang-BU1-8Fi_.js               2.16 kB │ gzip:  1.06 kB
+dist/assets/native-utils-Ch6cwJdY.js                                               2.40 kB │ gzip:  1.57 kB
+dist/assets/OfflineState.vue_vue_type_script_setup_true_lang-Dx21tGo9.js           2.44 kB │ gzip:  1.19 kB
+dist/assets/HqInput.vue_vue_type_script_setup_true_lang-2zmLwAt5.js                2.51 kB │ gzip:  1.11 kB
+dist/assets/ResolveSourceBadge.vue_vue_type_script_setup_true_lang-Dmh4FrxW.js     2.61 kB │ gzip:  1.42 kB
+dist/assets/HqSelect.vue_vue_type_script_setup_true_lang-6zeFG2XP.js               2.99 kB │ gzip:  1.39 kB
+dist/assets/team.store-JLeuPyya.js                                                 3.73 kB │ gzip:  1.88 kB
+dist/assets/RemoteLoginPage-BtoXGXI3.js                                            3.85 kB │ gzip:  1.85 kB
+dist/assets/ConnectPage-CKgDNtlo.js                                                5.09 kB │ gzip:  2.46 kB
+dist/assets/RemotePairingPage-D3eOPJND.js                                          6.23 kB │ gzip:  2.82 kB
+dist/assets/PairingScanner-BeDj4J-3.js                                             6.26 kB │ gzip:  3.41 kB
+dist/assets/task.store-piWJcYSV.js                                                 6.99 kB │ gzip:  2.61 kB
+dist/assets/RemoteTokensPage-DHFH0dSK.js                                           8.09 kB │ gzip:  3.91 kB
+dist/assets/WorkspacesPage-OY3GdsWl.js                                             8.80 kB │ gzip:  3.50 kB
+dist/assets/RemoteDevicesPage-CPJtv4mW.js                                          9.05 kB │ gzip:  3.79 kB
+dist/assets/TemplatesPage-BodhimrB.js                                              9.62 kB │ gzip:  4.27 kB
+dist/assets/SessionsPage-BTmZnoTs.js                                              10.58 kB │ gzip:  4.52 kB
+dist/assets/AgentsPage-C5c2dlxl.js                                                11.64 kB │ gzip:  4.06 kB
+dist/assets/TasksPage-BupbNUGA.js                                                 11.80 kB │ gzip:  4.69 kB
+dist/assets/OverviewPage-CMKxOiQx.js                                              12.12 kB │ gzip:  3.96 kB
+dist/assets/ApprovalsPage-Dk9lAsn0.js                                             12.28 kB │ gzip:  4.97 kB
+dist/assets/OnboardingPage-1gND9sej.js                                            12.94 kB │ gzip:  4.92 kB
+dist/assets/TeamsPage-6GT5AvwE.js                                                 16.01 kB │ gzip:  5.94 kB
+dist/assets/remote-chat.store-CzMU5Ba4.js                                         21.97 kB │ gzip:  7.06 kB
+dist/assets/AttachmentDrafts.vue_vue_type_script_setup_true_lang-DQxHLMJt.js      22.94 kB │ gzip:  9.35 kB
+dist/assets/TaskDetailPage-BC8sh8IX.js                                            23.47 kB │ gzip:  7.99 kB
+dist/assets/ScenesPage-D9NWnq8G.js                                                25.69 kB │ gzip:  8.71 kB
+dist/assets/RemoteChatPage-BjlOJBr_.js                                            41.28 kB │ gzip: 12.69 kB
+dist/assets/RemoteLinkPage-o8ca6es7.js                                            49.48 kB │ gzip: 18.89 kB
+dist/assets/ChatPage-BxwqkrTK.js                                                  79.47 kB │ gzip: 23.87 kB
+dist/assets/jsQR-UMIdgYmG.js                                                     130.80 kB │ gzip: 47.46 kB
+dist/assets/vendor-BYHMq7VA.js                                                   149.49 kB │ gzip: 50.50 kB
+dist/assets/index-JxkxIpPe.js                                                    230.67 kB │ gzip: 75.62 kB
+✓ built in 5.94s
+```
+
+保留了既有测试中的router injection警告和HUB_NOT_READY故障模拟日志，构建仍有既有echarts空chunk提示；最终64个测试文件、443项测试全通过。
+
+### 5. 亮暗截图与浏览器对比度复现
+
+每套6张，共12张，均已打开检查。手机375×812，电脑1280×800；设置表单选用工作区目录设置弹窗。
+
+| 场景 | 亮色 | 暗色 |
+| --- | --- | --- |
+| 手机登录 | [亮色](screenshots/r16-p3-fix1/light-mobile-login-375x812.png) | [暗色](screenshots/r16-p3-fix1/dark-mobile-login-375x812.png) |
+| 手机配对 | [亮色](screenshots/r16-p3-fix1/light-mobile-pair-375x812.png) | [暗色](screenshots/r16-p3-fix1/dark-mobile-pair-375x812.png) |
+| 手机对话输入区及顶栏 | [亮色](screenshots/r16-p3-fix1/light-mobile-chat-375x812.png) | [暗色](screenshots/r16-p3-fix1/dark-mobile-chat-375x812.png) |
+| 电脑对话输入区 | [亮色](screenshots/r16-p3-fix1/light-desktop-chat-1280x800.png) | [暗色](screenshots/r16-p3-fix1/dark-desktop-chat-1280x800.png) |
+| 电脑连接手机 | [亮色](screenshots/r16-p3-fix1/light-desktop-remote-link-1280x800.png) | [暗色](screenshots/r16-p3-fix1/dark-desktop-remote-link-1280x800.png) |
+| 电脑工作区设置表单 | [亮色](screenshots/r16-p3-fix1/light-desktop-workspace-form-1280x800.png) | [暗色](screenshots/r16-p3-fix1/dark-desktop-workspace-form-1280x800.png) |
+
+复现脚本使用本机Playwright/Chromium和Mock数据，只为对比度临时挂载真实共享组件；fixture未被应用入口引用。截图中没有真实账号、摄像头画面或有效配对码。
+
+```powershell
+$env:TEMP=(Join-Path $PWD '.tmp')
+$env:TMP=$env:TEMP
+pnpm --filter @hqagent/desktop exec vite --mode mock --host 127.0.0.1 --port 5198 --strictPort
+# 另一终端，在同一worktree根执行：
+python .hqagent/handoffs/screenshots/r16-p3-fix1/verify.py
+```
+
+真实最终输出（退出码0）：
+
+```text
+{"contrastChecks": [{"mode": "light", "view": "mobile-login-375x812", "count": 4, "minContrast": 7.58}, {"mode": "light", "view": "mobile-pair-375x812", "count": 2, "minContrast": 7.58}, {"mode": "light", "view": "mobile-chat-375x812", "count": 2, "minContrast": 6.92}, {"mode": "light", "view": "mobile-header", "count": 3, "minContrast": 4.76}, {"mode": "light", "view": "desktop-chat-1280x800", "count": 4, "minContrast": 7.58}, {"mode": "light", "view": "desktop-remote-link-1280x800", "count": 4, "minContrast": 7.58}, {"mode": "light", "view": "desktop-workspace-form-1280x800", "count": 4, "minContrast": 7.58}, {"mode": "light", "view": "shared-controls-normal", "count": 89, "minContrast": 6.92}, {"mode": "light", "view": "shared-controls-focus", "count": 89, "minContrast": 6.92}, {"mode": "light", "view": "shared-controls-autofill", "count": 89, "minContrast": 6.61}, {"mode": "dark", "view": "mobile-login-375x812", "count": 4, "minContrast": 8.21}, {"mode": "dark", "view": "mobile-pair-375x812", "count": 2, "minContrast": 8.21}, {"mode": "dark", "view": "mobile-chat-375x812", "count": 2, "minContrast": 8.21}, {"mode": "dark", "view": "mobile-header", "count": 3, "minContrast": 5.1}, {"mode": "dark", "view": "desktop-chat-1280x800", "count": 4, "minContrast": 8.21}, {"mode": "dark", "view": "desktop-remote-link-1280x800", "count": 4, "minContrast": 8.21}, {"mode": "dark", "view": "desktop-workspace-form-1280x800", "count": 4, "minContrast": 8.21}, {"mode": "dark", "view": "shared-controls-normal", "count": 89, "minContrast": 8.21}, {"mode": "dark", "view": "shared-controls-focus", "count": 89, "minContrast": 8.21}, {"mode": "dark", "view": "shared-controls-autofill", "count": 89, "minContrast": 6}], "screenshots": 12, "syntheticJsqrStream": "PASS", "cameraReleased": "PASS", "automaticBinding": "not performed", "browserErrors": 0}
+```
+
+连接手机截图将Mock设为“尚未保存过服务器地址”的unpaired状态，以验证默认地址；已有服务器偏好仍按原逻辑优先，没有改主代理的默认值或env声明。
+
+### 6. 验证边界
+
+- 未用实体手机摄像头扫描真实配对二维码，未实际绑定设备；真实iOS/Safari、Android及微信内置浏览器权限/后置选择/弱光对焦、切后台指示灯、热量与耗电需真机复验。
+- 原生BarcodeDetector分支由组件Mock验证；jsqr分支另有真实解码合成视频的浏览器验证。没有把Mock native检测描述为设备原生API实测。
+- Chrome强制autofill样式已验证；系统密码管理器、Safari自动填充及原生select弹出菜单外观需对应浏览器实测。
+- 未发出真实API429、未遇内存启动错误或额度错误；构建/测试始终串行，没有启动子代理或改依赖。
+- 已检查提交信息，不包含署名尾注或生成标记；未合并回integration，未部署。
