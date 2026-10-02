@@ -75,3 +75,11 @@ python -X utf8 -B -m pytest packages/protocol/tests scripts/protocol/tests -q -p
 - 返修 2（cd5cc32，精确附件只读 shell 放行）合入后：Codex verify-image 五项全通过；catalog native 两个 Agent 均 supported。
 - 新发现：默认场景角色未绑定 Agent，能力解析与执行解析不一致，场景图片能力恒为 unknown。返修 3（01a0de45，medium）已派。
 - 主代理脚本修正：r16joint.send_and_wait 改为只认发送后新出现的回复（首次复测曾误读上一轮旧回复）。
+
+## 11. 用户真机反馈后的界面返修与二次部署（2026-10-03）
+
+- 前端返修 1（8615a72 / fac5125）：暗色主题输入框对比度统一修复、手机顶栏可见；配对页内扫码（同源校验、jsqr 懒加载 47KB gzip、释放摄像头）。443 项通过。
+- 前端返修 2（66ce28f）：共用确认弹窗与底部选择面板，退出二次确认；去掉重复状态文字，在线绿 / 离线橙；顶部「+」新话题，去掉单选，默认继续上下文；输入行等高对齐；占位提示减弱。462 项通过。主代理补设备列表离线标签为橙色。
+- 服务端 set-password 命令（8c71c7b）：改密后删除该账号浏览器会话，PAT 保留。304 项通过。
+- 电脑连接手机页默认服务器 https://hqremote.hylucky.top（0f5a8e0）。
+- CI c23d375 三平台全绿；部署 serverD（仅服务端代码与 web，依赖未变），线上网页 bundle 与构建一致。
