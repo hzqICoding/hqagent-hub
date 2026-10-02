@@ -348,7 +348,7 @@ function formatTime(timestamp?: string) {
           <input
             v-model="confirmRiskAcknowledged"
             type="checkbox"
-            class="mt-0.5 rounded border-border"
+            class="hq-form-choice mt-0.5 rounded border-border"
             @click.stop
           />
           <div class="text-xs text-text leading-tight">

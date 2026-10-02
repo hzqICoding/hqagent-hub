@@ -282,7 +282,7 @@ function handleConversationSelect(conversationId: string) {
           v-model="chatStore.searchQuery"
           type="text"
           placeholder="搜索任务或项目..."
-          class="w-full pl-8 pr-2.5 py-1.5 text-xs bg-bg-app border border-border rounded-[var(--radius-sm)] text-text placeholder-text-muted/60 focus:outline-none focus:border-primary transition-colors"
+          class="hq-form-control w-full pl-8 pr-2.5 py-1.5 text-xs bg-bg-app border border-border rounded-[var(--radius-sm)] text-text placeholder-text-muted/60 focus:outline-none focus:border-primary transition-colors"
         />
       </div>
       <div class="grid grid-cols-2 gap-1 rounded-lg bg-bg-app p-1 text-[11px]">
@@ -308,7 +308,7 @@ function handleConversationSelect(conversationId: string) {
           <input
             type="checkbox"
             :checked="chatStore.includeHiddenConversations"
-            class="rounded border-border text-primary focus:ring-0"
+            class="hq-form-choice rounded border-border text-primary focus:ring-0"
             @change="chatStore.setIncludeHiddenConversations(($event.target as HTMLInputElement).checked)"
           />
           <span>显示已隐藏的对话</span>
@@ -533,7 +533,7 @@ function handleConversationSelect(conversationId: string) {
               v-model="selectedVisibility"
               value="both"
               name="visibility"
-              class="mt-0.5"
+              class="hq-form-choice mt-0.5"
             />
             <div>
               <p class="font-medium text-text">两端均可见 (默认)</p>
@@ -549,7 +549,7 @@ function handleConversationSelect(conversationId: string) {
               v-model="selectedVisibility"
               value="pc_only"
               name="visibility"
-              class="mt-0.5"
+              class="hq-form-choice mt-0.5"
             />
             <div>
               <p class="font-medium text-text">仅电脑可见</p>
@@ -565,7 +565,7 @@ function handleConversationSelect(conversationId: string) {
               v-model="selectedVisibility"
               value="mobile_only"
               name="visibility"
-              class="mt-0.5"
+              class="hq-form-choice mt-0.5"
             />
             <div>
               <p class="font-medium text-text">仅手机可见</p>

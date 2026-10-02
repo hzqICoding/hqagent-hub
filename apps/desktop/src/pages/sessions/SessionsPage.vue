@@ -172,12 +172,12 @@ function formatTime(timestamp?: string) {
             v-model="sessionStore.searchQuery"
             type="text"
             placeholder="搜索会话 ID 或 Agent..."
-            class="w-full pl-9 pr-3 py-1.5 text-xs bg-surface border border-border rounded-[var(--radius-sm)] focus:outline-none focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted"
+            class="hq-form-control w-full pl-9 pr-3 py-1.5 text-xs bg-surface border border-border rounded-[var(--radius-sm)] focus:outline-none focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted"
           />
         </div>
 
         <label class="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text cursor-pointer">
-          <input v-model="sessionStore.filterOnlyValid" type="checkbox" class="rounded border-border" />
+          <input v-model="sessionStore.filterOnlyValid" type="checkbox" class="hq-form-choice rounded border-border" />
           仅显示有效会话
         </label>
       </div>

@@ -8,7 +8,23 @@ export default {
       colors: {
         app: 'var(--color-bg-app)',
         sidebar: 'var(--color-bg-sidebar)',
-        panel: 'var(--color-bg-panel)',
+        panel: {
+          DEFAULT: 'var(--color-bg-panel)',
+          header: 'var(--color-bg-sidebar)',
+          hover: 'var(--color-bg-muted)',
+        },
+        // Existing page utilities share the same semantic theme tokens.
+        bg: { app: 'var(--color-bg-app)' },
+        text: {
+          DEFAULT: 'var(--color-text-primary)',
+          secondary: 'var(--color-text-secondary)',
+          muted: 'var(--color-text-muted)',
+          disabled: 'var(--color-text-disabled)',
+        },
+        success: 'var(--color-status-success)',
+        warning: 'var(--color-status-warning)',
+        danger: { DEFAULT: 'var(--color-status-danger)', hover: 'var(--color-status-danger)' },
+        info: 'var(--color-status-info)',
         elevated: 'var(--color-bg-elevated)',
         muted: 'var(--color-bg-muted)',
         code: 'var(--color-bg-code)',

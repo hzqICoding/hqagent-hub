@@ -1026,7 +1026,7 @@ function getExecutionStatusLabel(status?: string): string {
           <div v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-[11px] space-y-1">
             <p>{{ agentLabel(chatStore.activeConversation.agentType) }} · 固定继续原生会话</p>
             <template v-if="chatStore.activeConversation.nativeActivity?.activity !== 'closed_confirmed'">
-              <p>{{ closureText }}</p><label class="flex gap-2"><input v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
+              <p>{{ closureText }}</p><label class="flex gap-2"><input class="hq-form-choice" v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
             </template>
           </div>
           <!-- SessionMode switch -->
@@ -1037,7 +1037,7 @@ function getExecutionStatusLabel(status?: string): string {
                   v-model="sessionMode"
                   type="radio"
                   value="continue"
-                  class="accent-primary"
+                  class="hq-form-choice accent-primary"
                   @change="isSessionModeUserSelected = true"
                 />
                 <span>继续上下文</span>
@@ -1048,7 +1048,7 @@ function getExecutionStatusLabel(status?: string): string {
                   v-model="sessionMode"
                   type="radio"
                   value="new"
-                  class="accent-primary"
+                  class="hq-form-choice accent-primary"
                   @change="isSessionModeUserSelected = true"
                 />
                 <span>新话题</span>
@@ -1069,7 +1069,7 @@ function getExecutionStatusLabel(status?: string): string {
               v-model="inputText"
               rows="1"
               placeholder="输入给电脑上 Agent 的指令..."
-              class="flex-1 min-w-0 py-2 px-3 text-xs sm:text-sm bg-bg-app border border-border rounded-xl text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors resize-none max-h-24"
+              class="hq-form-control flex-1 min-w-0 py-2 px-3 text-xs sm:text-sm bg-bg-app border border-border rounded-xl text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors resize-none max-h-24"
               :disabled="chatStore.isRemoteSuspended || chatStore.isSending || chatStore.isConversationBusy"
               @keydown.enter.exact.prevent="handleSendMessage"
             />
@@ -1103,7 +1103,7 @@ function getExecutionStatusLabel(status?: string): string {
           </div>
           <p v-if="!chatStore.catalog?.authorizedRoots?.length" class="text-[11px] text-text-muted">电脑未开放远程添加项目</p>
           <select id="new-conv-workspace" v-model="newWorkspaceId" :disabled="!chatStore.catalog || chatStore.isLoadingCatalog"
-            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text">
+            class="hq-form-control w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text">
             <option v-if="!chatStore.catalog?.workspaces.length" value="">{{ catalogHint }}</option>
             <option v-for="ws in chatStore.catalog?.workspaces" :key="ws.workspaceId" :value="ws.workspaceId">{{ ws.name }}</option>
           </select>
@@ -1115,7 +1115,7 @@ function getExecutionStatusLabel(status?: string): string {
             v-model="newTitle"
             type="text"
             placeholder="例如：重构远程网关并测试"
-            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
+            class="hq-form-control w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
           />
         </div>
 
@@ -1125,7 +1125,7 @@ function getExecutionStatusLabel(status?: string): string {
             id="new-conv-scene"
             v-model="newSceneId"
             :disabled="!chatStore.catalog || chatStore.isLoadingCatalog"
-            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
+            class="hq-form-control w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
           >
             <option v-if="!chatStore.catalog?.scenes.length" value="">{{ catalogHint }}</option>
             <option v-for="scene in chatStore.catalog?.scenes" :key="scene.sceneId" :value="scene.sceneId">{{ scene.name }}</option>
@@ -1179,7 +1179,7 @@ function getExecutionStatusLabel(status?: string): string {
             v-model="withdrawReason"
             type="text"
             placeholder="例如：指令输入错误"
-            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
+            class="hq-form-control w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
           />
         </div>
       </div>
@@ -1220,7 +1220,7 @@ function getExecutionStatusLabel(status?: string): string {
             id="settings-title"
             v-model="settingsTitle"
             type="text"
-            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
+            class="hq-form-control w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
           />
         </div>
 
@@ -1228,15 +1228,15 @@ function getExecutionStatusLabel(status?: string): string {
           <label class="block font-medium text-text-secondary">可见性</label>
           <div class="space-y-2">
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" v-model="settingsVisibility" value="both" class="accent-primary" />
+              <input type="radio" v-model="settingsVisibility" value="both" class="hq-form-choice accent-primary" />
               <span>两端均可见 (默认)</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" v-model="settingsVisibility" value="pc_only" class="accent-primary" />
+              <input type="radio" v-model="settingsVisibility" value="pc_only" class="hq-form-choice accent-primary" />
               <span>仅电脑可见</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" v-model="settingsVisibility" value="mobile_only" class="accent-primary" />
+              <input type="radio" v-model="settingsVisibility" value="mobile_only" class="hq-form-choice accent-primary" />
               <span>仅手机可见</span>
             </label>
           </div>
@@ -1244,7 +1244,7 @@ function getExecutionStatusLabel(status?: string): string {
 
         <div class="pt-2 border-t border-border">
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" v-model="settingsArchived" class="accent-primary" />
+            <input type="checkbox" v-model="settingsArchived" class="hq-form-choice accent-primary" />
             <span>归档此对话</span>
           </label>
         </div>

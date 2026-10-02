@@ -85,13 +85,16 @@ onUnmounted(() => {
     <button
       type="button"
       :disabled="disabled"
+      aria-haspopup="listbox"
+      :aria-expanded="isOpen"
+      :aria-invalid="Boolean(error) || undefined"
       :class="[
-        'w-full flex items-center justify-between border bg-panel transition-colors text-left outline-none',
+        'hq-form-control w-full flex items-center justify-between border bg-panel transition-colors text-left outline-none',
         'focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-transparent',
         hasError
           ? 'border-status-danger'
           : 'border-border hover:border-border-strong',
-        disabled ? 'opacity-50 cursor-not-allowed bg-muted' : 'cursor-pointer',
+        disabled ? 'cursor-not-allowed' : 'cursor-pointer',
         sizeClasses,
       ]"
       @click="toggle"
@@ -99,7 +102,7 @@ onUnmounted(() => {
       <span v-if="selectedOption" class="text-content-primary truncate">
         {{ selectedOption.label }}
       </span>
-      <span v-else class="text-content-disabled truncate">
+      <span v-else class="hq-form-placeholder truncate">
         {{ placeholder }}
       </span>
 
@@ -119,10 +122,11 @@ onUnmounted(() => {
       <div
         v-for="opt in options"
         :key="opt.value"
+        :aria-disabled="opt.disabled || undefined"
         :class="[
-          'flex items-center justify-between px-3 py-2 text-sm cursor-pointer select-none transition-colors',
+          'hq-form-option flex items-center justify-between px-3 py-2 text-sm cursor-pointer select-none transition-colors',
           opt.disabled
-            ? 'opacity-40 cursor-not-allowed text-content-disabled'
+            ? 'cursor-not-allowed'
             : 'text-content-primary hover:bg-muted',
           opt.value === modelValue ? 'bg-accent-soft/30 font-medium' : '',
         ]"

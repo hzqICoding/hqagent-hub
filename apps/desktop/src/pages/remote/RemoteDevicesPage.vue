@@ -102,10 +102,10 @@ async function logout() {
       </p>
       <div class="flex gap-2 text-xs">
         <label class="flex-1">连接状态
-          <select v-model="onlineFilter" class="block w-full p-2 mt-1 bg-panel border border-border rounded-lg"><option value="all">全部连接状态</option><option value="true">在线</option><option value="false">离线</option></select>
+          <select v-model="onlineFilter" class="hq-form-control block w-full p-2 mt-1 bg-panel border border-border rounded-lg"><option value="all">全部连接状态</option><option value="true">在线</option><option value="false">离线</option></select>
         </label>
         <label class="flex-1">远程操作
-          <select v-model="accessFilter" class="block w-full p-2 mt-1 bg-panel border border-border rounded-lg"><option value="all">全部远程状态</option><option value="enabled">远程可用</option><option value="suspended">已暂停</option></select>
+          <select v-model="accessFilter" class="hq-form-control block w-full p-2 mt-1 bg-panel border border-border rounded-lg"><option value="all">全部远程状态</option><option value="enabled">远程可用</option><option value="suspended">已暂停</option></select>
         </label>
       </div>
       <div v-if="chatStore.deviceError" role="alert" class="text-xs text-danger">
@@ -148,7 +148,7 @@ async function logout() {
         <p class="text-xs text-text-muted">暂停只限制远程操作，历史与同步保留，不停止电脑上的任务。</p>
         <HqButton :loading="chatStore.isDeviceActionLoading" :variant="menuDevice.remoteAccess === 'suspended' ? 'primary' : 'secondary'" @click="changeAccess">{{ menuDevice.remoteAccess === 'suspended' ? '恢复远程' : '暂停远程' }}</HqButton>
         <label class="block text-xs">修改显示名（留空恢复电脑名称）
-          <input v-model="displayName" maxlength="120" aria-label="显示名" class="block w-full p-2 mt-1 rounded border border-border bg-bg-app" />
+          <input v-model="displayName" maxlength="120" aria-label="显示名" class="hq-form-control block w-full p-2 mt-1 rounded border border-border bg-bg-app" />
         </label>
         <HqButton size="sm" :loading="chatStore.isDeviceActionLoading" @click="saveName">保存显示名</HqButton>
         <div class="border-t border-border pt-3"><HqButton variant="danger" :disabled="chatStore.isDeviceActionLoading" @click="confirmDeletion(menuDevice)">删除设备</HqButton></div>

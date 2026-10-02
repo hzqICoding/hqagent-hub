@@ -5,6 +5,7 @@
 @import './semantics.css';
 @import './density.css';
 @import './contrast.css';
+@import './forms.css';
 
 @tailwind base;
 @tailwind components;

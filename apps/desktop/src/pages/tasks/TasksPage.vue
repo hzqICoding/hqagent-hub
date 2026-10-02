@@ -244,13 +244,13 @@ const createDisabledReason = computed(() => {
             v-model="taskStore.filterSearch"
             type="text"
             placeholder="搜索目标、ID 或 Agent..."
-            class="w-full pl-9 pr-3 py-1.5 text-xs bg-surface border border-border rounded-[var(--radius-sm)] focus:outline-none focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted"
+            class="hq-form-control w-full pl-9 pr-3 py-1.5 text-xs bg-surface border border-border rounded-[var(--radius-sm)] focus:outline-none focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted"
           />
         </div>
 
         <select
           v-model="taskStore.filterWorkspaceId"
-          class="px-3 py-1.5 text-xs bg-surface border border-border rounded-[var(--radius-sm)] text-text focus:outline-none focus:ring-1 focus:ring-primary"
+          class="hq-form-control px-3 py-1.5 text-xs bg-surface border border-border rounded-[var(--radius-sm)] text-text focus:outline-none focus:ring-1 focus:ring-primary"
         >
           <option value="">全部工作区</option>
           <option v-for="ws in workspaceStore.workspaces" :key="ws.id" :value="ws.id">
@@ -380,7 +380,7 @@ const createDisabledReason = computed(() => {
             </label>
             <select
               v-model="formWorkspaceId"
-              class="w-full px-3 py-2 text-xs bg-surface border border-border rounded-[var(--radius-sm)] text-text focus:outline-none focus:ring-1 focus:ring-primary"
+              class="hq-form-control w-full px-3 py-2 text-xs bg-surface border border-border rounded-[var(--radius-sm)] text-text focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option v-for="ws in workspaceStore.workspaces" :key="ws.id" :value="ws.id">
                 {{ ws.name }} ({{ ws.path }})
@@ -392,7 +392,7 @@ const createDisabledReason = computed(() => {
             <label class="block font-medium text-text mb-1">团队配置 Profile</label>
             <select
               v-model="formProfileId"
-              class="w-full px-3 py-2 text-xs bg-surface border border-border rounded-[var(--radius-sm)] text-text focus:outline-none focus:ring-1 focus:ring-primary"
+              class="hq-form-control w-full px-3 py-2 text-xs bg-surface border border-border rounded-[var(--radius-sm)] text-text focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option v-for="p in teamStore.profiles" :key="p.id" :value="p.id">
                 {{ p.name }} {{ p.isDefault ? '(默认)' : '' }}

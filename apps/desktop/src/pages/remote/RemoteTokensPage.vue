@@ -58,7 +58,7 @@ onBeforeUnmount(() => { request++ })
     <RemoteRequestNotice />
     <main class="flex-1 min-h-0 overflow-y-auto w-full max-w-lg mx-auto p-4 space-y-4">
       <p class="text-xs text-text-muted">用于外部工具管理设备。令牌秘密仅在首次签发时展示，请按需授予权限。</p>
-      <label class="text-xs flex gap-2 items-center"><input v-model="includeRevoked" type="checkbox" />显示已吊销</label>
+      <label class="text-xs flex gap-2 items-center"><input class="hq-form-choice" v-model="includeRevoked" type="checkbox" />显示已吊销</label>
       <p v-if="error" role="alert" class="text-xs text-danger">{{ error }} <button type="button" class="underline" @click="fetchTokens()">重试</button></p>
       <p v-if="loading" class="text-xs text-text-muted">正在读取令牌…</p>
       <p v-else-if="!tokens.length" class="text-sm text-text-muted py-8 text-center">暂无 API 令牌</p>

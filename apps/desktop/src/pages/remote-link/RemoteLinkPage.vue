@@ -307,7 +307,7 @@ async function copyPairCode() {
                 v-model="inputServerOrigin"
                 type="text"
                 :placeholder="DEFAULT_REMOTE_SERVER"
-                class="w-full pl-9 pr-3 py-2 text-xs bg-bg-app border border-border rounded-xl text-text placeholder-text-muted/50 focus:outline-none focus:border-primary transition-colors font-mono"
+                class="hq-form-control w-full pl-9 pr-3 py-2 text-xs bg-bg-app border border-border rounded-xl text-text placeholder-text-muted/50 focus:outline-none focus:border-primary transition-colors font-mono"
               />
             </div>
             <p class="text-[11px] text-text-muted">
@@ -325,7 +325,7 @@ async function copyPairCode() {
                 v-model="inputDeviceName"
                 type="text"
                 placeholder="我的电脑"
-                class="w-full pl-9 pr-3 py-2 text-xs bg-bg-app border border-border rounded-xl text-text placeholder-text-muted/50 focus:outline-none focus:border-primary transition-colors"
+                class="hq-form-control w-full pl-9 pr-3 py-2 text-xs bg-bg-app border border-border rounded-xl text-text placeholder-text-muted/50 focus:outline-none focus:border-primary transition-colors"
               />
             </div>
             <p class="text-[11px] text-text-muted">

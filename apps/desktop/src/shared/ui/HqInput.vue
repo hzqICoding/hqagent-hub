@@ -65,13 +65,15 @@ function clear() {
 <template>
   <div class="w-full flex flex-col gap-1">
     <div
+      :data-disabled="disabled || undefined"
+      :data-invalid="hasError || undefined"
       :class="[
-        'flex items-center w-full border bg-panel transition-colors',
+        'hq-form-field flex items-center w-full border bg-panel transition-colors',
         'focus-within:ring-2 focus-within:ring-ring focus-within:border-transparent',
         hasError
           ? 'border-status-danger focus-within:ring-status-danger'
           : 'border-border hover:border-border-strong',
-        disabled ? 'opacity-50 cursor-not-allowed bg-muted' : '',
+        disabled ? 'cursor-not-allowed' : '',
         sizeClasses,
       ]"
     >
@@ -84,8 +86,9 @@ function clear() {
         :value="modelValue"
         :placeholder="placeholder"
         :disabled="disabled"
+        :aria-invalid="hasError || undefined"
         :readonly="readonly"
-        class="w-full bg-transparent text-content-primary placeholder:text-content-disabled outline-none disabled:cursor-not-allowed"
+        class="hq-form-control hq-form-control--embedded w-full bg-transparent text-content-primary placeholder:text-content-disabled outline-none disabled:cursor-not-allowed"
         @input="onInput"
         @change="onChange"
         @focus="emit('focus', $event)"
