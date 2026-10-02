@@ -2,10 +2,10 @@
 wp: R16-P1
 status: done
 scope_declared: [apps/server/**, .hqagent/handoffs/R16-P1-server.md]
-scope_touched: [apps/server/README.md, apps/server/nginx-attachments.conf.example, apps/server/pyproject.toml, apps/server/requirements.txt, apps/server/scripts/smoke.py, apps/server/scripts/smoke_attachments.py, apps/server/server/app.py, apps/server/server/attachment_types.py, apps/server/server/attachments.py, apps/server/server/blobstore.py, apps/server/server/config.py, apps/server/server/events.py, apps/server/server/events_sync.py, apps/server/server/native.py, apps/server/server/native_events.py, apps/server/server/queries.py, apps/server/server/replica.py, apps/server/server/repository.py, apps/server/server/repository_attachments.py, apps/server/server/resources/http-errors.json, apps/server/server/resources/remote-hub.v2.bundle.json, apps/server/server/service.py, apps/server/server/service_sync.py, apps/server/server/thumbnail_child.py, apps/server/server/wire.py, apps/server/server/worker.py, apps/server/tests/test_attachment_races.py, apps/server/tests/test_attachment_wire.py, apps/server/tests/test_attachment_backend.py, apps/server/tests/test_blobstore_contract.py, apps/server/tests/test_thumbnail_platform_limits.py, apps/server/tests/test_attachments.py, apps/server/tests/test_controls_storage.py, apps/server/tests/test_devices_tokens.py, apps/server/tests/test_protocol.py, apps/server/tests/test_r15_policy.py, apps/server/tests/test_r3_guards.py, apps/server/tests/test_test_dependencies.py, .hqagent/handoffs/R16-P1-server.md]
+scope_touched: [apps/server/README.md, apps/server/nginx-attachments.conf.example, apps/server/pyproject.toml, apps/server/requirements.txt, apps/server/scripts/smoke.py, apps/server/scripts/smoke_attachments.py, apps/server/server/app.py, apps/server/server/attachment_types.py, apps/server/server/attachments.py, apps/server/server/blobstore.py, apps/server/server/config.py, apps/server/server/events.py, apps/server/server/events_sync.py, apps/server/server/native.py, apps/server/server/native_events.py, apps/server/server/queries.py, apps/server/server/replica.py, apps/server/server/repository.py, apps/server/server/repository_attachments.py, apps/server/server/resources/http-errors.json, apps/server/server/resources/remote-hub.v2.bundle.json, apps/server/server/service.py, apps/server/server/service_sync.py, apps/server/server/thumbnail_child.py, apps/server/server/wire.py, apps/server/server/worker.py, apps/server/tests/test_attachment_races.py, apps/server/tests/test_attachment_wire.py, apps/server/tests/test_attachment_backend.py, apps/server/tests/test_blobstore_contract.py, apps/server/tests/test_thumbnail_platform_limits.py, apps/server/tests/test_attachments.py, apps/server/tests/test_controls_storage.py, apps/server/tests/test_devices_tokens.py, apps/server/tests/test_protocol.py, apps/server/tests/test_r15_policy.py, apps/server/tests/test_r3_guards.py, apps/server/tests/test_test_dependencies.py, .hqagent/handoffs/R16-P1-server.md, apps/server/server/cli.py, apps/server/server/security.py, apps/server/tests/test_set_password.py]
 build: pass
 tests: pass
-commit: ce1a6340f319819f878ce0484c9b2a3cb98baf01
+commit: 8c71c7bfc2f0970b646ef2215db334ebaab01d6b
 open_questions: 0
 ---
 
@@ -425,3 +425,49 @@ SMOKE PASS
 完整输出为 `.tmp/r16-repair3-smoke-output.txt` 和 `.tmp/r16-repair3-streaming-output.txt`，包含原有账号、配对、修订2/3、附件、PAT、备份与脱敏检查的PASS行。本轮按小修要求未重跑server全量；前节298项是上一轮结果。未发生429、0xC0000142或额度错误，没有并行重型进程、联网安装、部署、合并或推送。
 
 实现提交 `ce1a634`；本回执另提交。每次提交后执行 `git log -1 --format=%B` 自查，无署名。
+
+
+## 运维小工作包：正式改密码命令（2026-10-02，完成）
+
+基线 `ce58b61 merge: sync integration after R1.6 deployment`，起始工作区干净。本轮增加正式命令：
+
+```sh
+python -m server.cli set-password --login alice
+python -m server.cli set-password --login alice --password-stdin
+```
+
+使用与服务一致的数据目录和server.key。交互模式复用getpass；stdin模式与create-account共用现有有界readline，只消费第一行，不接受命令行密码参数。账号必须已存在，不存在返回退出码1及原有固定笼统错误；不自动创建。成功只输出 `Password updated; browser sessions invalidated`，不输出密码、哈希或盐。
+
+实现落在cli.py、Security.set_password及仓储层delete_browser_sessions。create-account和set-password共用12–1024字符validate_password规则，改密复用现有Security.password_hash/scrypt与新随机盐。账号owner不变；密码更新和该owner的全部浏览器session记录删除在同一事务中提交，故其它账号会话不受影响、CLI可在服务运行时执行。选择删除会话记录而非只标revoked，也堵住旧Cookie的有限登出幂等重放入口；密码或会话操作失败则事务回滚，不会出现新密码已写但旧会话仍有效的部分状态。
+
+**PAT保留**：现有设计中PAT是独立随机秘密、域隔离HMAC与scope/到期/吊销记录，不由账号密码派生。普通改密不等于操作者要求吊销所有自动化集成，因此保留其既有授权及即时吊销语义；新增测试明确验证改密后PAT仍可用。设备凭据同样不由密码派生，本轮不撤销配对。README说明：若改密用于处置泄露，应另外吊销相关PAT、按需撤销设备，而不是误以为改密已经完成这两项操作。
+
+新增test_set_password.py共6项（含参数化）：交互及stdin成功、新密码登录200、旧密码401、两个有效旧会话及已登出重放会话全部失效、其它账号不受影响、PAT保留、盐更新、输出/日志无密码哈希盐；未知账号/短密码/超过1024字符失败且不创建账号、不影响原密码与会话；模拟会话删除失败验证原子回滚。stdin测试验证第二行仍未消费，交互测试验证调用getpass。定向结果 `6 passed, 1 warning in 2.90s`。
+
+按要求串行跑server全量，TEMP/TMP及basetemp使用本worktree内已忽略的.tmp，真实命令：
+
+```powershell
+# cwd: apps/server
+$env:TEMP=(Join-Path $PWD '.tmp')
+$env:TMP=$env:TEMP
+../../.venv/Scripts/python.exe -B -m pytest -q --tb=short -p no:cacheprovider --basetemp=.tmp/set-password-full
+```
+
+```text
+........................................................................ [ 23%]
+........................................................................ [ 47%]
+........................................................................ [ 71%]
+........................................................................ [ 94%]
+................                                                         [100%]
+=============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-server\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+304 passed, 1 warning in 82.29s (0:01:22)
+```
+
+输出为 `.tmp/set-password-{targeted,full}-output.txt`，warning为既有Starlette/httpx弃用提示。未安装依赖、未改协议/旧断言，未发生429、0xC0000142或额度错误。本轮不涉及文件传输，按任务仅跑server全量，没有重复跑附件smoke。没有访问或修改已上线账号、没有部署、推送或合并回integration。
+
+实现与测试提交 `8c71c7b`；README运维说明和本回执另提交。每次提交后执行 `git log -1 --format=%B` 自查，无署名。本小包无未完成项，open_questions=0。
