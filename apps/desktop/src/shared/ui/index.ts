@@ -32,3 +32,6 @@ export { default as ResolveSourceBadge } from './ResolveSourceBadge.vue'
 // 4 Page states
 export { default as LoadingState } from './states/LoadingState.vue'
 export { default as OfflineState } from './states/OfflineState.vue'
+
+export { confirm, useConfirm } from './confirm'
+export type { ConfirmOptions } from './confirm'

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useConfirm } from '@/shared/ui/confirm'
 import { ref, onMounted, computed, watch } from 'vue'
 import { useAppStore } from '@/stores/app.store'
 import { useTeamStore, STANDARD_ROLES, DEFAULT_TEAM_POLICIES } from '@/stores/team.store'
@@ -108,10 +109,12 @@ async function handleDuplicateCurrent() {
   await teamStore.duplicateProfile(activeProfile.value.id)
 }
 
-function handleDeleteCurrent() {
-  if (!activeProfile.value) return
-  if (confirm(`确定要删除团队配置 "${activeProfile.value.name}" 吗？`)) {
-    teamStore.deleteProfile(activeProfile.value.id)
+const confirm = useConfirm()
+async function handleDeleteCurrent() {
+  const profile = activeProfile.value
+  if (!profile) return
+  if (await confirm({ title: '删除团队配置？', description: `确定要删除团队配置 "${profile.name}" 吗？`, confirmText: '删除', danger: true })) {
+    teamStore.deleteProfile(profile.id)
   }
 }
 
