@@ -125,7 +125,7 @@ function handleStopRun() {
       <div v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-xs p-2 space-y-1">
         <p>固定继续原生会话</p>
         <template v-if="chatStore.activeConversation.nativeActivity?.activity !== 'closed_confirmed' || nativeError?.code === 'NATIVE_SESSION_CHANGED'">
-          <p>{{ closureText }}</p><label class="flex gap-2"><input v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
+          <p>{{ closureText }}</p><label class="flex gap-2"><input class="hq-form-choice" v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
         </template>
         <p v-if="nativeError" role="alert" class="text-danger">{{ nativeError.message }} <span class="select-text">{{ nativeError.requestId ? `requestId: ${nativeError.requestId}` : '' }}</span></p>
       </div>
@@ -237,7 +237,7 @@ function handleStopRun() {
             rows="1"
             :disabled="chatStore.isConversationBusy || chatStore.isActiveConversationArchived"
             :placeholder="chatStore.isConversationBusy ? '对话正在进行，结束后再继续' : '向角色团队输入任务目标或补充要求... (Enter 发送，Shift + Enter 换行)'"
-            class="flex-1 min-w-0 bg-transparent text-xs text-text placeholder-text-muted/50 resize-none outline-none focus:ring-0 leading-relaxed max-h-44 min-h-[44px] disabled:opacity-60 disabled:cursor-not-allowed"
+            class="hq-form-control flex-1 min-w-0 bg-transparent text-xs text-text placeholder-text-muted/50 resize-none outline-none focus:ring-0 leading-relaxed max-h-44 min-h-[44px] disabled:opacity-60 disabled:cursor-not-allowed"
             @input="handleInput"
             @keydown="handleKeyDown"
           />

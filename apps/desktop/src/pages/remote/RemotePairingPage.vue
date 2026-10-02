@@ -154,7 +154,7 @@ async function handleConfirm() {
             type="text"
             maxlength="8"
             placeholder="例如 ABCD1234"
-            class="w-full text-center tracking-widest font-mono text-lg font-bold py-2.5 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary transition-colors uppercase"
+            class="hq-form-control w-full text-center tracking-widest font-mono text-lg font-bold py-2.5 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary transition-colors uppercase"
             :disabled="isLoadingPreview || isConfirming || Boolean(previewData)"
             @input="formatCode(($event.target as HTMLInputElement).value)"
           />

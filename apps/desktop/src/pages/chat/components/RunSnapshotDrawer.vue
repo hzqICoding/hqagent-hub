@@ -432,7 +432,7 @@ function getReviewVerdictMeta(verdict: string) {
             v-model="cancelReason"
             type="text"
             placeholder="例如：输入参数有误或目标变更..."
-            class="w-full px-2.5 py-1.5 text-xs bg-bg-app border border-border rounded text-text focus:outline-none focus:border-primary"
+            class="hq-form-control w-full px-2.5 py-1.5 text-xs bg-bg-app border border-border rounded text-text focus:outline-none focus:border-primary"
           />
         </div>
       </div>

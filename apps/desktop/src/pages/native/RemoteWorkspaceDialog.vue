@@ -90,7 +90,7 @@ onBeforeUnmount(() => { alive = false; request++; clearTimeout(poll); stack.valu
   <HqDialog :open="true" title="添加项目" @close="emit('close')">
     <div class="space-y-3 text-xs">
       <p>只浏览电脑已授权的目录，不创建文件夹。</p>
-      <label class="block">授权根目录<select v-model="rootId" aria-label="授权根目录" :disabled="Boolean(pending)" class="block w-full border border-border rounded p-2 bg-bg-app mt-1"><option value="">请选择根目录</option><option v-for="item in roots" :key="item.rootId" :value="item.rootId">{{ item.displayName }}</option></select></label>
+      <label class="block">授权根目录<select v-model="rootId" aria-label="授权根目录" :disabled="Boolean(pending)" class="hq-form-control block w-full border border-border rounded p-2 bg-bg-app mt-1"><option value="">请选择根目录</option><option v-for="item in roots" :key="item.rootId" :value="item.rootId">{{ item.displayName }}</option></select></label>
       <p v-if="!roots.length">电脑未开放远程添加项目</p>
       <p v-if="!store.isWorkerOnline" class="text-warning">电脑离线，无法浏览目录</p>
       <p v-if="store.isRemoteSuspended" class="text-warning">这台电脑的远程操作已暂停</p>

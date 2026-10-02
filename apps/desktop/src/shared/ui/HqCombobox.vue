@@ -81,18 +81,21 @@ onUnmounted(() => {
     <button
       type="button"
       :disabled="disabled"
+      aria-haspopup="listbox"
+      :aria-expanded="isOpen"
+      :aria-invalid="Boolean(error) || undefined"
       :class="[
-        'w-full flex items-center justify-between h-9 px-3 text-sm border bg-panel transition-colors text-left outline-none rounded-[var(--radius-sm)]',
+        'hq-form-control w-full flex items-center justify-between h-9 px-3 text-sm border bg-panel transition-colors text-left outline-none rounded-[var(--radius-sm)]',
         'focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-transparent',
         error ? 'border-status-danger' : 'border-border hover:border-border-strong',
-        disabled ? 'opacity-50 cursor-not-allowed bg-muted' : 'cursor-pointer',
+        disabled ? 'cursor-not-allowed' : 'cursor-pointer',
       ]"
       @click="toggle"
     >
       <span v-if="selectedOption" class="text-content-primary truncate">
         {{ selectedOption.label }}
       </span>
-      <span v-else class="text-content-disabled truncate">
+      <span v-else class="hq-form-placeholder truncate">
         {{ placeholder }}
       </span>
 
@@ -110,14 +113,14 @@ onUnmounted(() => {
       class="absolute z-50 mt-1 w-full bg-elevated border border-border rounded-[var(--radius-sm)] shadow-popover p-1.5 focus:outline-none"
     >
       <!-- Search Input -->
-      <div class="flex items-center px-2 py-1 bg-app border border-border-subtle rounded mb-1.5">
+      <div class="hq-form-field flex items-center px-2 py-1 bg-app border border-border-subtle rounded mb-1.5">
         <Search class="h-3.5 w-3.5 text-content-muted mr-1.5 shrink-0" />
         <input
           ref="inputRef"
           v-model="searchQuery"
           type="text"
           :placeholder="searchPlaceholder"
-          class="w-full bg-transparent text-xs text-content-primary outline-none placeholder:text-content-disabled"
+          class="hq-form-control hq-form-control--embedded w-full bg-transparent text-xs text-content-primary outline-none placeholder:text-content-disabled"
         />
       </div>
 
@@ -126,10 +129,11 @@ onUnmounted(() => {
         <div
           v-for="opt in filteredOptions"
           :key="opt.value"
+        :aria-disabled="opt.disabled || undefined"
           :class="[
-            'flex items-center justify-between px-2.5 py-1.5 text-sm cursor-pointer select-none rounded transition-colors',
+            'hq-form-option flex items-center justify-between px-2.5 py-1.5 text-sm cursor-pointer select-none rounded transition-colors',
             opt.disabled
-              ? 'opacity-40 cursor-not-allowed text-content-disabled'
+              ? 'cursor-not-allowed'
               : 'text-content-primary hover:bg-muted',
             opt.value === modelValue ? 'bg-accent-soft/30 font-medium' : '',
           ]"

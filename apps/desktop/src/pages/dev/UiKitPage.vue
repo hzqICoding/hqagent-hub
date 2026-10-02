@@ -291,7 +291,7 @@ export interface HubEvent<T = unknown> {
         </span>
         <select
           :value="scenarioRunner.currentScenario.value"
-          class="bg-panel border border-border text-content-primary px-2 py-1 rounded text-xs outline-none"
+          class="hq-form-control bg-panel border border-border text-content-primary px-2 py-1 rounded text-xs outline-none"
           @change="scenarioRunner.switchScenario(($event.target as HTMLSelectElement).value as any)"
         >
           <option

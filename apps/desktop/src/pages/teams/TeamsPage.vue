@@ -409,7 +409,7 @@ function getResolveSourceMeta(source: ResolveSource): {
             <div class="space-y-1">
               <label class="text-2xs font-medium text-content-secondary">首选 Agent (Primary)</label>
               <select
-                class="w-full text-xs rounded-lg border border-border-default bg-surface-raised px-3 py-1.5 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+                class="hq-form-control w-full text-xs rounded-lg border border-border-default bg-surface-raised px-3 py-1.5 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
                 :value="activeProfile.roleBindings[role.roleId]?.primaryAgentId || ''"
                 @change="handlePrimaryAgentChange(role.roleId, $event)"
               >
@@ -450,7 +450,7 @@ function getResolveSourceMeta(source: ResolveSource): {
 
                 <!-- Add Fallback Select -->
                 <select
-                  class="text-2xs rounded border border-dashed border-border-default bg-transparent px-2 py-0.5 text-content-muted focus:outline-none"
+                  class="hq-form-control text-2xs rounded border border-dashed border-border-default bg-transparent px-2 py-0.5 text-content-muted focus:outline-none"
                   @change="handleAddFallbackAgent(role.roleId, $event)"
                 >
                   <option value="">+ 添加备用 Agent</option>
@@ -610,7 +610,7 @@ function getResolveSourceMeta(source: ResolveSource): {
       <div class="space-y-3 py-2">
         <textarea
           v-model="importJsonText"
-          class="w-full h-48 text-xs font-mono rounded-lg border border-border-default bg-surface-raised p-3 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+          class="hq-form-control w-full h-48 text-xs font-mono rounded-lg border border-border-default bg-surface-raised p-3 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
           placeholder="在此粘贴 JSON 文本..."
         />
         <p v-if="importError" class="text-2xs text-rose-600 dark:text-rose-400">

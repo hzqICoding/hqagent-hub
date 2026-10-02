@@ -146,7 +146,7 @@ function handleCloseDiagnosis() {
           v-model="agentStore.searchQuery"
           type="text"
           placeholder="搜索名称 / 适配器 / 能力..."
-          class="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg bg-muted/40 border border-border-default text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+          class="hq-form-control w-full text-xs pl-8 pr-3 py-1.5 rounded-lg bg-muted/40 border border-border-default text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
         />
       </div>
     </div>
@@ -283,7 +283,7 @@ function handleCloseDiagnosis() {
                 type="checkbox"
                 :checked="agent.status !== 'disabled'"
                 @change="(e) => agentStore.toggleAgent(agent.id, (e.target as HTMLInputElement).checked)"
-                class="rounded border-border-default text-primary-600 focus:ring-0"
+                class="hq-form-choice rounded border-border-default text-primary-600 focus:ring-0"
               />
               <span>{{ agent.status === 'disabled' ? '已停用' : '启用' }}</span>
             </label>
