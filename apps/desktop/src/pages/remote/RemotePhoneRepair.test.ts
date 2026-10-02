@@ -51,9 +51,9 @@ describe('R1.5 phone repair 2', () => {
     expect(wrapper.findAll('main div.cursor-pointer')).toHaveLength(1)
     expect(wrapper.text()).not.toContain('撤销设备')
     await wrapper.findAll('button').find((b) => b.text() === '删除')!.trigger('click')
-    expect(wrapper.text()).toContain('服务器上的对话副本会被删除')
-    expect(wrapper.text()).toContain('电脑上正在执行的任务可能仍在继续')
-    expect(wrapper.text()).toContain('只能在电脑端重新扫码')
+    expect(document.body.textContent).toContain('服务器上的对话副本会被删除')
+    expect(document.body.textContent).toContain('电脑上正在执行的任务可能仍在继续')
+    expect(document.body.textContent).toContain('只能在电脑端重新扫码')
   })
 
   it('returns to devices and clears content when selected computer is revoked by polling', async () => {
@@ -79,7 +79,7 @@ describe('R1.5 phone repair 2', () => {
     await flushPromises()
     await wrapper.get('[aria-label="在Web-Ecommerce新建任务"]').trigger('click')
     await flushPromises()
-    expect((wrapper.get('#new-conv-workspace').element as HTMLSelectElement).value).toBe('workspace_web')
+    expect(wrapper.get('#new-conv-workspace').text()).toBe('Web-Ecommerce')
     expect(wrapper.get('#new-conv-scene').text()).toContain('真实审核')
     await wrapper.findAll('button').find((b) => b.text() === '创建')!.trigger('click')
     await flushPromises()
@@ -118,7 +118,7 @@ describe('R1.5 phone repair 2', () => {
     resolve({ ...gateway.catalog, workspaces: [...gateway.catalog.workspaces].reverse() })
     await loading
     await flushPromises()
-    expect((wrapper.get('#new-conv-workspace').element as HTMLSelectElement).value).toBe('workspace_demo')
+    expect(wrapper.get('#new-conv-workspace').text()).toBe('HQAgent-Hub')
   })
 
   it('rejects missing catalog and offline creation without sending a request', async () => {
@@ -187,7 +187,7 @@ describe('R1.5 phone repair 2', () => {
     store.runs[0].status = 'failed'
     await flushPromises()
     expect(wrapper.find('#remote-status-details').exists()).toBe(true)
-    expect(wrapper.get('[data-testid=run-status-toggle]').classes()).toContain('text-warning')
+    expect(wrapper.get('[data-testid=run-status-toggle]').classes()).toContain('text-status-warning')
     store.runs[0].status = 'running'
     await flushPromises()
     await wrapper.get('[data-testid=run-status-toggle]').trigger('click')

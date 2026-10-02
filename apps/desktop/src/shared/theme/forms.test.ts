@@ -14,7 +14,7 @@ describe('shared native control theme coverage', () => {
         if (!tag.includes('hq-form-control')) missing.push(name)
       }
     }
-    expect(fields).toBeGreaterThan(35)
+    expect(fields).toBeGreaterThan(30)
     expect(missing).toEqual([])
   })
 })

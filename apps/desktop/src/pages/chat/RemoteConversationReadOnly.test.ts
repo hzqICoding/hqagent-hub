@@ -244,7 +244,7 @@ describe('Remote Conversation Interoperability and Cross-Endpoint Busy Lock on P
 
     const textarea = wrapper.find('textarea')
     expect(textarea.attributes('disabled')).toBeUndefined()
-    expect(textarea.attributes('placeholder')).toContain('向角色团队输入任务目标')
+    expect(textarea.attributes('placeholder')).toContain('输入任务目标或补充要求')
     expect(wrapper.text()).not.toContain('这是手机远程对话')
     expect(wrapper.text()).not.toContain('对话正在进行')
   })

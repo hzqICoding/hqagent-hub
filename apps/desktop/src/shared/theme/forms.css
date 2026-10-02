@@ -3,7 +3,7 @@
 :root {
   --hq-field-bg: var(--color-bg-panel, #ffffff);
   --hq-field-fg: var(--color-text-primary, #0f172a);
-  --hq-field-placeholder: var(--color-text-secondary, #475569);
+  --hq-field-placeholder: var(--color-text-muted, #64748b);
   --hq-field-border: var(--color-text-muted, #64748b);
   --hq-field-focus: var(--color-focus-ring, #2563eb);
   --hq-field-disabled-bg: var(--color-bg-muted, #f1f5f9);
@@ -32,6 +32,7 @@ body { color: var(--color-text-primary); background-color: var(--color-bg-app); 
   color: var(--hq-field-placeholder);
   -webkit-text-fill-color: var(--hq-field-placeholder);
   opacity: 1;
+  font-weight: 400;
 }
 :is(input, textarea, select, button).hq-form-control:focus-visible,
 .hq-form-field:focus-within {
@@ -93,3 +94,9 @@ input.hq-form-control:is(:autofill, :-webkit-autofill) {
   color: var(--hq-field-disabled-fg);
   opacity: 1;
 }
+
+/* Shared composer geometry: keep controls aligned when a draft grows to multiple lines. */
+.hq-composer-row { display: flex; align-items: flex-end; gap: 8px; min-width: 0; }
+.hq-composer-row .hq-composer-text { flex: 1; min-width: 0; min-height: 44px; max-height: 132px; resize: none; overflow-y: auto; border-radius: 12px; padding: 10px 12px; line-height: 22px; box-sizing: border-box; }
+.hq-composer-row .hq-composer-icon { flex: none; width: 44px; height: 44px; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; }
+.hq-composer-row .hq-composer-send { flex: none; width: 48px; height: 44px; min-width: 48px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; }

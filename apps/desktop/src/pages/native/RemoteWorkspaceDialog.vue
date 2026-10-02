@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { DirectoryEntry, DirectoryListingPage, RemoteResourceQueuedReceipt } from '@hqagent/protocol'
 import { getRemoteGateway } from '@/shared/api'
 import { useRemoteChatStore } from '@/stores/remote-chat.store'
-import { HqDialog, HqButton } from '@/shared/ui'
+import { HqDialog, HqButton, HqSelect } from '@/shared/ui'
 import { nativeFailure } from './native-utils'
 
 const emit = defineEmits<{ close: []; selected: [workspaceId: string] }>()
@@ -90,7 +90,7 @@ onBeforeUnmount(() => { alive = false; request++; clearTimeout(poll); stack.valu
   <HqDialog :open="true" title="添加项目" @close="emit('close')">
     <div class="space-y-3 text-xs">
       <p>只浏览电脑已授权的目录，不创建文件夹。</p>
-      <label class="block">授权根目录<select v-model="rootId" aria-label="授权根目录" :disabled="Boolean(pending)" class="hq-form-control block w-full border border-border rounded p-2 bg-bg-app mt-1"><option value="">请选择根目录</option><option v-for="item in roots" :key="item.rootId" :value="item.rootId">{{ item.displayName }}</option></select></label>
+      <label class="block">授权根目录<HqSelect v-model="rootId" aria-label="授权根目录" label="授权根目录" placeholder="请选择根目录" :disabled="Boolean(pending)" :options="roots.map((item) => ({ value: item.rootId, label: item.displayName }))" /></label>
       <p v-if="!roots.length">电脑未开放远程添加项目</p>
       <p v-if="!store.isWorkerOnline" class="text-warning">电脑离线，无法浏览目录</p>
       <p v-if="store.isRemoteSuspended" class="text-warning">这台电脑的远程操作已暂停</p>
