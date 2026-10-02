@@ -385,3 +385,157 @@ python .hqagent/handoffs/screenshots/r16-p3-fix1/verify.py
 - Chrome强制autofill样式已验证；系统密码管理器、Safari自动填充及原生select弹出菜单外观需对应浏览器实测。
 - 未发出真实API429、未遇内存启动错误或额度错误；构建/测试始终串行，没有启动子代理或改依赖。
 - 已检查提交信息，不包含署名尾注或生成标记；未合并回integration，未部署。
+
+
+## 返修 2：手机端界面整理（2026-10-02）
+
+### 1. 基线与提交
+
+- 工作区 `r15-web`，分支 `feat/r15-web`。开工先执行 `git merge integration/phase1`，从 `8f9f4bd` 快进到 `2446ea8`，无冲突。
+- 实现及测试提交：`66ce28f` — `fix(desktop): unify mobile dialogs and simplify chat controls`。
+- 实现提交后已运行 `git log -1 --format=%B`，输出即上面的标题，无署名尾注。验收材料另作 handoff 提交，同样逐次检查。
+- 自本次合并基线起仅修改 `apps/desktop/**`、`.hqagent/handoffs/**`；无依赖、根配置、协议、Hub 或服务端修改。`RemoteLinkPage.vue` 的 `VITE_DEFAULT_REMOTE_SERVER || 'https://hqremote.hylucky.top'` 保持原样。
+
+### 2. 实现与共用方式
+
+- `shared/ui/confirm.ts` 提供 `confirm(options): Promise<boolean>`，FIFO 排队，每次只显示一个确认。确认返回 `true`，取消、Esc、普通遮罩关闭返回 `false`；危险确认忽略遮罩点击、红色确认按钮。`useConfirm()` 在离开页面时取消未完成请求，避免异步确认后误执行操作。
+- `HqDialog` 增加统一 overlay stack：焦点圈定、初始聚焦、关闭后返回触发控件、仅顶层响应 Esc、嵌套滚动锁和层级管理。确认默认焦点在取消按钮。
+- `HqSelect`、`HqCombobox`、`HqDropdown` 共用 `HqOptionPanel`：小于 640px 用底部面板，电脑宽度锚定展开。支持 listbox/menu role、aria、方向键、Home/End、Enter、Esc、选择项禁用、焦点返回；可搜索选择器复用同一实现。面板和选项触控目标不小于 44px。
+- 设备页和对话页退出均二次确认；设备删除、令牌吊销、团队删除使用统一危险确认。团队删除捕获确认时的目标 ID，避免等待期间切换目标误删。
+- 手机可见的原生 select（设备筛选、对话项目/场景、授权根目录）均替换。电脑专用页面保留的原生 select 继续使用 `hq-form-control`。全仓代码搜索未找到 `window.confirm/alert/prompt` 调用，原团队页的裸 `confirm` 调用也已替换。
+- 顶部按钮顺序固定为新话题、管理设备、退出；明确使用 **44px**，避免根字号 14px 时 `w-11` 只有 38.5px。顶部连接标签在线为 success 绿色，离线为 warning 橙色，未就绪为 neutral。
+- 删除输入区模式单选和连接状态文字。普通发送默认 `continue`；`+` 激活「新话题 ×」，下一条使用 `new`，成功清除、失败保留，可取消；忙碌、离线、暂停和原生会话禁用并有原因。原生会话保持固定 `continue` 及既有终端退出确认。
+- 两端输入行统一：回形针 44×44、文本框最小高 44、发送 48×44、间距 8、圆角 12，多行上限 132 并与按钮底部对齐。手机左右 12px，附件草稿卡片与输入行对齐；电脑没有新增顶部 `+`。
+- placeholder 全局采用 muted 主题文字、`font-weight: 400`，正文继续原主题色；覆盖原生控件及共用选择器占位文案。
+
+页面接入示例（纯 UI 选项，不新增协议 DTO）：
+
+```ts
+import { useConfirm } from '@/shared/ui'
+const confirm = useConfirm()
+if (await confirm({ title: '确定退出登录？', confirmText: '退出' })) {
+  await logout()
+}
+// 危险操作追加 danger: true；非组件调用可直接导入 confirm，并传 AbortSignal。
+```
+
+### 3. 自动化与真实命令输出
+
+新增 19 项测试：确认 Promise/排队/取消/危险遮罩/嵌套焦点和滚动锁、页面卸载取消、下拉键盘/移动面板；默认 continue、一次 new 后恢复、失败重试、取消、忙碌/离线/暂停/native 禁用、退出确认；原生系统弹窗和手机 select 静态检查。
+
+旧测试相应改为查询共享选择器及 teleport 弹窗；旧“没有历史或失败时自动 new”的断言按本包要求改为默认 continue。原生会话续接、附件、设备、令牌等既有用例均通过。
+
+所有构建和测试串行执行，TEMP/TMP 为被忽略的 worktree `.tmp`。完整输出：[lint](r16-p3-fix2-validation/lint.txt)、[typecheck](r16-p3-fix2-validation/typecheck.txt)、[vitest](r16-p3-fix2-validation/vitest.txt)、[build](r16-p3-fix2-validation/build.txt)、[浏览器](r16-p3-fix2-validation/browser.txt)。以下为实际输出，四项退出码均为 0：
+
+```text
+> pnpm --filter @hqagent/desktop lint
+$ eslint src
+
+> pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+
+> pnpm --filter @hqagent/desktop exec vitest run --minWorkers=1 --maxWorkers=2
+Test Files  67 passed (67)
+      Tests  462 passed (462)
+   Start at  02:03:58
+   Duration  39.06s (transform 2.67s, setup 0ms, collect 18.03s, tests 15.39s, environment 27.00s, prepare 4.19s)
+```
+
+```text
+> pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1854 modules transformed.
+Generated an empty chunk: "echarts".
+rendering chunks...
+computing gzip size...
+dist/index.html                                                                    2.56 kB │ gzip:  1.04 kB
+dist/assets/ChatPage-DQ8nlvA7.css                                                  0.24 kB │ gzip:  0.17 kB
+dist/assets/index-CxiKY7_w.css                                                    60.61 kB │ gzip: 11.23 kB
+dist/assets/echarts-l0sNRNKZ.js                                                    0.00 kB │ gzip:  0.02 kB
+dist/assets/RemoteRequestNotice.vue_vue_type_script_setup_true_lang-C0Zohg-v.js    0.92 kB │ gzip:  0.60 kB
+dist/assets/HqEmptyState.vue_vue_type_script_setup_true_lang-D0I8Oc-F.js           1.17 kB │ gzip:  0.63 kB
+dist/assets/LoadingState.vue_vue_type_script_setup_true_lang-CUwSbvrc.js           1.55 kB │ gzip:  0.75 kB
+dist/assets/confirm-YtHa5w4K.js                                                    1.74 kB │ gzip:  0.94 kB
+dist/assets/PlaceholderPage-BgPdccfV.js                                            1.74 kB │ gzip:  1.10 kB
+dist/assets/HqTextarea.vue_vue_type_script_setup_true_lang-dhVQGqx6.js             1.88 kB │ gzip:  0.89 kB
+dist/assets/native-utils-Dv3iijhn.js                                               2.40 kB │ gzip:  1.57 kB
+dist/assets/OfflineState.vue_vue_type_script_setup_true_lang-B_V0rn22.js           2.44 kB │ gzip:  1.19 kB
+dist/assets/HqInput.vue_vue_type_script_setup_true_lang-CN5R3RPP.js                2.51 kB │ gzip:  1.11 kB
+dist/assets/ResolveSourceBadge.vue_vue_type_script_setup_true_lang-DBGSxdbB.js     2.61 kB │ gzip:  1.42 kB
+dist/assets/team.store-DeL-xhDK.js                                                 3.73 kB │ gzip:  1.88 kB
+dist/assets/RemoteLoginPage-DIsXgYdG.js                                            3.85 kB │ gzip:  1.85 kB
+dist/assets/HqDialog.vue_vue_type_script_setup_true_lang-YYZ2eT0k.js               4.39 kB │ gzip:  2.02 kB
+dist/assets/ConnectPage-CXriYI1o.js                                                5.09 kB │ gzip:  2.46 kB
+dist/assets/RemotePairingPage-DuUH_exz.js                                          6.23 kB │ gzip:  2.82 kB
+dist/assets/PairingScanner-D6Y09DN9.js                                             6.26 kB │ gzip:  3.40 kB
+dist/assets/task.store-Di_s8b7O.js                                                 6.99 kB │ gzip:  2.61 kB
+dist/assets/RemoteTokensPage-B3Q5spUk.js                                           7.59 kB │ gzip:  3.85 kB
+dist/assets/HqSelect.vue_vue_type_script_setup_true_lang-B_7duvR2.js               7.62 kB │ gzip:  3.28 kB
+dist/assets/RemoteDevicesPage-frZJy_5Z.js                                          8.54 kB │ gzip:  3.75 kB
+dist/assets/WorkspacesPage-D2G68V32.js                                             8.80 kB │ gzip:  3.50 kB
+dist/assets/TemplatesPage-D9u7qrMQ.js                                              9.62 kB │ gzip:  4.27 kB
+dist/assets/SessionsPage-Dtp38UrC.js                                              10.58 kB │ gzip:  4.52 kB
+dist/assets/AgentsPage-CUJcPuRT.js                                                11.64 kB │ gzip:  4.06 kB
+dist/assets/TasksPage-sYQePugW.js                                                 11.80 kB │ gzip:  4.69 kB
+dist/assets/OverviewPage-CXESx4Hp.js                                              12.12 kB │ gzip:  3.95 kB
+dist/assets/ApprovalsPage-CRkZU9pH.js                                             12.28 kB │ gzip:  4.97 kB
+dist/assets/OnboardingPage-DVGHR6Mp.js                                            12.94 kB │ gzip:  4.92 kB
+dist/assets/TeamsPage-iPhV2_PM.js                                                 16.12 kB │ gzip:  6.01 kB
+dist/assets/remote-chat.store-eqDSuV2P.js                                         21.97 kB │ gzip:  7.06 kB
+dist/assets/AttachmentDrafts.vue_vue_type_script_setup_true_lang-C2h_GDlm.js      22.94 kB │ gzip:  9.35 kB
+dist/assets/TaskDetailPage-DqqDF7DL.js                                            23.47 kB │ gzip:  8.00 kB
+dist/assets/ScenesPage-WD94eZOW.js                                                25.69 kB │ gzip:  8.71 kB
+dist/assets/RemoteChatPage-DwbT-XkW.js                                            41.14 kB │ gzip: 12.86 kB
+dist/assets/RemoteLinkPage-C57u8YEb.js                                            49.48 kB │ gzip: 18.89 kB
+dist/assets/ChatPage-BpIHs9nD.js                                                  78.99 kB │ gzip: 23.95 kB
+dist/assets/jsQR-UMIdgYmG.js                                                     130.80 kB │ gzip: 47.46 kB
+dist/assets/vendor-BgNhKvOF.js                                                   149.55 kB │ gzip: 50.53 kB
+dist/assets/index-NTlLgSM4.js                                                    230.72 kB │ gzip: 75.65 kB
+✓ built in 5.57s
+```
+
+保留既有 router injection 测试警告、模拟 HUB_NOT_READY 的测试日志和 echarts 空 chunk 构建提示。`jsQR-UMIdgYmG.js` 仍为独立异步资源（130.80 kB，gzip 47.46 kB），本包未调整扫码实现或依赖。
+
+### 4. 截图和浏览器检查
+
+[可复现脚本](screenshots/r16-p3-fix2/verify.py)、[结构化结果](screenshots/r16-p3-fix2/verification.json)。Chromium + 本地 mock，16 张亮暗截图，已查看检查；未使用真实账号、设备凭据或附件内容。
+
+| 场景 | 亮色 | 暗色 |
+| --- | --- | --- |
+| 手机对话页 / 顶栏图标 / 在线 / 单行输入 | [亮色](screenshots/r16-p3-fix2/light-mobile-chat-375x812.png) | [暗色](screenshots/r16-p3-fix2/dark-mobile-chat-375x812.png) |
+| 手机新话题标签 | [亮色](screenshots/r16-p3-fix2/light-mobile-new-topic-375x812.png) | [暗色](screenshots/r16-p3-fix2/dark-mobile-new-topic-375x812.png) |
+| 手机多行输入底部对齐 | [亮色](screenshots/r16-p3-fix2/light-mobile-multiline-375x812.png) | [暗色](screenshots/r16-p3-fix2/dark-mobile-multiline-375x812.png) |
+| 手机退出确认 | [亮色](screenshots/r16-p3-fix2/light-mobile-logout-375x812.png) | [暗色](screenshots/r16-p3-fix2/dark-mobile-logout-375x812.png) |
+| 手机离线橙色标签 | [亮色](screenshots/r16-p3-fix2/light-mobile-offline-375x812.png) | [暗色](screenshots/r16-p3-fix2/dark-mobile-offline-375x812.png) |
+| 手机底部选择面板 | [亮色](screenshots/r16-p3-fix2/light-mobile-select-375x812.png) | [暗色](screenshots/r16-p3-fix2/dark-mobile-select-375x812.png) |
+| 手机配对占位提示 | [亮色](screenshots/r16-p3-fix2/light-mobile-pair-placeholder-375x812.png) | [暗色](screenshots/r16-p3-fix2/dark-mobile-pair-placeholder-375x812.png) |
+| 电脑对话输入区 | [亮色](screenshots/r16-p3-fix2/light-desktop-chat-1280x800.png) | [暗色](screenshots/r16-p3-fix2/dark-desktop-chat-1280x800.png) |
+
+浏览器断言结果：
+
+- 手机 375×812：页面无横向溢出；顶部三个操作均 44×44；文本框 243×44、回形针 44×44、发送 48×44；多行文本框为 86px 高时发送仍 44px，底边均在 y=801.5。
+- 电脑 1280×800：文本框 438×44、发送 48×44，底部对齐。
+- 真实渲染共用表单，normal/focus/强制 autofill 各 89 项检查，正文 ≥4.5:1、placeholder ≥3:1 且常规字重。含 placeholder 的最低对比度：亮色 normal 4.34、autofill 4.15；暗色 normal 5.10、autofill 3.73。配对框常态占位亮色 4.76、暗色 5.10。
+- 顶栏文字/图标/状态最低亮色 4.57、暗色 5.10；离线标签亮色 4.51、暗色 7.06。退出取消后返回退出按钮，选择面板 Esc 关闭后返回选择器，滚动锁检查通过。
+- `browserErrors: 0`，`screenshots: 16`。
+
+复现（同一 worktree，需现有 Python Playwright/Chromium）：
+
+```powershell
+$env:TEMP=(Join-Path $PWD '.tmp')
+$env:TMP=$env:TEMP
+pnpm --filter @hqagent/desktop exec vite --mode mock --host 127.0.0.1 --port 5198 --strictPort
+# 另一个终端运行：
+$env:PYTHONUTF8='1'
+python .hqagent/handoffs/screenshots/r16-p3-fix2/verify.py
+```
+
+### 5. 验证边界与交接
+
+- 上述为桌面 Chromium 的手机尺寸模拟；iOS Safari / Android 真机软键盘、安全区、触摸滚动锁、VoiceOver/TalkBack 的完整读屏流程仍需真机复验。
+- 发送成功/失败/暂停/离线和原生续接由协议 mock + 组件/Store 测试验证，未触发线上任务、真实注销、设备删除或令牌吊销；没有重新做 P2/服务器真实联调。
+- 未改任何凭据或附件持久化路径，没有把秘密、Cookie 或下载地址写入日志、URL 查询参数或存储。
+- 未遇真实 429、0xC0000142 或额度错误；没有并行跑构建/测试，未启动子代理。本轮临时开发服务已停止。
+- 未合并回 integration，未部署；后续由主代理审核、集成及真机复验。
