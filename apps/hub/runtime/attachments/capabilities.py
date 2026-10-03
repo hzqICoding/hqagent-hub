@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from protocol.generated.python import ImageInputCapability, AttachmentTargetCapabilities
 from core.errors import HubError
+from adapters.versions import cli_version
 from runtime.remote.security import CredentialVault
 from storage.local_chat import now, uid
 from runtime.attachments.verification_target import target_for, TRANSPORTS
@@ -23,6 +24,7 @@ class VerificationStore:
 
     def record(self, agent, version, model, outcomes, mime_types, *, diagnostics=None, target=None, job_id=None, cleanup_confirmed=False, completed=True):
         self.root.mkdir(parents=True, exist_ok=True)
+        version = cli_version(version)
         result = dict(agent=agent, version=version, model=model, transport=TRANSPORTS[agent], observedAt=now(), passed=REQUIRED_PROBES <= outcomes.keys() and all(outcomes.values()), probes=outcomes, mimeTypes=mime_types)
         result['passed'] = result['passed'] and completed
         if diagnostics is not None:
@@ -45,9 +47,10 @@ class VerificationStore:
 
     def capability(self, agent, version, model=None, *, target=None):
         valid = None
+        version = cli_version(version)
         try:
             record = self.latest(target['agentId'] if target else agent, agent, model)
-            if target and record and record.get('target') == target and record.get('cleanupConfirmed') and record['version'] == version and record['model'] == model and (record['transport'] == TRANSPORTS.get(agent)) and record['passed'] and (REQUIRED_PROBES <= record['probes'].keys()) and all(record['probes'].values()):
+            if version and target and record and record.get('target') == target and record.get('cleanupConfirmed') and cli_version(record['version']) == version and record['model'] == model and (record['transport'] == TRANSPORTS.get(agent)) and record['passed'] and (REQUIRED_PROBES <= record['probes'].keys()) and all(record['probes'].values()):
                 valid = record
         except (OSError, ValueError, KeyError, TypeError):
             pass
