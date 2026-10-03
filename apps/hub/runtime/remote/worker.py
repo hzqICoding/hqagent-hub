@@ -40,6 +40,8 @@ class RemoteWorker:
         self.projector = Projector(bridge)
         self.busy = BusyState(repository, bridge.chat)
         self.sync = SyncService(repository, bridge.chat, link, self.busy)
+        from runtime.remote.recovery import SyncRecovery
+        self.recovery = SyncRecovery(repository, self.sync)
         self.delivery = DeliveryBridge(repository, bridge.chat, link, self.busy, self.sync)
         self.roots = AuthorizedRoots(repository, bridge.chat.repository)
         self.native = NativeService(repository, bridge.chat, link)
@@ -260,6 +262,7 @@ class RemoteWorker:
                 return
             self.repo.ack(hello["lastServerAck"])
             self.sync.on_ack()
+            self.recovery.on_hello(hello)
             if hello["commandDelivery"] == "frozen" and "reason" not in hello:
                 raise HubError("REMOTE_STORE_CHANGED", "服务端冻结响应缺少原因")
             if revision > active:

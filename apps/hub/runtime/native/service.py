@@ -329,8 +329,21 @@ class NativeService:
                 with self.db.transaction() as tx:
                     # Re-read metadata to avoid overwriting a simultaneous rename.
                     current = LocalConversationView.model_validate_json(tx.connection.execute("SELECT payload_json FROM local_conversations WHERE conversation_id=?",(view.id,)).fetchone()[0])
-                    current = current.model_copy(update={"native_activity":observed.native_activity,"native_source_revision":observed.native_source_revision})
-                    tx.connection.execute("UPDATE local_conversations SET payload_json=? WHERE conversation_id=?",(current.model_dump_json(by_alias=True,exclude_none=True),view.id))
+                    if facts(observed) == facts(current):
+                        continue
+                    # Native source/activity is replicated metadata, not merely
+                    # display decoration. Advance the same CAS used by rename
+                    # and visibility changes; observation time alone is ignored.
+                    stamp = now()
+                    current = current.model_copy(update={
+                        "native_activity": observed.native_activity,
+                        "native_source_revision": observed.native_source_revision,
+                        "version": (current.version or 1) + 1, "updated_at": stamp,
+                    })
+                    tx.connection.execute(
+                        "UPDATE local_conversations SET payload_json=?,updated_at=? WHERE conversation_id=?",
+                        (current.model_dump_json(by_alias=True, exclude_none=True), stamp, view.id),
+                    )
 
     def _cursor(self, value):
         self.pages = {k: v for k, v in self.pages.items() if v["expires"] > time.monotonic()}
