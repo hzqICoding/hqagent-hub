@@ -154,6 +154,17 @@ def test_filtered_page_discloses_no_pi_record_or_skip_count():
             models.RemoteBrowserEventPage.model_validate(bad)
 
 
+def test_mixed_opted_in_page_has_distinct_approvals_and_resume_cursor():
+    page = sample('pi.browser-event-page.json')
+    models.RemoteBrowserEventPage.model_validate(page)
+    items = page['items']
+    assert len({e['payload']['payload']['approvalId'] for e in items}) == len(items) == 2
+    assert len({e['payload']['eventId'] for e in items}) == len(items)
+    assert page['nextServerCursor'] == items[-1]['serverCursor']
+    legacy_adapter().validate_python(items[0])
+    models.RemoteBrowserPiApprovalEvent.model_validate(items[1])
+
+
 def test_both_new_named_types_have_contract_fixtures():
     defs = json.loads((P / 'schema/browser-pi.json').read_text(encoding='utf-8'))['$defs']
     manifest = sample('manifest.json')['fixtures']

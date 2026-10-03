@@ -49939,25 +49939,25 @@
                         "items": [
                           {
                             "payload": {
-                              "conversationId": "public_conversation_synthetic",
-                              "eventId": "event_synthetic_approval_5",
+                              "conversationId": "public_pi_conversation_synthetic",
+                              "eventId": "event_synthetic_pi_approval_5",
                               "occurredAt": "2026-09-26T12:00:00Z",
                               "payload": {
                                 "action": "git_push",
-                                "approvalId": "public_approval_synthetic",
+                                "approvalId": "public_pi_approval_synthetic",
                                 "denialCode": "PI_TOOL_CALL_BLOCKED",
                                 "expiresAt": "2026-09-26T12:05:00Z",
                                 "remoteApprovalAllowed": false,
                                 "requestedAt": "2026-09-26T12:00:00Z",
                                 "resultRef": {
-                                  "runId": "public_run_synthetic"
+                                  "runId": "public_pi_run_synthetic"
                                 },
                                 "riskLevel": "high",
                                 "status": "pending",
                                 "targetSummary": "example",
                                 "workerPolicyRevision": 1
                               },
-                              "seq": 1,
+                              "seq": 2,
                               "type": "approval.state_changed",
                               "wireRevision": 5,
                               "workerEpoch": "boot_demo",
@@ -49965,11 +49965,11 @@
                               "workerStoreId": "store_demo"
                             },
                             "recordedAt": "2026-09-26T12:00:01Z",
-                            "serverCursor": "opaque_feature_bound_cursor_synthetic",
+                            "serverCursor": "opaque_feature_bound_cursor_synthetic_002",
                             "type": "worker.event"
                           }
                         ],
-                        "nextServerCursor": "opaque_feature_bound_cursor_synthetic"
+                        "nextServerCursor": "opaque_feature_bound_cursor_synthetic_002"
                       },
                       "protocolVersion": "0.11.1",
                       "requestId": "req_0123456789abcdef01234567",
