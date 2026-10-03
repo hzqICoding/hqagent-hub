@@ -126,3 +126,16 @@ python -m runtime.pair --data-dir /path/to/hub-data --revoke-sessions
 ```
 
 使用 Hub 所在虚拟环境的 Python。该命令要求 Hub 正在运行，读取本机 descriptor 后向 loopback 内部接口发送请求，不显示令牌。它仅撤销本机浏览器会话，不解绑远程设备，也不撤销一次性连接码。连接码仍有效10分钟、只能兑换一次、最多尝试10次，并且仅在交互终端显示。
+
+## 修复远程同步冲突冻结
+
+仅当 Hub 本机因 `REMOTE_SYNC_CONFLICT` 冻结、相关生产者问题已修复时，由电脑操作者使用正在运行的 Hub 执行：
+
+```sh
+python -m runtime.cli --data-dir /path/to/hub-data remote resync --confirm-reset
+python -m runtime.cli --data-dir /path/to/hub-data remote status
+```
+
+命令复用本机 descriptor 的 operator Token，不需要重新配对。必须显式确认：服务器确认设备 `ready` 后，会清除该电脑的云端副本和原生索引，再从电脑完整补传；期间手机列表/历史可能暂时不完整。电脑源文件、对话、消息、执行结果及配对凭据不删除。未获 grant 的送达预留按现有 reset 规则释放；不会重新执行历史命令。云端附件随副本删除后按既有上传规则重建，本机缺失的文件无法凭空恢复。
+
+这是异步操作，`requested=true` 只表示恢复请求已持久保存。关闭同步会取消恢复流程。`STORE_CHANGED`、`ACK_CONFLICT`、身份/凭据问题等冻结不接受此命令；重新握手时服务端仍冻结的，也不会执行 reset。不要通过编辑数据库把 link 改回 paired，旧冲突 Outbox 会再次被拒绝。

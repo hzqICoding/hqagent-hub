@@ -83,3 +83,10 @@ python -X utf8 -B -m pytest packages/protocol/tests scripts/protocol/tests -q -p
 - 服务端 set-password 命令（8c71c7b）：改密后删除该账号浏览器会话，PAT 保留。304 项通过。
 - 电脑连接手机页默认服务器 https://hqremote.hylucky.top（0f5a8e0）。
 - CI c23d375 三平台全绿；部署 serverD（仅服务端代码与 web，依赖未变），线上网页 bundle 与构建一致。
+
+## 12. 用户真机反馈修复（2026-10-03）
+
+- 新对话首条 continue 报 SESSION_NOT_RESUMABLE：Hub 返修 4（da553a1）无可续接上一轮时自动新建；前端返修 4（4200633）显示 Hub 具体原因。
+- 原生会话 51/56 显示「CLI 版本尚未验证」：前端返修 3 按可用性分组；Hub 返修 5（61aee66，新会话 01a0ff62）结构普查（Codex 33.7 万、Claude 8.2 万条，只含版本 / 类型 / 计数，已核无路径与正文）后放宽为 Codex 0.98.0–0.159.2、Claude 2.1.251–2.1.288，同 major 未来版本结构校验通过才读取；用户电脑 56/56 可读。
+- 本机浏览器会话持久化（7e45fd9）：摘要入库、30 天滑动续期、上限 20、`runtime.pair --revoke-sessions`。
+- 返修 5 上线后用户 Hub 因 REMOTE_SYNC_CONFLICT 本地冻结（服务端未冻结）：根因为已导入原生对话的源版本 / 活动状态变化未递增 metadataVersion。修复（9a6e6ae）递增版本，并新增仅限「本机同步冲突冻结」的 `remote resync --confirm-reset` 恢复（服务端 ready 后 reset 再新代次补传）。主代理在用户电脑执行恢复：paired online，手机可见 14 个对话，无需重新配对。

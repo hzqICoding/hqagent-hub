@@ -1,0 +1,31 @@
+{
+  "checks": [
+    {
+      "theme": "light",
+      "capabilityStates": [
+        "verified",
+        "invalidated",
+        "running"
+      ],
+      "paidStarts": 0,
+      "deletion": "synthetic busy conversation rejected",
+      "blockingRunLink": true,
+      "horizontalOverflow": false
+    },
+    {
+      "theme": "dark",
+      "capabilityStates": [
+        "verified",
+        "invalidated",
+        "running"
+      ],
+      "paidStarts": 0,
+      "deletion": "synthetic busy conversation rejected",
+      "blockingRunLink": true,
+      "horizontalOverflow": false
+    }
+  ],
+  "screenshots": 8,
+  "browserErrors": 0,
+  "source": "Chromium + local protocol mocks; no real model calls or user deletion"
+}

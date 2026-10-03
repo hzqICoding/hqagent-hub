@@ -42,7 +42,7 @@ class LocalClient:
             body = json.dumps(value if value is not None else {}).encode()
             connection.request(
                 method,
-                '/api/v1' + path,
+                path if path.startswith('/internal/') else '/api/v1' + path,
                 body=body if method != 'GET' else None,
                 headers={
                     'Authorization': 'Bearer ' + self.token,
@@ -132,6 +132,9 @@ def parser():
     pairing.add_argument('--device-name', default=socket.gethostname())
     remote.add_parser('status')
     remote.add_parser('unlink')
+    resync = remote.add_parser('resync', help='修复同步冲突：清理云端副本并从本机完整重建')
+    resync.add_argument('--confirm-reset', action='store_true', required=True,
+                        help='确认云端副本在补传完成前暂时不完整')
     workspace = groups.add_parser('workspace').add_subparsers(dest='action', required=True)
     workspace.add_parser('add').add_argument('path', type=Path)
     workspace.add_parser('list')
@@ -150,6 +153,10 @@ def parser():
 
 def execute(args, client, out):
     if args.group == 'remote':
+        if args.action == 'resync':
+            data = client.request('POST', '/internal/remote/resync')
+            print(json.dumps(data, ensure_ascii=False), file=out)
+            return
         if args.action == 'pair':
             return pair(client, args.server, args.device_name, out)
         data = client.request(
