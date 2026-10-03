@@ -4,6 +4,7 @@ import LocalChatLayout from '../layouts/LocalChatLayout.vue'
 import { useLocalAuthStore } from '@/stores/local-auth.store'
 import { useRemoteAuthStore } from '@/stores/remote-auth.store'
 import { getRuntimeMode } from '@/shared/config/runtime-mode'
+import { isDesktopShell } from '@/shared/api/desktop-endpoint'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -162,6 +163,12 @@ export const router = createRouter({
 
 // Navigation Guard: In real mode, enforce local session check
 router.beforeEach(async (to, _from, next) => {
+  if (isDesktopShell()) {
+    // DesktopConnection owns readiness/recovery; no browser connection-code route.
+    if (to.path === '/connect' || to.path.startsWith('/remote/') || to.path === '/remote') next('/chat')
+    else next()
+    return
+  }
   // 1. Remote routes guard
   if (to.path === '/remote' || to.path.startsWith('/remote/')) {
     const remoteAuthStore = useRemoteAuthStore()

@@ -1,4 +1,4 @@
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::{
     error::CommandError,
@@ -7,11 +7,16 @@ use crate::{
 };
 
 #[tauri::command]
-pub fn get_hub_endpoint(
-    app: AppHandle,
-    state: State<'_, ShellState>,
-) -> Result<HubEndpoint, CommandError> {
-    state.hub_endpoint(Some(&app)).map_err(CommandError::from)
+pub async fn get_hub_endpoint(app: AppHandle) -> Result<HubEndpoint, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<ShellState>()
+            .hub_endpoint(Some(&app))
+            .map_err(CommandError::from)
+    })
+    .await
+    .map_err(|_| {
+        CommandError::from(crate::error::ShellError::Internal("读取本机连接失败".into()))
+    })?
 }
 
 #[tauri::command]
@@ -59,4 +64,3 @@ pub fn set_autostart_enabled(
 ) -> Result<(), CommandError> {
     state.set_autostart(enabled).map_err(CommandError::from)
 }
-

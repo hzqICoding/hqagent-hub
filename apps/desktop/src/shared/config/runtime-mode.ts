@@ -1,3 +1,5 @@
+import { isDesktopShell } from '@/shared/api/desktop-endpoint'
+
 export type AppRuntimeMode = 'local' | 'remote'
 
 let runtimeModeOverride: AppRuntimeMode | null = null
@@ -7,6 +9,7 @@ export function setRuntimeModeForTesting(mode: AppRuntimeMode | null): void {
 }
 
 export function getRuntimeMode(): AppRuntimeMode {
+  if (isDesktopShell()) return 'local'
   if (runtimeModeOverride) {
     return runtimeModeOverride
   }

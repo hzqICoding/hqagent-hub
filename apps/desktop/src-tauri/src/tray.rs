@@ -8,12 +8,17 @@ use tauri::{
 pub const TRAY_ID: &str = "hqagent-main-tray";
 const SHOW_ID: &str = "show-main-window";
 const QUIT_ID: &str = "quit-hqagent";
+const STATUS_ID: &str = "hub-process-status";
+
+struct TrayStatus<R: Runtime>(MenuItem<R>);
 
 pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, SHOW_ID, "显示 HQAgent-Hub", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, SHOW_ID, "打开 HQAgent-Hub", true, None::<&str>)?;
+    let status = MenuItem::with_id(app, STATUS_ID, "Hub：启动中", false, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, QUIT_ID, "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &separator, &quit])?;
+    let menu = Menu::with_items(app, &[&status, &show, &separator, &quit])?;
+    app.manage(TrayStatus(status));
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(generated_icon())
@@ -42,6 +47,29 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         })
         .build(app)?;
     Ok(())
+}
+
+fn hub_status_label(statuses: &[crate::process_supervisor::ProcessStatus]) -> &'static str {
+    use crate::process_supervisor::{Component, ProcessStatus};
+    for status in statuses {
+        match status {
+            ProcessStatus::Running { component: Component::Core, .. } => return "运行中",
+            ProcessStatus::Missing { component: Component::Core, .. }
+            | ProcessStatus::Stopped { component: Component::Core, .. } => return "已停止",
+            _ => {}
+        }
+    }
+    "启动中"
+}
+
+pub fn update_status<R: Runtime>(app: &AppHandle<R>, statuses: &[crate::process_supervisor::ProcessStatus]) {
+    let label = hub_status_label(statuses);
+    if let Some(status) = app.try_state::<TrayStatus<R>>() {
+        let _ = status.0.set_text(format!("Hub：{label}"));
+    }
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_tooltip(Some(format!("HQAgent-Hub — {label}")));
+    }
 }
 
 pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
@@ -86,4 +114,3 @@ mod tests {
         assert_eq!(icon.height(), 32);
     }
 }
-
