@@ -96,3 +96,5 @@ python -X utf8 -B -m pytest packages/protocol/tests scripts/protocol/tests -q -p
 - 协议 0.10.1（7f9c8d2）、前端（c5626c6 / 3d96096）、Hub（cb92d51 起，新会话 01a0ffac）合入；裁决 Hub Q1：未 ACK 审批事实时暂时阻塞本机删除，作为后续协议修订项。server bundle 刷新并修正测试版本常量。integration：server 304、Hub 702 passed。
 - 用户电脑：旧验证记录 legacy_unbound（预期），但 detected_version 为 `2.1.288 (Claude Code)` / `codex-cli 0.159.2` 未提取 semver → 四个目标 target_unavailable，无法发起验证。返修派 01a0ffac（medium）。
 - CI 4f8f142：hub windows `test_remote_dispatch.py::test_ws_queue_backpressure_does_not_disconnect_when_more_than_200_commands_arrive` TimeoutError（该 job 用时 7:47，明显偏慢，前几轮均通过），其余 7 项通过。观察：再次出现则派返修，改为按完成条件等待。
+
+- 0.10.1 返修 1（5a49109，共用版本解析 adapters/versions.py）合入；CI 1e6c1e8 三平台全绿（Windows 背压超时未复现，判定偶发）；部署 serverD（openapi 0.10.1）。用户电脑经新作业接口完成四个目标验证（Claude 默认 / opus、Codex 默认 / gpt-6-astra），全部 succeeded + cleanup confirmed，线上 catalog 全部场景与原生 supported。
