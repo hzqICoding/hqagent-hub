@@ -149,6 +149,9 @@ class UnitOfWork(AttachmentRepository, NativeRepository, DeviceRepository, SyncR
     def auth_list(self, prefix):
         return [json.loads(r[0]) for r in self.db.execute("SELECT body FROM auth WHERE substr(key,1,?)=?", (len(prefix), prefix))]
 
+    def delete_browser_sessions(self, owner):
+        self.db.execute("DELETE FROM auth WHERE owner=? AND category='session'", (owner,))
+
     def get(self, owner, kind, identifier):
         row = self.db.execute("SELECT body FROM records WHERE owner=? AND kind=? AND id=?", (owner, kind, identifier)).fetchone()
         return json.loads(row[0]) if row else None

@@ -615,7 +615,7 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     expect(controlSpy).toHaveBeenCalledWith('run_seq_4', { action: 'resume' })
   })
 
-  it('B4: defaults sessionMode to new and displays warning tip when latest run is cancelled or failed', async () => {
+  it('B4: keeps continue by default and displays warning when latest run is cancelled or failed', async () => {
     // 1. Cancelled run
     mockRemoteGateway.runs = [
       {
@@ -636,9 +636,7 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     // Warning tip displayed
     expect(wrapper.text()).toContain('上一轮已中断，继续上下文可能失败')
 
-    // Radio input for "new" is checked
-    const newTopicRadio = wrapper.find<HTMLInputElement>('input[type="radio"][value="new"]')
-    expect(newTopicRadio.element.checked).toBe(true)
+    expect(wrapper.find('[data-testid=new-topic-tag]').exists()).toBe(false)
 
     // 2. Failed run via event
     const failedRunEvent: RemoteBrowserEvent = {
@@ -673,11 +671,11 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     expect(store.activeRun?.runId).toBe('run_failed_new')
     expect(store.activeRun?.status).toBe('failed')
     expect(wrapper.text()).toContain('上一轮已中断，继续上下文可能失败')
-    expect(newTopicRadio.element.checked).toBe(true)
+    expect(wrapper.find('[data-testid=new-topic-tag]').exists()).toBe(false)
   })
 
-  it('B5: sessionMode defaults: new when conversation has no runs, continue when latest run succeeded, and respects manual user selection', async () => {
-    // 1. Conversation has no runs -> defaults to "new"
+  it('B5: defaults to continue and preserves explicit next-message new state across run updates', async () => {
+    // 1. Conversation has no runs -> defaults to continue
     mockRemoteGateway.runs = []
     const wrapper = mount(RemoteChatPage, {
       global: { plugins: [router] },
@@ -685,10 +683,7 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     const store = useRemoteChatStore()
     await flushPromises()
 
-    const newRadio = wrapper.find<HTMLInputElement>('input[type="radio"][value="new"]')
-    const continueRadio = wrapper.find<HTMLInputElement>('input[type="radio"][value="continue"]')
-    expect(newRadio.element.checked).toBe(true)
-    expect(continueRadio.element.checked).toBe(false)
+    expect(wrapper.find('[data-testid=new-topic-tag]').exists()).toBe(false)
 
     // 2. Latest run succeeded arrives -> automatically switches default to "continue"
     const successRunEvent: RemoteBrowserEvent = {
@@ -721,15 +716,13 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     await flushPromises()
 
     expect(store.activeRun?.status).toBe('succeeded')
-    expect(continueRadio.element.checked).toBe(true)
-    expect(newRadio.element.checked).toBe(false)
+    expect(wrapper.find('[data-testid=new-topic-tag]').exists()).toBe(false)
 
     // 3. User manually selects "new" -> should respect user's manual choice
-    await newRadio.setValue()
-    await newRadio.trigger('change')
+    await wrapper.get('[aria-label="新话题"]').trigger('click')
     await flushPromises()
 
-    expect(newRadio.element.checked).toBe(true)
+    expect(wrapper.find('[data-testid=new-topic-tag]').exists()).toBe(true)
 
     // Another succeeded run arrives via event, but user already chose "new" -> must remain "new"
     const anotherRunEvent: RemoteBrowserEvent = {
@@ -762,8 +755,7 @@ describe('Remote Events Loop, Incremental Updating & Approvals (B1 & B2)', () =>
     await flushPromises()
 
     // Must remain "new" as chosen by user!
-    expect(newRadio.element.checked).toBe(true)
-    expect(continueRadio.element.checked).toBe(false)
+    expect(wrapper.find('[data-testid=new-topic-tag]').exists()).toBe(true)
   })
 
   it('B6: device transitions from online to offline, without reloading page, badge becomes 电脑离线 after next device poll', async () => {

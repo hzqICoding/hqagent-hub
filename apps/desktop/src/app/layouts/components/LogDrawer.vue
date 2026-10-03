@@ -79,7 +79,7 @@ function getLevelBadgeVariant(level: string): 'neutral' | 'success' | 'warning' 
           <input
             type="checkbox"
             v-model="appStore.isAutoScrollLogs"
-            class="rounded border-border-default text-primary-600 focus:ring-0"
+            class="hq-form-choice rounded border-border-default text-primary-600 focus:ring-0"
           />
           <ArrowDown class="w-3 h-3" />
           <span>自动滚底</span>

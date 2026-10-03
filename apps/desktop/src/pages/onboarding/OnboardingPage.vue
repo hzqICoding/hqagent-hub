@@ -253,7 +253,7 @@ function handleFinish() {
               <input
                 v-model="workspacePath"
                 type="text"
-                class="flex-1 text-xs font-mono bg-panel border border-border-default rounded-md px-3 py-2 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+                class="hq-form-control flex-1 text-xs font-mono bg-panel border border-border-default rounded-md px-3 py-2 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
               />
             </div>
             <p class="text-2xs text-content-muted">Git 仓库将自动启用 Worktree 隔离机制，保护您的主分支。</p>

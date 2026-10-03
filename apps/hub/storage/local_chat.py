@@ -464,6 +464,8 @@ class LocalChatRepository:
             tx.connection.execute("INSERT INTO local_messages VALUES(?,?,?,?,?,?,?)", (message_id, conversation_id, seq, "user", value.text, run_id, stamp))
             tx.connection.execute("INSERT INTO local_runs VALUES(?,?,?,?,?,?,?,?,?,?)", (run_id, conversation_id, message_id, None,
                 json.dumps({"conversationKind": "native", "agentType": str(conversation.agent_type)}) if native else row[0], str(value.session_mode), "queued", None, stamp, stamp))
+            if value.attachment_ids:
+                self.attachments.bind_local(tx, conversation_id, message_id, run_id, value.attachment_ids)
             updated = conversation.model_copy(update={"last_run_id": run_id, "updated_at": stamp})
             persisted = updated.model_copy(update={"last_run_status": None})
             tx.connection.execute("UPDATE local_conversations SET payload_json=?,updated_at=? WHERE conversation_id=?",
@@ -486,7 +488,8 @@ class LocalChatRepository:
             rows = db.execute("SELECT * FROM local_messages WHERE conversation_id=? AND sequence>? ORDER BY sequence LIMIT ?",
                               (conversation_id, after, min(max(limit, 1), 200))).fetchall()
         return [LocalMessageView.model_validate({"id": r["message_id"], "conversationId": conversation_id,
-            "sequence": r["sequence"], "role": r["role"], "text": r["text"], "runId": r["run_id"], "createdAt": r["created_at"]}) for r in rows]
+            "sequence": r["sequence"], "role": r["role"], "text": r["text"], "runId": r["run_id"], "createdAt": r["created_at"],
+            **({"attachments": self.attachments.repo.message_views(r['message_id'])} if getattr(self,'attachments',None) else {})}) for r in rows]
 
     def run_record(self, run_id: str) -> dict:
         with self.database.locked_connection() as db:

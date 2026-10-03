@@ -54,7 +54,7 @@ const canRequestContextReset = computed(() => chatStore.canResetContext)
 function adjustHeight() {
   if (!textareaRef.value) return
   textareaRef.value.style.height = 'auto'
-  const newHeight = Math.min(Math.max(textareaRef.value.scrollHeight, 44), 180)
+  const newHeight = Math.min(Math.max(textareaRef.value.scrollHeight, 44), 132)
   textareaRef.value.style.height = `${newHeight}px`
 }
 
@@ -125,7 +125,7 @@ function handleStopRun() {
       <div v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-xs p-2 space-y-1">
         <p>固定继续原生会话</p>
         <template v-if="chatStore.activeConversation.nativeActivity?.activity !== 'closed_confirmed' || nativeError?.code === 'NATIVE_SESSION_CHANGED'">
-          <p>{{ closureText }}</p><label class="flex gap-2"><input v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
+          <p>{{ closureText }}</p><label class="flex gap-2"><input class="hq-form-choice" v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
         </template>
         <p v-if="nativeError" role="alert" class="text-danger">{{ nativeError.message }} <span class="select-text">{{ nativeError.requestId ? `requestId: ${nativeError.requestId}` : '' }}</span></p>
       </div>
@@ -195,7 +195,7 @@ function handleStopRun() {
         </HqButton>
       </div>
 
-      <AttachmentDrafts v-if="chatStore.activeConversationId" :key="chatStore.activeConversationId" ref="attachmentDrafts" :conversation-id="chatStore.activeConversationId" :disabled="chatStore.isSending || chatStore.isActiveConversationArchived" @blocked="attachmentsBlocked = $event" />
+
       <!-- 4. Generic Send Error Alert -->
       <div
         v-if="chatStore.sendError"
@@ -223,76 +223,17 @@ function handleStopRun() {
         <span class="text-xs font-medium">对话正在进行，结束后再继续</span>
       </div>
 
-      <!-- 5. Floating Modern Composer Card (PI-Desktop / Codex style) -->
-      <div
-        class="bg-panel border border-border/80 focus-within:border-primary/60 rounded-2xl shadow-sm focus-within:shadow-md transition-all duration-200 overflow-hidden"
-      >
-        <!-- Textarea input -->
-        <div class="px-2 pt-3 pb-1 flex items-start gap-2 min-w-0">
-          <button type="button" aria-label="添加附件" class="min-w-[44px] min-h-[44px] shrink-0 flex items-center justify-center text-content-muted" :disabled="chatStore.isSending || chatStore.isActiveConversationArchived || !chatStore.activeConversationId" @click="attachmentDrafts?.open()"><Paperclip class="w-5 h-5" /></button>
-        <textarea
-            ref="textareaRef"
-            v-model="inputText"
-            :maxlength="32000"
-            rows="1"
-            :disabled="chatStore.isConversationBusy || chatStore.isActiveConversationArchived"
-            :placeholder="chatStore.isConversationBusy ? '对话正在进行，结束后再继续' : '向角色团队输入任务目标或补充要求... (Enter 发送，Shift + Enter 换行)'"
-            class="flex-1 min-w-0 bg-transparent text-xs text-text placeholder-text-muted/50 resize-none outline-none focus:ring-0 leading-relaxed max-h-44 min-h-[44px] disabled:opacity-60 disabled:cursor-not-allowed"
-            @input="handleInput"
-            @keydown="handleKeyDown"
-          />
+      <div class="bg-panel border border-border rounded-2xl overflow-hidden">
+        <AttachmentDrafts class="px-[12px]" v-if="chatStore.activeConversationId" :key="chatStore.activeConversationId" ref="attachmentDrafts" :conversation-id="chatStore.activeConversationId" :disabled="chatStore.isSending || chatStore.isActiveConversationArchived" @blocked="attachmentsBlocked = $event" />
+        <div class="hq-composer-row px-[12px] py-3">
+          <button type="button" aria-label="添加附件" class="hq-composer-icon text-content-muted" :disabled="chatStore.isSending || chatStore.isActiveConversationArchived || !chatStore.activeConversationId" @click="attachmentDrafts?.open()"><Paperclip class="w-5 h-5" /></button>
+          <textarea ref="textareaRef" v-model="inputText" :maxlength="32000" rows="1" :disabled="chatStore.isConversationBusy || chatStore.isActiveConversationArchived"
+            :placeholder="chatStore.isConversationBusy ? '对话正在进行，结束后再继续' : '输入任务目标或补充要求…'"
+            class="hq-form-control hq-composer-text border border-border text-sm" @input="handleInput" @keydown="handleKeyDown" />
+          <button v-if="chatStore.isCurrentRunActive && inputText.trim().length === 0" type="button" class="hq-composer-send bg-status-danger-soft text-status-danger" title="中止当前执行轮次" aria-label="中止当前执行轮次" @click="handleStopRun"><Square class="w-4 h-4 fill-current" /></button>
+          <button v-else type="button" class="hq-composer-send" :class="canSend ? 'bg-action-primary text-action-primary-text hover:bg-action-primary-hover' : 'bg-muted text-content-disabled cursor-not-allowed'" :disabled="!canSend || chatStore.isSending" title="发送目标指令 (Enter)" aria-label="发送目标指令" @click="handleSend"><ArrowUp class="w-5 h-5" /></button>
         </div>
 
-        <!-- Integrated Action Toolbar -->
-        <div class="px-3 pb-2.5 pt-1.5 flex items-center justify-between gap-2 border-t border-border/30 select-none flex-wrap">
-          <!-- Left: continuous task context hint -->
-          <div class="flex items-center gap-2 min-w-0 flex-wrap">
-            <span class="text-[11px] text-text-muted">当前任务连续对话</span>
-          </div>
-
-          <!-- Right: Running indicator & Action Button -->
-          <div class="flex items-center gap-2 shrink-0 ml-auto">
-            <!-- Active run status badge -->
-            <div
-              v-if="chatStore.isCurrentRunActive"
-              class="flex items-center gap-1.5 text-[11px] text-warning bg-warning/10 px-2 sm:px-2.5 py-0.5 rounded-full border border-warning/20 shrink-0"
-            >
-              <Clock class="w-3 h-3 animate-spin text-warning" />
-              <span class="hidden sm:inline">执行中 · 新指令自动排队</span>
-              <span class="sm:hidden text-[10px]">执行中</span>
-            </div>
-
-            <!-- Stop Button if running and input is empty -->
-            <button
-              v-if="chatStore.isCurrentRunActive && inputText.trim().length === 0"
-              type="button"
-              class="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition-all bg-danger/15 text-danger hover:bg-danger/25 active:scale-95 cursor-pointer shadow-xs"
-              title="中止当前执行轮次"
-              aria-label="中止当前执行轮次"
-              @click="handleStopRun"
-            >
-              <Square class="w-3.5 h-3.5 fill-current" />
-            </button>
-
-            <!-- Send button (Circle button) -->
-            <button
-              v-else
-              type="button"
-              class="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition-all shadow-xs"
-              :class="
-                canSend
-                  ? 'bg-primary text-white hover:bg-primary-hover active:scale-95 cursor-pointer'
-                  : 'bg-muted text-text-muted/40 cursor-not-allowed'
-              "
-              :disabled="!canSend || chatStore.isSending"
-              title="发送目标指令 (Enter)"
-              aria-label="发送目标指令"
-              @click="handleSend"
-            >
-              <ArrowUp class="w-4 h-4 stroke-[2.5]" />
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   </div>

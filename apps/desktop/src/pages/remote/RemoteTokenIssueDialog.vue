@@ -63,12 +63,12 @@ function revokeIssued() {
   <HqDialog :open="true" :title="issuedTokenId ? 'API 令牌已创建' : '新建 API 令牌'" @close="close">
     <div class="space-y-4 text-xs">
       <template v-if="!issuedTokenId">
-        <label class="block">名称<input v-model="name" :disabled="loading" maxlength="120" aria-label="令牌名称" class="block w-full p-2 mt-1 bg-bg-app border border-border rounded" /></label>
+        <label class="block">名称<input v-model="name" :disabled="loading" maxlength="120" aria-label="令牌名称" class="hq-form-control block w-full p-2 mt-1 bg-bg-app border border-border rounded" /></label>
         <fieldset :disabled="loading" class="space-y-2"><legend class="mb-2 font-medium">权限（各自独立）</legend>
-          <label v-for="scope in permissions" :key="scope" class="flex items-center gap-2"><input v-model="scopes" type="checkbox" :value="scope" />{{ scope }}</label>
+          <label v-for="scope in permissions" :key="scope" class="flex items-center gap-2"><input class="hq-form-choice" v-model="scopes" type="checkbox" :value="scope" />{{ scope }}</label>
         </fieldset>
         <p v-if="scopes.includes('devices:delete')" class="text-warning">删除是破坏性操作</p>
-        <label class="block">有效期（天，默认 90，最多 365）<input v-model.number="days" :disabled="loading" type="number" min="1" max="365" step="1" aria-label="有效期天数" class="block w-full p-2 mt-1 bg-bg-app border border-border rounded" /></label>
+        <label class="block">有效期（天，默认 90，最多 365）<input v-model.number="days" :disabled="loading" type="number" min="1" max="365" step="1" aria-label="有效期天数" class="hq-form-control block w-full p-2 mt-1 bg-bg-app border border-border rounded" /></label>
         <p class="text-text-muted">权限只用于设备管理，不授予对话、模型或令牌管理能力。</p>
       </template>
       <template v-else-if="secret">

@@ -252,7 +252,7 @@ class ClaudeAdapter(AgentAdapter):
             session_id=session_id,
             external_session_id=external_id,
             spec=spec,
-            guard=PathGuard(spec.worktree_path or "", spec.allowed_paths),
+            guard=PathGuard(spec.worktree_path or "", spec.allowed_paths, input_attachments=spec.input_attachments),
         )
         launched = await self._launch(
             state,
@@ -349,12 +349,16 @@ class ClaudeAdapter(AgentAdapter):
             "--json-schema",
             result_schema,
         )
-        args.extend(["--resume" if resume else "--session-id", state.external_session_id])
+        from adapters.attachment_input import claude_session_args
+        args.extend(claude_session_args(state.external_session_id, resume=resume,
+            has_attachments=bool(state.spec.input_attachments)))
         args.extend(["--tools", "Read,Glob,Grep"])
         if state.spec.model_id_:
             args.extend(["--model", state.spec.model_id_])
         if state.spec.reasoning_effort:
             args.extend(["--effort", state.spec.reasoning_effort])
+        from adapters.attachment_input import claude_input
+        body = await asyncio.to_thread(claude_input, message, state.spec.input_attachments) if state.spec.input_attachments else (message + "\n").encode("utf-8")
         try:
             state.process = await self.runner.start(
                 args,
@@ -363,7 +367,7 @@ class ClaudeAdapter(AgentAdapter):
             )
             if state.process.stdin is None:
                 raise BrokenPipeError("Claude stdin 不可用")
-            state.process.stdin.write((message + "\n").encode("utf-8"))
+            state.process.stdin.write(body)
             await state.process.stdin.drain()
             state.process.stdin.close()
         except OSError as exc:
@@ -420,7 +424,7 @@ class ClaudeAdapter(AgentAdapter):
                 session_id=request.session_id,
                 external_session_id=request.external_session_id,
                 spec=spec,
-                guard=PathGuard(spec.worktree_path or "", spec.allowed_paths),
+                guard=PathGuard(spec.worktree_path or "", spec.allowed_paths, input_attachments=spec.input_attachments),
             )
             new_state = True
         else:
@@ -438,7 +442,7 @@ class ClaudeAdapter(AgentAdapter):
                     retryable=False,
                 )
             state.spec = spec
-            state.guard = PathGuard(spec.worktree_path or "", spec.allowed_paths)
+            state.guard = PathGuard(spec.worktree_path or "", spec.allowed_paths, input_attachments=spec.input_attachments)
         if state.process is not None and state.process.returncode is None:
             return failure(AdapterFailureKind.AGENT_ERROR, "会话仍在运行", retryable=False)
         state.queue = asyncio.Queue()

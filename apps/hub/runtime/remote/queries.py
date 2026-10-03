@@ -33,7 +33,7 @@ class QueryChannel:
         return remaining
 
     def common(self, frame):
-        return {"wireRevision":3,"queryId":frame["queryId"],"requestId":frame["requestId"],
+        return {"wireRevision":frame["wireRevision"],"queryId":frame["queryId"],"requestId":frame["requestId"],
             "connectionId":frame["connectionId"],"workerId":frame["targetWorkerId"],
             "workerStoreId":frame["expectedWorkerStoreId"],"workerEpoch":frame["workerEpoch"]}
 

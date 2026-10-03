@@ -20,7 +20,7 @@ Worker先可靠同步完整role=user消息与pending_upload清单，再上传该
 
 下载无Range，只输出原始流；原文件为application/octet-stream，缩略图为image/png，两者均为attachment/no-store/nosniff、Content-Length和X-Request-Id。上传/下载总期限120秒、无进展30秒；中途失败停止流，不向二进制尾部拼JSON。跨owner、pc_only、删除或过期直接ID均404。
 
-Pillow固定12.3.0，仅在独立子进程解码；并发1，硬内存上限160MiB，父进程等待最多8秒（Linux CPU另限6秒），最多40M像素、首帧、最长边512、全新PNG且不带源元数据，产物≤512KiB。Linux使用RLIMIT_AS/CPU/FSIZE；Windows使用Job Object的每进程内存硬限，安装限制失败即不解码。失败/超限为thumbnailStatus=unavailable，绝不回退原图。这一保守预算面向2核/2G、MemoryMax=384M实例，部分大图可能无法生成缩略图。部署时需实际确认服务总内存峰值及平台限制可用。
+Pillow固定12.3.0，仅在独立子进程解码，并发1；所有平台均保留父进程最多8秒等待及终止、40M像素上限、首帧、最长边512、全新PNG去元数据、产物≤512KiB，失败不回退原图。Linux/serverD强制RLIMIT_AS=160MiB、CPU=6秒、FSIZE=512KiB，任一安装失败即不解码；Windows保留Job Object每进程160MiB硬限制，安装失败仍退出。macOS不调用RLIMIT_AS/RLIMIT_DATA、不宣称160MiB硬内存限制；仅逐项尝试CPU=6秒和FSIZE=512KiB，缺少常量或setrlimit抛ValueError/OSError时继续，其余像素、输出大小和父进程超时限制始终有效。FSIZE只限制普通文件，不限制stdout管道，PNG字节上限由解码程序在输出前检查。Linux预算面向2核/2G、MemoryMax=384M实例，部分大图可能无法生成缩略图；macOS实际行为须由对应平台CI验证。
 
 删除对话/reset/撤销/删除设备同事务清除附件元数据、引用、上传预留、消息绑定和可重放清单；提交后关闭读者、终止对应缩略图子进程、清临时文件，再确认零引用并删CAS文件。其它owner/会话的有效同hash引用保留。只保留无正文删除身份及上传意图摘要墓碑；重试原已删除上传意图不能复活文件。不能收回删除前客户端已经收到的字节。
 
@@ -78,6 +78,16 @@ $env:HQREMOTE_ORIGIN = 'https://hub.example.com'
 ```
 
 创建账号时交互输入口令，最少 12 字符，最多 1024 字符。自动化使用 `--password-stdin`，只从标准输入第一行读取。没有 `--password` 参数、公开注册路由或默认账号密码。不要把口令写入 shell 历史、命令参数、CI 日志或项目文件。
+
+修改已有账号密码（使用与服务相同的 `HQREMOTE_DATA_DIR` 和 `server.key`）：
+
+```sh
+python -m server.cli set-password --login alice
+# 自动化可加 --password-stdin，由安全的标准输入提供新密码；只读取一行。
+python -m server.cli set-password --login alice --password-stdin
+```
+
+交互输入使用getpass，不回显。账号必须已存在，密码沿用12–1024字符规则与scrypt哈希；成功只打印固定提示，不输出口令、哈希或盐。失败返回退出码1和既有笼统错误提示，不创建账号。密码更新与该账号全部浏览器会话失效在同一事务提交，原Cookie和旧登出重放均不能继续使用，需重新登录；其它账号不受影响。PAT与设备凭据保留：它们独立签发、鉴权和撤销，不是由账号密码派生。如此次改密用于处置泄露，请另外通过令牌管理吊销相关PAT、按需撤销设备。命令可在服务运行时执行，使用SQLite事务保证一致性，无需重启服务。
 
 | 环境变量 | 默认值 | 用途 |
 | --- | --- | --- |

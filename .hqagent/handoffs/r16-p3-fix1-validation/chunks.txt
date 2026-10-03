@@ -1,0 +1,1 @@
+{"jsqrChunks": [{"file": "jsQR-UMIdgYmG.js", "bytes": 130799}], "entryStaticChunkCount": 2, "jsqrInEntryStaticGraph": false, "jsqrInPairingStaticGraph": false, "jsqrPreloadedByHtml": false, "scannerChunks": ["PairingScanner-BeDj4J-3.js"]}

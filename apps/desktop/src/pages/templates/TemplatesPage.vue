@@ -200,7 +200,7 @@ async function handleApplyTemplate() {
           <input
             v-model="searchQuery"
             placeholder="搜索预设模板..."
-            class="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-border-default bg-surface-card text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+            class="hq-form-control w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-border-default bg-surface-card text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
         </div>
 

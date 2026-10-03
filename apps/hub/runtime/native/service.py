@@ -549,9 +549,8 @@ class NativeService:
         source = await self.io(self.source, row)
         await self.io(self.check, row, source)
         candidates = await self.chat.ports.tasks.directory.list_candidates()
-        candidate = next((a for a in candidates if a.instance_id == row["runtime_id"]),None)
-        if candidate is None or "session_resume" not in candidate.capabilities:
-            raise HubError("SESSION_NOT_RESUMABLE", "当前Runtime没有声明精确会话续接能力")
+        from runtime.execution_selection import native_execution_candidate
+        native_execution_candidate(candidates, row['runtime_id'], self.chat.ports.tasks.runtime)
         sessions = self.chat.ports.tasks.runtime.sessions.repository
         session = await sessions.get(row["session_id"])
         if session is not None and (str(session.status) != "idle" or not session.is_valid):

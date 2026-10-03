@@ -7,10 +7,32 @@ def restrict():
     limit = 160 * 1024 * 1024
     if os.name == 'posix':
         import resource
-        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
-        resource.setrlimit(resource.RLIMIT_CPU, (6, 6))
-        resource.setrlimit(resource.RLIMIT_FSIZE, (524288, 524288))
+        if sys.platform == 'darwin':
+            # Do not rely on AS/DATA for decoder memory on Darwin: availability
+            # and enforcement are not assumed here. No hard memory cap is claimed.
+            # CPU seconds and regular-file size are additional best-effort guards;
+            # FSIZE does not bound stdout (a pipe). The checks below still enforce
+            # 40M pixels, first frame, 512px and 512KiB output; the parent enforces
+            # an 8-second wall timeout and kills/waits for the actual decoder.
+            for name, maximum in (('RLIMIT_CPU', 6), ('RLIMIT_FSIZE', 524288)):
+                resource_id = getattr(resource, name, None)
+                if resource_id is None:
+                    continue
+                try:
+                    resource.setrlimit(resource_id, (maximum, maximum))
+                except (ValueError, OSError):
+                    # One unavailable kernel limit must not disable thumbnails
+                    # or prevent trying the remaining independent limit.
+                    continue
+        else:
+            # Linux/serverD retains mandatory 160MiB address-space, CPU and file
+            # limits. Errors propagate: inability to install them is fail closed.
+            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+            resource.setrlimit(resource.RLIMIT_CPU, (6, 6))
+            resource.setrlimit(resource.RLIMIT_FSIZE, (524288, 524288))
     elif os.name == 'nt':
+        # Windows keeps its mandatory per-process Job Object memory limit;
+        # a failed setup remains fatal. The parent provides the same wall timeout.
         import ctypes
         from ctypes import wintypes as w
 

@@ -16,6 +16,8 @@ import {
   HqBadge,
   HqDialog,
   HqEmptyState,
+  HqSelect,
+  useConfirm,
 } from '@/shared/ui'
 import {
   Menu,
@@ -38,6 +40,7 @@ import {
 } from 'lucide-vue-next'
 
 const router = useRouter()
+const confirm = useConfirm()
 const chatStore = useRemoteChatStore()
 const authStore = useRemoteAuthStore()
 
@@ -45,7 +48,7 @@ const isMobileSidebarOpen = ref(false)
 const attachmentDrafts = ref<InstanceType<typeof AttachmentDrafts> | null>(null)
 const attachmentsBlocked = ref(false)
 const inputText = ref('')
-const sessionMode = ref<'new' | 'continue'>('continue')
+const nextMessageNew = ref(false)
 const messageContainerRef = ref<HTMLElement | null>(null)
 
 // Dialog states
@@ -231,36 +234,31 @@ watch(
   }
 )
 
-const isSessionModeUserSelected = ref(false)
-
-function updateDefaultSessionMode() {
-  if (isSessionModeUserSelected.value) return
-  const currentRun = chatStore.activeRun
-  if (!currentRun) {
-    sessionMode.value = 'new'
-  } else if (currentRun.status === 'cancelled' || currentRun.status === 'failed') {
-    sessionMode.value = 'new'
-  } else if (currentRun.status === 'succeeded') {
-    sessionMode.value = 'continue'
-  }
+watch(() => chatStore.activeConversationId, () => { nativeConfirmed.value = false; nextMessageNew.value = false })
+const newTopicDisabledReason = computed(() => {
+  if (!chatStore.activeConversation) return '请先选择对话'
+  if (chatStore.activeConversation.conversationKind === 'native') return '原生会话固定继续上下文，不支持新话题'
+  if (chatStore.isRemoteSuspended) return '这台电脑的远程操作已暂停'
+  if (!chatStore.isWorkerOnline) return '电脑离线，暂不能开启新话题'
+  if (chatStore.isConversationBusy) return '对话正在进行，结束后再开启新话题'
+  if (chatStore.isSending) return '消息正在发送'
+  return ''
+})
+const connectionLabel = computed(() => {
+  const device = chatStore.activeDevice
+  if (!device) return { text: '未连接', variant: 'neutral' as const }
+  if (device.status === 'reconciliation_required') return { text: '未就绪', variant: 'neutral' as const }
+  if (!chatStore.isWorkerOnline) return { text: '电脑离线', variant: 'warning' as const }
+  if (device.busySnapshotFresh === false) return { text: '未就绪', variant: 'neutral' as const }
+  return { text: '电脑在线', variant: 'success' as const }
+})
+function newTopic() { if (!newTopicDisabledReason.value) nextMessageNew.value = true }
+function resizeComposer() {
+  if (!composerRef.value) return
+  composerRef.value.style.height = '44px'
+  composerRef.value.style.height = `${Math.min(132, Math.max(44, composerRef.value.scrollHeight))}px`
 }
-
-watch(
-  () => chatStore.activeConversationId,
-  () => {
-    nativeConfirmed.value = false
-    isSessionModeUserSelected.value = false
-    updateDefaultSessionMode()
-  }
-)
-
-watch(
-  [() => chatStore.activeRun?.runId, () => chatStore.activeRun?.status],
-  () => {
-    updateDefaultSessionMode()
-  },
-  { immediate: true }
-)
+watch(inputText, () => { void nextTick(resizeComposer) })
 
 const pendingCommands = computed(() =>
   chatStore.commands.filter(
@@ -307,6 +305,7 @@ function canWithdraw(cmd: RemoteCommandView): boolean {
 async function handleSendMessage() {
   if (chatStore.isRemoteSuspended) { chatStore.sendError = '这台电脑的远程操作已暂停'; return }
   const text = inputText.value.trim()
+  if (!chatStore.activeConversationId) return
   if (!text || chatStore.isSending || attachmentsBlocked.value || !nativeCanSend.value) return
 
   if (!chatStore.isWorkerOnline) {
@@ -321,10 +320,11 @@ async function handleSendMessage() {
   try {
     const conversationId = chatStore.activeConversationId
     const drafts = attachmentDrafts.value
-    await chatStore.sendMessage(text, sessionMode.value, nativeConfirmed.value && chatStore.activeConversation?.nativeSourceRevision ? { terminalClosedConfirmed: true, sourceRevision: chatStore.activeConversation.nativeSourceRevision } : undefined, drafts?.ids() || [])
+    await chatStore.sendMessage(text, nextMessageNew.value && chatStore.activeConversation?.conversationKind !== 'native' ? 'new' : 'continue', nativeConfirmed.value && chatStore.activeConversation?.nativeSourceRevision ? { terminalClosedConfirmed: true, sourceRevision: chatStore.activeConversation.nativeSourceRevision } : undefined, drafts?.ids() || [])
     drafts?.sent()
     if (chatStore.activeConversationId !== conversationId) return
     nativeConfirmed.value = false
+    nextMessageNew.value = false
     inputText.value = ''
     scrollToBottom()
   } catch {
@@ -413,6 +413,7 @@ async function handleApproval(approval: RemoteApprovalView, decision: 'approve' 
 }
 
 async function handleLogout() {
+  if (!await confirm({ title: '确定退出登录？', confirmText: '退出' })) return
   await authStore.logout()
   chatStore.reset()
   router.replace('/remote/login')
@@ -459,65 +460,22 @@ function getExecutionStatusLabel(status?: string): string {
 <template>
   <div class="h-dvh flex flex-col bg-bg-app select-none overflow-hidden">
     <!-- Top Bar -->
-    <header class="h-14 bg-panel border-b border-border px-3 sm:px-4 flex items-center justify-between shrink-0 z-30">
-      <div class="flex items-center gap-2 min-w-0">
-        <!-- Drawer toggle button -->
-        <button
-          type="button"
-          class="p-2 -ml-1 rounded-lg text-text-muted hover:text-text hover:bg-panel-hover cursor-pointer transition-colors"
-          title="打开对话列表"
-          aria-label="打开对话列表"
-          @click="isMobileSidebarOpen = true"
-        >
-          <Menu class="w-5 h-5" />
-        </button>
-
-        <div class="min-w-0 flex items-center gap-2">
-          <button
-            type="button"
-            class="font-bold text-sm text-text truncate max-w-[100px] sm:max-w-xs hover:text-primary transition-colors flex items-center gap-1 cursor-pointer text-left"
-            title="切换电脑"
-            @click="router.push('/remote/devices')"
-          >
-            <span>{{ chatStore.selectedDevice?.displayName || chatStore.selectedDevice?.deviceName || '我的电脑' }}</span>
-            <span class="text-xs text-text-muted font-normal truncate">/ {{ chatStore.activeConversation?.title || '对话' }}</span>
-          </button>
-
-          <!-- Layer 1: Transport Status (Worker Online/Offline badge) -->
-          <HqBadge
-            :variant="chatStore.isWorkerOnline ? 'success' : 'neutral'"
-            class="shrink-0 text-[10px]"
-          >
-            {{ chatStore.activeConversation?.conversationKind === 'native' ? agentLabel(chatStore.activeConversation.agentType) : chatStore.isWorkerOnline ? '电脑在线' : '电脑离线' }}
-          </HqBadge>
-          <button v-if="chatStore.activeRun" type="button" data-testid="run-status-toggle"
-            class="shrink-0 rounded px-1.5 py-1 text-[10px]" :class="statusNeedsAttention ? 'text-warning bg-warning/15' : 'text-text-muted bg-panel'"
-            :aria-expanded="statusExpanded" aria-controls="remote-status-details" @click="statusExpanded = !statusExpanded">
-            {{ statusLabel }}{{ statusNeedsAttention ? ' !' : '' }}
-          </button>
+    <header class="h-16 bg-panel border-b border-border px-[12px] flex items-center justify-between gap-2 shrink-0 z-30">
+      <div class="flex items-center gap-1 min-w-0 flex-1">
+        <button type="button" class="min-w-[44px] min-h-[44px] shrink-0 rounded-xl flex items-center justify-center text-content-muted hover:bg-muted" title="打开对话列表" aria-label="打开对话列表" @click="isMobileSidebarOpen = true"><Menu class="w-5 h-5" /></button>
+        <div class="min-w-0 flex-1 space-y-1">
+          <button type="button" class="block w-full text-left text-xs font-semibold text-content-primary truncate" title="切换电脑" @click="router.push('/remote/devices')">{{ chatStore.selectedDevice?.displayName || chatStore.selectedDevice?.deviceName || '我的电脑' }} / {{ chatStore.activeConversation?.title || '对话' }}</button>
+          <div class="flex items-center gap-1 min-w-0">
+            <HqBadge :variant="connectionLabel.variant" class="text-[10px] shrink-0" data-testid="connection-status">{{ connectionLabel.text }}</HqBadge>
+            <span v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-[10px] text-content-secondary">{{ agentLabel(chatStore.activeConversation.agentType) }}</span>
+            <button v-if="chatStore.activeRun" type="button" data-testid="run-status-toggle" class="shrink-0 rounded px-1 py-0.5 text-[10px]" :class="statusNeedsAttention ? 'text-status-warning bg-status-warning-soft' : 'text-content-muted bg-muted'" :aria-expanded="statusExpanded" aria-controls="remote-status-details" @click="statusExpanded = !statusExpanded">{{ statusLabel }}{{ statusNeedsAttention ? ' !' : '' }}</button>
+          </div>
         </div>
       </div>
-
-      <div class="flex items-center gap-1.5 shrink-0">
-        <HqButton
-          variant="ghost"
-          size="sm"
-          class="text-xs p-1.5"
-          title="管理设备"
-          @click="router.push('/remote/devices')"
-        >
-          <Laptop class="w-4 h-4" />
-        </HqButton>
-
-        <button
-          type="button"
-          class="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-panel-hover cursor-pointer transition-colors"
-          title="退出登录"
-          aria-label="退出登录"
-          @click="handleLogout"
-        >
-          <LogOut class="w-4 h-4" />
-        </button>
+      <div class="flex items-center gap-[8px] shrink-0" data-testid="chat-header-actions">
+        <button type="button" aria-label="新话题" :aria-description="newTopicDisabledReason || '下一条消息开启新话题'" :title="newTopicDisabledReason || '新话题'" :disabled="Boolean(newTopicDisabledReason)" class="w-[44px] h-[44px] rounded-xl flex items-center justify-center text-content-muted hover:bg-muted disabled:opacity-50" @click="newTopic"><Plus class="w-5 h-5" /></button>
+        <button type="button" aria-label="管理设备" title="管理设备" class="w-[44px] h-[44px] rounded-xl flex items-center justify-center text-content-muted hover:bg-muted" @click="router.push('/remote/devices')"><Laptop class="w-5 h-5" /></button>
+        <button type="button" aria-label="退出登录" title="退出登录" class="w-[44px] h-[44px] rounded-xl flex items-center justify-center text-content-muted hover:bg-muted" @click="handleLogout"><LogOut class="w-5 h-5" /></button>
       </div>
     </header>
     <RemoteRequestNotice />
@@ -1004,7 +962,7 @@ function getExecutionStatusLabel(status?: string): string {
         </div>
 
         <!-- Composer -->
-        <footer class="p-2.5 sm:p-3 bg-panel border-t border-border shrink-0 space-y-2">
+        <footer class="px-[12px] py-3 bg-panel border-t border-border shrink-0 space-y-2">
           <!-- Busy lock banner -->
           <div
             v-if="chatStore.isConversationBusy"
@@ -1026,50 +984,20 @@ function getExecutionStatusLabel(status?: string): string {
           <div v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-[11px] space-y-1">
             <p>{{ agentLabel(chatStore.activeConversation.agentType) }} · 固定继续原生会话</p>
             <template v-if="chatStore.activeConversation.nativeActivity?.activity !== 'closed_confirmed'">
-              <p>{{ closureText }}</p><label class="flex gap-2"><input v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
+              <p>{{ closureText }}</p><label class="flex gap-2"><input class="hq-form-choice" v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
             </template>
           </div>
-          <!-- SessionMode switch -->
-          <div class="flex items-center justify-between text-xs text-text-muted px-1">
-            <div v-if="chatStore.activeConversation?.conversationKind !== 'native'" class="flex items-center gap-3">
-              <label class="flex items-center gap-1 cursor-pointer">
-                <input
-                  v-model="sessionMode"
-                  type="radio"
-                  value="continue"
-                  class="accent-primary"
-                  @change="isSessionModeUserSelected = true"
-                />
-                <span>继续上下文</span>
-              </label>
-
-              <label class="flex items-center gap-1 cursor-pointer">
-                <input
-                  v-model="sessionMode"
-                  type="radio"
-                  value="new"
-                  class="accent-primary"
-                  @change="isSessionModeUserSelected = true"
-                />
-                <span>新话题</span>
-              </label>
-            </div>
-
-            <span class="text-[10px]">
-              {{ chatStore.isWorkerOnline ? (chatStore.isRemoteSuspended ? '电脑在线 · 已暂停' : '电脑在线就绪') : '电脑离线' }}
-            </span>
-          </div>
-
+          <div v-if="nextMessageNew" class="flex items-center w-fit rounded-lg bg-accent-soft text-content-primary" data-testid="new-topic-tag"><span class="pl-3 text-xs">新话题</span><button type="button" aria-label="取消新话题" :disabled="chatStore.isSending" class="min-w-[44px] min-h-[44px] rounded-r-lg text-content-primary" @click="nextMessageNew = false">×</button></div>
           <AttachmentDrafts v-if="chatStore.activeConversationId" :key="chatStore.activeConversationId" ref="attachmentDrafts" remote :conversation-id="chatStore.activeConversationId" :suspended="chatStore.isRemoteSuspended" :disabled="chatStore.isSending" :offline="!chatStore.isWorkerOnline" @blocked="attachmentsBlocked = $event" />
           <!-- Input + Send Button -->
-          <div class="flex items-center gap-2 min-w-0">
-            <button type="button" aria-label="添加附件" class="min-w-[44px] min-h-[44px] shrink-0 flex items-center justify-center text-content-muted" :disabled="!chatStore.activeConversationId || chatStore.isRemoteSuspended || chatStore.isSending" @click="attachmentDrafts?.open()"><Paperclip class="w-5 h-5" /></button>
+          <div class="hq-composer-row">
+            <button type="button" aria-label="添加附件" class="hq-composer-icon text-content-muted" :disabled="!chatStore.activeConversationId || chatStore.isRemoteSuspended || chatStore.isSending" @click="attachmentDrafts?.open()"><Paperclip class="w-5 h-5" /></button>
             <textarea
               ref="composerRef"
               v-model="inputText"
               rows="1"
               placeholder="输入给电脑上 Agent 的指令..."
-              class="flex-1 min-w-0 py-2 px-3 text-xs sm:text-sm bg-bg-app border border-border rounded-xl text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors resize-none max-h-24"
+              class="hq-form-control hq-composer-text text-sm border border-border"
               :disabled="chatStore.isRemoteSuspended || chatStore.isSending || chatStore.isConversationBusy"
               @keydown.enter.exact.prevent="handleSendMessage"
             />
@@ -1077,7 +1005,7 @@ function getExecutionStatusLabel(status?: string): string {
             <HqButton
               variant="primary"
               aria-label="发送消息"
-              class="min-h-[44px] min-w-[44px] px-3 rounded-xl shrink-0"
+              class="hq-composer-send"
               :loading="chatStore.isSending"
               :disabled="attachmentsBlocked || !nativeCanSend || chatStore.isRemoteSuspended || !inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
               @click="handleSendMessage"
@@ -1102,11 +1030,7 @@ function getExecutionStatusLabel(status?: string): string {
             <HqButton size="sm" variant="ghost" :disabled="!chatStore.catalog?.authorizedRoots?.length || chatStore.isRemoteSuspended || !chatStore.isWorkerOnline" @click="addingWorkspace = true">添加项目</HqButton>
           </div>
           <p v-if="!chatStore.catalog?.authorizedRoots?.length" class="text-[11px] text-text-muted">电脑未开放远程添加项目</p>
-          <select id="new-conv-workspace" v-model="newWorkspaceId" :disabled="!chatStore.catalog || chatStore.isLoadingCatalog"
-            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text">
-            <option v-if="!chatStore.catalog?.workspaces.length" value="">{{ catalogHint }}</option>
-            <option v-for="ws in chatStore.catalog?.workspaces" :key="ws.workspaceId" :value="ws.workspaceId">{{ ws.name }}</option>
-          </select>
+          <HqSelect id="new-conv-workspace" v-model="newWorkspaceId" label="项目" :placeholder="catalogHint" :disabled="!chatStore.catalog || chatStore.isLoadingCatalog" :options="(chatStore.catalog?.workspaces || []).map((ws) => ({ value: ws.workspaceId, label: ws.name }))" />
         </div>
         <div class="space-y-1.5">
           <label for="new-conv-title" class="block font-medium text-text-secondary">标题（选填）</label>
@@ -1115,21 +1039,13 @@ function getExecutionStatusLabel(status?: string): string {
             v-model="newTitle"
             type="text"
             placeholder="例如：重构远程网关并测试"
-            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
+            class="hq-form-control w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
           />
         </div>
 
         <div class="space-y-1.5">
           <label for="new-conv-scene" class="block font-medium text-text-secondary">工作场景</label>
-          <select
-            id="new-conv-scene"
-            v-model="newSceneId"
-            :disabled="!chatStore.catalog || chatStore.isLoadingCatalog"
-            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
-          >
-            <option v-if="!chatStore.catalog?.scenes.length" value="">{{ catalogHint }}</option>
-            <option v-for="scene in chatStore.catalog?.scenes" :key="scene.sceneId" :value="scene.sceneId">{{ scene.name }}</option>
-          </select>
+          <HqSelect id="new-conv-scene" v-model="newSceneId" label="工作场景" :placeholder="catalogHint" :disabled="!chatStore.catalog || chatStore.isLoadingCatalog" :options="(chatStore.catalog?.scenes || []).map((scene) => ({ value: scene.sceneId, label: scene.name }))" />
         </div>
         <div v-if="!chatStore.catalog || chatStore.catalogError || !chatStore.catalog.workspaces.length || !chatStore.catalog.scenes.length" role="status" class="space-y-2">
           <p>{{ catalogHint }}</p>
@@ -1179,7 +1095,7 @@ function getExecutionStatusLabel(status?: string): string {
             v-model="withdrawReason"
             type="text"
             placeholder="例如：指令输入错误"
-            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
+            class="hq-form-control w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
           />
         </div>
       </div>
@@ -1220,7 +1136,7 @@ function getExecutionStatusLabel(status?: string): string {
             id="settings-title"
             v-model="settingsTitle"
             type="text"
-            class="w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
+            class="hq-form-control w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
           />
         </div>
 
@@ -1228,15 +1144,15 @@ function getExecutionStatusLabel(status?: string): string {
           <label class="block font-medium text-text-secondary">可见性</label>
           <div class="space-y-2">
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" v-model="settingsVisibility" value="both" class="accent-primary" />
+              <input type="radio" v-model="settingsVisibility" value="both" class="hq-form-choice accent-primary" />
               <span>两端均可见 (默认)</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" v-model="settingsVisibility" value="pc_only" class="accent-primary" />
+              <input type="radio" v-model="settingsVisibility" value="pc_only" class="hq-form-choice accent-primary" />
               <span>仅电脑可见</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" v-model="settingsVisibility" value="mobile_only" class="accent-primary" />
+              <input type="radio" v-model="settingsVisibility" value="mobile_only" class="hq-form-choice accent-primary" />
               <span>仅手机可见</span>
             </label>
           </div>
@@ -1244,7 +1160,7 @@ function getExecutionStatusLabel(status?: string): string {
 
         <div class="pt-2 border-t border-border">
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" v-model="settingsArchived" class="accent-primary" />
+            <input type="checkbox" v-model="settingsArchived" class="hq-form-choice accent-primary" />
             <span>归档此对话</span>
           </label>
         </div>

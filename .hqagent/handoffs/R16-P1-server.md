@@ -2,10 +2,10 @@
 wp: R16-P1
 status: done
 scope_declared: [apps/server/**, .hqagent/handoffs/R16-P1-server.md]
-scope_touched: [apps/server/README.md, apps/server/nginx-attachments.conf.example, apps/server/pyproject.toml, apps/server/requirements.txt, apps/server/scripts/smoke.py, apps/server/scripts/smoke_attachments.py, apps/server/server/app.py, apps/server/server/attachment_types.py, apps/server/server/attachments.py, apps/server/server/blobstore.py, apps/server/server/config.py, apps/server/server/events.py, apps/server/server/events_sync.py, apps/server/server/native.py, apps/server/server/native_events.py, apps/server/server/queries.py, apps/server/server/replica.py, apps/server/server/repository.py, apps/server/server/repository_attachments.py, apps/server/server/resources/http-errors.json, apps/server/server/resources/remote-hub.v2.bundle.json, apps/server/server/service.py, apps/server/server/service_sync.py, apps/server/server/thumbnail_child.py, apps/server/server/wire.py, apps/server/server/worker.py, apps/server/tests/test_attachment_races.py, apps/server/tests/test_attachment_wire.py, apps/server/tests/test_attachment_backend.py, apps/server/tests/test_blobstore_contract.py, apps/server/tests/test_attachments.py, apps/server/tests/test_controls_storage.py, apps/server/tests/test_devices_tokens.py, apps/server/tests/test_protocol.py, apps/server/tests/test_r15_policy.py, apps/server/tests/test_r3_guards.py, apps/server/tests/test_test_dependencies.py, .hqagent/handoffs/R16-P1-server.md]
+scope_touched: [apps/server/README.md, apps/server/nginx-attachments.conf.example, apps/server/pyproject.toml, apps/server/requirements.txt, apps/server/scripts/smoke.py, apps/server/scripts/smoke_attachments.py, apps/server/server/app.py, apps/server/server/attachment_types.py, apps/server/server/attachments.py, apps/server/server/blobstore.py, apps/server/server/config.py, apps/server/server/events.py, apps/server/server/events_sync.py, apps/server/server/native.py, apps/server/server/native_events.py, apps/server/server/queries.py, apps/server/server/replica.py, apps/server/server/repository.py, apps/server/server/repository_attachments.py, apps/server/server/resources/http-errors.json, apps/server/server/resources/remote-hub.v2.bundle.json, apps/server/server/service.py, apps/server/server/service_sync.py, apps/server/server/thumbnail_child.py, apps/server/server/wire.py, apps/server/server/worker.py, apps/server/tests/test_attachment_races.py, apps/server/tests/test_attachment_wire.py, apps/server/tests/test_attachment_backend.py, apps/server/tests/test_blobstore_contract.py, apps/server/tests/test_thumbnail_platform_limits.py, apps/server/tests/test_attachments.py, apps/server/tests/test_controls_storage.py, apps/server/tests/test_devices_tokens.py, apps/server/tests/test_protocol.py, apps/server/tests/test_r15_policy.py, apps/server/tests/test_r3_guards.py, apps/server/tests/test_test_dependencies.py, .hqagent/handoffs/R16-P1-server.md, apps/server/server/cli.py, apps/server/server/security.py, apps/server/tests/test_set_password.py]
 build: pass
 tests: pass
-commit: 004b6c12f65e8d1d5122cb6f566e2dcfeb7a5ada
+commit: 8c71c7bfc2f0970b646ef2215db334ebaab01d6b
 open_questions: 0
 ---
 
@@ -291,3 +291,183 @@ SMOKE PASS
 - README、nginx占位和本回执另作文档提交。头部commit为最后实现/测试提交。每次提交后执行git log -1 --format=%B自查，无署名；未合回integration、未推送、未部署。
 
 返修1要求已完成，open_questions=0。
+
+
+## 返修 2：macOS 缩略图平台限制（本地实现与验证完成，待真实macOS CI）
+
+基线 `f431eb1 merge: sync integration with attachment UI and protocol test fix`，起始工作区干净。针对主代理提供的CI run 36696935866中macos-latest两项缩略图ready断言失败，本轮只改thumbnail_child平台策略、增加平台分支测试，并更新README及本回执。没有改协议、BlobStore、业务测试原断言或其它端，没有推送或触发远端CI。
+
+### 根因核对与证据限制
+
+代码核对确认：旧restrict()对所有os.name=posix直接设置RLIMIT_AS，任意setrlimit异常会到子进程最外层except并exit(1)，父进程因此返回thumbnailStatus=unavailable。因此主代理的Darwin限制不兼容推断与代码路径及两项失败现象一致；本轮没有拿到该CI子进程的具体异常，不能把它说成已在macOS复现的唯一根因。
+
+官方文档在线核实未能完成：web检索及直接打开均返回工具端 `Invalid URL (POST /v1/alpha/search)` / HTTP404；备用只读浏览器入口返回需要批准而当前approval policy为never，没有访问到页面、没有绕过权限。供主代理/CI环境继续核对的官方资料为 [Python resource](https://docs.python.org/3/library/resource.html) 和 [Apple XNU资源限制实现](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_resource.c)。这些是待核对引用，本回执不冒称已读取其当前内容。实现采用用户明确允许的macOS退化策略，不依赖AS/DATA作为硬内存保证。
+
+### 各平台限制策略
+
+| 平台 | restrict()策略 | 不受平台分支影响的硬约束 |
+| --- | --- | --- |
+| Linux/serverD | RLIMIT_AS=(160MiB,160MiB)、RLIMIT_CPU=(6,6)、RLIMIT_FSIZE=(524288,524288)，任何安装错误继续向外抛出并失败关闭；未降低Linux语义 | 独立解码进程、并发1、父进程8秒期限并kill/wait、像素≤40M、仅首帧、最长边512、PNG重编码去元数据、产物≤512KiB、失败不回退原图 |
+| macOS/darwin | 不调用RLIMIT_AS或RLIMIT_DATA，不声称有160MiB硬内存限制。只对CPU6秒、FSIZE512KiB逐项尝试；常量缺失或ValueError/OSError时跳过该项，继续尝试另一项，不因可选rlimit失败令缩略图恒不可用 | 同上；内存风险由像素上限、单进程并发和父进程超时控制，不等价于Linux的地址空间硬限 |
+| Windows | Job Object每进程160MiB硬限制及失败关闭逻辑不变 | 同上 |
+
+代码注释和README同步说明这些差异。FSIZE只约束普通文件，不约束stdout管道；输出PNG的512KiB上限仍由子进程输出前和父进程收取后分别检查。没有删除像素/首帧/输出大小校验，没有把原图作为缩略图替代。Linux之外的其它POSIX平台继续旧的强制限制策略，本轮没有增加其支持承诺。
+
+### 单测
+
+新增 `tests/test_thumbnail_platform_limits.py` 18项参数化用例：
+
+- 替换thumbnail_child模块持有的os/sys引用，并向sys.modules注入假resource，避免真的给pytest进程设置rlimit，也不改变pytest/pathlib使用的全局os.name。
+- Linux精确断言AS160MiB、CPU6、FSIZE512KiB的调用顺序/值；三项分别模拟ValueError和OSError，均必须继续失败，不能被Darwin容错分支吞掉。
+- Darwin分别模拟无错误、CPU不支持、FSIZE不支持、两者都不支持，以及常量缺失；不调用AS/DATA，独立尝试可用限制，不抛出可选限制异常。
+- 原有两项真实图片ready测试未改断言，在本Windows环境连同平台测试定向运行通过：`20 passed, 1 warning in 1.02s`。
+
+这证明分支策略和本机缩略图路径，不证明macOS内核实际接受/执行的限制；真实macOS及CI两项修复结果仍由主代理推送后验证。
+
+### 真实串行验证
+
+在apps/server设置worktree内忽略目录：
+
+```powershell
+$env:TEMP=(Join-Path $PWD '.tmp')
+$env:TMP=$env:TEMP
+../../.venv/Scripts/python.exe -B -m pytest -q --tb=short -p no:cacheprovider --basetemp=.tmp/r16-repair2-full
+```
+
+```text
+........................................................................ [ 24%]
+........................................................................ [ 48%]
+........................................................................ [ 72%]
+........................................................................ [ 96%]
+..........                                                               [100%]
+=============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-server\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+298 passed, 1 warning in 98.69s (0:01:38)
+```
+
+```powershell
+../../.venv/Scripts/python.exe -B scripts/smoke.py
+```
+
+```text
+Account created
+uvicorn listening on loopback: PASS
+browser login and secure session: PASS
+pairing preview and confirmation: PASS
+fake Worker revision 2, create/grant/sync, offline refusal and reconnect: PASS
+20MB streaming RSS: baseline=93310976 peak=94539776 delta=1228800 bytes; upload/download SHA256: PASS
+revision 3 index, ephemeral queries, resource grant and imported history: PASS
+ephemeral query body and selection absent from database: PASS
+packaged public OpenAPI and request IDs: PASS
+PAT issuance, device pause/resume/delete and immediate revocation: PASS
+Consistent backup created
+server output credential redaction: PASS
+SMOKE PASS
+```
+
+```powershell
+../../.venv/Scripts/python.exe -B scripts/smoke_attachments.py
+```
+
+```text
+Account created
+uvicorn listening on loopback: PASS
+browser login and secure session: PASS
+pairing preview and confirmation: PASS
+fake Worker revision 2, create/grant/sync, offline refusal and reconnect: PASS
+20MB streaming RSS: baseline=93483008 peak=94662656 delta=1179648 bytes; upload/download SHA256: PASS
+revision 3 index, ephemeral queries, resource grant and imported history: PASS
+ephemeral query body and selection absent from database: PASS
+packaged public OpenAPI and request IDs: PASS
+PAT issuance, device pause/resume/delete and immediate revocation: PASS
+Consistent backup created
+server output credential redaction: PASS
+SMOKE PASS
+```
+
+输出在 `.tmp/r16-repair2-{targeted,full,smoke,streaming}-output.txt`。只串行运行服务端测试及两个冒烟；没有同时启动多组重型进程，没有联网安装。warning仍为预装Starlette/httpx弃用提示。未遇到429、0xC0000142或额度错误；文档工具404/批准策略限制已如上单列，不包装成代码故障。
+
+实现与测试提交 `e936b3b`；README和本回执另作文档提交。每次提交后用 `git log -1 --format=%B` 自查，无署名。工作只在允许路径内，未合并回integration、未推送、未部署。下一步由主代理推CI确认macos-latest；本轮不宣称真实macOS已通过。
+
+
+## 返修 3：macOS smoke RSS采样（本机验证完成）
+
+主代理反馈返修2的macOS 298项测试已通过；此次仅处理smoke读取不存在的/proc路径。起始HEAD为f93a7ec，工作区干净。本轮只改 `scripts/smoke_attachments.py` 和本回执。
+
+`rss(pid)` 新增darwin分支，用参数数组执行 `/bin/ps -o rss= -p <pid>`（无shell），将正整数KiB乘1024转换为字节。命令失败/超时、空输出、0、负数或非数字均抛OSError，不返回0。Windows GetProcessMemoryInfo和Linux /proc分支保持原样。另将采样线程的异常传回主流程，避免线程失效后仍用残留样本输出SMOKE PASS。
+
+本机模拟darwin检查输出：`Darwin RSS mocked checks: conversion and 8 failure cases PASS`，覆盖单位转换、五种非法输出及OSError/非零退出/超时。真实macOS进程采样仍由主代理推CI验证，没有宣称本机运行过macOS。
+
+Windows下设置TEMP/TMP为worktree内 `.tmp`，以下命令分别串行执行，均退出0。真实输出摘录：
+
+```powershell
+../../.venv/Scripts/python.exe -B scripts/smoke.py
+```
+
+```text
+20MB streaming RSS: baseline=93577216 peak=94760960 delta=1183744 bytes; upload/download SHA256: PASS
+SMOKE PASS
+```
+
+```powershell
+../../.venv/Scripts/python.exe -B scripts/smoke_attachments.py
+```
+
+```text
+20MB streaming RSS: baseline=93683712 peak=94953472 delta=1269760 bytes; upload/download SHA256: PASS
+SMOKE PASS
+```
+
+完整输出为 `.tmp/r16-repair3-smoke-output.txt` 和 `.tmp/r16-repair3-streaming-output.txt`，包含原有账号、配对、修订2/3、附件、PAT、备份与脱敏检查的PASS行。本轮按小修要求未重跑server全量；前节298项是上一轮结果。未发生429、0xC0000142或额度错误，没有并行重型进程、联网安装、部署、合并或推送。
+
+实现提交 `ce1a634`；本回执另提交。每次提交后执行 `git log -1 --format=%B` 自查，无署名。
+
+
+## 运维小工作包：正式改密码命令（2026-10-02，完成）
+
+基线 `ce58b61 merge: sync integration after R1.6 deployment`，起始工作区干净。本轮增加正式命令：
+
+```sh
+python -m server.cli set-password --login alice
+python -m server.cli set-password --login alice --password-stdin
+```
+
+使用与服务一致的数据目录和server.key。交互模式复用getpass；stdin模式与create-account共用现有有界readline，只消费第一行，不接受命令行密码参数。账号必须已存在，不存在返回退出码1及原有固定笼统错误；不自动创建。成功只输出 `Password updated; browser sessions invalidated`，不输出密码、哈希或盐。
+
+实现落在cli.py、Security.set_password及仓储层delete_browser_sessions。create-account和set-password共用12–1024字符validate_password规则，改密复用现有Security.password_hash/scrypt与新随机盐。账号owner不变；密码更新和该owner的全部浏览器session记录删除在同一事务中提交，故其它账号会话不受影响、CLI可在服务运行时执行。选择删除会话记录而非只标revoked，也堵住旧Cookie的有限登出幂等重放入口；密码或会话操作失败则事务回滚，不会出现新密码已写但旧会话仍有效的部分状态。
+
+**PAT保留**：现有设计中PAT是独立随机秘密、域隔离HMAC与scope/到期/吊销记录，不由账号密码派生。普通改密不等于操作者要求吊销所有自动化集成，因此保留其既有授权及即时吊销语义；新增测试明确验证改密后PAT仍可用。设备凭据同样不由密码派生，本轮不撤销配对。README说明：若改密用于处置泄露，应另外吊销相关PAT、按需撤销设备，而不是误以为改密已经完成这两项操作。
+
+新增test_set_password.py共6项（含参数化）：交互及stdin成功、新密码登录200、旧密码401、两个有效旧会话及已登出重放会话全部失效、其它账号不受影响、PAT保留、盐更新、输出/日志无密码哈希盐；未知账号/短密码/超过1024字符失败且不创建账号、不影响原密码与会话；模拟会话删除失败验证原子回滚。stdin测试验证第二行仍未消费，交互测试验证调用getpass。定向结果 `6 passed, 1 warning in 2.90s`。
+
+按要求串行跑server全量，TEMP/TMP及basetemp使用本worktree内已忽略的.tmp，真实命令：
+
+```powershell
+# cwd: apps/server
+$env:TEMP=(Join-Path $PWD '.tmp')
+$env:TMP=$env:TEMP
+../../.venv/Scripts/python.exe -B -m pytest -q --tb=short -p no:cacheprovider --basetemp=.tmp/set-password-full
+```
+
+```text
+........................................................................ [ 23%]
+........................................................................ [ 47%]
+........................................................................ [ 71%]
+........................................................................ [ 94%]
+................                                                         [100%]
+=============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-server\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+304 passed, 1 warning in 82.29s (0:01:22)
+```
+
+输出为 `.tmp/set-password-{targeted,full}-output.txt`，warning为既有Starlette/httpx弃用提示。未安装依赖、未改协议/旧断言，未发生429、0xC0000142或额度错误。本轮不涉及文件传输，按任务仅跑server全量，没有重复跑附件smoke。没有访问或修改已上线账号、没有部署、推送或合并回integration。
+
+实现与测试提交 `8c71c7b`；README运维说明和本回执另提交。每次提交后执行 `git log -1 --format=%B` 自查，无署名。本小包无未完成项，open_questions=0。

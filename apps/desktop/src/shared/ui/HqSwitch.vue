@@ -32,9 +32,10 @@ function toggle() {
 
 <template>
   <label
+    :data-disabled="disabled || undefined"
     :class="[
-      'inline-flex items-center gap-2.5 select-none',
-      disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+      'hq-choice-field inline-flex items-center gap-2.5 select-none',
+      disabled ? 'cursor-not-allowed' : 'cursor-pointer',
     ]"
   >
     <button
@@ -63,7 +64,7 @@ function toggle() {
       />
     </button>
 
-    <span v-if="label || $slots.default" class="text-sm text-content-primary">
+    <span v-if="label || $slots.default" class="hq-choice-label text-sm text-content-primary">
       <slot>{{ label }}</slot>
     </span>
   </label>

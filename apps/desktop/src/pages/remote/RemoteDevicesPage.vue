@@ -4,18 +4,18 @@ import { useRouter } from 'vue-router'
 import type { RemoteDeviceView } from '@hqagent/protocol'
 import { useRemoteChatStore } from '@/stores/remote-chat.store'
 import { useRemoteAuthStore } from '@/stores/remote-auth.store'
-import { HqButton, HqBadge, HqDialog, HqEmptyState } from '@/shared/ui'
+import { HqButton, HqBadge, HqDialog, HqEmptyState, HqSelect, useConfirm } from '@/shared/ui'
 import { Laptop, Plus, MoreHorizontal, LogOut, KeyRound } from 'lucide-vue-next'
 import RemoteRequestNotice from './RemoteRequestNotice.vue'
 
 const router = useRouter()
+const confirm = useConfirm()
 const chatStore = useRemoteChatStore()
 const authStore = useRemoteAuthStore()
 const showRevoked = ref(false)
 const menuWorkerId = ref<string | null>(null)
 const menuDevice = computed(() => chatStore.devices.find((d) => d.workerId === menuWorkerId.value))
 const displayName = ref('')
-const deviceToDelete = ref<RemoteDeviceView | null>(null)
 const onlineFilter = ref('all')
 const accessFilter = ref('all')
 const filteredDevices = computed(() => chatStore.availableDevices.filter((d) =>
@@ -67,15 +67,14 @@ async function saveName() {
     displayName.value = menuDevice.value.displayName || ''
   }
 }
-function confirmDeletion(device: RemoteDeviceView) {
+async function confirmDeletion(device: RemoteDeviceView) {
+  if (chatStore.isDeviceActionLoading) return
   chatStore.deviceActionError = null
-  deviceToDelete.value = device
-  menuWorkerId.value = null
-}
-async function deleteDevice() {
-  if (deviceToDelete.value && await chatStore.deleteDevice(deviceToDelete.value.workerId, showRevoked.value)) deviceToDelete.value = null
+  if (!await confirm({ title: '确认删除设备？', description: '这台电脑在服务器上的对话副本会被删除，电脑本地不受影响。\n电脑上正在执行的任务可能仍在继续。\n以后要再连接，只能在电脑端重新扫码。', confirmText: '确认删除', danger: true })) return
+  if (await chatStore.deleteDevice(device.workerId, showRevoked.value)) menuWorkerId.value = null
 }
 async function logout() {
+  if (!await confirm({ title: '确定退出登录？', confirmText: '退出' })) return
   await authStore.logout()
   chatStore.reset()
   void router.replace('/remote/login')
@@ -88,7 +87,7 @@ async function logout() {
       <div><h1 class="font-bold text-sm">我的电脑</h1><p class="text-[10px] text-text-muted">设备管理</p></div>
       <div class="flex items-center gap-2">
         <HqButton variant="secondary" size="sm" @click="router.push('/remote/tokens')"><KeyRound class="w-3.5 h-3.5" />API 令牌</HqButton>
-        <button type="button" aria-label="退出登录" class="p-2" @click="logout"><LogOut class="w-4 h-4" /></button>
+        <button type="button" aria-label="退出登录" class="min-w-[44px] min-h-[44px] flex items-center justify-center" @click="logout"><LogOut class="w-4 h-4" /></button>
       </div>
     </header>
     <RemoteRequestNotice />
@@ -102,15 +101,16 @@ async function logout() {
       </p>
       <div class="flex gap-2 text-xs">
         <label class="flex-1">连接状态
-          <select v-model="onlineFilter" class="block w-full p-2 mt-1 bg-panel border border-border rounded-lg"><option value="all">全部连接状态</option><option value="true">在线</option><option value="false">离线</option></select>
+          <HqSelect v-model="onlineFilter" label="连接状态" :options="[{ value: 'all', label: '全部连接状态' }, { value: 'true', label: '在线' }, { value: 'false', label: '离线' }]" />
         </label>
         <label class="flex-1">远程操作
-          <select v-model="accessFilter" class="block w-full p-2 mt-1 bg-panel border border-border rounded-lg"><option value="all">全部远程状态</option><option value="enabled">远程可用</option><option value="suspended">已暂停</option></select>
+          <HqSelect v-model="accessFilter" label="远程操作" :options="[{ value: 'all', label: '全部远程状态' }, { value: 'enabled', label: '远程可用' }, { value: 'suspended', label: '已暂停' }]" />
         </label>
       </div>
       <div v-if="chatStore.deviceError" role="alert" class="text-xs text-danger">
         {{ chatStore.deviceError }} <button type="button" class="underline" @click="refresh">重试</button>
       </div>
+      <p v-if="chatStore.deviceActionError" role="alert" class="text-xs text-status-danger">{{ chatStore.deviceActionError }}</p>
       <p v-if="chatStore.isLoadingDevices" class="text-xs text-text-muted">正在获取设备列表…</p>
       <HqEmptyState v-else-if="!filteredDevices.length" title="暂无匹配电脑" description="调整筛选，或在电脑端生成配对码添加电脑" />
       <div v-else class="space-y-3">
@@ -123,7 +123,7 @@ async function logout() {
           </div>
           <p class="text-[11px] text-text-muted my-2">{{ device.platform }} · {{ device.architecture }}</p>
           <div class="flex flex-wrap gap-2">
-            <HqBadge :variant="(device.online ?? device.status === 'online') ? 'success' : 'neutral'">{{ (device.online ?? device.status === 'online') ? '电脑在线' : '电脑离线' }}</HqBadge>
+            <HqBadge :variant="(device.online ?? device.status === 'online') ? 'success' : 'warning'">{{ (device.online ?? device.status === 'online') ? '电脑在线' : '电脑离线' }}</HqBadge>
             <HqBadge :variant="device.remoteAccess === 'suspended' ? 'warning' : 'info'">{{ device.remoteAccess === 'suspended' ? '远程操作已暂停' : '远程可用' }}</HqBadge>
             <HqBadge v-if="device.supportedWireRevisions?.includes(2)" variant="primary">支持互通 (v2)</HqBadge>
           </div>
@@ -148,7 +148,7 @@ async function logout() {
         <p class="text-xs text-text-muted">暂停只限制远程操作，历史与同步保留，不停止电脑上的任务。</p>
         <HqButton :loading="chatStore.isDeviceActionLoading" :variant="menuDevice.remoteAccess === 'suspended' ? 'primary' : 'secondary'" @click="changeAccess">{{ menuDevice.remoteAccess === 'suspended' ? '恢复远程' : '暂停远程' }}</HqButton>
         <label class="block text-xs">修改显示名（留空恢复电脑名称）
-          <input v-model="displayName" maxlength="120" aria-label="显示名" class="block w-full p-2 mt-1 rounded border border-border bg-bg-app" />
+          <input v-model="displayName" maxlength="120" aria-label="显示名" class="hq-form-control block w-full p-2 mt-1 rounded border border-border bg-bg-app" />
         </label>
         <HqButton size="sm" :loading="chatStore.isDeviceActionLoading" @click="saveName">保存显示名</HqButton>
         <div class="border-t border-border pt-3"><HqButton variant="danger" :disabled="chatStore.isDeviceActionLoading" @click="confirmDeletion(menuDevice)">删除设备</HqButton></div>
@@ -156,15 +156,6 @@ async function logout() {
         <RemoteRequestNotice />
       </div>
     </HqDialog>
-    <HqDialog :open="Boolean(deviceToDelete)" title="确认删除设备？" @close="deviceToDelete = null">
-      <div class="space-y-3 text-xs">
-        <p>这台电脑在服务器上的对话副本会被删除，电脑本地不受影响。</p>
-        <p>电脑上正在执行的任务可能仍在继续。</p>
-        <p>以后要再连接，只能在电脑端重新扫码。</p>
-        <p v-if="chatStore.deviceActionError" role="alert" class="text-danger">{{ chatStore.deviceActionError }}</p>
-        <RemoteRequestNotice />
-      </div>
-      <template #footer><HqButton variant="ghost" :disabled="chatStore.isDeviceActionLoading" @click="deviceToDelete = null">取消</HqButton><HqButton variant="danger" :loading="chatStore.isDeviceActionLoading" @click="deleteDevice">确认删除</HqButton></template>
-    </HqDialog>
+
   </div>
 </template>

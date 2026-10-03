@@ -16,6 +16,8 @@ def _current_windows_sid() -> str:
         check=True,
         capture_output=True,
         text=True,
+        encoding="oem",
+        errors="replace",
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     row = next(csv.reader(io.StringIO(completed.stdout.strip())))
@@ -33,6 +35,8 @@ def secure_current_user_only(path: Path, directory: bool = False) -> None:
         check=True,
         capture_output=True,
         text=True,
+        encoding="oem",
+        errors="replace",
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 
@@ -59,4 +63,3 @@ class RuntimeDescriptorFile:
                 self.path.unlink(missing_ok=True)
         except (OSError, ValueError):
             return
-

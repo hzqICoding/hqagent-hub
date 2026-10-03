@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import RemoteRequestNotice from './RemoteRequestNotice.vue'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { useRemoteAuthStore } from '@/stores/remote-auth.store'
 import { getRemoteGateway, RemoteApiError } from '@/shared/api'
@@ -11,6 +11,17 @@ import { Laptop, ArrowLeft, CheckCircle2, AlertCircle, ShieldCheck } from 'lucid
 const router = useRouter()
 const gateway = getRemoteGateway()
 const authStore = useRemoteAuthStore()
+
+const PairingScanner = defineAsyncComponent(() => import('./PairingScanner.vue'))
+const scannerOpen = ref(false)
+let successTimer: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => { scannerOpen.value = false; clearTimeout(successTimer) })
+async function onScanned(code: string) {
+  scannerOpen.value = false
+  pairCode.value = code
+  previewData.value = null
+  await handlePreview()
+}
 
 const pairCode = ref('')
 const isLoadingPreview = ref(false)
@@ -84,7 +95,7 @@ async function handleConfirm() {
       pairCode: pairCode.value,
     })
     isSuccess.value = true
-    setTimeout(() => {
+    successTimer = setTimeout(() => {
       router.push('/remote/devices')
     }, 1200)
   } catch (err: unknown) {
@@ -102,6 +113,7 @@ async function handleConfirm() {
 <template>
   <div class="min-h-screen bg-bg-app flex flex-col justify-center px-4 py-8 select-none">
     <RemoteRequestNotice />
+    <PairingScanner v-if="scannerOpen" @close="scannerOpen = false" @decoded="onScanned" />
     <div class="w-full max-w-sm mx-auto bg-panel border border-border rounded-2xl shadow-xl p-6 sm:p-8 space-y-6">
       <!-- Back Link -->
       <button
@@ -148,16 +160,19 @@ async function handleConfirm() {
           <label for="pair-code" class="block text-xs font-medium text-text-secondary">
             8 位配对短码
           </label>
+          <div class="flex items-center gap-2">
           <input
             id="pair-code"
             :value="pairCode"
             type="text"
             maxlength="8"
             placeholder="例如 ABCD1234"
-            class="w-full text-center tracking-widest font-mono text-lg font-bold py-2.5 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary transition-colors uppercase"
+            class="hq-form-control w-full min-w-0 text-center tracking-widest font-mono text-lg font-bold py-2.5 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary transition-colors uppercase"
             :disabled="isLoadingPreview || isConfirming || Boolean(previewData)"
             @input="formatCode(($event.target as HTMLInputElement).value)"
           />
+          <button type="button" class="shrink-0 min-h-[44px] min-w-[44px] px-3 rounded-lg border border-border bg-panel text-text hover:bg-panel-hover focus-visible:ring-2 focus-visible:ring-ring" :disabled="isLoadingPreview || isConfirming || Boolean(previewData)" @click="scannerOpen = true">扫码</button>
+          </div>
         </div>
 
         <!-- Preview Card -->
