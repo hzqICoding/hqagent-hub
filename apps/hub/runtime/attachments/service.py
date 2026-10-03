@@ -17,6 +17,8 @@ class AttachmentService:
         self.library = AttachmentLibrary(worker)
         self.repo = self.library.repo
         self.capabilities = ImageCapabilities(worker)
+        from runtime.attachments.verification_jobs import VerificationCoordinator
+        self.verifications = VerificationCoordinator.for_service(self)
         from runtime.attachments.sync import AttachmentSync
         self.sync = AttachmentSync(self)
         self.jobs = {}
@@ -31,7 +33,10 @@ class AttachmentService:
             return
         adapter = self.chat.ports.tasks.directory.adapter_for(agent.instance_id)
         descriptor = await adapter.detect()
-        cap = self.capabilities.store.capability(str(agent.adapter_id), getattr(descriptor, 'detected_version', ''), model)
+        from runtime.attachments.verification_target import target_for
+        version = getattr(descriptor, 'detected_version', '')
+        target = target_for(agent.instance_id, str(agent.adapter_id), version, model, adapter)
+        cap = self.capabilities.store.capability(str(agent.adapter_id), version, model, target=target)
         if cap.support != 'supported' or any((v['attachment']['mimeType'] not in cap.mime_types for v in inputs if v['attachment']['kind'] == 'image')):
             raise HubError('AGENT_IMAGE_UNSUPPORTED', '实际派发Agent图片输入未经当前版本验证')
 
@@ -204,6 +209,7 @@ class AttachmentService:
         self.recovered = True
 
     async def stop(self):
+        await self.verifications.close()
         await self.sync.stop()
         for job in list(self.jobs.values()):
             job.cancel()

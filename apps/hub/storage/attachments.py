@@ -13,6 +13,11 @@ class AttachmentRepository:
     def row(self, identifier, tx=None, *, available=True):
         with self.db.locked_connection() as db:
             row = (tx.connection if tx else db).execute('SELECT * FROM local_attachments WHERE attachment_id=?', (identifier,)).fetchone()
+            if row and available and (tx.connection if tx else db).execute(
+                'SELECT 1 FROM local_conversation_deletions WHERE conversation_id=?',
+                (row['conversation_id'],),
+            ).fetchone():
+                raise HubError('NOT_FOUND', '附件不存在或已清理')
         if row is None or (available and (row['state'] in {'deleted', 'expired'} or (row['state'] == 'uploaded' and row['expires_at'] <= now()))):
             raise HubError('NOT_FOUND', '附件不存在或已清理')
         return dict(row)
@@ -23,6 +28,8 @@ class AttachmentRepository:
         return LocalAttachmentView(attachment=json.loads(row['manifest_json']), conversationId=row['conversation_id'], state=row['state'], createdAt=row['created_at'], **{'expiresAt': row['expires_at']} if row['expires_at'] else {}, syncStatus=sync.get('status', 'not_synced'), **{'syncError': sync['error']} if sync.get('error') else {})
 
     def insert(self, tx, conversation, manifest, file_key, *, origin=None):
+        if tx.connection.execute('SELECT 1 FROM local_conversation_deletions WHERE conversation_id=?', (conversation,)).fetchone():
+            raise HubError('NOT_FOUND', '对话不存在')
         stamp = now()
         expires = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat().replace('+00:00', 'Z')
         tx.connection.execute('INSERT INTO local_attachments VALUES(?,?,?,?,?,?,?,?,?)', (manifest['attachmentId'], conversation, json.dumps(manifest), file_key, 'uploaded', stamp, expires, origin, '{}'))

@@ -1,0 +1,54 @@
+{
+  "target": {
+    "agentId": "local.claude.default",
+    "agentType": "claude",
+    "modelId": "opus",
+    "cliVersion": "1.2.3",
+    "transport": "stream-json-image-v1",
+    "targetRevision": "opaque-target-revision-001"
+  },
+  "inUse": true,
+  "usages": [
+    {
+      "sceneId": "analyze",
+      "roleId": "analyst"
+    }
+  ],
+  "usagesTruncated": false,
+  "status": "failed",
+  "passed": false,
+  "invalidated": false,
+  "invalidationReasons": [],
+  "lastRecord": {
+    "recordId": "verification_record_example",
+    "target": {
+      "agentId": "local.claude.default",
+      "agentType": "claude",
+      "modelId": "opus",
+      "cliVersion": "1.2.3",
+      "transport": "stream-json-image-v1",
+      "targetRevision": "opaque-target-revision-001"
+    },
+    "passed": false,
+    "probes": {
+      "new": false,
+      "resume": false,
+      "mixedFive": false,
+      "cancel": false,
+      "error": false
+    },
+    "diagnostics": {
+      "newStart": {
+        "result": "adapter_failure",
+        "elapsedMs": 12,
+        "code": "INTERNAL",
+        "retryable": false,
+        "startupStage": "process.start"
+      }
+    },
+    "mimeTypes": [],
+    "observedAt": "2026-10-02T12:00:00Z",
+    "jobId": "verification_job_example"
+  },
+  "lastJobId": "verification_job_example"
+}

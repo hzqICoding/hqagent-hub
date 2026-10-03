@@ -1,0 +1,8 @@
+{
+  "agentId": "local.claude.default",
+  "agentType": "claude",
+  "modelId": "opus",
+  "cliVersion": "1.2.3",
+  "transport": "stream-json-image-v1",
+  "targetRevision": "opaque-target-revision-001"
+}

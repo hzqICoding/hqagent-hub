@@ -164,6 +164,7 @@ class CommandBridge:
             "worker": self.repo.get("link")["view"]["workerId"], "value": value})
 
     def _admit(self, tx, frame, registered):
+        self.chat.repository.assert_not_deleted(frame['conversationId'], tx.connection)
         cached = self.repo.get(self._scope_key("command-rejection:", frame), tx)
         if cached is not None:
             return cached, [], False
@@ -221,8 +222,10 @@ class CommandBridge:
             prior = self.repo.inbox(frame["commandId"], tx)
             if prior is None:
                 worker = self.repo.get("link", tx)["view"]["workerId"]
+                deleted = tx.connection.execute('SELECT 1 FROM local_conversation_deletions WHERE conversation_id=?',
+                                                (frame['conversationId'],)).fetchone()
                 tx.connection.execute("INSERT INTO remote_inbox(worker_id,command_id,digest,command_json,status) VALUES(?,?,?,?,?)",
-                    (worker, frame["commandId"], request_hash(frame), canonical(frame), "rejected"))
+                    (worker, frame["commandId"], request_hash(frame), '{}' if deleted else canonical(frame), "rejected"))
             # Conflicting variants must not replace an accepted command or its
             # receipt. Their rejection is independently cached by immutable hash.
             receipt = self._reject(tx, frame, code, persist=prior is None)

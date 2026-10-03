@@ -1,0 +1,5 @@
+{
+  "agentId": "local.claude.default",
+  "expectedTargetRevision": "opaque-default-revision-001",
+  "acknowledgeModelUsage": true
+}

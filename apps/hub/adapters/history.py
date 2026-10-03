@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from core.errors import HubError
+from adapters.versions import version_tuple
 from runtime.remote.security import safe_text
 
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
@@ -128,12 +129,7 @@ class FileHistory:
     def paths(self):
         return self.root.rglob('*.jsonl')
 
-    @staticmethod
-    def version_tuple(version):
-        if not isinstance(version, str) or len(version) > 32:
-            return None
-        match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version)
-        return tuple(map(int, match.groups())) if match else None
+    version_tuple = staticmethod(version_tuple)
 
     def verified_version(self, version):
         value = self.version_tuple(version)

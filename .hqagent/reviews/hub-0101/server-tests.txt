@@ -1,0 +1,36 @@
+........................................................................ [ 23%]
+.........................................F.............................. [ 47%]
+........................................................................ [ 71%]
+........................................................................ [ 94%]
+................                                                         [100%]
+================================== FAILURES ===================================
+_____________ test_request_ids_completion_logs_errors_and_openapi _____________
+tests\test_devices_tokens.py:294: in test_request_ids_completion_logs_errors_and_openapi
+    assert result.json() == json.loads((root/'packages/protocol/openapi/remote-hub.v2.bundle.json').read_text(encoding='utf-8'))
+E   AssertionError: assert {'components'...}}, ...}, ...} == {'components'...}}, ...}, ...}
+E
+E     Omitting 7 identical items, use -vv to show
+E     Differing items:
+E     {'paths': {'/api/v2/api-tokens': {'get': {'description': '仅登录Cookie列出本人令牌元数据，永不返回secret/校验值。游标绑定账号和includeRevoked。', '...: 'X-Client-Request-Id', ...}], 'requestBody': {'content': {'application/json': {...}}, 'required': True}, ...}}, ...}} != {'paths': {'/api/v2/api-tokens': {'get': {'description': '仅登录Cookie列出本人令牌元数据，永不返回secret/校验值。游标绑定账号和includeRevoked。', '...: 'X-Client-Request-Id', ...}], 'requestBody': {'content': {'application/json': {...}}, 'required': True}, ...}}, ...}}
+E     {'info': {'description': '部署于远程Hu...
+E
+E     ...Full output truncated (2 lines hidden), use '-vv' to show
+------------------------------ Captured log call ------------------------------
+INFO     hqremote:http.py:100 {"requestId":"XAjdbckg0kq1PwdLYqyIcsU7FU3sPtrh","operation":"issueRemoteApiToken","status":201,"errorCode":null,"elapsedMs":1.98}
+INFO     hqremote:http.py:100 {"requestId":"28kkbYvwYRFihHeNoT9X6JEkzDexmgVV","operation":"listRemoteDevices","status":200,"errorCode":null,"elapsedMs":0.337}
+INFO     hqremote:http.py:100 {"requestId":"C773jERcIhCa8xAWyEUnMUDRnP27IkqC","operation":"listRemoteDevices","status":401,"errorCode":"REMOTE_AUTH_REQUIRED","elapsedMs":0.17}
+INFO     hqremote:http.py:100 {"requestId":"g-Ms6aiiKa53YRYVjWtwF2JTYAZtwyMm","operation":"listRemoteDevices","status":422,"errorCode":"VALIDATION_FAILED","elapsedMs":0.127}
+INFO     hqremote:http.py:100 {"requestId":"11fb1WiSXzp-S3V3AF0yW1vG6jKDRDIp","operation":"unmatched","status":404,"errorCode":"NOT_FOUND","elapsedMs":0.164}
+INFO     hqremote:http.py:100 {"requestId":"vhOArxuVNnyfYCmcOKRLNbbKlbJ5FQI5","operation":"listRemoteApiTokens","status":403,"errorCode":"REMOTE_API_TOKEN_SCOPE_INSUFFICIENT","elapsedMs":0.733}
+INFO     hqremote:http.py:100 {"requestId":"NR6R-3aNhxLmM7i90loMNNCxWtJNDMo-","operation":"listRemoteDevices","status":400,"errorCode":"BAD_REQUEST","elapsedMs":0.092}
+INFO     hqremote:http.py:100 {"requestId":"zA3tePWJvzuHsv3Ml7D5z0xi25fQSkO4","operation":"listRemoteDevices","status":200,"errorCode":null,"clientRequestId":"12345678-1234-4234-9234-123456789abc","elapsedMs":0.342}
+INFO     hqremote:http.py:100 {"requestId":"_878e2wcCqMo_kmw30iKZPQPmVOkYPBV","operation":"getRemoteOpenApi","status":200,"errorCode":null,"elapsedMs":7.28}
+============================== warnings summary ===============================
+..\..\..\vnext-integration\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\vnext-integration\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_devices_tokens.py::test_request_ids_completion_logs_errors_and_openapi
+1 failed, 303 passed, 1 warning in 81.72s (0:01:21)

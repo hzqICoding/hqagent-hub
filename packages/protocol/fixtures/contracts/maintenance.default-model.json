@@ -1,0 +1,16 @@
+{
+  "target": {
+    "agentId": "local.claude.default",
+    "agentType": "claude",
+    "cliVersion": "1.2.3",
+    "transport": "stream-json-image-v1",
+    "targetRevision": "opaque-default-revision-001"
+  },
+  "inUse": false,
+  "usages": [],
+  "usagesTruncated": false,
+  "status": "unverified",
+  "passed": false,
+  "invalidated": false,
+  "invalidationReasons": []
+}

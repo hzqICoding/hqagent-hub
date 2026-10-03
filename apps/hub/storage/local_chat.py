@@ -41,6 +41,8 @@ class LocalChatRepository:
         self.native = None
         self.role_templates = LocalRoleTemplateRepository(database)
         self._role_catalog = BuiltinCatalog.load()
+        from runtime.conversation_deletion import initialize_deletion_storage
+        initialize_deletion_storage(database)
         self._seed_scenes()
 
     def _seed_scenes(self) -> None:
@@ -229,6 +231,9 @@ class LocalChatRepository:
             raise HubError("VALIDATION_FAILED", "必须提供不超过200字符的Idempotency-Key")
         digest = request_hash(request)
         with self.database.transaction() as tx:
+            for prefix in ('messages:', 'client-message:', 'conversation.update:'):
+                if route.startswith(prefix):
+                    self.assert_not_deleted(route[len(prefix):], tx.connection)
             row = tx.connection.execute("SELECT request_hash,response_json FROM local_commands WHERE route=? AND idempotency_key=?",
                                         (route, key)).fetchone()
             if row:
@@ -281,6 +286,7 @@ class LocalChatRepository:
                 "SELECT rr.run_id FROM local_runs rr JOIN local_messages m ON m.message_id=rr.message_id "
                 "WHERE rr.conversation_id=c.conversation_id ORDER BY m.sequence DESC LIMIT 1) "
                 "LEFT JOIN tasks t ON t.task_id=r.task_id "
+                "WHERE NOT EXISTS(SELECT 1 FROM local_conversation_deletions d WHERE d.conversation_id=c.conversation_id) "
                 "ORDER BY c.updated_at DESC"
             ).fetchall()
         values = [self._conversation_view(row[0], row[1], row[2]) for row in rows]
@@ -292,6 +298,7 @@ class LocalChatRepository:
 
     def conversation(self, conversation_id: str) -> LocalConversationView:
         with self.database.locked_connection() as db:
+            self.assert_not_deleted(conversation_id, db)
             row = self._conversation_row(db, conversation_id)
         if row is None:
             raise HubError("NOT_FOUND", "对话不存在")
@@ -377,6 +384,17 @@ class LocalChatRepository:
         if self.conversation(conversation_id).archived:
             raise HubError("CONFLICT", "对话已归档，请先恢复后再执行")
 
+    def assert_not_deleted(self, conversation_id: str, connection=None) -> None:
+        with self.database.locked_connection() as db:
+            deleted = (connection or db).execute(
+                'SELECT state FROM local_conversation_deletions WHERE conversation_id=?',
+                (conversation_id,),
+            ).fetchone()
+        if deleted:
+            if deleted[0] != 'completed':
+                raise HubError('CONFLICT', '对话正在删除', detail={'reason': 'deleting'})
+            raise HubError('NOT_FOUND', '对话不存在')
+
     def assert_local_authority(self, conversation_id: str) -> None:
         # D48: retained internal call sites only validate existence. Authority is
         # provenance; it cannot make a computer-owned conversation read-only.
@@ -386,6 +404,8 @@ class LocalChatRepository:
         seen = set()
         with self.database.locked_connection() as db:
             while task_id and task_id not in seen:
+                if db.execute('SELECT 1 FROM local_deleted_execution_resources WHERE resource_id=? AND kind=\'task\'', (task_id,)).fetchone():
+                    raise HubError('NOT_FOUND', '任务不存在')
                 seen.add(task_id)
                 rows = db.execute("SELECT conversation_id FROM local_runs WHERE task_id=?", (task_id,)).fetchall()
                 for row in rows:
@@ -402,6 +422,8 @@ class LocalChatRepository:
         if not profile_id or not profile_id.startswith("local-profile:"):
             return
         with self.database.locked_connection() as db:
+            if db.execute('SELECT 1 FROM local_deleted_execution_resources WHERE resource_id=? AND kind=\'profile\'', (profile_id,)).fetchone():
+                raise HubError('NOT_FOUND', '执行配置不存在')
             row = db.execute("SELECT conversation_id FROM local_runs WHERE run_id=?",
                              (profile_id[len("local-profile:"):],)).fetchone()
         if row:
@@ -433,6 +455,7 @@ class LocalChatRepository:
         if not value.client_message_id or len(value.client_message_id) > 160:
             raise HubError("VALIDATION_FAILED", "clientMessageId必须为1到160字符")
         def create(tx: Transaction) -> dict:
+            self.assert_not_deleted(conversation_id, tx.connection)
             conversation_row = self._conversation_row(tx.connection, conversation_id)
             if conversation_row is None:
                 raise HubError("NOT_FOUND", "对话不存在")

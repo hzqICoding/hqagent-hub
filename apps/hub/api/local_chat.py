@@ -90,6 +90,11 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
     router.include_router(native_router(service.native))
     from runtime.attachments.api import attachment_router
     router.include_router(attachment_router(service.attachments))
+    from runtime.attachments.maintenance_api import maintenance_router
+    def maintenance_cookie(request: Request):
+        if auth.expires_at(request.cookies.get(COOKIE_NAME)) is None:
+            raise HubError('UNAUTHORIZED', '请先输入本机连接码')
+    router.include_router(maintenance_router(service.attachments), dependencies=[Depends(maintenance_cookie)])
     if remote_router is not None:
         router.include_router(remote_router)
 

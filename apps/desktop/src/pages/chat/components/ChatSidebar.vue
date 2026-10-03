@@ -26,6 +26,7 @@ import {
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'close'): void
+  (e: 'delete', id: string): void
 }>()
 
 const chatStore = useChatStore()
@@ -179,8 +180,9 @@ async function restoreConversation(conversation: LocalConversationView) {
 }
 
 function taskMenuItems(conversation: LocalConversationView) {
+  const deletion = { id: 'delete', label: '删除对话', danger: true, action: () => emit('delete', conversation.id) }
   if (conversation.archived) {
-    return [{
+    return [deletion, {
       id: 'restore',
       label: '恢复任务',
       icon: ArchiveRestore,
@@ -189,6 +191,7 @@ function taskMenuItems(conversation: LocalConversationView) {
   }
   const canArchive = chatStore.canArchiveConversation(conversation)
   return [
+    deletion,
     {
       id: 'rename',
       label: '重命名',
