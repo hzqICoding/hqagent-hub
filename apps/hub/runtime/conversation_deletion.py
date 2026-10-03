@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
+import shutil
+import uuid
 
 from core.errors import HubError
 from protocol.generated.python import LocalConversationDeletionView
@@ -29,13 +33,15 @@ def initialize_deletion_storage(database):
             BEGIN SELECT RAISE(ABORT, 'conversation_deleted'); END''')
 
 
-def _contains(value, identifiers):
+def _contains(value, identifiers, identifier_context=False):
     """Exact structured identifiers, never substring-match user text or paths."""
     if isinstance(value, dict):
-        return any(_contains(v, identifiers) for v in value.values())
+        return any(_contains(v, identifiers, identifier_context or
+                   key.lower().replace('_', '').endswith(('id', 'ids')) or key in {'resumeSessions'})
+                   for key, v in value.items())
     if isinstance(value, list):
-        return any(_contains(v, identifiers) for v in value)
-    return isinstance(value, str) and value in identifiers
+        return any(_contains(v, identifiers, identifier_context) for v in value)
+    return identifier_context and isinstance(value, str) and value in identifiers
 
 
 class ConversationDeletion:
@@ -68,6 +74,24 @@ class ConversationDeletion:
             if expanded == selected:
                 return [t for t in tasks if t['task_id'] in selected]
             selected = expanded
+
+    def _execution_scope(self, db, conversation):
+        runs = [dict(r) for r in db.execute('SELECT * FROM local_runs WHERE conversation_id=?', (conversation,))]
+        tasks = self._tasks(db, runs)
+        task_ids = {t['task_id'] for t in tasks}
+        shared = {r[0] for r in db.execute('SELECT task_id FROM local_runs WHERE conversation_id<>?', (conversation,))}
+        session_owners = {r['session_id']: r['task_id'] for r in db.execute('SELECT session_id,task_id FROM sessions')
+                          if r['task_id'] in task_ids}
+        for spec in db.execute("SELECT key,value_json FROM hub_state WHERE key LIKE 'task_spec:%'"):
+            if spec['key'][len('task_spec:'):] not in task_ids:
+                value = json.loads(spec['value_json'])
+                shared.update(owner for session, owner in session_owners.items() if _contains(value, {session}))
+        while True:
+            related = shared | {t['task_id'] for t in tasks
+                                if json.loads(t['payload_json']).get('parentTaskId') in shared}
+            if related == shared:
+                return runs, tasks, task_ids - shared
+            shared = related
 
     def _blockers(self, tx, conversation, runs, tasks):
         blockers, reasons = set(), set()
@@ -106,6 +130,17 @@ class ConversationDeletion:
             if any(r[0] not in TERMINAL | {'skipped'} for r in tx.connection.execute(
                     'SELECT status FROM task_nodes WHERE task_id=?', (task['task_id'],))):
                 reason = reason or 'active_runs'
+            task_service = self.chat.ports.tasks
+            if task['task_id'] in getattr(task_service, '_dispatching', ()) or any(
+                row[0] in getattr(task_service, '_outcomes', {}) for row in tx.connection.execute(
+                    'SELECT node_id FROM task_nodes WHERE task_id=?', (task['task_id'],))
+            ):
+                reason = 'active_runs'
+            for session in tx.connection.execute('SELECT session_id,agent_instance_id FROM sessions WHERE task_id=?', (task['task_id'],)):
+                registry = self._registry(session['agent_instance_id'])
+                state = registry.get(session['session_id']) if registry else None
+                if state and (not state.finished.is_set() or (state.process is not None and state.process.returncode is None)):
+                    reason = 'recovery_required'
             observer = getattr(type(self.chat.ports.tasks), 'activity_observation', None)
             if observer is not None:
                 try:
@@ -144,6 +179,15 @@ class ConversationDeletion:
                 'reason': reason, 'blockingRunIds': ordered[:100],
                 'hasMoreBlockingRuns': len(ordered) > 100,
             })
+
+    def _registry(self, agent):
+        directory = getattr(self.chat.ports.tasks, 'directory', None)
+        if directory is None:
+            return None
+        try:
+            return getattr(directory.adapter_for(agent), 'registry', None)
+        except Exception:
+            return None
 
     def _remote_intent(self, tx, conversation):
         """Emit a durable deletion even while offline; ACK alone confirms erasure."""
@@ -225,6 +269,11 @@ class ConversationDeletion:
         try:
             attachments = getattr(self.chat, 'attachments', None)
             if attachments:
+                await attachments.library.quiesce_conversation(conversation)
+                with self.db.transaction() as tx:
+                    self._retain_shared_inputs(tx, conversation, attachments.library)
+                    if self.worker:
+                        self.worker.repo.seal(tx)
                 await attachments.library.erase_conversation(conversation)
             with self.db.transaction() as tx:
                 self._erase_rows(tx, conversation)
@@ -234,27 +283,93 @@ class ConversationDeletion:
         except Exception as error:
             raise HubError('INTERNAL', '对话清理未完成，可使用相同请求标识重试') from error
 
+    def _retain_shared_inputs(self, tx, conversation, library):
+        """Transfer referenced bytes before erasing this conversation's files.
+
+        Copy+fsync precedes the ownership transaction. On interruption either
+        the old owner still has its original bytes, or the retained owner has a
+        durable copy; retry and orphan maintenance are safe in both cases.
+        """
+        db = tx.connection
+        _, _, exclusive = self._execution_scope(db, conversation)
+        owners = {}
+        for row in db.execute(
+            'SELECT r.task_id,r.conversation_id,r.message_id FROM local_runs r '
+            'WHERE r.conversation_id<>? AND r.task_id IS NOT NULL '
+            'AND NOT EXISTS(SELECT 1 FROM local_conversation_deletions d WHERE d.conversation_id=r.conversation_id) '
+            'ORDER BY r.conversation_id,r.message_id', (conversation,)):
+            owners.setdefault(row['task_id'], dict(row))
+        specs = {}
+        needed = {}
+        for row in db.execute("SELECT key,value_json FROM hub_state WHERE key LIKE 'task_spec:%'").fetchall():
+            task = row['key'][len('task_spec:'):]
+            if task in exclusive:
+                continue
+            # An independently retained Task also owns its inputs even without
+            # a LocalRun. Its private storage bucket is not a conversation.
+            owner = owners.setdefault(task, {'conversation_id': 'retained-task-' + task, 'message_id': None})
+            spec = json.loads(row['value_json']); specs[task] = spec
+            for value in spec.get('inputAttachments', []):
+                identifier = value.get('attachment', {}).get('attachmentId')
+                if identifier:
+                    needed.setdefault(identifier, owner)
+        for row in db.execute('SELECT * FROM local_attachments WHERE conversation_id=?', (conversation,)).fetchall():
+            identifier = row['attachment_id']
+            owner = needed.get(identifier)
+            if not owner:
+                continue
+            new_key = row['file_key']
+            new_path = None
+            if row['file_key']:
+                old_path = library.path(row)
+                new_key = uuid.uuid4().hex + old_path.suffix
+                new_path = library.directory(owner['conversation_id']) / new_key
+                with old_path.open('rb') as source, new_path.open('xb') as destination:
+                    shutil.copyfileobj(source, destination, 65536)
+                    destination.flush()
+                    os.fsync(destination.fileno())
+            db.execute("UPDATE local_attachments SET conversation_id=?,file_key=?,sync_json='{}' WHERE attachment_id=?",
+                       (owner['conversation_id'], new_key, identifier))
+            db.execute('DELETE FROM attachment_sync_jobs WHERE attachment_id=?', (identifier,))
+            db.execute('DELETE FROM local_attachment_messages WHERE attachment_id=? AND message_id IN '
+                       '(SELECT message_id FROM local_messages WHERE conversation_id=?)', (identifier, conversation))
+            if owner['message_id']:
+                ordinal = db.execute('SELECT COALESCE(MAX(ordinal),-1)+1 FROM local_attachment_messages WHERE message_id=?',
+                                     (owner['message_id'],)).fetchone()[0]
+                db.execute('INSERT OR IGNORE INTO local_attachment_messages VALUES(?,?,?,NULL)',
+                           (owner['message_id'], identifier, ordinal))
+            for task, spec in specs.items():
+                changed = False
+                for value in spec.get('inputAttachments', []):
+                    if value.get('attachment', {}).get('attachmentId') == identifier:
+                        if new_path:
+                            value['localPath'] = str(new_path)
+                        if 'sourceMessageId' in value and owner['message_id']:
+                            value['sourceMessageId'] = owner['message_id']
+                        changed = True
+                if changed:
+                    db.execute('UPDATE hub_state SET value_json=? WHERE key=?', (json.dumps(spec), 'task_spec:' + task))
+                    from protocol.generated.python import AgentInputAttachment
+                    for session in db.execute('SELECT session_id,agent_instance_id FROM sessions WHERE task_id=?', (task,)):
+                        registry = self._registry(session['agent_instance_id'])
+                        state = registry.get(session['session_id']) if registry else None
+                        if state:
+                            state.spec = state.spec.model_copy(update={'input_attachments': tuple(
+                                AgentInputAttachment.model_validate(value) for value in spec.get('inputAttachments', []))})
+
     def _erase_rows(self, tx, conversation):
         db = tx.connection
-        runs = [dict(r) for r in db.execute('SELECT * FROM local_runs WHERE conversation_id=?', (conversation,))]
-        tasks = self._tasks(db, runs)
-        task_ids = {t['task_id'] for t in tasks}
-        # A shared execution survives along with its full dependency graph.
-        shared = {r[0] for r in db.execute('SELECT task_id FROM local_runs WHERE conversation_id<>?', (conversation,))}
-        session_owners = {r['session_id']: r['task_id'] for r in db.execute('SELECT session_id,task_id FROM sessions')
-                          if r['task_id'] in task_ids}
-        for spec in db.execute("SELECT key,value_json FROM hub_state WHERE key LIKE 'task_spec:%'"):
-            if spec['key'][len('task_spec:'):] not in task_ids:
-                value = json.loads(spec['value_json'])
-                shared.update(owner for session, owner in session_owners.items() if _contains(value, {session}))
-        while True:
-            related = shared | {t['task_id'] for t in tasks
-                                if json.loads(t['payload_json']).get('parentTaskId') in shared}
-            if related == shared:
-                break
-            shared = related
-        task_ids -= shared
+        runs, tasks, task_ids = self._execution_scope(db, conversation)
         identifiers = {conversation} | {r['run_id'] for r in runs} | {r[0] for r in db.execute('SELECT message_id FROM local_messages WHERE conversation_id=?', (conversation,))} | task_ids
+        for task in task_ids:
+            for table, column in (('sessions', 'session_id'), ('task_nodes', 'node_id'),
+                                  ('approvals', 'approval_id'), ('task_checkpoints', 'checkpoint_id'),
+                                  ('worktrees', 'worktree_id'), ('artifacts', 'artifact_id')):
+                identifiers.update(row[0] for row in db.execute(f'SELECT {column} FROM {table} WHERE task_id=?', (task,)))
+        for action in db.execute("SELECT value_json FROM hub_state WHERE key LIKE 'task_action:%'"):
+            value = json.loads(action[0])
+            if value.get('taskId') in task_ids and value.get('actionId'):
+                identifiers.add(value['actionId'])
         native_rows = db.execute('SELECT * FROM native_sources WHERE conversation_id=?', (conversation,)).fetchall()
         for native in native_rows:
             identifiers.update({native['native_id'], native['session_id']})
@@ -284,6 +399,10 @@ class ConversationDeletion:
             db.execute('DELETE FROM hub_state WHERE key=?', ('local-run-session-mode:' + run['run_id'],))
         for task_id in task_ids:
             db.execute("INSERT OR IGNORE INTO local_deleted_execution_resources VALUES(?,'task')", (task_id,))
+            for session in db.execute('SELECT session_id,agent_instance_id FROM sessions WHERE task_id=?', (task_id,)):
+                registry = self._registry(session['agent_instance_id'])
+                if registry:
+                    registry.forget_finished(session['session_id'])
             for table in ('task_nodes', 'sessions', 'approvals', 'task_checkpoints', 'worktrees', 'artifacts'):
                 db.execute(f'DELETE FROM {table} WHERE task_id=?', (task_id,))
             db.execute('DELETE FROM tasks WHERE task_id=?', (task_id,))
@@ -305,6 +424,7 @@ class ConversationDeletion:
         # Remove private copies, including source Inbox bodies, not just UI rows.
         for table, key_column, payload_column in (
             ('hub_state', 'key', 'value_json'), ('local_commands', 'rowid', 'response_json'),
+            ('remote_state', 'key', 'value_json'),
             ('idempotency_records', 'rowid', 'response_json'), ('events', 'seq', 'envelope_json'),
             ('native_commands', 'rowid', 'frame_json'), ('native_history_indexes', 'cache_key', 'metadata_json'),
         ):
@@ -351,4 +471,9 @@ class ConversationDeletion:
             conversations = [r[0] for r in db.execute("SELECT conversation_id FROM local_conversation_deletions WHERE state<>'completed'")]
         for conversation in conversations:
             async with self.chat._conversation_lock(conversation):
-                await self._finish(conversation)
+                try:
+                    await self._finish(conversation)
+                except HubError:
+                    # A locked local file retains its durable fence; unrelated
+                    # conversations and explicit retry must remain available.
+                    logging.getLogger(__name__).warning('conversation cleanup pending')
