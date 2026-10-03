@@ -19,7 +19,8 @@ class HistoryIndex:
 
     def __init__(self, reader, repository):
         self.reader, self.repository = reader, repository
-        self.policy = self.policy + ':' + digest([reader.structure_version, reader.version_policy, reader.verified_series])
+        self.policy = self.policy + ':' + digest([reader.structure_version, reader.version_policy,
+            reader.verified_series, reader.surveyed_maximum])
         self.entries = {}
         self.lock = threading.RLock()
         self.parsed_bytes = 0
@@ -65,6 +66,9 @@ class HistoryIndex:
     def load(self, path):
         key = self.key(path)
         result = self.entries.get(key)
+        if result is not None and result.get('policy') != self.policy:
+            self.entries.pop(key, None)
+            result = None
         if result is None:
             result = self.repository.load(key)
             if result is not None and result.get('policy') == self.policy:
@@ -146,6 +150,9 @@ class HistoryIndex:
                     self.verify(old)
                     if old.get('diagnostic'):
                         self.reader.diagnostics.append(old['diagnostic'])
+                    source = self.source(old)
+                    if source is not None:
+                        self.reader.record_diagnostic(source)
                     return old
                 except HubError as error:
                     if error.code != 'NATIVE_SESSION_CHANGED':
@@ -204,6 +211,7 @@ class HistoryIndex:
                 entry['prefix_hash'] = hasher.hexdigest()
                 state['seen'] = sorted(state.get('seen', []))
                 if source is not None:
+                    self.reader.record_diagnostic(source)
                     source.cut, source.prefix_hash = entry['cut'], entry['prefix_hash']
                     source.modified = before.st_mtime
                     from adapters.history import stamp
