@@ -204,5 +204,5 @@ codex 有自己的默认署名行为。
 
 | 职责 | canonical task | thread ID | session ID | 状态/接续 |
 | --- | --- | --- | --- | --- |
-| 图片作业、双鉴权API、CLI、集成与串行全量 | /root | 01a0ffac-4c25-7923-b0d1-c09095bf126c | 01a0ffac-4c25-7923-b0d1-c09095bf126c | 实施中；回执handoffs/hub-0101.md |
-| 删除协调与真服务端擦除测试 | /root/local_deletion | 01a0ffae-8678-78c3-8fa1-594ba77da3de | 01a0ffac-4c25-7923-b0d1-c09095bf126c（继承，不是独立session） | 核心交付已cherry-pick，补资源复核；本线程可followup，跨客户端恢复未验证 |
+| 图片作业、双鉴权API、CLI、集成与串行全量 | /root | 01a0ffac-4c25-7923-b0d1-c09095bf126c | 01a0ffac-4c25-7923-b0d1-c09095bf126c | 实现已交付；Hub696通过、末次维护35通过；server303通过/基线bundle导致1失败；回执handoffs/hub-0101.md含1项协议待裁决 |
+| 删除协调与真服务端擦除测试 | /root/local_deletion | 01a0ffae-8678-78c3-8fa1-594ba77da3de | 01a0ffac-4c25-7923-b0d1-c09095bf126c（继承，不是独立session） | 已完成可复用；6个子分支提交已整合；停止证据、取消竞态和缓存闭包复核均已处理；本线程可followup，跨客户端恢复未验证 |
