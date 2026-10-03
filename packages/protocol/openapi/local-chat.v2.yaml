@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HQAgent N0 Local Chat
-  version: 0.11.0
+  version: 0.11.1
   description: N0 additive contract. Responses use the existing ApiEnvelope; response
     schema below describes data, see x-envelope.
 x-envelope: ../schema/envelope.json#/$defs/ApiEnvelope
@@ -143,7 +143,7 @@ paths:
                         lastJobId: verification_job_example
                       hasMore: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '401':
           description: ApiEnvelope.error
           headers:
@@ -168,7 +168,7 @@ paths:
                       message: 缺少或错误的 Bearer token；token 只能来自 hub.json
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '403':
           description: ApiEnvelope.error
           headers:
@@ -194,7 +194,7 @@ paths:
                         HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '404':
           description: ApiEnvelope.error
           headers:
@@ -219,7 +219,7 @@ paths:
                       message: 目标资源不存在
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '422':
           description: ApiEnvelope.error
           headers:
@@ -244,7 +244,7 @@ paths:
                       message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '500':
           description: ApiEnvelope.error
           headers:
@@ -269,7 +269,7 @@ paths:
                       message: 未分类的内部错误，detail 里带 requestId 供查日志
                       retryable: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '400':
           description: ApiEnvelope.error
           headers:
@@ -294,7 +294,7 @@ paths:
                       message: 游标无效或与当前资源/认证范围不符，不泄露游标归属
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '410':
           description: ApiEnvelope.error
           headers:
@@ -319,7 +319,7 @@ paths:
                       message: 浏览器opaque游标已失效，需重新获取owner范围快照
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
       x-error-codes:
       - UNAUTHORIZED
       - ORIGIN_NOT_ALLOWED
@@ -412,7 +412,7 @@ paths:
                       orphanProcessIds: []
                       slotHeld: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '401':
           description: ApiEnvelope.error
           headers:
@@ -437,7 +437,7 @@ paths:
                       message: 缺少或错误的 Bearer token；token 只能来自 hub.json
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '403':
           description: ApiEnvelope.error
           headers:
@@ -463,7 +463,7 @@ paths:
                         HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '404':
           description: ApiEnvelope.error
           headers:
@@ -488,7 +488,7 @@ paths:
                       message: 目标资源不存在
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '422':
           description: ApiEnvelope.error
           headers:
@@ -513,7 +513,7 @@ paths:
                       message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '500':
           description: ApiEnvelope.error
           headers:
@@ -538,7 +538,7 @@ paths:
                       message: 未分类的内部错误，detail 里带 requestId 供查日志
                       retryable: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '409':
           description: ApiEnvelope.error
           headers:
@@ -563,7 +563,7 @@ paths:
                       message: 相同 Idempotency-Key 复用于不同请求体
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
                 CONFLICT:
                   value:
                     success: false
@@ -575,7 +575,7 @@ paths:
                         reason: verification_in_progress
                         activeJobId: verification_job_example
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
           x-errorVariantSchema:
             $ref: ../schema/local-maintenance.json#/$defs/LocalMaintenanceConflictError
       requestBody:
@@ -675,7 +675,7 @@ paths:
                       orphanProcessIds: []
                       slotHeld: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '401':
           description: ApiEnvelope.error
           headers:
@@ -700,7 +700,7 @@ paths:
                       message: 缺少或错误的 Bearer token；token 只能来自 hub.json
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '403':
           description: ApiEnvelope.error
           headers:
@@ -726,7 +726,7 @@ paths:
                         HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '404':
           description: ApiEnvelope.error
           headers:
@@ -751,7 +751,7 @@ paths:
                       message: 目标资源不存在
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '422':
           description: ApiEnvelope.error
           headers:
@@ -776,7 +776,7 @@ paths:
                       message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '500':
           description: ApiEnvelope.error
           headers:
@@ -801,7 +801,7 @@ paths:
                       message: 未分类的内部错误，detail 里带 requestId 供查日志
                       retryable: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
       x-error-codes:
       - UNAUTHORIZED
       - ORIGIN_NOT_ALLOWED
@@ -899,7 +899,7 @@ paths:
                       orphanProcessIds: []
                       slotHeld: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '200':
           description: ApiEnvelope.data; no model output or path.
           headers:
@@ -955,7 +955,7 @@ paths:
                       slotHeld: false
                       finishedAt: '2026-10-02T12:00:00Z'
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '401':
           description: ApiEnvelope.error
           headers:
@@ -980,7 +980,7 @@ paths:
                       message: 缺少或错误的 Bearer token；token 只能来自 hub.json
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '403':
           description: ApiEnvelope.error
           headers:
@@ -1006,7 +1006,7 @@ paths:
                         HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '404':
           description: ApiEnvelope.error
           headers:
@@ -1031,7 +1031,7 @@ paths:
                       message: 目标资源不存在
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '422':
           description: ApiEnvelope.error
           headers:
@@ -1056,7 +1056,7 @@ paths:
                       message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '500':
           description: ApiEnvelope.error
           headers:
@@ -1081,7 +1081,7 @@ paths:
                       message: 未分类的内部错误，detail 里带 requestId 供查日志
                       retryable: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '409':
           description: ApiEnvelope.error
           headers:
@@ -1106,7 +1106,7 @@ paths:
                       message: 相同 Idempotency-Key 复用于不同请求体
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
                 CONFLICT:
                   value:
                     success: false
@@ -1118,7 +1118,7 @@ paths:
                         reason: verification_in_progress
                         activeJobId: verification_job_example
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
           x-errorVariantSchema:
             $ref: ../schema/local-maintenance.json#/$defs/LocalMaintenanceConflictError
       requestBody:
@@ -4025,7 +4025,7 @@ paths:
                       localDeleted: true
                       remoteCleanup: pending
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '401':
           description: ApiEnvelope.error
           headers:
@@ -4050,7 +4050,7 @@ paths:
                       message: 缺少或错误的 Bearer token；token 只能来自 hub.json
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '403':
           description: ApiEnvelope.error
           headers:
@@ -4076,7 +4076,7 @@ paths:
                         HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '404':
           description: ApiEnvelope.error
           headers:
@@ -4101,7 +4101,7 @@ paths:
                       message: 目标资源不存在
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '422':
           description: ApiEnvelope.error
           headers:
@@ -4126,7 +4126,7 @@ paths:
                       message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '500':
           description: ApiEnvelope.error
           headers:
@@ -4151,7 +4151,7 @@ paths:
                       message: 未分类的内部错误，detail 里带 requestId 供查日志
                       retryable: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
         '409':
           description: ApiEnvelope.error
           headers:
@@ -4176,7 +4176,7 @@ paths:
                       message: 相同 Idempotency-Key 复用于不同请求体
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
                 CONFLICT:
                   value:
                     success: false
@@ -4190,7 +4190,7 @@ paths:
                         - run_example
                         hasMoreBlockingRuns: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.11.0
+                    protocolVersion: 0.11.1
           x-errorVariantSchema:
             $ref: ../schema/local-maintenance.json#/$defs/LocalMaintenanceConflictError
       x-error-codes:
@@ -4451,7 +4451,7 @@ paths:
                     isDefault: false
                   verified: true
                 requestId: req_0123456789abcdef01234567
-                protocolVersion: 0.11.0
+                protocolVersion: 0.11.1
           x-dataSchema:
             $ref: ../schema/local-chat.json#/$defs/LocalAgentModelsView
       parameters:

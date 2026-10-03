@@ -1,0 +1,31 @@
+{
+  "type": "worker.event",
+  "serverCursor": "opaque_feature_bound_cursor_synthetic",
+  "recordedAt": "2026-09-26T12:00:01Z",
+  "payload": {
+    "type": "approval.state_changed",
+    "eventId": "event_synthetic_approval_5",
+    "workerId": "worker_demo",
+    "workerStoreId": "store_demo",
+    "workerEpoch": "boot_demo",
+    "seq": 1,
+    "occurredAt": "2026-09-26T12:00:00Z",
+    "conversationId": "public_conversation_synthetic",
+    "payload": {
+      "approvalId": "public_approval_synthetic",
+      "resultRef": {
+        "runId": "public_run_synthetic"
+      },
+      "action": "git_push",
+      "targetSummary": "example",
+      "riskLevel": "high",
+      "status": "pending",
+      "requestedAt": "2026-09-26T12:00:00Z",
+      "expiresAt": "2026-09-26T12:05:00Z",
+      "remoteApprovalAllowed": false,
+      "workerPolicyRevision": 1,
+      "denialCode": "REMOTE_APPROVAL_FORBIDDEN"
+    },
+    "wireRevision": 2
+  }
+}

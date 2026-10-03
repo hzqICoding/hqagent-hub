@@ -1,6 +1,6 @@
 # PI Runtime 契约（PI-P0 / D53）
 
-包版本 **0.11.0**；新增 **wireRevision 5**；服务端支持 **[1,2,3,4,5]**。
+包版本 **0.11.1**（补冻1）；线路仍为 **wireRevision 5**；服务端支持 **[1,2,3,4,5]**。
 基线：PI适配方案 v0.2。第一期调度、安全与图片；第二期原生会话读取、导入与续接。
 本文件同时冻结两期类型，不宣称第二期读取器或第一期 Runtime 已实现。无新增 HTTP 路由。
 
@@ -30,8 +30,9 @@ PI场景指任一角色实际绑定PI（含后备链可能选择PI）；不能�
 缺省投影保持0.10.1：不返回PI实例/场景/对话/原生索引及其关联运行、消息、审批、能力；
 不带新增guard/模型绑定/格式诊断字段。直接寻址PI资源返回既有NOT_FOUND；不能伪称claude/codex。
 新客户端必须在首次列表/快照、写操作及轮询中一致携带该头。既有非PI流程与认证不变。
-列表和事件游标绑定能力集，切换能力后重新取快照；WS ticket签发时将能力集绑定到一次性ticket，
+列表和事件游标绑定能力集，切换能力后重新取快照；仅本机 `/api/v1/auth/ws-ticket` 签发时将能力集绑定到一次性ticket，
 流式事件使用该投影，不能收到HTTP过滤后的资源又从事件中泄露。跳过展示项仍推进扫描游标，不能永远卡在PI事件上。
+云端没有浏览器WS ticket接口，云端P1只绑定HTTP列表/事件游标及其请求能力集；本机ticket属于Hub/P2。
 Header不能通过服务器猜测User-Agent或包版本代替；旧端收到正常非PI数据不需升级。
 HTTP兼容窗口保留N/N−1既有请求形状；本次是可选能力扩展，旧枚举结果保持原域。
 
@@ -178,3 +179,96 @@ P2必须实际验证：无shell启动、guard握手与超时fail-closed、未知
 P1必须验证：1–4同一旧样本接受/拒绝域不变、4→5栅栏、离线/暂停/安全取消、旧客户端事件不收到PI。
 前端默认模型建议必须来自可用列表，显示保护状态和图片验证，而非提供忽略风险按钮。
 这些是下游业务与真CLI验收要求；本包只做合成Contract Fixture和协议测试，不作模型调用实测声明。
+
+## 8. 补冻1：修订5审批事实到浏览器事件的投影
+
+### 8.1 版本与边界
+
+0.11.0的RemoteBrowserEvent只接受旧线路形状的worker.event，直接嵌入修订5审批不能通过校验。
+本补冻0.11.1只扩展HTTP事件联合：新增 `RemoteBrowserPiApprovalEvent` 变体，并以
+`RemoteBrowserLegacyApprovalEvent` 命名已有旧形状的**浏览器专用投影**。无新增HTTP路由、错误码或Worker帧，
+wireRevision仍为5；所有线路1–5及递归引用保持不变。新变体只给pi-v1，因此无需提高线路号或更换能力声明。
+
+Server先校验/持久化原Worker事实并更新审批视图，再生成或读取浏览器投影，二者职责不同。
+**Inbox/可靠Outbox中的原wireRevision、seq、epoch、hash、ACK、grant及审计事实绝不改写**。
+下文浏览器兼容对象的wireRevision=2只是旧浏览器解码形状标签，并非声称Worker使用了修订2。
+只允许在browser projection层新建副本；禁止把投影重新送入Worker codec入站、可靠重放或计算源事实hash。
+
+### 8.2 审批投影与可见性
+
+按认证owner、当前设备/store、对话归属及visibility先过滤，再按可信会话/执行绑定判定PI关联：
+沿§1的PI场景/原生及历史绑定标记；不能根据浏览器参数、标题、是否包含pi字符串或仅审批action猜测。
+无法证明非PI的绑定不得按非PI公开；保留待核实/按既有PI保守门禁处理，不能偷偷将pi改称其它Runtime。
+
+| 源事实 | 浏览器能力 | 发出的浏览器事件 |
+| --- | --- | --- |
+| 非PI approval.state_changed（修订5） | 无pi-v1或有pi-v1 | RemoteBrowserLegacyApprovalEvent：外层worker.event，内层approval.state_changed且兼容标签wireRevision=2 |
+| PI相关 approval.state_changed（修订5） | pi-v1 | RemoteBrowserPiApprovalEvent：外层worker.event，内层RemoteV5ApprovalEvent，wireRevision=5 |
+| PI相关事件 | 无pi-v1 | 无事件、无替代conversation.updated、无快照刷新提示；推进内部扫描位置及不透明nextServerCursor |
+| 其它owner/pc_only/已删除且不可见资源 | 任意 | 依既有可见性/删除门禁跳过，不发泄露资源ID的替代通知 |
+
+非PI正常审批**不得只发conversation.updated，也不得跳过**，否则现有前端不会刷新审批。
+RemoteBrowserLegacyApprovalEvent结构是旧RemoteBrowserV2WorkerEvent的子集，冻结0.10.1客户端无需修改即可处理；
+本次不把新字段混入旧形状。新客户端对PI变体仍走worker.event→approval.state_changed，处理语义一致。
+pending按approvalId upsert；approved/rejected/expired移除待处理项，不把command.completed等同审批消耗。
+
+投影字段映射（只读事实副本，不从展示结果反向修改Worker状态）：
+
+| 字段 | 来源/处理 |
+| --- | --- |
+| 外层type | worker.event |
+| serverCursor / recordedAt | Server owner+能力集作用域的不透明事件游标/记录时间；不使用Worker seq作为游标 |
+| 内层type | 保持approval.state_changed |
+| wireRevision | 非PI旧形状固定2；PI新变体保留5；仅浏览器兼容标签 |
+| eventId、workerId、workerStoreId、workerEpoch、seq、occurredAt | 保留来源诊断字段；seq不用于浏览器排序/断点，缺口不解释为PI数量或事件类别 |
+| conversationId | 由已验证owner/worker/store下的本机ID映射成公共对话ID |
+| payload.approvalId | 同一作用域下的公共审批ID，与GET approval/snapshot/decisions一致 |
+| payload.resultRef | runId、executionTaskId、nodeId、sessionId等按既有命名空间规则映射；无对应资源不能伪造关联 |
+| action、riskLevel、status、requestedAt、expiresAt、remoteApprovalAllowed、workerPolicyRevision | 保留真实值及类型；不得为投影放宽审批权限、延期或把终态改pending |
+| targetSummary | 既有脱敏摘要，不回显原始工具参数、路径、凭据或私有推理 |
+| denialCode | PI新变体保留线路5错误；非PI按下述兼容规则映射 |
+
+denialCode为空则仍缺省；非PI且值在RemoteWire2ErrorCode中则原样保留。
+对于已确认非PI、remoteApprovalAllowed=false且denialCode为旧域无法表示的拒绝原因，浏览器副本使用
+`REMOTE_APPROVAL_FORBIDDEN`，**原原因完整保留在原事实及有权限的GET审批/快照视图中**。
+这是明确的保守拒绝投影，不是删除错误后宣称可批准。不得改remoteApprovalAllowed为true，或把PI专用错误误分到非PI后掩盖。
+不一致状态（如允许批准同时带禁止原因）、失配资源引用等按既有事实校验拒绝/对账，不“修复”为成功审批。
+
+### 8.3 修订5其余事件的投影矩阵
+
+以下首先执行与审批相同的owner/visibility/pi-v1过滤。任何PI事件被过滤时都不能通过替代事件、计数、原因或ID通知旧端其存在。
+源事实仍走可靠ACK；浏览器扫描游标可跨过内部/隐藏记录，返回可见项的数量、hasMore只描述可见投影，
+不新增hiddenCount、原始偏移或被跳过类型；不透明游标不可被调用方解码成内部序号。
+
+| 修订5事件组 | 浏览器投影规则 |
+| --- | --- |
+| command.received / accepted / rejected / completed / failed / control_result | 更新既有RemoteCommandView后发command.updated，携真实控制结果与错误；不直接塞入worker.event的旧命令联合 |
+| sync.conversation.upserted | conversation.updated，公共对话视图按能力集裁剪 |
+| sync.message.segment | 收齐/校验/应用完整消息后发顶层message.appended；不发布未拼齐片段 |
+| sync.run.state / run.state_changed | 先应用/核对既有运行投影；可表示时发旧worker.event形状的对应sync.run.state/run.state_changed（标签2，映射公共引用），不伪造状态。PI关联也先检查pi-v1 |
+| run.progress | 脱敏message与映射resultRef后发旧worker.event/run.progress形状（标签2） |
+| capability.changed | 更新完整catalog；旧形状通知仅用RemoteV2CatalogEvent已知字段，去PI资源和新字段。pi-v1客户端也通过现有GET catalog取得完整能力；通知不包含任何PI内容时可共用旧形状 |
+| sync.busy.snapshot / sync.backfill.progress | Server应用完整集合/批次；既有可见conversation.updated用于busy/同步元数据，不能因此宣称审批已刷新 |
+| sync.conversation.deleted / sync.reset | 既有conversation.deleted / store.reset，按既有删除语义和能力集过滤，不附隐藏PI对象的ID或数量 |
+| native.index.upserted / deleted / native.closure.confirmed | 保存允许的索引/审计，既有原生列表刷新/轮询获取；不直接放入旧worker.event，不上传未导入正文 |
+| conversation.skip_recorded | 完成命令序号对账；可发原有兼容通知（标签2）或不发布浏览器事件，不制造执行成功 |
+| query.result.segment / query.failed、握手/心跳、ACK、grant、conversation.gap/skip、events.omitted、sync.content.redaction及下行命令 | 仅对应传输、在线查询、grant/删除栅栏通道；不转为浏览器worker.event，查询结果仍不得持久化 |
+
+禁止通用地给任意修订5帧换成2并尝试发送。上述旧形状必须逐字段白名单构造、映射与校验；例如catalog不能原样塞入新runtimes，命令新控制证据不能被截断。
+仅PI变化且旧客户端可见catalog/busy投影没有变化时，不向旧端发送因此产生的替代通知。
+对已获授权且可见、确实无法通过旧形状安全表达的状态事件：使用既有公共view通知（表中对应类型）；
+若没有合适通知，返回既有 `REMOTE_CURSOR_EXPIRED`（410）要求重新快照对账，**不得静默跳过待处理审批**。
+不新增未知顶层事件去赌旧前端的fallback；尤其不能用conversation.updated冒充审批刷新。
+410重建取同一已应用水位的快照与新serverCursor，包含当前pending且未过期的审批，之后只接水位之后的事件，避免死循环和遗漏。
+只有隐藏/内部事件可无通知跳过并推进游标；不可见PI事件不触发410或快照提示。
+
+### 8.4 下游验收与职责
+
+P1：在浏览器投影层按能力集选择审批变体，审批视图与可恢复投影记录原子提交；过滤先于投影/回放，不能因请求头改变源Inbox。
+修复Q2的临时conversation.updated方案；测试非PI+无头/有头都收到pending及三个终态、PI无头完全不可见、
+PI有头接受新错误、断线游标回放/快照恢复、公共ID可用于批准/拒绝、原wire5 hash/seq/ACK完全未变。
+还要覆盖降级拒绝码、同一worker混合PI/非PI、owner/pc_only/删除、隐藏记录跨页推进且不报告隐藏数量。
+
+P3：更新生成联合以接受RemoteBrowserPiApprovalEvent，复用已有approval.state_changed upsert/删除逻辑；
+pi-v1仍是显式解码能力，未知结构走已规定快照对账。非PI审批使用旧形状，不要求旧前端先改代码才能收到。
+P2：无Worker线路或审批事实变更；本机ticket能力集绑定仍由Hub负责，云端P1无需新增票据接口。

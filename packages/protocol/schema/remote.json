@@ -3840,6 +3840,9 @@
         },
         {
           "$ref": "remote-sync.json#/$defs/RemoteBrowserStoreReset"
+        },
+        {
+          "$ref": "browser-pi.json#/$defs/RemoteBrowserPiApprovalEvent"
         }
       ]
     },
