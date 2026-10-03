@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConversationDeletion from './components/ConversationDeletion.vue'
 import NativeSyncNotice from '@/pages/native/NativeSyncNotice.vue'
 import { agentLabel } from '@/pages/native/native-utils'
 import { ref, onMounted, onUnmounted, watch, nextTick, computed, inject } from 'vue'
@@ -32,6 +33,7 @@ import {
   Menu,
 } from 'lucide-vue-next'
 
+const deletionRef = ref<InstanceType<typeof ConversationDeletion> | null>(null)
 const chatStore = useChatStore()
 const authStore = useLocalAuthStore()
 const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null)
@@ -47,6 +49,7 @@ let mounted = false
 const isContextResetDisabled = computed(() => !chatStore.canResetContext || chatStore.isActiveConversationArchived || chatStore.isRemoteConversation)
 
 const conversationMenuItems = computed(() => [
+  { id: 'delete', label: '删除对话', danger: true, action: () => { if (chatStore.activeConversationId) void deletionRef.value?.request(chatStore.activeConversationId) } },
   {
     id: 'reset-context',
     label: '重置 Agent 上下文',
@@ -199,6 +202,7 @@ async function restoreActiveConversation() {
 
 <template>
   <div class="h-full flex flex-col bg-bg-app overflow-hidden">
+    <ConversationDeletion ref="deletionRef" @open-run="isDrawerOpen = true" />
     <!-- Load Error Alert -->
     <div
       v-if="chatStore.loadError"
@@ -248,6 +252,7 @@ async function restoreActiveConversation() {
         ]"
         @close="isMobileSidebarOpen = false"
         @select="isMobileSidebarOpen = false"
+        @delete="deletionRef?.request($event)"
       />
 
       <!-- Center Column: Active Chat Stream & Composer -->
