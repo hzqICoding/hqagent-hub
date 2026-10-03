@@ -41,5 +41,36 @@ def pi_smoke(client, port, request):
         assert client.get('/api/v2/native-sessions/'+identifier).status_code==404
         assert request('GET','/native-sessions/'+identifier,model='RemoteNativeSessionView',extra=feature).status_code==200
         assert client.get('/api/v2/events',params={'after':before},headers=feature).json()['error']['code']=='REMOTE_CURSOR_INVALID'
+        seq = 2
+        def emit(kind, **fields):
+            nonlocal seq
+            seq += 1
+            send(ws, dict(common, type=kind, eventId=uid(), seq=seq, **fields))
+            assert receive(ws)['position']['seq'] == seq
+        for local, agent in [('normal-conv','codex'),('pi-conv','pi')]:
+            emit('sync.conversation.upserted', syncGeneration=1, payload=dict(
+                conversationId=local, workspaceId='ws', title='Synthetic '+agent,
+                createdAt=stamp(time.time()), updatedAt=stamp(time.time()), archived=False,
+                visibility='both', metadataVersion=1, authority='local', conversationKind='native',
+                agentType=agent, nativeSessionId='session-'+local))
+            emit('sync.run.state', syncGeneration=1, payload=dict(
+                runId='run-'+local, conversationId=local, status='waiting_approval', observedAt=stamp(time.time())))
+        legacy_cursor = request('GET','/events',model='RemoteBrowserEventPage').json()['data']['nextServerCursor']
+        pi_cursor = request('GET','/events',model='RemoteBrowserEventPage',extra=feature).json()['data']['nextServerCursor']
+        for local in ('normal-conv','pi-conv'):
+            payload = dict(approvalId='approval-'+local, resultRef=dict(runId='run-'+local),
+                           action='network', targetSummary='Safe synthetic action', riskLevel='low',
+                           status='pending', requestedAt=stamp(time.time()), expiresAt=stamp(time.time()+120),
+                           remoteApprovalAllowed=local=='normal-conv', workerPolicyRevision=1)
+            if local=='pi-conv':
+                payload['denialCode']='PI_TOOL_CALL_BLOCKED'
+            emit('approval.state_changed', conversationId=local, payload=payload)
+        old_events = request('GET','/events?after='+legacy_cursor,model='RemoteBrowserEventPage').json()['data']['items']
+        new_events = request('GET','/events?after='+pi_cursor,model='RemoteBrowserEventPage',extra=feature).json()['data']['items']
+        assert len(old_events)==1 and len(new_events)==2
+        dto.RemoteBrowserLegacyApprovalEvent.model_validate(old_events[0])
+        dto.RemoteBrowserPiApprovalEvent.model_validate(new_events[1])
+        assert old_events[0]['payload']['wireRevision']==2 and new_events[1]['payload']['wireRevision']==5
     print('revision 5 negotiation, pi-v1 HTTP and cursor isolation: PASS')
+    print('revision 5 approvals: legacy realtime projection and pi-v1 isolation: PASS')
     return [secret,challenge['pairCode']]

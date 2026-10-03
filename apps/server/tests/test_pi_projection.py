@@ -104,6 +104,10 @@ def test_pi_message_run_approval_attachment_and_events_do_not_leak(env):
         new_tail=env.pi.get('/events').json()['data']['nextServerCursor']
         assert w.emit(w.message('pi-local','PRIVATE-PI-TEXT'))['type']=='worker.events_ack'
         assert w.emit(w.event('sync.run.state',syncGeneration=1,payload=dict(runId='pi-run',conversationId='pi-local',status='waiting_approval',observedAt=stamp(env.clock()))))['type']=='worker.events_ack'
+        # 0.11.1 requires snapshot reconciliation when a visible state has no
+        # safe legacy event variant (sync.run.state is outside that union).
+        assert env.pi.get('/events?after='+new_tail).json()['error']['code']=='REMOTE_CURSOR_EXPIRED'
+        new_tail=env.pi.get('/conversations/'+pi+'/snapshot').json()['data']['serverCursor']
         approval=dict(approvalId='pi-approval',resultRef=dict(runId='pi-run'),action='git_push',targetSummary='PRIVATE-PI-TARGET',riskLevel='high',status='pending',requestedAt=stamp(env.clock()),expiresAt=stamp(env.clock()+120),remoteApprovalAllowed=False,workerPolicyRevision=1)
         assert w.emit(w.event('approval.state_changed',conversationId='pi-local',payload=approval))['type']=='worker.events_ack'
         snapshot=env.pi.get('/conversations/'+pi+'/snapshot').json()['data']
@@ -118,7 +122,7 @@ def test_pi_message_run_approval_attachment_and_events_do_not_leak(env):
         old=env.alice.get('/events?after='+old_tail).json()['data']
         assert old['items']==[] and old['nextServerCursor']!=old_tail and not old['hasMore']
         new=env.pi.get('/events?after='+new_tail).json()['data']
-        assert new['items'] and any(e['type']=='conversation.updated' for e in new['items'])
+        assert new['items'] and any(e['type']=='worker.event' and e['payload']['type']=='approval.state_changed' and e['payload']['wireRevision']==5 for e in new['items'])
         assert 'PRIVATE-PI' not in json.dumps(old)
         assert env.alice.get('/events?after='+new_tail).json()['error']['code']=='REMOTE_CURSOR_INVALID'
         assert env.pi.get('/events?after='+old_tail).json()['error']['code']=='REMOTE_CURSOR_INVALID'

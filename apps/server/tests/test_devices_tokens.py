@@ -464,7 +464,7 @@ def test_publication_runs_from_standalone_package_without_checkout(tmp_path):
 sys.path.insert(0, sys.argv[1])
 from server.public_contract import OPENAPI, HTTP_ERRORS
 from server.app import ROUTES
-assert OPENAPI['info']['version'] == '0.11.0'
+assert OPENAPI['info']['version'] == '0.11.1'
 assert len(ROUTES) == 47 and len(HTTP_ERRORS) == 95
 print('standalone package publication: PASS')
 """
