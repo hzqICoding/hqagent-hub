@@ -169,8 +169,8 @@ class AttachmentLibrary:
         self.erase(row)
         return {'attachmentId': identifier, 'deleted': True}
 
-    async def erase_conversation(self, conversation):
-        """Close readers and writers before removing only Hub-owned attachment files."""
+    async def quiesce_conversation(self, conversation):
+        """Stop only file I/O owned by this conversation, never model execution."""
         with self.db.locked_connection() as db:
             rows = [dict(row) for row in db.execute(
                 'SELECT * FROM local_attachments WHERE conversation_id=?', (conversation,))]
@@ -183,6 +183,10 @@ class AttachmentLibrary:
         for identifier in identifiers:
             for stream in list(self.streams.pop(identifier, ())):
                 stream.close()
+
+    async def erase_conversation(self, conversation):
+        """Close readers and writers before removing only Hub-owned attachment files."""
+        await self.quiesce_conversation(conversation)
         directory = self.root / self.directory_key(conversation)
         if not directory.exists():
             return

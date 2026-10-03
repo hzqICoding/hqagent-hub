@@ -135,9 +135,14 @@ def test_cleanup_failure_preserves_fence_and_restart_recovers(tmp_path, monkeypa
         await system.close()
         reopened = System(tmp_path)
         try:
+            retry = reopened.worker.attachments.library.erase_conversation
+            monkeypatch.setattr(reopened.worker.attachments.library, 'erase_conversation', denied)
             await reopened.chat.start()
-            assert reopened.db.connection.execute('SELECT COUNT(*) FROM local_conversations').fetchone()[0] == 0
+            assert reopened.chat.repository.conversations() == []
+            assert reopened.db.connection.execute("SELECT state FROM local_conversation_deletions WHERE conversation_id=?", (cid,)).fetchone()[0] == 'cleaning'
+            monkeypatch.setattr(reopened.worker.attachments.library, 'erase_conversation', retry)
             result = await reopened.chat.delete_conversation(cid, 1, 'delete')
+            assert reopened.db.connection.execute('SELECT COUNT(*) FROM local_conversations').fetchone()[0] == 0
             assert result.local_deleted is True
         finally:
             await reopened.close()
@@ -205,26 +210,55 @@ def test_native_import_erases_hub_copy_and_keeps_vendor_file(tmp_path):
     asyncio.run(scenario())
 
 
-def test_shared_task_and_other_conversation_survive(tmp_path):
+@pytest.mark.parametrize('independent', [False, True])
+def test_shared_task_and_other_conversation_survive(tmp_path, independent):
     async def scenario():
         system = System(tmp_path)
         try:
             first = conversation(system, 'first').id
             second = conversation(system, 'second').id
+            body = b'SHARED_SYNTHETIC_ATTACHMENT'
+            uploaded = await system.local.post(f'/api/v2/conversations/{first}/attachments', content=body, headers=headers(body))
+            attachment = uploaded.json()['data']['attachment']['attachmentId']
+            library = system.worker.attachments.library
+            old_path = library.path(library.repo.row(attachment))
             await system.chat.start()
-            receipt = system.chat.send(first, dto.SendLocalMessageInput(clientMessageId='run', text='synthetic shared', sessionMode='new'), 'run')
+            receipt = system.chat.send(first, dto.SendLocalMessageInput(clientMessageId='run', text='synthetic shared', sessionMode='new', attachmentIds=[attachment]), 'run')
             await until(lambda: system.chat.repository.run_record(receipt.run_id)['status'] == 'succeeded')
             task_id = system.chat.repository.run_record(receipt.run_id)['task_id']
             with system.db.transaction() as tx:
-                tx.connection.execute('INSERT INTO local_messages VALUES(?,?,?,?,?,?,?)', ('shared-message', second, 1, 'user', 'retained', 'shared-run', now()))
-                tx.connection.execute('INSERT INTO local_runs VALUES(?,?,?,?,?,?,?,?,?,?)',
-                    ('shared-run', second, 'shared-message', task_id, '{}', 'new', 'succeeded', None, now(), now()))
+                if independent:
+                    task = dict(tx.connection.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone())
+                    payload = json.loads(task['payload_json'])
+                    payload.update(id='independent-task', profileId='independent-profile')
+                    tx.connection.execute('INSERT INTO tasks VALUES(?,?,?,?,?,?,?,?,?)',
+                        ('independent-task', task['workspace_id'], 'independent-profile', task['objective'], task['status'], task['source'], json.dumps(payload), now(), now()))
+                    spec = json.loads(tx.connection.execute('SELECT value_json FROM hub_state WHERE key=?', ('task_spec:' + task_id,)).fetchone()[0])
+                    session = tx.connection.execute('SELECT session_id FROM sessions WHERE task_id=?', (task_id,)).fetchone()[0]
+                    spec['request'].update(profileId='independent-profile', resumeSessions={'analyst': session})
+                    tx.connection.execute('INSERT INTO hub_state VALUES(?,?,?)', ('task_spec:independent-task', json.dumps(spec), now()))
+                else:
+                    tx.connection.execute('INSERT INTO local_messages VALUES(?,?,?,?,?,?,?)', ('shared-message', second, 1, 'user', 'retained', 'shared-run', now()))
+                    tx.connection.execute('INSERT INTO local_runs VALUES(?,?,?,?,?,?,?,?,?,?)',
+                        ('shared-run', second, 'shared-message', task_id, '{}', 'new', 'succeeded', None, now(), now()))
             result = await system.chat.delete_conversation(first, 1, 'delete-first')
             assert result.local_deleted
             assert system.chat.repository.conversation(second).id == second
             assert system.db.connection.execute('SELECT 1 FROM tasks WHERE task_id=?', (task_id,)).fetchone()
             assert system.db.connection.execute('SELECT 1 FROM sessions WHERE task_id=?', (task_id,)).fetchone()
             assert system.db.connection.execute('SELECT 1 FROM hub_state WHERE key=?', ('task_spec:' + task_id,)).fetchone()
+            retained = library.repo.row(attachment)
+            assert retained['conversation_id'].startswith('retained-task-') if independent else retained['conversation_id'] == second
+            assert library.path(retained).read_bytes() == body
+            assert not old_path.exists()
+            saved = json.loads(system.db.connection.execute('SELECT value_json FROM hub_state WHERE key=?', ('task_spec:' + task_id,)).fetchone()[0])
+            assert saved['inputAttachments'][0]['localPath'] == str(library.path(retained))
+            if independent:
+                other = json.loads(system.db.connection.execute("SELECT value_json FROM hub_state WHERE key='task_spec:independent-task'").fetchone()[0])
+                assert other['inputAttachments'][0]['localPath'] == str(library.path(retained))
+                assert system.db.connection.execute("SELECT 1 FROM tasks WHERE task_id='independent-task'").fetchone()
+            await library.maintain(restart=True)
+            assert library.path(retained).read_bytes() == body
         finally:
             await system.close()
     asyncio.run(scenario())
@@ -308,4 +342,48 @@ def test_deleted_remote_send_and_grant_replays_are_rejected_before_cache(tmp_pat
             assert system.db.connection.execute('SELECT COUNT(*) FROM local_conversations WHERE conversation_id=?', (cid,)).fetchone()[0] == 0
             assert system.worker.delivery.row(command)['command_json'] is None
             assert not system.db.connection.execute("SELECT 1 FROM remote2_delivery WHERE command_id='late-after-delete'").fetchone()
+    asyncio.run(scenario())
+
+
+def test_execution_handles_and_session_only_caches_are_erased(tmp_path):
+    async def scenario():
+        from adapters.session_registry import SessionRegistry, AdapterSessionState
+        from storage.events import EventDraft
+        system = System(tmp_path)
+        try:
+            cid = conversation(system).id
+            await system.chat.start()
+            receipt = system.chat.send(cid, dto.SendLocalMessageInput(clientMessageId='exclusive', text='synthetic exclusive', sessionMode='new'), 'exclusive')
+            await until(lambda: system.chat.repository.run_record(receipt.run_id)['status'] == 'succeeded')
+            task = system.chat.repository.run_record(receipt.run_id)['task_id']
+            node = system.db.connection.execute('SELECT node_id FROM task_nodes WHERE task_id=?', (task,)).fetchone()[0]
+            session = system.db.connection.execute('SELECT session_id FROM sessions WHERE task_id=?', (task,)).fetchone()[0]
+            system.tasks._dispatching.add(task)
+            with pytest.raises(HubError) as error:
+                await system.chat.delete_conversation(cid, 1, 'delete-exclusive')
+            assert error.value.detail['reason'] == 'active_runs'
+            system.tasks._dispatching.discard(task)
+            system.tasks._outcomes[node] = object()
+            with pytest.raises(HubError) as error:
+                await system.chat.delete_conversation(cid, 1, 'delete-exclusive')
+            assert error.value.detail['reason'] == 'active_runs'
+            system.tasks._outcomes.pop(node)
+            system.adapter.registry = SessionRegistry()
+            state = AdapterSessionState(session_id=session, external_session_id='synthetic', spec=system.adapter.started[0], guard=None)
+            state.finished.set()
+            system.adapter.registry.add(state)
+            with system.db.transaction() as tx:
+                tx.connection.execute('INSERT INTO local_commands VALUES(?,?,?,?)', ('session-only', 'secret-key', 'hash', json.dumps({'id': session, 'output': 'SENSITIVE_CACHED_OUTPUT'})))
+                tx.connection.execute('INSERT INTO idempotency_records VALUES(?,?,?,?,?)', ('cache', '/sessions/' + session, 'hash', json.dumps({'id': session, 'private': 'SENSITIVE_CACHED_OUTPUT'}), now()))
+                tx.connection.execute('INSERT INTO remote_state VALUES(?,?)', ('session-cache', json.dumps({'sessionId': session, 'body': 'SENSITIVE_CACHED_OUTPUT'})))
+                event, _ = system.events.append(tx, EventDraft(aggregate_type='session', aggregate_id=session, type='session.test', payload={'private': 'SENSITIVE_CACHED_OUTPUT'}))
+                system.repo.seal(tx)
+            result = await system.chat.delete_conversation(cid, 1, 'delete-exclusive')
+            assert result.local_deleted
+            assert system.adapter.registry.get(session) is None
+            for table, field in [('local_commands', 'response_json'), ('idempotency_records', 'response_json'), ('remote_state', 'value_json'), ('events', 'payload_json')]:
+                assert not any('SENSITIVE_CACHED_OUTPUT' in row[0] for row in system.db.connection.execute(f'SELECT {field} FROM {table}'))
+            assert system.db.connection.execute('SELECT payload_json FROM events WHERE seq=?', (event.seq,)).fetchone()[0] == '{}'
+        finally:
+            await system.close()
     asyncio.run(scenario())
