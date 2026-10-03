@@ -129,7 +129,7 @@ def test_wire_one_error_domain_and_no_frame_rewriting():
         wire.encode(dict(type='server.heartbeat', wireRevision=1, connectionId='c', receivedAt='2026-09-27T00:00:00Z'), 2)
     rejected = wire.encode(dict(type='worker.hello_rejected', error=Fault('REMOTE_SYNC_CONFLICT').view()), 1)
     dto.RemoteServerOutboundFrame.model_validate(rejected)
-    assert rejected['error']['code'] == 'INTERNAL' and rejected['supportedWireRevisions'] == [1, 2, 3, 4]
+    assert rejected['error']['code'] == 'INTERNAL' and rejected['supportedWireRevisions'] == [1, 2, 3, 4, 5]
 
 
 def test_late_received_without_a_prior_timer_transaction_cannot_get_grant(env):
