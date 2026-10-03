@@ -1,0 +1,10 @@
+<script setup lang="ts">
+import type { LocalImageVerificationDiagnostics, LocalImageProbeDiagnostic } from '@hqagent/protocol'
+defineProps<{ diagnostics: LocalImageVerificationDiagnostics }>()
+const stages: (keyof LocalImageVerificationDiagnostics)[] = ['newStart','newCollect','newRecognition','resumeStart','resumeCollect','resumeRecognition','mixedFiveStart','mixedFiveCollect','mixedFiveRecognition','cancelStart','cancelStop','errorCheck']
+const fields: (keyof LocalImageProbeDiagnostic)[] = ['result','elapsedMs','matched','kind','code','retryable','exceptionType','startupStage','osError','winError','outcome','orphanProcessIds']
+const fieldLabels: Record<keyof LocalImageProbeDiagnostic,string> = {result:'结果',elapsedMs:'耗时（毫秒）',matched:'识别匹配',kind:'失败类别',code:'错误码',retryable:'可重试',exceptionType:'安全异常类型',startupStage:'启动阶段',osError:'系统错误码',winError:'Windows 错误码',outcome:'取消结果',orphanProcessIds:'需核对的进程 ID'}
+const stageLabels: Record<keyof LocalImageVerificationDiagnostics,string> = {newStart:'新建·启动',newCollect:'新建·收集',newRecognition:'新建·识别',resumeStart:'续接·启动',resumeCollect:'续接·收集',resumeRecognition:'续接·识别',mixedFiveStart:'混合输入·启动',mixedFiveCollect:'混合输入·收集',mixedFiveRecognition:'混合输入·识别',cancelStart:'取消探测·启动',cancelStop:'取消探测·停止',errorCheck:'错误检查'}
+function value(input: unknown) { return ['string','number','boolean'].includes(typeof input) ? String(input) : Array.isArray(input) && input.every(item=>Number.isSafeInteger(item)) ? input.join(', ') : '' }
+</script>
+<template><details class="text-xs text-content-secondary"><summary class="min-h-[44px] flex items-center cursor-pointer">安全诊断（仅契约字段）</summary><template v-for="stage in stages" :key="stage"><div v-if="diagnostics[stage]" class="p-2 border border-border rounded break-words"><b>{{ stageLabels[stage] }}</b><template v-for="field in fields" :key="field"><p v-if="diagnostics[stage]?.[field] !== undefined">{{ fieldLabels[field] }}：{{ value(diagnostics[stage]?.[field]) }}</p></template></div></template></details></template>
