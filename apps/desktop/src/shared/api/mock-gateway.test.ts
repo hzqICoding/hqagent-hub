@@ -23,7 +23,8 @@ describe('MockGateway', () => {
 
   it('lists agents correctly in happy-path scenario', async () => {
     const agents = await gateway.listAgents()
-    expect(agents.length).toBe(3)
+    expect(agents.length).toBe(6)
+    expect(agents.filter(agent=>agent.adapterId==='pi')).toHaveLength(3)
     const claude = agents.find((a) => a.adapterId === 'claude')
     expect(claude).toBeDefined()
     expect(claude?.status).toBe('ready')

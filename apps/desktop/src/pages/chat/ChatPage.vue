@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
 import ConversationDeletion from './components/ConversationDeletion.vue'
 import NativeSyncNotice from '@/pages/native/NativeSyncNotice.vue'
 import { agentLabel } from '@/pages/native/native-utils'
@@ -277,7 +278,7 @@ async function restoreActiveConversation() {
               </h1>
 
               <HqBadge size="sm" variant="info" class="text-[10px] shrink-0">
-                {{ chatStore.activeConversation.conversationKind === 'native' ? agentLabel(chatStore.activeConversation.agentType) : getSceneLabel(chatStore.activeConversation.sceneId) }}
+                <RuntimeIcon v-if="chatStore.activeConversation.agentType" :agent="chatStore.activeConversation.agentType" class="inline-block w-4 h-4" />{{ chatStore.activeConversation.conversationKind === 'native' ? agentLabel(chatStore.activeConversation.agentType) : getSceneLabel(chatStore.activeConversation.sceneId) }}
               </HqBadge>
 
               <HqBadge v-if="chatStore.activeConversation.authority === 'remote'" size="sm" variant="primary" class="text-[10px] shrink-0 font-medium">
@@ -361,7 +362,7 @@ async function restoreActiveConversation() {
             class="flex-1 min-h-0 overflow-y-auto divide-y divide-border/20 py-2"
             @scroll="handleScroll"
           >
-            <NativeSyncNotice v-if="chatStore.activeConversation?.conversationKind === 'native'" :key="chatStore.activeConversationId || undefined" />
+            <NativeSyncNotice :agent-type="chatStore.activeConversation?.agentType" v-if="chatStore.activeConversation?.conversationKind === 'native'" :key="chatStore.activeConversationId || undefined" />
             <!-- Empty state with starter prompts -->
             <div
               v-if="chatStore.messages.length === 0"

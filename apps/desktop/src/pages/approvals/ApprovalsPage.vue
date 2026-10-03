@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
+import { getLocalChatGateway } from '@/shared/api'
+import type { AgentView } from '@hqagent/protocol'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app.store'
@@ -29,6 +32,7 @@ const router = useRouter()
 const appStore = useAppStore()
 const approvalStore = useApprovalStore()
 const toast = useToast()
+const agents = ref<AgentView[]>([])
 
 // Confirmation modal states
 const isConfirmModalOpen = ref(false)
@@ -42,6 +46,7 @@ const rejectReason = ref('')
 
 onMounted(async () => {
   await approvalStore.fetchApprovals()
+  try { agents.value = await getLocalChatGateway().listLocalAgents() } catch { /* Runtime stays unknown if the index is unavailable. */ }
 })
 
 function getRiskBadge(level: RiskLevel) {
@@ -268,7 +273,7 @@ function formatTime(timestamp?: string) {
           <div class="flex flex-wrap items-center gap-4">
             <span class="inline-flex items-center gap-1">
               <UserCheck class="w-3.5 h-3.5 text-primary" />
-              请求 Agent: {{ appr.requestAgentName }}
+              <RuntimeIcon :agent="agents.find(agent=>agent.id===appr.requestAgentId)?.adapterId" class="inline-block w-4 h-4" />请求 Agent: {{ appr.requestAgentName }}
             </span>
             <span>•</span>
             <span>发起时间: {{ formatTime(appr.requestedAt) }}</span>
