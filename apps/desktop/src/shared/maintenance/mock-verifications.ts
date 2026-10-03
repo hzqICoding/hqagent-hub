@@ -14,6 +14,7 @@ export class MockVerifications {
       const record: LocalImageVerificationRecord = { recordId: `example-record-${index}`, target: { ...target, ...(index === 1 ? { cliVersion: '1.2.2' } : {}) }, passed: true, probes: { new:true,resume:true,mixedFive:true,cancel:true,error:true }, diagnostics:{},mimeTypes:['image/png'],observedAt:'2026-10-02T12:00:00Z' }
       return { target, inUse:true, usages:[], usagesTruncated:false, status: status as LocalImageVerificationState['status'], passed:status==='passed',invalidated:status==='stale',invalidationReasons:status==='stale'?['cli_version_changed']:[],...(index<2?{lastRecord:record}:{}) }
     })
+    this.states.push({target:{agentId:'local.pi.synthetic',agentType:'pi',cliVersion:'1.0.1',transport:'pi-rpc-images-v1',targetRevision:'pi-verification-example'},inUse:true,usages:[],usagesTruncated:false,status:'unverified',passed:false,invalidated:false,invalidationReasons:[]})
     this.states.push({ ...this.states[1], target:{...this.states[1].target, modelId:'historical-model'}, lastRecord:{...this.states[1].lastRecord!,target:{...this.states[1].lastRecord!.target,modelId:'historical-model'}}, inUse:false })
   }
   start(input: StartLocalImageVerificationInput, key: string) {

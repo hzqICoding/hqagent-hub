@@ -1,4 +1,4 @@
-import type { AttachmentLimits, ImageInputCapability, LocalAttachmentView, AttachmentTargetCapabilities, RemoteV4CatalogView, RemoteConversationView, MessageAttachmentView } from '@hqagent/protocol'
+import type { AttachmentLimits, ImageInputCapability, LocalAttachmentView, AttachmentTargetCapabilities, RemoteV5CatalogView, RemoteConversationView, MessageAttachmentView } from '@hqagent/protocol'
 import { RemoteApiError } from '@/shared/api/remote-gateway'
 
 export function attachmentFailure(code: ConstructorParameters<typeof RemoteApiError>[0]['code'], message: string): never {
@@ -26,11 +26,14 @@ function supports(capability: ImageInputCapability | undefined, image: LocalAtta
 }
 export function validateImageCapabilities(images: LocalAttachmentView['attachment'][], target?: AttachmentTargetCapabilities): void {
   if (!images.length) return
+  const bindings = target?.conversationKind === 'native' ? [target.native] : target?.roles || []
+  if (bindings.some(binding => binding?.agentType === 'pi' && (!binding.agentId || binding.transport !== 'pi-rpc-images-v1'))) attachmentFailure('AGENT_IMAGE_UNSUPPORTED', '当前 Agent 不支持图片')
   const capabilities = target?.conversationKind === 'native' ? [target.native?.imageInput] : target?.roles?.map((role) => role?.imageInput)
   if (!capabilities?.length || images.some((image) => capabilities.some((capability) => !supports(capability, image)))) attachmentFailure('AGENT_IMAGE_UNSUPPORTED', '当前 Agent 不支持图片')
 }
-export function remoteCapabilities(conversation: RemoteConversationView, catalog: RemoteV4CatalogView): AttachmentTargetCapabilities {
-  if (conversation.conversationKind === 'native') return { conversationKind: 'native', capabilityRevision: catalog.capabilityRevision, roles: [], native: catalog.nativeImageCapabilities?.find((entry) => entry.agentType === conversation.agentType) }
+// Remote native conversation metadata has no exact PI instance/model binding. Never pick the first PI capability.
+export function remoteCapabilities(conversation: RemoteConversationView, catalog: RemoteV5CatalogView): AttachmentTargetCapabilities {
+  if (conversation.conversationKind === 'native') return { conversationKind: 'native', capabilityRevision: catalog.capabilityRevision, roles: [], native: conversation.agentType === 'pi' ? undefined : catalog.nativeImageCapabilities?.find((entry) => entry.agentType === conversation.agentType) }
   const scene = catalog.scenes.find((entry) => entry.sceneId === conversation.sceneId && entry.version === conversation.sceneVersion)
-  return { conversationKind: 'scenario', capabilityRevision: catalog.capabilityRevision, roles: scene?.roleImageCapabilities || [] }
+  return { conversationKind: 'scenario', capabilityRevision: catalog.capabilityRevision, roles: (scene?.roleImageCapabilities || []).map(role => ({ ...role, agentType: role.agentType || catalog.runtimes?.find(runtime=>runtime.agentId===role.agentId)?.agentType })) }
 }

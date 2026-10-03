@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import PiGuardStatus from '@/shared/runtime/PiGuardStatus.vue'
+import { piModelLabel, piSuggestion } from '@/shared/runtime/pi'
 import { computed, onMounted, ref, watch } from 'vue'
 import type {
   LocalBaseRoleId,
@@ -103,6 +105,10 @@ const sceneValidationError = computed(() => {
   if (!editableRoles.value.some((role) => role.enabled)) {
     return '场景至少需要一个启用阶段。'
   }
+  const invalidPiModel = editableRoles.value.find(role => role.enabled && isPiRole(role) && role.modelId && (!scenesStore.agentModelsMap[role.agentInstanceId]?.verified || !scenesStore.agentModelsMap[role.agentInstanceId]?.models.some(model => model.id === role.modelId)))
+  if (invalidPiModel) return `${roleDisplayName(invalidPiModel)} 的 PI 模型不在已核实本机清单中，请重新选择。`
+  const invalidPiEffort = editableRoles.value.find(role => role.enabled && isPiRole(role) && role.reasoningEffort && !selectedModel(role)?.efforts.includes(role.reasoningEffort))
+  if (invalidPiEffort) return `${roleDisplayName(invalidPiEffort)} 的 PI 思考强度尚未核实，请选择本机提供的选项或继承默认。`
   const missingAgent = editableRoles.value.find((role) => role.enabled && !role.agentInstanceId.trim())
   if (missingAgent) return `${roleDisplayName(missingAgent)} 尚未配置执行 Agent。`
   if (isCustomScene.value && !sceneName.value.trim()) return '自定义场景名称不能为空。'
@@ -285,6 +291,8 @@ function handleAgentChange(role: LocalRoleConfig, agentId: string) {
   if (agentId) void scenesStore.fetchAgentModels(agentId)
 }
 
+function isPiRole(role: LocalRoleConfig) { return scenesStore.availableAgents.find(agent=>agent.id===role.agentInstanceId)?.adapterId === 'pi' }
+function piSuggestionAvailable(role: LocalRoleConfig) { return scenesStore.agentModelsMap[role.agentInstanceId]?.verified && scenesStore.agentModelsMap[role.agentInstanceId]?.models.some(model=>model.id===piSuggestion(role.roleId)) }
 function selectedModel(role: LocalRoleConfig) {
   return scenesStore.agentModelsMap[role.agentInstanceId]?.models.find((model) => model.id === role.modelId)
 }
@@ -347,6 +355,16 @@ function removeStage(index: number) {
   editableRoles.value.splice(index, 1)
 }
 
+function rolesForSave(roles: LocalRoleConfig[]) {
+  return roles.map(role => {
+    const copy = { ...role }
+    if (isPiRole(role)) {
+      if (!copy.modelId) delete copy.modelId
+      if (!copy.reasoningEffort) delete copy.reasoningEffort
+    }
+    return copy
+  })
+}
 async function handleSave() {
   const current = scenesStore.currentScene
   if (!current || sceneValidationError.value) {
@@ -356,7 +374,7 @@ async function handleSave() {
   applyOriginalPlannerInheritance()
   try {
     await scenesStore.saveScene(current.id, {
-      roles: editableRoles.value,
+      roles: rolesForSave(editableRoles.value),
       expectedVersion: current.version,
       reviewMode: reviewMode.value,
       ...(isCustomScene.value
@@ -404,7 +422,7 @@ async function createScene() {
     const created = await scenesStore.createScene({
       name: newSceneName.value.trim(),
       description: newSceneDescription.value.trim(),
-      roles,
+      roles: rolesForSave(roles),
       reviewMode: copiedReviewMode,
     })
     selectedSceneId.value = created.id
@@ -667,21 +685,23 @@ async function refreshTemplates() {
                     value: agent.id,
                   }))"
                   placeholder="选择本地 Agent"
+                  :aria-label="`${role.roleId} Agent`"
                   @update:model-value="(value) => handleAgentChange(role, value as string)"
                 />
               </div>
               <div>
                 <label class="block font-medium text-text mb-1">模型规格</label>
                 <HqSelect
-                  v-if="scenesStore.agentModelsMap[role.agentInstanceId]?.verified
-                    && (scenesStore.agentModelsMap[role.agentInstanceId]?.models.length || 0) > 0"
+                  v-if="isPiRole(role) || (scenesStore.agentModelsMap[role.agentInstanceId]?.verified
+                    && (scenesStore.agentModelsMap[role.agentInstanceId]?.models.length || 0) > 0)"
                   v-model="role.modelId"
                   :disabled="usesOriginalPlannerReview && role.roleId === 'reviewer'"
-                  :options="(scenesStore.agentModelsMap[role.agentInstanceId]?.models || []).map((model) => ({
-                    label: `${model.name} (${model.id})`,
+                  :options="[{ label: '继承本机默认模型', value: '' }, ...(scenesStore.agentModelsMap[role.agentInstanceId]?.verified ? scenesStore.agentModelsMap[role.agentInstanceId]?.models || [] : []).map((model) => ({
+                    label: isPiRole(role) ? piModelLabel(model.id) : `${model.name} (${model.id})`,
                     value: model.id,
-                  }))"
+                  }))]"
                   placeholder="选择模型"
+                  :aria-label="`${role.roleId} 模型`"
                   @update:model-value="role.reasoningEffort = ''"
                 />
                 <HqInput
@@ -694,7 +714,7 @@ async function refreshTemplates() {
               <div>
                 <label class="block font-medium text-text mb-1">思考强度</label>
                 <HqSelect
-                  v-if="selectedModel(role)"
+                  v-if="isPiRole(role) || selectedModel(role)"
                   v-model="role.reasoningEffort"
                   :disabled="usesOriginalPlannerReview && role.roleId === 'reviewer'"
                   :options="effortOptions(role)"
@@ -709,6 +729,11 @@ async function refreshTemplates() {
               </div>
             </div>
 
+            <div v-if="role.enabled && isPiRole(role)" class="text-xs space-y-2" data-testid="pi-role-hint">
+              <PiGuardStatus :guard="scenesStore.availableAgents.find(agent=>agent.id===role.agentInstanceId)?.guard" />
+              <p class="text-content-secondary">当前模型：{{ role.modelId ? piModelLabel(role.modelId) : '继承本机默认，执行前由本机解析' }}</p>
+              <p class="text-content-secondary">{{ role.roleId === 'developer' ? '执行' : '规划 / 审核' }}建议：{{ piModelLabel(piSuggestion(role.roleId)) }} · {{ piSuggestionAvailable(role) ? '本机可用，请按需手动选择' : '本机不可用，不会自动选择或切换渠道' }}</p>
+            </div>
             <div v-if="role.enabled">
               <label class="block font-medium text-text text-xs mb-1">角色职责与约束</label>
               <HqTextarea v-model="role.instructions" :rows="4" :maxlength="12000" show-count />

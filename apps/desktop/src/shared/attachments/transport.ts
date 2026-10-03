@@ -1,3 +1,4 @@
+import { clientFetch, applyClientFeatures } from '@/shared/api/client-features'
 import type { ApiEnvelope, ErrorCode } from '@hqagent/protocol'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 
@@ -25,6 +26,7 @@ export function uploadAttachment<T>(url: string, file: Blob, options: UploadOpti
     const cleanup = () => { clearTimeout(idle); options.signal?.removeEventListener('abort', abort) }
     const resetIdle = () => { clearTimeout(idle); idle = setTimeout(() => { idleExpired = true; xhr.abort() }, 30000) }
     xhr.open('POST', url)
+    applyClientFeatures(xhr)
     xhr.withCredentials = !bearer
     xhr.timeout = 120000
     xhr.setRequestHeader('Content-Type','application/octet-stream')
@@ -52,7 +54,7 @@ export function uploadAttachment<T>(url: string, file: Blob, options: UploadOpti
   })
 }
 export async function attachmentBlob(url: string, thumbnail: boolean, signal: AbortSignal | undefined, error: AttachmentErrorFactory, bearer?: string): Promise<Blob> {
-  const response = await fetch(url, { credentials: bearer ? 'omit' : 'same-origin', cache: 'no-store', redirect: 'error', signal, ...(bearer ? { headers: { Authorization: `Bearer ${bearer}` } } : {}) })
+  const response = await clientFetch(url, { credentials: bearer ? 'omit' : 'same-origin', cache: 'no-store', redirect: 'error', signal, ...(bearer ? { headers: { Authorization: `Bearer ${bearer}` } } : {}) })
   if (!response.ok) {
     let envelope: ApiEnvelope<never> | undefined
     try { envelope = await response.json() } catch { /* Do not retain binary/error body. */ }

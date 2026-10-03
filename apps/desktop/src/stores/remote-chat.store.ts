@@ -1,3 +1,4 @@
+import { remotePiBlock, piRemoteCandidates, PI_WIRE_PENDING } from '@/shared/runtime/pi'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 import { preflightAttachments } from '@/shared/attachments/preflight'
 import { defineStore } from 'pinia'
@@ -11,7 +12,7 @@ import type {
   RemoteRunView,
   RemoteCommandView,
   RemoteApprovalView,
-  RemoteV4CatalogView,
+  RemoteV5CatalogView,
   RemoteQueuedReceipt,
   RemoteCreateConversationInput,
   RemoteBrowserEvent,
@@ -99,7 +100,8 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   const selectedWorkerId = ref<string | null>(null)
   const isLoadingDevices = ref(false)
   const deviceError = ref<string | null>(null)
-  const catalog = ref<RemoteV4CatalogView | null>(null)
+  const catalog = ref<RemoteV5CatalogView | null>(null)
+  const piGuardIssue = computed(() => activeConversation.value ? remotePiBlock(activeConversation.value, catalog.value, activeDevice.value?.supportedWireRevisions) : '')
   const isLoadingCatalog = ref(false)
   const catalogError = ref<string | null>(null)
   let catalogRequest = 0
@@ -178,7 +180,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     if (!d || d.status === 'revoked' || d.remoteAccess === 'suspended') return false
     if (d.online !== true && d.status !== 'online') return false
     if (d.status === 'reconciliation_required') return false
-    if (d.supportedWireRevisions && !d.supportedWireRevisions.some((revision) => revision === 2 || revision === 3 || revision === 4)) return false
+    if (d.supportedWireRevisions && !d.supportedWireRevisions.some((revision) => revision === 2 || revision === 3 || revision === 4 || revision === 5)) return false
     if (d.busySnapshotFresh === false) return false
     return true
   })
@@ -700,7 +702,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
     const d = activeDevice.value
     // F5: 电脑端版本过旧提示
-    if (d?.supportedWireRevisions && !(activeConversation.value?.conversationKind === 'native' ? d.supportedWireRevisions.some((revision) => revision === 3 || revision === 4) : d.supportedWireRevisions.some((revision) => revision === 2 || revision === 3 || revision === 4))) {
+    if (d?.supportedWireRevisions && !(activeConversation.value?.conversationKind === 'native' ? d.supportedWireRevisions.some((revision) => revision === 3 || revision === 4 || revision === 5) : d.supportedWireRevisions.some((revision) => revision === 2 || revision === 3 || revision === 4 || revision === 5))) {
       sendError.value = '电脑端版本过旧，请升级 HQAgent'
       throw new RemoteApiError({
         message: '电脑端版本过旧，请升级 HQAgent',
@@ -733,6 +735,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
     const convId = activeConversationId.value
     const conversationKind = activeConversation.value?.conversationKind
+    const isPiSubmission = activeConversation.value ? piRemoteCandidates(activeConversation.value, catalog.value).isPi : false
     const intent = JSON.stringify([convId, text, attachmentIds, nativeConfirmation])
     const clientMessageId = attachmentIds.length ? (attachmentSendIntents.get(intent) || crypto.randomUUID()) : `cmsg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     if (attachmentIds.length) attachmentSendIntents.set(intent, clientMessageId)
@@ -749,7 +752,14 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
 
     try {
       const gateway = getRemoteGateway()
-      if (attachmentIds.length && !d?.supportedWireRevisions?.includes(4)) throw new RemoteApiError({ code: 'REMOTE_REVISION_REQUIRED', status: 409, message: '电脑端不支持附件，请升级并等待修订 4 连接就绪' })
+      const targetConversation = conversations.value.find(conversation => conversation.conversationId === convId)
+      if (targetConversation && piRemoteCandidates(targetConversation, catalog.value).isPi) {
+        const currentCatalog = await gateway.getWorkerCatalog(targetConversation.targetWorkerId)
+        if (currentCatalog.workerId !== targetConversation.targetWorkerId || currentCatalog.workerStoreId !== targetConversation.workerStoreId) throw new RemoteApiError({ code:'REMOTE_STORE_CHANGED', message:'电脑存储已变化，请刷新后核对 PI 安全状态', status:409 })
+        const blocked = remotePiBlock(targetConversation, currentCatalog, d?.supportedWireRevisions)
+        if (blocked) throw new RemoteApiError({ code: d?.supportedWireRevisions?.includes(5) ? 'PI_GUARD_UNAVAILABLE' : 'REMOTE_REVISION_REQUIRED', message: blocked, status: 409 })
+      }
+      if (attachmentIds.length && !d?.supportedWireRevisions?.some(revision => revision === 4 || revision === 5)) throw new RemoteApiError({ code: 'REMOTE_REVISION_REQUIRED', status: 409, message: '电脑端不支持附件，请升级并等待修订 4 连接就绪' })
       if (attachmentIds.length) {
         await preflightAttachments(true, convId, attachmentIds, activeConversation.value || undefined)
         if (activeConversationId.value !== convId) throw new Error('对话已切换，请返回原对话重试')
@@ -792,7 +802,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
         messages.value.splice(tempIdx, 1)
       }
       if (err instanceof RemoteApiError) {
-        sendError.value = err.code === 'SESSION_NOT_RESUMABLE' ? getRemoteErrorMessage(err.code, err.message, conversationKind) : err.message
+        sendError.value = err.code === 'REMOTE_REVISION_REQUIRED' && isPiSubmission ? PI_WIRE_PENDING : err.code === 'SESSION_NOT_RESUMABLE' ? getRemoteErrorMessage(err.code, err.message, conversationKind) : err.message
       } else {
         sendError.value = '发送消息失败，请重试'
       }
@@ -1378,6 +1388,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
   }
 
   return {
+    piGuardIssue,
     devices,
     availableDevices,
     revokedDevices,

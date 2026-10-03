@@ -40,6 +40,7 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const canSend = computed(() => {
   return (
     (chatStore.activeConversation?.conversationKind !== 'native' || chatStore.activeConversation.nativeActivity?.activity === 'closed_confirmed' || (nativeConfirmed.value && Boolean(chatStore.activeConversation.nativeSourceRevision))) &&
+    !chatStore.piGuardIssue &&
     !attachmentsBlocked.value &&
     !chatStore.isConversationBusy &&
     inputText.value.trim().length > 0 &&
@@ -129,6 +130,7 @@ function handleStopRun() {
         </template>
         <p v-if="nativeError" role="alert" class="text-danger">{{ nativeError.message }} <span class="select-text">{{ nativeError.requestId ? `requestId: ${nativeError.requestId}` : '' }}</span></p>
       </div>
+      <p v-if="chatStore.piGuardIssue" role="alert" class="text-sm text-status-warning">{{ chatStore.piGuardIssue }}</p>
       <!-- 1. Floating Queued Messages Deck -->
       <div v-if="chatStore.queuedMessages.length > 0" class="space-y-1.5">
         <div

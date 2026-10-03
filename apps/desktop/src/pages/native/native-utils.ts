@@ -1,7 +1,7 @@
-import type { NativeActivity, NativeAgentType, NativeMessagePage, NativeMessagePart, RemoteLinkView, RemoteSyncSettingsView } from '@hqagent/protocol'
+import type { NativeActivity, RuntimeNativeAgentType, NativeMessagePage, NativeMessagePart, RemoteLinkView, RemoteSyncSettingsView } from '@hqagent/protocol'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 
-export const agentLabel = (agent?: NativeAgentType) => agent === 'claude' ? 'Claude Code' : agent === 'codex' ? 'Codex' : '原生 Agent'
+export const agentLabel = (agent?: RuntimeNativeAgentType) => agent === 'claude' ? 'Claude Code' : agent === 'codex' ? 'Codex' : agent === 'pi' ? 'PI' : '原生 Agent'
 export const activityLabel = (activity: NativeActivity) => ({ unknown: '可能仍在终端中运行', likely_active: '终端正在使用', closed_confirmed: '已确认关闭' }[activity])
 export const closureText = '请先在电脑终端里退出这个会话。同时写入会损坏会话记录。确认已退出后再继续。'
 export function nativeFailure(error: unknown): { message: string; requestId?: string; code?: string } {
@@ -13,13 +13,14 @@ export function nativeFailure(error: unknown): { message: string; requestId?: st
   }
   return { code: value?.code, requestId: value?.requestId, message: guidance[value?.code || ''] || getRemoteErrorMessage(value?.code, value?.code === 'SESSION_NOT_RESUMABLE' ? value.message : value?.message || '操作失败，请重试', 'native') }
 }
-export function nativeSyncNotice(link: RemoteLinkView | null, settings: RemoteSyncSettingsView | null): string {
+export function nativeSyncNotice(link: RemoteLinkView | null, settings: RemoteSyncSettingsView | null, agentType?: RuntimeNativeAgentType): string {
   if (!link || !settings) return '已在本机导入，正在核对同步条件'
   if (!settings.mirrorEnabled) return '已在本机导入，同步已关闭'
   if (link.state === 'unpaired' || link.state === 'pairing') return '已在本机导入，尚未配对手机'
   if (link.state === 'revoked') return '已在本机导入，设备连接已撤销'
   if (link.state === 'frozen') return '已在本机导入，连接正在核对，暂未同步'
   if (link.connectionStatus !== 'online') return '已在本机导入，电脑离线，等待连接后同步'
+  if (agentType === 'pi') return '已在本机导入；PI 同步需要修订 5。当前接口未提供协商状态，请在电脑核对是否等待远程线路升级'
   // No negotiated revision / backfill-complete field exists in RemoteLinkView.
   return '已在本机导入，待连接支持修订 3 的服务后同步'
 }

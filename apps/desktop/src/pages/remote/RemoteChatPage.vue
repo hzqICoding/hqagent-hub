@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { piRemoteCandidates, PI_WIRE_PENDING } from '@/shared/runtime/pi'
+import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 import AttachmentDrafts from '@/shared/attachments/AttachmentDrafts.vue'
 import MessageAttachments from '@/shared/attachments/MessageAttachments.vue'
@@ -44,6 +46,7 @@ const router = useRouter()
 const confirm = useConfirm()
 const chatStore = useRemoteChatStore()
 const authStore = useRemoteAuthStore()
+const piScenario = computed(() => chatStore.activeConversation && !chatStore.activeConversation.agentType && piRemoteCandidates(chatStore.activeConversation, chatStore.catalog).isPi)
 
 const isMobileSidebarOpen = ref(false)
 const attachmentDrafts = ref<InstanceType<typeof AttachmentDrafts> | null>(null)
@@ -239,6 +242,7 @@ watch(() => chatStore.activeConversationId, () => { nativeConfirmed.value = fals
 const newTopicDisabledReason = computed(() => {
   if (!chatStore.activeConversation) return '请先选择对话'
   if (chatStore.activeConversation.conversationKind === 'native') return '原生会话固定继续上下文，不支持新话题'
+  if (chatStore.piGuardIssue) return chatStore.piGuardIssue
   if (chatStore.isRemoteSuspended) return '这台电脑的远程操作已暂停'
   if (!chatStore.isWorkerOnline) return '电脑离线，暂不能开启新话题'
   if (chatStore.isConversationBusy) return '对话正在进行，结束后再开启新话题'
@@ -468,7 +472,7 @@ function getExecutionStatusLabel(status?: string): string {
           <button type="button" class="block w-full text-left text-xs font-semibold text-content-primary truncate" title="切换电脑" @click="router.push('/remote/devices')">{{ chatStore.selectedDevice?.displayName || chatStore.selectedDevice?.deviceName || '我的电脑' }} / {{ chatStore.activeConversation?.title || '对话' }}</button>
           <div class="flex items-center gap-1 min-w-0">
             <HqBadge :variant="connectionLabel.variant" class="text-[10px] shrink-0" data-testid="connection-status">{{ connectionLabel.text }}</HqBadge>
-            <span v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-[10px] text-content-secondary">{{ agentLabel(chatStore.activeConversation.agentType) }}</span>
+            <span v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-[10px] text-content-secondary"><RuntimeIcon :agent="chatStore.activeConversation.agentType" class="inline-block w-4 h-4" /> {{ agentLabel(chatStore.activeConversation.agentType) }}</span>
             <button v-if="chatStore.activeRun" type="button" data-testid="run-status-toggle" class="shrink-0 rounded px-1 py-0.5 text-[10px]" :class="statusNeedsAttention ? 'text-status-warning bg-status-warning-soft' : 'text-content-muted bg-muted'" :aria-expanded="statusExpanded" aria-controls="remote-status-details" @click="statusExpanded = !statusExpanded">{{ statusLabel }}{{ statusNeedsAttention ? ' !' : '' }}</button>
           </div>
         </div>
@@ -678,7 +682,7 @@ function getExecutionStatusLabel(status?: string): string {
           id="remote-status-details"
           class="p-2.5 bg-panel border-b border-border shrink-0 space-y-2 text-xs max-h-[30dvh] overflow-y-auto"
         >
-          <p v-if="deliveryFailure" class="text-danger">{{ deliveryFailure.error?.code === 'SESSION_NOT_RESUMABLE' ? getRemoteErrorMessage(deliveryFailure.error.code, deliveryFailure.error.message, chatStore.activeConversation?.conversationKind) : deliveryFailure.error?.message || '送达失败或过期，请核对后重试' }}</p>
+          <p v-if="deliveryFailure" class="text-danger">{{ deliveryFailure.error?.code === 'REMOTE_REVISION_REQUIRED' && (piScenario || chatStore.activeConversation?.agentType === 'pi') ? PI_WIRE_PENDING : deliveryFailure.error?.code?.startsWith('PI_') ? getRemoteErrorMessage(deliveryFailure.error.code) : deliveryFailure.error?.code === 'SESSION_NOT_RESUMABLE' ? getRemoteErrorMessage(deliveryFailure.error.code, deliveryFailure.error.message, chatStore.activeConversation?.conversationKind) : deliveryFailure.error?.message || '送达失败或过期，请核对后重试' }}</p>
           <!-- Three Layers Display -->
           <div class="grid grid-cols-1 gap-1.5 sm:grid-cols-3 bg-bg-app/70 p-2 rounded-lg border border-border/60">
             <!-- Layer 1: Transport State -->
@@ -817,7 +821,7 @@ function getExecutionStatusLabel(status?: string): string {
               <div class="space-y-0.5">
                 <div class="flex items-center gap-1.5 font-bold text-text">
                   <ShieldAlert class="w-4 h-4 text-warning shrink-0" />
-                  <span>安全审批请求：{{ approval.action }}</span>
+                  <span><RuntimeIcon v-if="chatStore.activeConversation?.agentType" :agent="chatStore.activeConversation.agentType" class="inline-block w-4 h-4" />{{ chatStore.activeConversation?.agentType ? agentLabel(chatStore.activeConversation.agentType) : '' }}<template v-if="piScenario"><RuntimeIcon agent="pi" class="inline-block w-4 h-4" />含 PI 的场景 · </template> 安全审批请求：{{ approval.action }}</span>
                 </div>
                 <p class="text-[11px] text-text-muted">
                   {{ approval.targetSummary }}
@@ -988,6 +992,7 @@ function getExecutionStatusLabel(status?: string): string {
               <p>{{ closureText }}</p><label class="flex gap-2"><input class="hq-form-choice" v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
             </template>
           </div>
+          <p v-if="chatStore.piGuardIssue" role="alert" class="text-sm text-status-warning">{{ chatStore.piGuardIssue }}</p>
           <div v-if="nextMessageNew" class="flex items-center w-fit rounded-lg bg-accent-soft text-content-primary" data-testid="new-topic-tag"><span class="pl-3 text-xs">新话题</span><button type="button" aria-label="取消新话题" :disabled="chatStore.isSending" class="min-w-[44px] min-h-[44px] rounded-r-lg text-content-primary" @click="nextMessageNew = false">×</button></div>
           <AttachmentDrafts v-if="chatStore.activeConversationId" :key="chatStore.activeConversationId" ref="attachmentDrafts" remote :conversation-id="chatStore.activeConversationId" :suspended="chatStore.isRemoteSuspended" :disabled="chatStore.isSending" :offline="!chatStore.isWorkerOnline" @blocked="attachmentsBlocked = $event" />
           <!-- Input + Send Button -->
@@ -1008,7 +1013,7 @@ function getExecutionStatusLabel(status?: string): string {
               aria-label="发送消息"
               class="hq-composer-send"
               :loading="chatStore.isSending"
-              :disabled="attachmentsBlocked || !nativeCanSend || chatStore.isRemoteSuspended || !inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
+              :disabled="Boolean(chatStore.piGuardIssue) || attachmentsBlocked || !nativeCanSend || chatStore.isRemoteSuspended || !inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
               @click="handleSendMessage"
             >
               <Send class="w-4 h-4" />
