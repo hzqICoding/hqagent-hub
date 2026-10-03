@@ -56,9 +56,10 @@ class Replica:
             local = event['conversationId']
             public, _ = tx.sync_id(owner, worker, store, 'conversation', local, local)
             was_visible = self.visible(tx, owner, public)
+            was_pi = bool(tx.get(owner,'pi-resource','conversation:'+public))
             self.s.erase_replica(tx, owner, worker, store, local, permanent=True, through_generation=generation)
             if was_visible:
-                self.browser_event(tx, owner, dict(type='conversation.deleted', conversationId=public))
+                self.browser_event(tx, owner, dict(type='conversation.deleted', conversationId=public, _pi=was_pi))
         fence = dict(eventId=event['eventId'], seq=event['seq'], generation=generation, type=event['type'], conversation=event.get('conversationId'))
         tx.put(owner, 'deletion-fence', digest([worker, store, event['eventId']]), fence, worker=worker, store=store)
 
@@ -164,7 +165,7 @@ class Replica:
         if payload['visibility'] != 'pc_only':
             self.s.event(tx, owner, 'conversation.updated', self.s.view(owner, 'conversation', value))
         elif previous and previous.get('visibility', 'both') != 'pc_only':
-            self.browser_event(tx, owner, dict(type='conversation.deleted', conversationId=public))
+            self.browser_event(tx, owner, dict(type='conversation.deleted', conversationId=public, _pi=self.s.projection.is_pi(tx,owner,value)))
 
     def message(self, tx, owner, event, conversation):
         p = event['payload']; worker, store = event['workerId'], event['workerStoreId']

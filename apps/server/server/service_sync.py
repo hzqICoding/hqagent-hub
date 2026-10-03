@@ -9,11 +9,13 @@ from .replica import Replica
 from .service import BLOCKED, Service, TERMINAL
 from .devices import DeviceManagement
 from .native import NativeService
+from .client_features import ClientProjection, cursor_scope
 
 
 class SyncService(NativeService, DeviceManagement, Service):
     def __init__(self, repo, settings, security):
         super().__init__(repo, settings, security)
+        self.projection = ClientProjection(self)
         self.replica = Replica(self)
         from .queries import Queries
         self.queries = Queries(self)
@@ -38,7 +40,7 @@ class SyncService(NativeService, DeviceManagement, Service):
             def pending_command(command):
                 if command['_frame']['wireRevision'] == requested:
                     return False
-                if (previous == 2 and requested == 3 and command['_frame']['wireRevision'] == 2) or (requested == 4 and command['_frame']['wireRevision'] in {2,3}):
+                if (previous == 2 and requested == 3 and command['_frame']['wireRevision'] == 2) or (requested in {4,5} and 2 <= command['_frame']['wireRevision'] < requested):
                     # The control attempt has a durable final observation even
                     # when its execution outcome remains unknown. Keep its
                     # status/evidence unchanged; ACK/outbox fences still apply.
@@ -70,6 +72,7 @@ class SyncService(NativeService, DeviceManagement, Service):
     def browser_get(self, tx, owner, kind, identifier):
         value = self.get(tx, owner, kind, identifier)
         require(not value.get('_deleted'), 'NOT_FOUND')
+        self.projection.require_visible(tx, owner, value)
         worker = value.get('targetWorkerId', value.get('workerId', value.get('_worker')))
         if worker:
             self.get(tx, owner, 'device', worker)
@@ -90,6 +93,8 @@ class SyncService(NativeService, DeviceManagement, Service):
         result = super().replay(tx, owner, scope, key, body, action)
         if isinstance(result, dict) and result.get('commandId'):
             command = tx.get(owner, 'command', result['commandId'])
+            if command:
+                self.projection.require_visible(tx,owner,command)
             require(not command or command.get('error', {}).get('code') != 'REMOTE_DELIVERY_EXPIRED', 'REMOTE_DELIVERY_EXPIRED')
         return result
 
@@ -160,6 +165,7 @@ class SyncService(NativeService, DeviceManagement, Service):
     def conversation(self, tx, owner, identifier, *, exempt=False):
         conv = self.browser_get(tx, owner, 'conversation', identifier)
         self.ready(tx, owner, conv['targetWorkerId'], conv['workerStoreId'], exempt=exempt)
+        require(not self.projection.is_pi(tx, owner, conv) or self.connections[(owner,conv['targetWorkerId'])].revision == 5, 'REMOTE_REVISION_REQUIRED')
         require('_localId' in conv, 'REMOTE_STATE_NOT_READY')
         return conv
 
@@ -189,6 +195,8 @@ class SyncService(NativeService, DeviceManagement, Service):
 
     def create_conversation(self, tx, owner, body):
         self.ready(tx, owner, body['targetWorkerId'], body['workerStoreId'])
+        pi = self.projection.scene_gate(tx, owner, body['targetWorkerId'], body['sceneId'])
+        require(not pi or self.connections[(owner,body['targetWorkerId'])].revision == 5, 'REMOTE_REVISION_REQUIRED')
         catalog = self.get(tx, owner, 'catalog', body['targetWorkerId'])
         require(catalog['workerStoreId'] == body['workerStoreId'], 'REMOTE_STORE_CHANGED')
         require(any(w['workspaceId'] == body['workspaceId'] for w in catalog['workspaces']), 'NOT_FOUND')
@@ -197,7 +205,7 @@ class SyncService(NativeService, DeviceManagement, Service):
         require(scene['version'] == body['sceneVersion'], 'REMOTE_SCENE_VERSION_MISMATCH')
         local = uid()
         public, _ = tx.sync_id(owner, body['targetWorkerId'], body['workerStoreId'], 'conversation', local, local)
-        reservation = dict(conversationId=public, targetWorkerId=body['targetWorkerId'], workerStoreId=body['workerStoreId'], _localId=local)
+        reservation = dict(conversationId=public, targetWorkerId=body['targetWorkerId'], workerStoreId=body['workerStoreId'], _localId=local, _pi=pi)
         self.save(tx, owner, 'create-reservation', public, reservation)
         return self.enqueue_v2(tx, owner, reservation, 'conversation.create', body)
 
@@ -208,6 +216,7 @@ class SyncService(NativeService, DeviceManagement, Service):
 
     def send_message(self, tx, owner, identifier, body):
         conv = self.conversation(tx, owner, identifier)
+        self.projection.guard_ready(tx,owner,conv)
         key = digest([identifier, body['clientMessageId']])
         previous = tx.get(owner, 'message-intent', key)
         if previous:
@@ -369,7 +378,7 @@ class SyncService(NativeService, DeviceManagement, Service):
         tx.sync_erase(owner, worker, store, conversation, permanent, through_generation)
 
     def token(self, owner, scope, data, expires=None):
-        claims = dict(scope=scope, data=data, expires=expires or int(self.settings.clock() + self.settings.cursor_ttl))
+        claims = dict(scope=cursor_scope(scope), data=data, expires=expires or int(self.settings.clock() + self.settings.cursor_ttl))
         payload = base64.urlsafe_b64encode(canonical(claims).encode()).decode().rstrip('=')
         return 'p2.' + payload + '.' + self.security.mac('page-v2', canonical(dict(claims, owner=owner)))
 
@@ -379,7 +388,7 @@ class SyncService(NativeService, DeviceManagement, Service):
             version, payload, signature = token.split('.')
             require(version == 'p2', 'REMOTE_CURSOR_INVALID')
             claims = json.loads(base64.b64decode(payload + '=' * (-len(payload) % 4), altchars=b'-_', validate=True))
-            require(claims['scope'] == scope and hmac.compare_digest(signature, self.security.mac('page-v2', canonical(dict(claims, owner=owner)))), 'REMOTE_CURSOR_INVALID')
+            require(claims['scope'] == cursor_scope(scope) and hmac.compare_digest(signature, self.security.mac('page-v2', canonical(dict(claims, owner=owner)))), 'REMOTE_CURSOR_INVALID')
             require(claims['expires'] > self.settings.clock(), 'REMOTE_CURSOR_EXPIRED')
             return claims
         except Fault:
@@ -409,7 +418,7 @@ class SyncService(NativeService, DeviceManagement, Service):
         if worker:
             self.get(tx, owner, 'device', worker)
         scope = digest(['conversations', worker, workspace])
-        values = [v for v in tx.list(owner, 'conversation', worker=worker) if v.get('visibility', 'both') != 'pc_only' and (not workspace or v['workspaceId'] == workspace)]
+        values = [v for v in tx.list(owner, 'conversation', worker=worker) if v.get('visibility', 'both') != 'pc_only' and self.projection.allowed(tx,owner,v) and (not workspace or v['workspaceId'] == workspace)]
         def key(v):
             return [v.get('lastActivityAt', v['updatedAt']), v['conversationId']]
         values.sort(key=key, reverse=True)
@@ -435,6 +444,8 @@ class SyncService(NativeService, DeviceManagement, Service):
                 conversation = body.get('conversationId') or payload.get('conversationId') or payload.get('resourceRef', {}).get('conversationId')
                 command_event = body['type'] == 'command.updated' or (body['type'] == 'worker.event' and payload.get('type', '').startswith('command.'))
                 allowed = body['type'] in {'conversation.deleted', 'store.reset'} or conversation is None or self.replica.visible(tx, owner, conversation) or (command_event and self.command_visible(tx, owner, conversation))
+                allowed = allowed and self.projection.event_allowed(tx,owner,body)
+                body = {k:v for k,v in body.items() if not k.startswith('_')}
                 if allowed:
                     if body['type'] == 'conversation.updated':
                         # Browser transport freshness is current, not an

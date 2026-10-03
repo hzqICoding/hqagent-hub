@@ -30,6 +30,7 @@ class SyncEvents(Events):
                     require(local_scope == prior['conversation'], 'REMOTE_SYNC_CONFLICT')
             return self.advance(tx, owner, worker, store, connection)
         require(not tx.sync_overlap(owner, worker, store, first, last) and first > self.position(tx, owner, worker, store)['seq'], 'REMOTE_EVENT_CONFLICT')
+        self.s.projection.check_worker_event(tx,owner,event)
         require(event['type'] != 'message.appended', 'REMOTE_SYNC_CONFLICT')
         if event['type'] == 'run.state_changed':
             require('summary' not in event['payload'], 'REMOTE_SYNC_CONFLICT')
@@ -170,8 +171,14 @@ class SyncEvents(Events):
         elif kind == 'message.appended':
             raise Fault('REMOTE_SYNC_CONFLICT')  # new producers must use bounded segments
         if self.s.replica.visible(tx, owner, public) or (kind.startswith('command.') and self.s.command_visible(tx, owner, public)):
-            if event['wireRevision']==4 and kind.startswith('command.'):
+            if event['wireRevision'] >= 4 and kind.startswith('command.'):
                 self.s.command_event(tx,owner,value)
+            elif event['wireRevision'] >= 5:
+                # Public browser DTOs intentionally do not embed wire5 frames.
+                # Notify the existing conversation projection; snapshot/approval
+                # GETs expose the committed Worker fact under the same feature gate.
+                conv = self.s.get(tx,owner,'conversation',public)
+                self.s.event(tx,owner,'conversation.updated',self.s.view(owner,'conversation',conv))
             else:
                 self.s.event(tx, owner, 'worker.event', mapped)
 
