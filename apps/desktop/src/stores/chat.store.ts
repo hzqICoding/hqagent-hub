@@ -1,8 +1,10 @@
+import { localPiBlock, localPiAgents } from '@/shared/runtime/pi'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 import { preflightAttachments } from '@/shared/attachments/preflight'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type {
+  AgentView,
   NativeContinuationConfirmationInput,
   LocalConversationView,
   CreateLocalConversationInput,
@@ -36,6 +38,8 @@ export interface ActivityItem {
 }
 
 export const useChatStore = defineStore('chat', () => {
+  const agents = ref<AgentView[]>([])
+  const piGuardIssue = computed(() => localPiBlock(activeConversation.value, scenes.value, agents.value))
   // Conversations
   const conversations = ref<LocalConversationView[]>([])
   const activeConversationId = ref<string | null>(null)
@@ -247,13 +251,15 @@ export const useChatStore = defineStore('chat', () => {
     loadError.value = null
     const gateway = getLocalChatGateway()
     try {
-      const [wsRes, scenesRes] = await Promise.all([
+      const [wsRes, scenesRes, agentsRes] = await Promise.all([
         gateway.listLocalWorkspaces(),
         gateway.listLocalScenes(),
+        gateway.listLocalAgents(),
       ])
       if (generation !== viewGeneration) return
       workspaces.value = wsRes
       scenes.value = scenesRes
+      agents.value = agentsRes
     } catch (error) {
       loadError.value = error instanceof Error ? error.message : '加载项目与场景失败'
     }
@@ -595,6 +601,11 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       const gateway = getLocalChatGateway()
+      if (conversation?.agentType === 'pi' || localPiAgents(conversation, scenes.value, agents.value).length) {
+        agents.value = await gateway.listLocalAgents()
+        const blocked = localPiBlock(conversation, scenes.value, agents.value)
+        if (blocked) throw new HubApiError(blocked, 'PI_GUARD_UNAVAILABLE', 409)
+      }
       if (attachmentIds.length) {
         await preflightAttachments(false, convId, attachmentIds)
         if (activeConversationId.value !== convId) throw new Error('对话已切换，请返回原对话重试')
@@ -1216,6 +1227,7 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
     conversationRuns.value = []
     activeRun.value = null
+    agents.value = []
     workspaces.value = []
     scenes.value = []
     approvals.value = []
@@ -1237,6 +1249,8 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   return {
+    agents,
+    piGuardIssue,
     conversations,
     activeConversationId,
     activeConversation,

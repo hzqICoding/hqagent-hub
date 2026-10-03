@@ -6,7 +6,7 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.11.0"
+const Version = "0.11.1"
 
 type AdapterId = string
 

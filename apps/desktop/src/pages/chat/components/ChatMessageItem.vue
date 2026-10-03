@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
+import { agentLabel } from '@/pages/native/native-utils'
 import MessageAttachments from '@/shared/attachments/MessageAttachments.vue'
 import { ref, computed } from 'vue'
 import type { LocalMessageView } from '@hqagent/protocol'
@@ -6,7 +8,6 @@ import { HqMarkdown } from '@/shared/ui'
 import { useChatStore } from '@/stores/chat.store'
 import ProcessActivityGroup from './ProcessActivityGroup.vue'
 import {
-  Bot,
   Terminal,
   Sparkles,
   ChevronDown,
@@ -131,13 +132,13 @@ async function copyText(text: string) {
     <!-- Assistant Final Reply (Clean typography, bot avatar, markdown body, quick copy buttons) -->
     <div v-else class="max-w-3xl mx-auto flex items-start gap-2 sm:gap-3 group">
       <div class="w-7 h-7 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0 mt-0.5 border border-success/30 shadow-xs">
-        <Bot class="w-4 h-4" />
+        <RuntimeIcon :agent="chatStore.activeConversation?.agentType" class="w-4 h-4" />
       </div>
 
       <div class="flex-1 min-w-0 space-y-1.5">
         <div class="flex items-center justify-between text-[11px] text-text-muted select-none">
           <div class="flex items-center gap-2">
-            <span class="font-semibold text-text text-xs">HQAgent 团队</span>
+            <span class="font-semibold text-text text-xs">{{ chatStore.activeConversation?.agentType ? agentLabel(chatStore.activeConversation.agentType) : 'HQAgent 团队' }}</span>
             <span class="font-mono text-[10px]">#{{ message.sequence }}</span>
             <span>{{ formatTime(message.createdAt) }}</span>
           </div>

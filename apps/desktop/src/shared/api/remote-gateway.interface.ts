@@ -1,7 +1,7 @@
 import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
   AttachmentDeletedView, RemoteAttachmentView, RemoteAttachmentLimitsView,
-  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV4CatalogView,
+  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV5CatalogView,
   RemoteDevicePatchInput,
   RemoteDeviceDeletionView,
   RemoteApiTokenCreateInput,
@@ -74,7 +74,7 @@ export interface IRemoteGateway {
   listDevices(cursor?: string, limit?: number, filters?: RemoteDeviceFilters): Promise<RemoteDevicePage>
   getDevice(workerId: string): Promise<RemoteDeviceView>
   revokeDevice(workerId: string, input: RemoteDeviceRevokeInput, idempotencyKey?: string): Promise<RemoteDeviceRevocationView>
-  getWorkerCatalog(workerId: string): Promise<RemoteV4CatalogView>
+  getWorkerCatalog(workerId: string): Promise<RemoteV5CatalogView>
 
   // Conversations
   listConversations(params?: {

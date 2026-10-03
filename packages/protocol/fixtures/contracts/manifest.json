@@ -1,6 +1,6 @@
 {
   "$comment": "原子 Contract Fixture 清单。每个文件是单个协议类型的 Golden 样本，不是完整 UI 场景（裁决 D10）。前端的组合场景放在 apps/desktop/src/shared/api/scenarios/ 下，引用这里的文件，不在这里堆 UI 状态。",
-  "protocolVersion": "0.11.0",
+  "protocolVersion": "0.11.1",
   "fixtures": {
     "bootstrap.happy.json": "BootstrapView",
     "agents.discovery-partial.json": "AgentDiscoveryResult",
@@ -486,6 +486,13 @@
     "pi.image-job-input.json": "StartLocalImageVerificationInput",
     "pi.native-readable.json": "RuntimeNativeSessionIndex",
     "pi.agent-guard-blocked.json": "AgentView",
-    "pi.catalog-with-runtime.json": "RemoteV5CatalogEvent"
+    "pi.catalog-with-runtime.json": "RemoteV5CatalogEvent",
+    "pi.RemoteBrowserLegacyApprovalEvent.json": "RemoteBrowserLegacyApprovalEvent",
+    "pi.RemoteBrowserPiApprovalEvent.json": "RemoteBrowserPiApprovalEvent",
+    "pi.browser-legacy-approval-approved.json": "RemoteBrowserLegacyApprovalEvent",
+    "pi.browser-legacy-approval-rejected.json": "RemoteBrowserLegacyApprovalEvent",
+    "pi.browser-legacy-approval-expired.json": "RemoteBrowserLegacyApprovalEvent",
+    "pi.browser-event-page.json": "RemoteBrowserEventPage",
+    "pi.browser-filtered-page.json": "RemoteBrowserEventPage"
   }
 }

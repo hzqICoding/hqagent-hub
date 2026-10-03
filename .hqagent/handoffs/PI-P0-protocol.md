@@ -8,103 +8,18 @@ scope_touched:
 - .hqagent/DECISIONS.md
 - .hqagent/INTERFACES.md
 - .hqagent/handoffs/PI-P0-protocol.md
-- .hqagent/reviews/pi-p0/api-contract.txt
-- .hqagent/reviews/pi-p0/pytest.txt
-- .hqagent/reviews/pi-p0/validate.txt
+- .hqagent/reviews/pi-p0-supplement1/api-contract.txt
+- .hqagent/reviews/pi-p0-supplement1/pytest.txt
+- .hqagent/reviews/pi-p0-supplement1/validate.txt
 - packages/protocol/VERSION
 - packages/protocol/fixtures/contracts/manifest.json
-- packages/protocol/fixtures/contracts/pi.PiGuardCheckInput.json
-- packages/protocol/fixtures/contracts/pi.PiGuardDecision.json
-- packages/protocol/fixtures/contracts/pi.PiGuardHandshake.json
-- packages/protocol/fixtures/contracts/pi.PiGuardReason.json
-- packages/protocol/fixtures/contracts/pi.PiImageTransport.json
-- packages/protocol/fixtures/contracts/pi.PiModelSelection.json
-- packages/protocol/fixtures/contracts/pi.PiNativeFormatProfile.json
-- packages/protocol/fixtures/contracts/pi.PiNativeReaderId.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ApprovalDecisionCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ApprovalEvent.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5BackfillProgress.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5BusySnapshot.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CancelCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CatalogEvent.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CatalogView.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CommandAccepted.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CommandCompleted.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CommandEnvelope.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CommandFailed.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CommandReceipt.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CommandReceived.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CommandRejected.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5CommandWithdrawalCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ContentRedaction.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ControlConfirmed.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ControlObserved.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ControlResult.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ConversationCreateCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ConversationDeleted.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ConversationGap.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ConversationSkip.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ConversationUpdateCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ConversationUpserted.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5DeliveryGrant.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5DirectoryQuery.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5EventAck.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ExecutionEvent.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5MessageEvent.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5MessageSegment.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5NativeConfirmationRecorded.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5NativeImportCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5NativeIndexDeleted.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5NativeIndexUpserted.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5NativeReadQuery.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5OmittedEvents.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5PauseCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ProgressEvent.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5QueryFailed.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5QueryPayload.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5QueryResultSegment.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5RedactedSlot.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ResumeCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5RetryCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5RunStateEvent.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5RunSubmitCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5RunSubmitPayload.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5SceneSummary.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ServerHeartbeat.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5ServerOutboundFrame.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5SkipRecorded.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5SyncConversation.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5SyncMessageSegment.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5SyncReset.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5SyncedRunState.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5VisibleWorkerEvent.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5WorkerEvent.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5WorkerHeartbeat.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5WorkerHello.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5WorkerHelloAck.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5WorkerHelloRejected.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5WorkerOutboundFrame.json
-- packages/protocol/fixtures/contracts/pi.RemoteV5WorkspaceRegisterCommand.json
-- packages/protocol/fixtures/contracts/pi.RemoteWire5ApprovalView.json
-- packages/protocol/fixtures/contracts/pi.RemoteWire5Error.json
-- packages/protocol/fixtures/contracts/pi.RemoteWire5ErrorCode.json
-- packages/protocol/fixtures/contracts/pi.RuntimeCatalogEntry.json
-- packages/protocol/fixtures/contracts/pi.RuntimeGuardView.json
-- packages/protocol/fixtures/contracts/pi.RuntimeNativeAgentType.json
-- packages/protocol/fixtures/contracts/pi.RuntimeNativeFormatView.json
-- packages/protocol/fixtures/contracts/pi.RuntimeNativeImageCapability.json
-- packages/protocol/fixtures/contracts/pi.RuntimeNativeSessionIndex.json
-- packages/protocol/fixtures/contracts/pi.RuntimeNativeUnsupportedReason.json
-- packages/protocol/fixtures/contracts/pi.RuntimeRoleImageCapability.json
-- packages/protocol/fixtures/contracts/pi.agent-guard-blocked.json
-- packages/protocol/fixtures/contracts/pi.catalog-with-runtime.json
-- packages/protocol/fixtures/contracts/pi.image-job-input.json
-- packages/protocol/fixtures/contracts/pi.image-target.json
-- packages/protocol/fixtures/contracts/pi.native-readable.json
-- packages/protocol/fixtures/contracts/pi.public-LocalConversationView.json
-- packages/protocol/fixtures/contracts/pi.public-LocalRunView.json
-- packages/protocol/fixtures/contracts/pi.public-RemoteConversationView.json
-- packages/protocol/fixtures/contracts/pi.public-RemoteNativeSessionView.json
+- packages/protocol/fixtures/contracts/pi.RemoteBrowserLegacyApprovalEvent.json
+- packages/protocol/fixtures/contracts/pi.RemoteBrowserPiApprovalEvent.json
+- packages/protocol/fixtures/contracts/pi.browser-event-page.json
+- packages/protocol/fixtures/contracts/pi.browser-filtered-page.json
+- packages/protocol/fixtures/contracts/pi.browser-legacy-approval-approved.json
+- packages/protocol/fixtures/contracts/pi.browser-legacy-approval-expired.json
+- packages/protocol/fixtures/contracts/pi.browser-legacy-approval-rejected.json
 - packages/protocol/generated/go/protocol.go
 - packages/protocol/generated/python/models.py
 - packages/protocol/generated/ts/index.ts
@@ -112,32 +27,26 @@ scope_touched:
 - packages/protocol/openapi/local-hub.v1.yaml
 - packages/protocol/openapi/remote-hub.v2.bundle.json
 - packages/protocol/openapi/remote-hub.v2.yaml
-- packages/protocol/registry/error-codes.yaml
 - packages/protocol/remote/PI-contract.md
-- packages/protocol/remote/api-contract.py
 - packages/protocol/remote/api-guide.md
-- packages/protocol/remote/http-error-guidance.yaml
-- packages/protocol/schema/agent-instance.json
-- packages/protocol/schema/local-chat.json
-- packages/protocol/schema/local-maintenance.json
-- packages/protocol/schema/local-native.json
-- packages/protocol/schema/remote-attachments.json
-- packages/protocol/schema/remote-native.json
-- packages/protocol/schema/remote-pi.json
+- packages/protocol/schema/browser-pi.json
 - packages/protocol/schema/remote.json
 - packages/protocol/tests/test_attachment_contract.py
 - packages/protocol/tests/test_devices_api.py
 - packages/protocol/tests/test_local_maintenance_contract.py
 - packages/protocol/tests/test_local_native_contract.py
 - packages/protocol/tests/test_native_protocol.py
+- packages/protocol/tests/test_pi_browser_projection.py
 - packages/protocol/tests/test_pi_contract.py
 build: pass
 tests: pass
-commit: 36c472eb72a4e7c101db26ec62c355b1007b672a
+commit: 3603166e5f8ded531d0cbb29a8c1772e21869d95
 open_questions: 0
 ---
 
 # PI-P0 协议冻结回执
+
+当前交付为0.11.1补冻1，见本文末节；以下原0.11.0内容保留为历史。头部commit/scope_touched/验证状态对应本次补冻。
 
 协议冻结提交：`36c472eb72a4e7c101db26ec62c355b1007b672a`。基线`6ba7583`（主代理已合入integration），工作树开工时干净。
 包版本 **0.11.0**，新增 **wireRevision 5**，D53；未合并回integration。
@@ -314,3 +223,55 @@ build=pass指协议生成/漂移检查，不代表应用业务构建或真CLI验
 - `PiGuardHandshake`
 - `PiGuardCheckInput`
 - `PiGuardDecision`
+
+
+## 补冻 1：0.11.1 浏览器审批投影
+
+冻结SHA：`3603166e5f8ded531d0cbb29a8c1772e21869d95`；协议实现提交`139fa6ce068acf92f9139399b37e011879d44eea`，合成混合页一致性修正提交`3603166e5f8ded531d0cbb29a8c1772e21869d95`。
+开工`git merge integration/phase1`返回Already up to date，基线`119a931`。本次没有合回integration。
+
+### 裁决落实与取舍
+
+- Q1：云端没有浏览器WS ticket接口；PI-contract §1/§8、api-guide §16.1和OpenAPI扩展说明均澄清，仅本机 /api/v1/auth/ws-ticket 由Hub/P2绑定能力集。P1仅绑定云端HTTP列表/事件游标，不新增票据。
+- Q2：非PI修订5审批投影成RemoteBrowserLegacyApprovalEvent（现有0.10.1 worker.event→approval.state_changed形状，内层兼容标签2）。冻结旧解码器可接收pending/approved/rejected/expired，旧前端按现有分支实时upsert/移除，无需先改代码。
+- 新增RemoteBrowserPiApprovalEvent，只允许声明pi-v1且通过owner/visibility/归属检查的客户端收到；payload为映射公共ID后的RemoteV5ApprovalEvent。RemoteBrowserEvent只追加这一项，不放开整个修订5执行事件联合。
+- 未声明能力不接收PI审批或替代conversation.updated/刷新提示；隐藏/内部记录可以跳过但推进不透明扫描游标，不附PI存在标志、数量或ID。
+- 原事实的wireRevision/seq/epoch/hash/ACK/grant完全不变。标签2仅新建的浏览器兼容副本，绝不能回灌到Worker可靠流。契约§8逐字段列明ID映射、保留字段和拒绝码处理。
+- 非PI禁批原因在旧错误域中就保留；无法表示且确为禁止远程批准时，兼容副本保守显示REMOTE_APPROVAL_FORBIDDEN，原原因仍保留；不改remoteApprovalAllowed、不伪造成功、不把PI错误错分为非PI。
+- 逐类冻结命令、会话/消息/运行同步、进度、catalog、busy、原生索引与内部传输事件的投影规则。可见状态若无安全旧通知形状，走既有410 REMOTE_CURSOR_EXPIRED快照对账，不能静默跳过待处理审批；隐藏PI记录不触发替代通知或410。
+- 包补丁版本升0.11.1，因公共HTTP联合新增了能力门禁下的变体；wireRevision仍5，所有1–5闭包不变，无新路由/错误码/PAT范围。
+
+### 产物与验证
+
+新增schema/browser-pi.json的两个类型及7个合成Fixture；更新HTTP事件联合、三个OpenAPI诊断版本、云端审批投影扩展与GET events示例、bundle、三端生成物、PI-contract/api-guide。
+既有测试只更新当前版本，以及对RemoteBrowserEvent新增分支作精确预期对比；没有把整个类型加入跳过集合，没有删测试/skip/xfail或放宽线路冻结线。
+专项测试覆盖0.10.1审批解码闭包、非PI四种状态、新PI变体拒绝其它帧、源事实不变、拒绝码保守映射、混合页独立ID及游标、隐藏页无提示字段、线路1–5闭包不变。
+这些是协议与合成示例验收，不代表P1的实际过滤/通知实现或前端端到端已通过。
+
+串行真实输出（最终树）：
+
+```text
+pwsh -NoProfile -File scripts/protocol/validate.ps1 -CheckGenerated
+协议校验通过：608 个类型，492 个 Contract Fixture
+
+python -X utf8 -B packages/protocol/remote/api-contract.py
+API contract verified: 47 current + 0 planned HTTP operations; 95 error codes; self-contained bundle; examples/auth/request IDs consistent
+
+python -X utf8 -B -m pytest packages/protocol/tests scripts/protocol/tests -q -p no:cacheprovider --basetemp=.hqagent/.tmp/pi-projection-tests-final
+788 passed in 55.61s
+```
+
+生成器输出608类型；按既定--no-index --no-build-isolation --force-reinstall --no-deps参数离线重装了协议包。
+证据在 `.hqagent/reviews/pi-p0-supplement1/` 的validate.txt、api-contract.txt、pytest.txt；临时测试数据在忽略目录.hqagent/.tmp，不提交。
+首轮787项通过后，收尾修正混合页两个示例复用同一审批ID的问题并新增一致性断言，再完整重跑得到上述788项通过。
+没有启动模型、修改apps或docs、运行并行测试，也没有遇到429/0xC0000142/额度错误。
+
+### 下游实施要点
+
+**P1服务端**：撤掉Q2临时conversation.updated替代通知，在owner/可见性/可信PI归属检查后选择两种审批投影；源Inbox只读，独立构造兼容副本、公共ID与拒绝码。审批视图与可恢复浏览器事件原子提交，能力集在读取/回放时再检查；同一Worker混合PI/非PI不得按整个设备一刀切隐藏。验证新审批、终态移除、断线回放、快照恢复、无头旧客户端非PI可见、无头PI无任何替代通知，及源hash/ACK不变。其它修订5事件按§8.3矩阵实现，无法安全表达时明确快照对账。无云端WS ticket工作。
+
+**P3前端**：更新生成联合，pi-v1客户端让RemoteBrowserPiApprovalEvent进入既有approval.state_changed分支；pending按ID upsert，approved/rejected/expired移除。保持410重建快照及新游标后接增量。非PI旧形状兼容现有代码，不能要求旧客户端先实现conversation.updated刷新审批才能恢复原功能。
+
+**P2 Hub**：无需更改Worker线路、审批事实或增加字段；本机WS ticket能力绑定仍归Hub，Q1只是归属澄清。
+
+needs-decision：0。提交均为本分支本地提交，未合并integration；每次提交后已按要求自查commit message，无署名。

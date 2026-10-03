@@ -1,10 +1,11 @@
+import { piAgents, piModels, piNativeExample } from '@/shared/runtime/pi-examples'
 import { MockVerifications } from '@/shared/maintenance/mock-verifications'
 import { MockAttachmentLibrary } from '@/shared/attachments/mock-library'
 import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
   LocalImageVerificationPage, LocalImageVerificationJobView, StartLocalImageVerificationInput, LocalConversationDeletionView,
   AttachmentLimits, AttachmentDeletedView, LocalAttachmentView, AttachmentTargetCapabilities,
-  LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
+  LocalNativeSessionPage, RuntimeNativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
   LocalAuthInput,
   AgentView,
@@ -88,9 +89,9 @@ export class MockLocalChatGateway implements LocalChatGateway {
   public authorizedRoots: LocalAuthorizedRootsView = { version: 1, roots: [] }
   public importedNativeIds = new Set<string>()
   async listNativeSessions(): Promise<LocalNativeSessionPage> {
-    return { items: nativeExamples(this.workspaces[0]?.id || 'workspace_example').filter((item) => !this.importedNativeIds.has(item.nativeSessionId)), hasMore: false }
+    return { items: [...nativeExamples(this.workspaces[0]?.id || 'workspace_example'),piNativeExample(this.workspaces[0]?.id || 'workspace_example')].filter((item) => !this.importedNativeIds.has(item.nativeSessionId)), hasMore: false }
   }
-  async getNativeSession(id: string): Promise<NativeSessionIndex> {
+  async getNativeSession(id: string): Promise<RuntimeNativeSessionIndex> {
     const item = (await this.listNativeSessions()).items.find((item) => item.nativeSessionId === id)
     if (!item) throw new HubApiError('会话不存在', 'NOT_FOUND', 404)
     return item
@@ -194,6 +195,8 @@ export class MockLocalChatGateway implements LocalChatGateway {
     this.agents = discoveredList.map((a: any) => ({
       ...a,
     }))
+
+    this.agents.push(...piAgents())
 
     // Seed scenes
     const analyzeScene: LocalSceneView = {
@@ -832,6 +835,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
   }
 
   async getAgentModels(agentId: string): Promise<LocalAgentModelsView> {
+    if (this.agents.find(agent=>agent.id===agentId)?.adapterId === 'pi') return piModels(agentId)
     if (agentId.includes('claude')) {
       return {
         agentInstanceId: agentId,
