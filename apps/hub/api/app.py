@@ -193,7 +193,7 @@ def create_application(
     from api.local_chat import install_local_routes
     from runtime.local_chat import LocalChatService
     from storage.local_chat import LocalChatRepository
-    local_auth = LocalBrowserAuth()
+    local_auth = LocalBrowserAuth(storage_path=paths.data / "browser-sessions.db")
     local_chat = LocalChatService(LocalChatRepository(database), resolved_ports)
     from runtime.composition import build_remote_worker
     from runtime.remote.api import install_remote_routes
@@ -209,6 +209,7 @@ def create_application(
         try:
             yield
         finally:
+            local_auth.close()
             await remote_worker.stop()
             await local_chat.stop()
             if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "shutdown"):
@@ -572,6 +573,14 @@ def create_application(
         # A browser cookie alone must never be enough to mint pairing codes.
         response = success_response(LocalConnectionCodeView(
             code=local_auth.issue_code(), expires_in_seconds=int(local_auth.code_ttl)))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.post("/internal/auth/revoke-sessions")
+    async def revoke_browser_sessions() -> JSONResponse:
+        # Same operator-only boundary as connection-code renewal.
+        local_auth.revoke_sessions()
+        response = success_response({"revoked": True})
         response.headers["Cache-Control"] = "no-store"
         return response
 

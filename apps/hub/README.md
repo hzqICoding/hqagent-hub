@@ -16,7 +16,7 @@ python -m venv .venv
 ../../.venv/Scripts/python.exe -m runtime.main --environment development --port 8765 --data-dir E:/tmp/hqagent-n0-local
 ```
 
-控制台显示本地URL和一次性连接码。前端开发服务器把 `/api` 代理到 `http://127.0.0.1:8765`，浏览器通过 `/api/v2/auth/local-session` 换取 HttpOnly Cookie，不读取Hub Token。连接码有效期10分钟，仅用一次；Cookie有效期1天，Worker重启后重新连接。
+控制台显示本地URL和一次性连接码。前端开发服务器把 `/api` 代理到 `http://127.0.0.1:8765`，浏览器通过 `/api/v2/auth/local-session` 换取 HttpOnly Cookie，不读取Hub Token。连接码有效期10分钟，仅用一次；浏览器会话有效期30天，使用时滑动续期（每小时最多落盘一次），Hub重启后仍有效。用户数据目录的 `data/browser-sessions.db` 只保存会话摘要和到期时间，不保存会话密钥；最多保留20个会话，超出淘汰最早建立的会话。系统时钟回拨导致到期时间超出未来30天时，会话失效，需重新输入连接码。
 
 生产同源访问可添加 `--web-dir <前端dist绝对路径>`；只有前端完成构建后才能使用该参数。N0支持HTTP事件补拉，`/ws/v2/local`尚未实现，前端不要依赖它。
 
@@ -114,3 +114,15 @@ cd apps/hub
 `[tool.hatch.build.targets.wheel]` 的 `packages` 必须包含
 `adapters`、`orchestrator`、`security`，否则 PyInstaller 打包时这三个包不进产物。
 新增顶层包时记得同步这里——W1 的 R1 就是漏了 `protocol` 导致进程起不来。
+
+## 撤销本机浏览器会话
+
+退出登录会撤销当前浏览器会话。需要让所有浏览器重新连接时，在 `apps/hub` 下运行：
+
+```sh
+python -m runtime.pair --revoke-sessions
+# 自定义数据目录时，与 Hub 启动参数一致：
+python -m runtime.pair --data-dir /path/to/hub-data --revoke-sessions
+```
+
+使用 Hub 所在虚拟环境的 Python。该命令要求 Hub 正在运行，读取本机 descriptor 后向 loopback 内部接口发送请求，不显示令牌。它仅撤销本机浏览器会话，不解绑远程设备，也不撤销一次性连接码。连接码仍有效10分钟、只能兑换一次、最多尝试10次，并且仅在交互终端显示。
