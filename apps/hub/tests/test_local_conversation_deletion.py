@@ -19,6 +19,38 @@ def conversation(system, key='delete'):
         title='synthetic deletion', workspaceId='workspace', sceneId='analyze'), key)
 
 
+def test_v1_v2_deletion_share_cas_idempotency_and_no_store(tmp_path):
+    async def scenario():
+        system = System(tmp_path)
+        try:
+            cid = conversation(system).id
+            path = '/conversations/' + cid
+            no_origin = await system.local.delete('/api/v1' + path + '?expectedVersion=1',
+                headers={'Idempotency-Key': 'delete'})
+            assert no_origin.status_code == 403 and no_origin.headers['cache-control'] == 'no-store'
+            system.local.headers['Origin'] = 'http://127.0.0.1'
+            missing = await system.local.delete('/api/v1' + path, headers={'Idempotency-Key': 'delete'})
+            assert missing.status_code == 422 and missing.headers['cache-control'] == 'no-store'
+            stale = await system.local.delete('/api/v1' + path + '?expectedVersion=2', headers={'Idempotency-Key': 'delete'})
+            assert stale.status_code == 409 and stale.json()['error']['detail']['reason'] == 'version_mismatch'
+            deleted = await system.local.delete('/api/v1' + path + '?expectedVersion=1',
+                headers={'Idempotency-Key': 'delete', 'X-Request-Id': 'erase-request'})
+            assert deleted.status_code == 200, deleted.text
+            assert deleted.json()['requestId'] == deleted.headers['x-request-id'] == 'erase-request'
+            assert deleted.headers['cache-control'] == 'no-store'
+            from core.local_auth import COOKIE_NAME
+            auth = system.application.local_auth
+            system.local.cookies.set(COOKIE_NAME, auth.exchange(auth.issue_code()))
+            replay = await system.local.delete('/api/v2' + path + '?expectedVersion=1', headers={'Idempotency-Key': 'delete'})
+            assert replay.status_code == 200 and replay.json()['data'] == deleted.json()['data']
+            assert replay.headers['cache-control'] == 'no-store'
+            missing = await system.local.delete('/api/v2' + path + '?expectedVersion=1', headers={'Idempotency-Key': 'new-key'})
+            assert missing.status_code == 404 and missing.headers['cache-control'] == 'no-store'
+        finally:
+            await system.close()
+    asyncio.run(scenario())
+
+
 def seed_runs(system, cid, count, status='succeeded'):
     with system.db.transaction() as tx:
         for index in range(count):

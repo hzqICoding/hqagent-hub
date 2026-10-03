@@ -209,6 +209,7 @@ def create_application(
         try:
             yield
         finally:
+            await remote_worker.attachments.verifications.close()
             local_auth.close()
             await remote_worker.stop()
             await local_chat.stop()
@@ -227,6 +228,9 @@ def create_application(
         allowed_origins=allowed_origins or set(DEFAULT_ALLOWED_ORIGINS),
         allowed_hosts=allowed_hosts or {"127.0.0.1", "localhost"},
     )
+    from runtime.attachments.maintenance_api import MaintenanceBoundary, maintenance_router
+    app.add_middleware(MaintenanceBoundary)
+    app.include_router(maintenance_router(remote_worker.attachments), prefix='/api/v1')
     remote_router = install_remote_routes(app, remote_worker.link, remote_worker.sync, remote_worker.roots)
     from runtime.native.api import native_router
     app.include_router(native_router(remote_worker.native), prefix="/api/v1")
@@ -364,10 +368,8 @@ def create_application(
     ) -> JSONResponse:
         if maintenance.enabled:
             raise HubError("HUB_MAINTENANCE", "Local Hub 正在维护，暂不接受新任务")
-        if value.parent_task_id:
-            local_chat.repository.assert_local_task(value.parent_task_id)
-        local_chat.repository.assert_local_profile(value.profile_id)
-        return success_response(await resolved_ports.tasks.create_task(value, idempotency_key))
+        return success_response(await local_chat.guard_task_operation(value.parent_task_id or '',
+            lambda: resolved_ports.tasks.create_task(value, idempotency_key), profile_id=value.profile_id))
 
     @app.get("/api/v1/tasks/{task_id}")
     async def get_task(task_id: str) -> JSONResponse:
@@ -379,8 +381,8 @@ def create_application(
         value: TaskActionInput,
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ) -> JSONResponse:
-        local_chat.repository.assert_local_task(task_id)
-        return success_response(await resolved_ports.tasks.act(task_id, value, idempotency_key))
+        return success_response(await local_chat.guard_task_operation(task_id,
+            lambda: resolved_ports.tasks.act(task_id, value, idempotency_key)))
 
     @app.get("/api/v1/sessions")
     async def list_sessions(
@@ -401,7 +403,8 @@ def create_application(
         with database.locked_connection() as db:
             row = db.execute("SELECT task_id FROM sessions WHERE session_id=?", (session_id,)).fetchone()
         if row:
-            local_chat.repository.assert_local_task(row[0])
+            return success_response(await local_chat.guard_task_operation(row[0],
+                lambda: resolved_ports.sessions.resume(session_id, value)))
         return success_response(await resolved_ports.sessions.resume(session_id, value))
 
     @app.get("/api/v1/approvals")

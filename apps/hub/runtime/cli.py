@@ -138,8 +138,9 @@ def parser():
     agents = groups.add_parser('agents').add_subparsers(dest='action', required=True)
     agents.add_parser('discover')
     verify = agents.add_parser('verify-image', help='显式调用真实模型验证图片输入，会产生模型用量')
-    verify.add_argument('--agent', choices=('claude', 'codex'), required=True)
+    verify.add_argument('--agent', required=True, help='Agent实例ID，或唯一匹配的claude/codex类型')
     verify.add_argument('--model')
+    verify.add_argument('--acknowledge-model-usage', action='store_true', help='确认本次多次模型调用及可能费用')
     roots = groups.add_parser('roots').add_subparsers(dest='action', required=True)
     roots.add_parser('list')
     roots.add_parser('add').add_argument('path', type=Path)
@@ -164,9 +165,30 @@ def execute(args, client, out):
     elif args.group == 'agents':
         data = client.request('POST', '/agents/discovery')
         if args.action == 'verify-image':
-            from runtime.attachments.verification import verify_images
-            record = asyncio.run(verify_images(HubPaths.resolve(args.data_dir).root, args.agent, args.model))
-            data = {k: record[k] for k in ('agent', 'version', 'model', 'observedAt', 'passed', 'probes', 'diagnostics')}
+            if not args.acknowledge_model_usage:
+                raise CLIError('验证会产生多次模型用量；请明确传入 --acknowledge-model-usage。')
+            agents = data if isinstance(data, list) else data.get('discovered', data.get('agents', data.get('items', [])))
+            matches = [a for a in agents if a.get('id') == args.agent or a.get('adapterId') == args.agent]
+            if len(matches) != 1:
+                raise CLIError('Agent类型未唯一匹配，请用 --agent 指定实例ID。')
+            identifier = matches[0]['id']
+            query = '?agentId=' + quote(identifier, safe='')
+            if args.model is not None:
+                query += '&modelId=' + quote(args.model, safe='')
+            rows = client.request('GET', '/agents/image-verifications' + query)['items']
+            row = next((r for r in rows if r['target'].get('modelId') == args.model), None)
+            if row is None:
+                raise CLIError('指定验证目标不可用。')
+            value = dict(agentId=identifier, expectedTargetRevision=row['target']['targetRevision'], acknowledgeModelUsage=True)
+            if args.model is not None:
+                value['modelId'] = args.model
+            data = client.request('POST', '/agents/image-verification-jobs', value)
+            try:
+                while data['status'] in {'queued', 'running', 'cancel_requested'}:
+                    time.sleep(1)
+                    data = client.request('GET', '/agents/image-verification-jobs/' + data['jobId'])
+            except KeyboardInterrupt:
+                data = client.request('POST', '/agents/image-verification-jobs/' + data['jobId'] + '/cancellations', {})
     else:
         data = LocalAuthorizedRootsView.model_validate(
             client.request('GET', '/remote/authorized-roots')
