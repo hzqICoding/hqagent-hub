@@ -1,0 +1,2 @@
+$ eslint src
+exit_code=0

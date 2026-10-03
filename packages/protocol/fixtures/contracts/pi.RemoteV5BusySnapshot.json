@@ -1,0 +1,18 @@
+{
+  "type": "sync.busy.snapshot",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "wireRevision": 5,
+  "snapshotId": "busy_demo",
+  "connectionId": "connection_demo",
+  "capturedAt": "2026-09-26T12:00:00Z",
+  "partIndex": 0,
+  "partCount": 1,
+  "conversationIds": [
+    "conversation_demo"
+  ]
+}

@@ -1,6 +1,7 @@
 import type { UiGateway } from './ui-gateway'
 import { mockGateway } from './mock-gateway'
 import { localHubGateway } from './local-hub-gateway'
+import { isDesktopShell } from './desktop-endpoint'
 
 export * from '@hqagent/protocol'
 export type { UiGateway, EventSubscription } from './ui-gateway'
@@ -9,7 +10,7 @@ export { localHubGateway, LocalHubGateway, HubApiError } from './local-hub-gatew
 
 export function getUiGateway(): UiGateway {
   const mode = import.meta.env.VITE_GATEWAY_MODE || 'mock'
-  if (mode === 'local') {
+  if (isDesktopShell() || mode === 'local') {
     return localHubGateway
   }
   return mockGateway
@@ -35,4 +36,3 @@ export {
   getRemoteGateway,
   setRemoteGatewayForTesting,
 } from './remote-provider'
-

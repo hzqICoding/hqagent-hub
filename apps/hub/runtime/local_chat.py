@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import AsyncExitStack
 import json
 import logging
 import time
@@ -24,18 +25,27 @@ class LocalChatService:
         self._jobs: dict[str, asyncio.Task] = {}
         self._supervisor: asyncio.Task | None = None
         self._closed = False
+        self._quiescing = False
         self._wake = asyncio.Event()
         self._slots = asyncio.Semaphore(3)
         self._last_approval_check = 0.0
         self._conversation_locks: dict[str, asyncio.Lock] = {}
         self.remote_dispatch_guard = None
+        from runtime.conversation_deletion import ConversationDeletion
+        self.deletions = ConversationDeletion(self)
 
     async def start(self) -> None:
         self._closed = False
+        self._quiescing = False
+        await self.deletions.recover()
         if getattr(self, 'attachments', None):
             await self.attachments.recover()
         if self._supervisor is None:
             self._supervisor = asyncio.create_task(self._supervise())
+
+    def begin_shutdown(self) -> None:
+        self._quiescing = True
+        self._wake.set()
 
     async def stop(self) -> None:
         self._closed = True
@@ -54,6 +64,36 @@ class LocalChatService:
         if value.workspace_id not in {w.id for w in workspaces}:
             raise HubError("NOT_FOUND", "请先登记并选择本机项目目录")
         return self.repository.create_conversation(value, key)
+
+    async def delete_conversation(self, conversation_id: str, expected_version: int, key: str):
+        return await self.deletions.delete(conversation_id, expected_version, key)
+
+    async def guard_task_operation(self, task_id: str, operation, *, profile_id=None):
+        """Direct Task/session controls share every owning conversation boundary."""
+        with self.repository.database.locked_connection() as db:
+            conversations, seen, profiles, ancestor = set(), set(), {profile_id} if profile_id else set(), task_id
+            while ancestor and ancestor not in seen:
+                seen.add(ancestor)
+                conversations.update(row[0] for row in db.execute(
+                    'SELECT conversation_id FROM local_runs WHERE task_id=?', (ancestor,)))
+                task = db.execute('SELECT profile_id,payload_json FROM tasks WHERE task_id=?', (ancestor,)).fetchone()
+                if not task:
+                    break
+                profiles.add(task[0])
+                ancestor = json.loads(task[1]).get('parentTaskId')
+            for profile in profiles:
+                if profile and profile.startswith('local-profile:'):
+                    conversations.update(row[0] for row in db.execute(
+                        'SELECT conversation_id FROM local_runs WHERE run_id=?', (profile[len('local-profile:'):],)))
+        async with AsyncExitStack() as stack:
+            for conversation in sorted(conversations):
+                await stack.enter_async_context(self._conversation_lock(conversation))
+            self.repository.assert_local_task(task_id)
+            for profile in profiles:
+                self.repository.assert_local_profile(profile)
+            for conversation in conversations:
+                self.repository.assert_not_deleted(conversation)
+            return await operation()
 
     def _conversation_lock(self, conversation_id: str) -> asyncio.Lock:
         return self._conversation_locks.setdefault(conversation_id, asyncio.Lock())
@@ -75,6 +115,8 @@ class LocalChatService:
         return await update()
 
     def send(self, conversation_id: str, value: SendLocalMessageInput, key: str):
+        if self._quiescing:
+            raise HubError("HUB_MAINTENANCE", "Hub 正在停止，暂不接受新任务")
         receipt = self.repository.enqueue(conversation_id, value, key)
         self._wake.set()
         return receipt
@@ -98,11 +140,11 @@ class LocalChatService:
         if not key:
             raise HubError("VALIDATION_FAILED", "必须提供Idempotency-Key")
         record = self.repository.run_record(run_id)
-        if str(value.action) in {"append_instruction", "resume", "retry"}:
-            async with self._conversation_lock(record["conversation_id"]):
+        async with self._conversation_lock(record["conversation_id"]):
+            self.repository.assert_not_deleted(record['conversation_id'])
+            if str(value.action) in {"append_instruction", "resume", "retry"}:
                 self.repository.assert_execution_allowed(record["conversation_id"])
-                return await self._control(record, value, key)
-        return await self._control(record, value, key)
+            return await self._control(record, value, key)
 
     def wake_remote_queue(self) -> None:
         """Wake only after the inbox / run / receipt transaction commits."""
@@ -183,7 +225,7 @@ class LocalChatService:
                     )
 
     async def _supervise(self) -> None:
-        while not self._closed:
+        while not self._closed and not self._quiescing:
             if time.monotonic() - self._last_approval_check >= 5:
                 self._last_approval_check = time.monotonic()
                 if hasattr(type(self.ports.tasks), "expire_approvals"):
@@ -192,6 +234,8 @@ class LocalChatService:
                     except Exception:
                         logging.getLogger(__name__).error("工具审批过期检查失败，需要检查本机任务状态", exc_info=True)
             for conversation in self.repository.conversations(include_hidden=True, observe_native=False):
+                if self._quiescing:
+                    break
                 job = self._jobs.get(conversation.id)
                 if job and not job.done():
                     continue
@@ -212,7 +256,8 @@ class LocalChatService:
 
     async def _drive(self, record: dict) -> None:
         async with self._slots:
-            await self._execute(record)
+            if not self._quiescing:
+                await self._execute(record)
 
     async def _execute(self, record: dict) -> None:
         run_id = record["run_id"]

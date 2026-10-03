@@ -82,7 +82,5 @@ def parse_agent_result(value: Any) -> AgentResult:
 
 
 def version_tuple(value: str) -> tuple[int, ...]:
-    match = re.search(r"(\d+(?:\.\d+)+)", value)
-    if not match:
-        return ()
-    return tuple(int(part) for part in match.group(1).split("."))
+    from adapters.versions import cli_version, version_tuple as numeric_version
+    return numeric_version(cli_version(value)) or ()

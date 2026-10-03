@@ -142,7 +142,13 @@ def test_verification_records_are_bound_to_current_version_and_complete_probes(t
     store.record('claude', '2.1.285', None, {'new': True}, ['image/png'])
     assert not store.capability('claude', '2.1.285').verified
     store.record('claude', '2.1.285', None, {key: True for key in REQUIRED_PROBES}, ['image/png'])
-    assert store.capability('claude', '2.1.285').verified
+    assert not store.capability('claude', '2.1.285').verified  # 0.10.1: legacy_unbound is history only.
+    from runtime.attachments.verification_target import target_for
+    target = target_for('agent', 'claude', '2.1.285', None, object())
+    store.record('claude', '2.1.285', None, {key: True for key in REQUIRED_PROBES}, ['image/png'],
+                 target=target, cleanup_confirmed=True)
+    assert store.capability('claude', '2.1.285', target=target).verified
+    assert not store.capability('claude', '2.1.285', target={**target, 'agentId': 'other'}).verified
     assert not store.capability('claude', '2.1.286').verified
     assert not store.capability('claude', '2.1.285', 'other-model').verified
 
@@ -358,7 +364,7 @@ def test_verify_image_entry_uses_injected_adapter_and_persists_version(tmp_path,
     assert len(adapter.started) == 2 and len(adapter.resumed) == 2
     assert adapter.resumed[0].external_session_id == adapter.handle.external_session_id
     assert len(adapter.resumed[1].task_spec.input_attachments) == 5
-    assert VerificationStore(tmp_path).capability('claude', '2.1.285').verified
+    assert VerificationStore(tmp_path).capability('claude', '2.1.285', target=record['target']).verified
     assert not VerificationStore(tmp_path).capability('claude', '2.1.286').verified
     assert not list((tmp_path / 'image-verification').glob('probe-*'))
 
@@ -385,7 +391,10 @@ def test_real_phone_image_uses_verified_catalog_and_local_input(tmp_path):
             scene = pair.system.chat.repository.scene('analyze')
             pair.system.chat.repository.save_scene('analyze', dto.SaveLocalSceneInput(expectedVersion=scene.version, roles=[r.model_copy(update={'agent_instance_id': 'agent'}) for r in scene.roles]))
             caps = pair.system.worker.attachments.capabilities
-            caps.store.record('claude', '2.1.285', None, {key: True for key in REQUIRED_PROBES}, ['image/png'])
+            from runtime.attachments.verification_target import target_for
+            target = target_for('agent', 'claude', '2.1.285', None, pair.system.adapter)
+            caps.store.record('claude', '2.1.285', None, {key: True for key in REQUIRED_PROBES}, ['image/png'],
+                              target=target, cleanup_confirmed=True)
             await caps.refresh()
             await pair.system.worker.projector.catalog()
             await until(lambda: not pair.system.repo.frames())

@@ -1,0 +1,13 @@
+{
+  "type": "sync.conversation.deleted",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "wireRevision": 5,
+  "syncGeneration": 1,
+  "conversationId": "conversation_demo",
+  "deletedAt": "2026-09-26T12:00:00Z"
+}

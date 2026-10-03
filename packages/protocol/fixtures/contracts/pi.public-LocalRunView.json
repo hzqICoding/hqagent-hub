@@ -1,0 +1,11 @@
+{
+  "id": "run-pi",
+  "conversationId": "conversation-pi",
+  "messageId": "message-pi",
+  "taskId": "task-pi",
+  "status": "succeeded",
+  "createdAt": "2026-10-04T00:00:00Z",
+  "updatedAt": "2026-10-04T00:00:00Z",
+  "conversationKind": "native",
+  "agentType": "pi"
+}
