@@ -387,3 +387,43 @@ def test_execution_handles_and_session_only_caches_are_erased(tmp_path):
         finally:
             await system.close()
     asyncio.run(scenario())
+
+
+def test_unacked_approval_body_blocks_without_forging_redaction_or_omission(tmp_path):
+    async def scenario():
+        from pydantic import ValidationError
+        system = System(tmp_path)
+        try:
+            cid = conversation(system).id
+            seed_runs(system, cid, 1)
+            with system.db.transaction() as tx:
+                identity = system.repo.get('identity', tx)
+                identity['wireRevision'] = 4
+                system.repo.put('identity', identity, tx)
+                system.repo.set_view(tx, {'state': 'paired', 'workerId': 'approval-worker', 'deviceName': 'fixture',
+                    'serverOrigin': 'https://paired.invalid', 'connectionStatus': 'offline', 'lastConnectedAt': None})
+                tx.connection.execute('INSERT INTO remote_sync_versions VALUES(?,?,?,?,?,?)',
+                    (identity['store'], 1, 'conversation', cid, 1, 'digest'))
+                event = system.repo.emit(tx, 'approval.state_changed', conversationId=cid, payload={
+                    'approvalId': 'private-approval', 'resultRef': {'runId': 'r-0'}, 'action': 'git_push',
+                    'targetSummary': 'SENSITIVE_PENDING_APPROVAL', 'riskLevel': 'high', 'status': 'approved',
+                    'requestedAt': now(), 'expiresAt': now(), 'remoteApprovalAllowed': False,
+                    'workerPolicyRevision': 1, 'denialCode': 'REMOTE_APPROVAL_FORBIDDEN'})
+                system.repo.seal(tx)
+            original = tuple(system.db.connection.execute('SELECT frame_json,digest FROM remote_outbox WHERE seq=?', (event['seq'],)).fetchone())
+            with pytest.raises(ValidationError):
+                dto.RemoteV4RedactedSlot.model_validate({'seq': event['seq'], 'eventId': event['eventId'],
+                    'eventSha256': original[1], 'originalType': 'approval.state_changed'})
+            with pytest.raises(HubError) as error:
+                await system.chat.delete_conversation(cid, 1, 'approval-delete')
+            assert error.value.detail == {'reason': 'cancellation_unconfirmed', 'blockingRunIds': ['r-0'], 'hasMoreBlockingRuns': False}
+            assert tuple(system.db.connection.execute('SELECT frame_json,digest FROM remote_outbox WHERE seq=?', (event['seq'],)).fetchone()) == original
+            assert not system.db.connection.execute('SELECT 1 FROM local_conversation_deletions').fetchone()
+            # Once the existing transport commits the actual ACK it prunes the
+            # immutable frame, so the same DELETE can complete normally.
+            system.repo.ack({'workerStoreId': identity['store'], 'seq': event['seq']})
+            assert (await system.chat.delete_conversation(cid, 1, 'approval-delete')).local_deleted
+            assert not any('SENSITIVE_PENDING_APPROVAL' in r[0] for r in system.db.connection.execute('SELECT payload_json FROM events'))
+        finally:
+            await system.close()
+    asyncio.run(scenario())
