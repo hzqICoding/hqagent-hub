@@ -246,6 +246,31 @@ def test_adapter_cannot_transfer_verification_ownership_to_user_session(tmp_path
     asyncio.run(scenario())
 
 
+def test_final_target_check_holds_slot_and_repeated_cancel_still_commits_terminal(tmp_path, monkeypatch):
+    async def scenario():
+        coordinator, adapter, request = setup(tmp_path, monkeypatch)
+        entered = asyncio.Event()
+        original = coordinator.current
+        async def current(job):
+            if job['view']['cleanupState'] == 'confirmed':
+                entered.set()
+                await asyncio.Event().wait()
+            return await original(job)
+        coordinator.current = current
+        job = await coordinator.start(request(), 'key', 'req')
+        await entered.wait()
+        assert coordinator.view(job.job_id).slot_held
+        with pytest.raises(HubError) as error:
+            await coordinator.start(request(), 'another-key', 'req2')
+        assert error.value.detail['reason'] == 'verification_in_progress'
+        await asyncio.gather(*(coordinator.cancel(job.job_id, 'cancel') for _ in range(10)))
+        await until(lambda: not coordinator.tasks)
+        view = coordinator.view(job.job_id)
+        assert view.status == 'cancelled' and view.cleanup_state == 'confirmed'
+        assert not view.applied_to_current_target and not view.result.passed and not view.slot_held
+    asyncio.run(scenario())
+
+
 def test_http_auth_cross_version_idempotency_progress_request_id(tmp_path):
     async def scenario():
         system = System(tmp_path, hold=True)

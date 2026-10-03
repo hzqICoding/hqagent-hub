@@ -186,7 +186,7 @@ class VerificationCoordinator:
             if target['targetRevision'] != raw['expectedTargetRevision']:
                 conflict('target_changed')
             for job in self.data['jobs'].values():
-                if job['view']['slotHeld'] and self.slot(job['view']['target']) == self.slot(target):
+                if (job['view']['slotHeld'] or job['view']['status'] not in TERMINAL) and self.slot(job['view']['target']) == self.slot(target):
                     conflict('verification_in_progress', activeJobId=job['view']['jobId'])
             identifier, stamp = uid('verification-job'), now()
             view = dict(jobId=identifier, target=target, status='queued', acknowledgeModelUsage=True,
@@ -232,7 +232,8 @@ class VerificationCoordinator:
     @staticmethod
     def cleanup_state(job, stopped):
         job['view'].update(cleanupState='confirmed' if stopped else 'unconfirmed',
-                           executionMayStillBeRunning=not stopped, slotHeld=not stopped)
+                           executionMayStillBeRunning=not stopped,
+                           slotHeld=not stopped or job['view']['status'] not in TERMINAL)
 
     async def cleanup(self, job, adapter, *, deadline=None):
         job['view']['cleanupState'] = 'pending'
@@ -332,9 +333,11 @@ class VerificationCoordinator:
                 async with asyncio.timeout(max(0, cleanup_deadline - asyncio.get_running_loop().time())):
                     await self.current(job)
                 current = True
-            except Exception:
+            except (Exception, asyncio.CancelledError) as error:
                 current = False
                 job['failureReason'] = 'target_changed'
+                if isinstance(error, asyncio.CancelledError):
+                    status = 'cancelled' if job['view']['status'] == 'cancel_requested' else 'interrupted'
             target = job['view']['target']
             for progress in job['view']['probes'].values():
                 if progress['state'] == 'running':
@@ -346,6 +349,7 @@ class VerificationCoordinator:
                 completed=status == 'succeeded')
             job['view'].update(status=status, finishedAt=now(), result=record_view(record, target),
                 appliedToCurrentTarget=stopped and current and record['passed'] and status == 'succeeded')
+            self.cleanup_state(job, stopped)
             self.persist(job)
             try:
                 if self.capabilities:
@@ -369,9 +373,10 @@ class VerificationCoordinator:
             task = self.tasks.get(identifier)
             if task:
                 queued = job['view']['status'] == 'queued'
+                already_requested = job['view']['status'] == 'cancel_requested'
                 job['view']['status'] = 'cancel_requested'
                 self.persist(job)
-                if not queued:
+                if not queued and not already_requested:
                     task.cancel()
             else:
                 # Retrying only cleanup never starts inference. A restarted Hub
@@ -442,7 +447,7 @@ class VerificationCoordinator:
             for job in self.data['jobs'].values():
                 if self.slot(job['view']['target']) == (identifier, selected):
                     row['lastJobId'] = job['view']['jobId']
-                    if job['view']['slotHeld']:
+                    if job['view']['slotHeld'] or job['view']['status'] not in TERMINAL:
                         row['activeJobId'] = job['view']['jobId']
             rows.append(row)
         fingerprint = request_hash([agent_id, model, inactive, limit, rows])
