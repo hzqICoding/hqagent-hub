@@ -1,0 +1,27 @@
+{
+  "nativeSessionId": "native_local_example",
+  "workspaceId": "workspace_example",
+  "agentType": "pi",
+  "title": "合成终端会话",
+  "createdAt": "2026-09-28T12:00:00Z",
+  "updatedAt": "2026-09-28T12:00:00Z",
+  "indexVersion": 1,
+  "sourceRevision": "270c0d536da1e328c882cda409fc95a131d86851b817f538836313cad3b9ed03",
+  "format": {
+    "status": "readable",
+    "readerId": "pi.jsonl.v3.tree",
+    "cliVersion": "1.0.1",
+    "pi": {
+      "readerId": "pi.jsonl.v3.tree",
+      "sessionVersion": 3,
+      "structure": "tree",
+      "branchSelection": "last_persisted_entry"
+    }
+  },
+  "activity": {
+    "activity": "unknown",
+    "observedAt": "2026-09-28T12:00:00Z",
+    "processMatch": "unknown",
+    "recentlyModified": false
+  }
+}

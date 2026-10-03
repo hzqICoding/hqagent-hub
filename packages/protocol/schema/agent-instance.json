@@ -67,7 +67,8 @@
         "authKind": { "$ref": "common.json#/$defs/AuthKind" },
         "executablePath": { "type": "string" },
         "minimumVersion": { "type": "string", "description": "适配器要求的最低版本，低于此值状态为 incompatible" },
-        "lastHealthyAt": { "$ref": "common.json#/$defs/Timestamp" }
+        "lastHealthyAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "guard": { "$ref": "remote-pi.json#/$defs/RuntimeGuardView" }
       }
     },
     "AgentDiscoveryError": {

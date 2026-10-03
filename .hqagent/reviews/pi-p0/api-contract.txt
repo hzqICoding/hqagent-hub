@@ -1,0 +1,1 @@
+API contract verified: 47 current + 0 planned HTTP operations; 95 error codes; self-contained bundle; examples/auth/request IDs consistent

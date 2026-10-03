@@ -102,6 +102,7 @@ impl HubEndpointProvider {
         supervisor: Arc<ProcessSupervisor>,
     ) -> Result<Self, ShellError> {
         let client = Client::builder()
+            .no_proxy()
             .timeout(Duration::from_secs(2))
             .redirect(Policy::none())
             .build()
@@ -187,7 +188,7 @@ impl HubEndpointProvider {
 }
 
 fn read_json_response<T: for<'de> Deserialize<'de>>(
-    mut response: reqwest::blocking::Response,
+    response: reqwest::blocking::Response,
 ) -> Result<T, ShellError> {
     let mut bytes = Vec::new();
     response

@@ -56,10 +56,12 @@ def test_local_aliases_have_identical_dtos_and_no_remote_receipts():
 def test_filters_read_input_and_local_page_fixture():
     ops=operations('local-chat.v2.yaml','v2')
     params={p['name']:p for p in ops['/native-sessions']['get']['parameters']}
-    assert set(params)=={'workspaceId','agentType','cursor','limit'}
+    assert set(params)=={'workspaceId','agentType','cursor','limit','X-HQ-Client-Features'}
+    assert params['X-HQ-Client-Features']['required'] is False
+    assert params['X-HQ-Client-Features']['schema']=={'type':'string','enum':['pi-v1']}
     assert params['limit']['schema']=={'type':'integer','minimum':1,'maximum':100,'default':50}
     read=ops['/native-sessions/{nativeSessionId}/messages']['get']
-    assert {p['name'] for p in read['parameters']}=={'nativeSessionId','sourceRevision','before','limit'}
+    assert {p['name'] for p in read['parameters']}=={'nativeSessionId','sourceRevision','before','limit','X-HQ-Client-Features'}
     assert read['responses']['200']['x-dataSchema']['$ref'].endswith('/NativeMessagePage')
     raw=json.loads((P/'fixtures/contracts/local-native.page.json').read_text(encoding='utf-8'))
     parsed=models.LocalNativeSessionPage.model_validate(raw)
@@ -76,7 +78,7 @@ def test_patch_changes_no_existing_wire_schema_or_fixture():
         released=subprocess.check_output(['git','show',f'271c904:packages/protocol/{relative}'],cwd=P).decode('utf-8')
         assert released==old
         # Current frozen wire closures are checked by test_attachment_contract.py.
-    assert models.PROTOCOL_VERSION==(P/'VERSION').read_text().strip()=='0.10.1'
+    assert models.PROTOCOL_VERSION==(P/'VERSION').read_text().strip()=='0.11.0'
     manifest=load('fixtures/contracts/manifest.json')['fixtures']
     assert manifest['local-native.page.json']=='LocalNativeSessionPage'
     assert set(load('schema/local-native.json')['$defs'])=={'LocalNativeSessionPage'}

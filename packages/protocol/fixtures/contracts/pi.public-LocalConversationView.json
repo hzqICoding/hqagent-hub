@@ -1,0 +1,13 @@
+{
+  "id": "conversation_archived_example",
+  "title": "RTK 分析记录",
+  "workspaceId": "workspace_example",
+  "sceneId": "analyze",
+  "createdAt": "2026-09-26T00:00:00Z",
+  "updatedAt": "2026-09-26T01:00:00Z",
+  "version": 3,
+  "archived": true,
+  "lastRunId": "run_example",
+  "lastRunStatus": "succeeded",
+  "agentType": "pi"
+}

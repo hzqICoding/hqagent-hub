@@ -19,7 +19,7 @@ use crate::{
     error::ShellError,
     process_supervisor::{Component, ProcessSpec, ProcessStatus, ProcessSupervisor},
     runtime_descriptor::{HubEndpoint, HubEndpointProvider},
-    tray::TRAY_ID,
+    tray,
 };
 
 const MAINTENANCE_POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -55,25 +55,38 @@ pub struct ShellState {
 }
 
 impl ShellState {
-    pub fn new(paths: AppPaths) -> Result<Self, ShellError> {
+    pub fn new(paths: AppPaths, resource_dir: PathBuf) -> Result<Self, ShellError> {
         paths.ensure_directories()?;
         let config = Arc::new(ShellConfigStore::load(paths.shell_config.clone())?);
         let settings = config.get();
+        let mut core_args = settings.core_args.clone();
+        if !core_args
+            .iter()
+            .any(|arg| arg == "--web-dir" || arg.starts_with("--web-dir="))
+            && resource_dir.join("web/index.html").is_file()
+        {
+            core_args.extend([
+                "--web-dir".into(),
+                resource_dir.join("web").to_string_lossy().into_owned(),
+            ]);
+        }
         let core_executable = configured_executable(
             settings.core_executable.as_deref(),
             "HQAGENT_CORE_PATH",
-            "hqagent-core.exe",
+            &resource_dir,
+            "core/hqagent-core.exe",
         )?;
         let update_agent_executable = configured_executable(
             settings.update_agent_executable.as_deref(),
             "HQAGENT_UPDATE_AGENT_PATH",
+            &resource_dir,
             "hqagent-update-agent.exe",
         )?;
         let supervisor = ProcessSupervisor::start(vec![
             ProcessSpec {
                 component: Component::Core,
                 executable: core_executable,
-                args: settings.core_args,
+                args: core_args,
                 runtime_dir: paths.runtime_dir.clone(),
                 descriptor_path: Some(paths.runtime_dir.join("hub.json")),
             },
@@ -150,6 +163,7 @@ impl ShellState {
         let hub_instance_id = Arc::clone(&self.hub_instance_id);
         let stop = Arc::clone(&self.monitor_stop);
         let warnings = Arc::clone(&self.warnings);
+        let supervisor = Arc::clone(&self.supervisor);
         let handle = thread::Builder::new()
             .name("hub-maintenance-monitor".into())
             .spawn(move || {
@@ -173,6 +187,7 @@ impl ShellState {
                             }
                         }
                     }
+                    tray::update_status(&app, &supervisor.statuses());
                     wait_monitor(&stop, MAINTENANCE_POLL_INTERVAL);
                 }
             })
@@ -248,9 +263,6 @@ fn apply_maintenance_shared<R: Runtime>(
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_title(title);
     }
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let _ = tray.set_tooltip(Some(title));
-    }
 }
 
 fn wait_monitor(stop: &AtomicBool, duration: Duration) {
@@ -276,4 +288,3 @@ pub fn config_process_paths(statuses: &[ProcessStatus]) -> Vec<PathBuf> {
         })
         .collect()
 }
-

@@ -28,7 +28,7 @@
           "minLength": 1,
           "maxLength": 160,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*(?:[/:][A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*)*$",
-          "description": "Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name."
+          "description": "Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name. For PI use provider/modelId, split the first slash only; pi-rpc-images-v1 transport. Resolve default selection before verification and invalidate on effective provider/model/config change."
         },
         "cliVersion": {
           "type": "string",
@@ -401,7 +401,7 @@
           "minLength": 1,
           "maxLength": 160,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*(?:[/:][A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*)*$",
-          "description": "Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name."
+          "description": "Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name. For PI use provider/modelId, split the first slash only; pi-rpc-images-v1 transport. Resolve default selection before verification and invalidate on effective provider/model/config change."
         },
         "expectedTargetRevision": {
           "type": "string",

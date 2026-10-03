@@ -239,11 +239,11 @@ mod tests {
 
     use super::verify_private_file_acl;
 
-    /// 当前用户的 `域\用户名`，与 icacls 接受的主体格式一致。
+    /// Use the process identity, not inherited USERNAME (which can name a different user).
     fn current_principal() -> String {
-        let domain = std::env::var("USERDOMAIN").expect("USERDOMAIN");
-        let user = std::env::var("USERNAME").expect("USERNAME");
-        format!("{domain}\\{user}")
+        let output = Command::new("whoami.exe").output().expect("whoami.exe");
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).expect("principal name").trim().to_owned()
     }
 
     fn icacls(args: &[&str]) {
