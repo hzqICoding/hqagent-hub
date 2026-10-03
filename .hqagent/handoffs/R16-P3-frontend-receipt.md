@@ -539,3 +539,249 @@ python .hqagent/handoffs/screenshots/r16-p3-fix2/verify.py
 - 未改任何凭据或附件持久化路径，没有把秘密、Cookie 或下载地址写入日志、URL 查询参数或存储。
 - 未遇真实 429、0xC0000142 或额度错误；没有并行跑构建/测试，未启动子代理。本轮临时开发服务已停止。
 - 未合并回 integration，未部署；后续由主代理审核、集成及真机复验。
+
+
+## 返修 3：原生会话按可用性分组
+
+### 1. 基线与范围
+
+- 工作区 `r15-web` / 分支 `feat/r15-web`，先执行 `git merge integration/phase1`，真实输出 `Already up to date.`；开工基线为 `0c0ff7d`。
+- 实现与测试提交：`471a840` — `fix(desktop): group native sessions by format availability`。提交后 `git log -1 --format=%B` 已自查，输出即该标题，无署名或生成标记。
+- 仅改 `apps/desktop/src/pages/native/NativeSessionsPanel.vue`、新增同目录 `NativeAvailability.test.ts` 以及本回执/验收材料。不新增依赖，不改协议、Hub、服务端或根配置；未合并回 integration、未部署。
+
+### 2. 行为变化
+
+手机和电脑均复用 `NativeSessionsPanel`，一次修改覆盖两端：
+
+- 每个工作区主列表只显示 `format.status === 'readable'` 的会话，按 `updatedAt` 倒序排列；同时间按会话 ID 稳定排序。
+- 其他状态统一收进工作区末尾默认折叠的「暂不支持（N）」。当前协议生成物的枚举只有 readable/unsupported，判断使用“不是 readable”，对未来或异常不可读状态保守处理，不自造协议字段。
+- 展开后显示会话标题、Agent 类型、`format.cliVersion`、`format.reason`，采用主题次要文字色；版本/原因缺失时分别显示「CLI 版本未知」/「当前记录格式尚未支持」。
+- 某工作区全部不可用时显示「暂无可读取的原生会话」，不可用项继续折叠，不以一整片灰色条目充满主列表。
+- 点击不可用项只打开现有 `HqDialog` 说明：「该会话由 Codex 0.111.0 生成，当前版本的记录格式尚未支持，无法读取或续接」，并展示原因；没有重新读取、续接、导入按钮，不读取消息、不查询会话详情、不发起导入、不跳转对话。
+- 读取、准备续接、实际导入均只允许 readable。准备续接时若权威详情已变为不可读，直接切换到说明；列表刷新发现所选会话变为不可读时清除旧读取状态。正常原生会话的终端退出确认及既有续接流程保留。
+- 计数与折叠状态全部只在内存：刷新列表保留该工作区当前折叠状态，换电脑或重新挂载恢复默认折叠。**不读写 localStorage/sessionStorage**，不存在偏好写入失败中断页面的路径。
+- 分页结果按会话 ID 去重后计数；还有未加载页时提示「以下数量仅统计已加载的会话」，不会把已加载数量冒充总数。折叠按钮有 aria-expanded/aria-controls，列表/刷新操作至少 44px，说明弹窗复用 Esc、焦点返回和主题样式。
+
+### 3. 测试与真实输出
+
+新增 16 项组件测试，分别在本机和远程模式覆盖：
+
+1. 按工作区分组计数、主列表更新时间倒序、默认折叠、组末位置、原因和版本展示。
+2. 56 条合成会话中仅 5 条 readable 出现在主列表，折叠计数为 51。
+3. 点击不可用项展示说明，读取、详情查询、导入请求均为 0，不发出 opened 导航事件。
+4. 全部不可用的空状态与缺失版本/原因的中文兜底。
+5. 模拟 Storage.getItem 抛 SecurityError、setItem 抛 QuotaExceededError，组件仍可展开、刷新、折叠，且根本不调用这些存储 API；重新挂载恢复折叠。
+6. 未知/异常的非 readable 状态同样归入不可用，不扩展生成物枚举。
+7. 重叠分页去重、重新计数和排序。
+8. 续接前返回 unsupported 时不展示确认导入、不发起续接。
+
+验收命令全部串行，TEMP/TMP 均为 worktree 内被忽略的 `.tmp`。四项退出码均为 0。完整原始输出：[lint](r16-p3-fix3-validation/lint.txt)、[typecheck](r16-p3-fix3-validation/typecheck.txt)、[vitest](r16-p3-fix3-validation/vitest.txt)、[build](r16-p3-fix3-validation/build.txt)。
+
+```text
+> pnpm --filter @hqagent/desktop lint
+$ eslint src
+
+> pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+
+> pnpm --filter @hqagent/desktop exec vitest run --minWorkers=1 --maxWorkers=2
+Test Files  68 passed (68)
+      Tests  478 passed (478)
+   Start at  09:13:47
+   Duration  46.70s (transform 3.09s, setup 0ms, collect 22.89s, tests 16.49s, environment 33.30s, prepare 5.16s)
+```
+
+```text
+> pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1854 modules transformed.
+Generated an empty chunk: "echarts".
+rendering chunks...
+computing gzip size...
+dist/index.html                                                                    2.56 kB │ gzip:  1.04 kB
+dist/assets/ChatPage-DQ8nlvA7.css                                                  0.24 kB │ gzip:  0.17 kB
+dist/assets/index-CxiKY7_w.css                                                    60.61 kB │ gzip: 11.23 kB
+dist/assets/echarts-l0sNRNKZ.js                                                    0.00 kB │ gzip:  0.02 kB
+dist/assets/RemoteRequestNotice.vue_vue_type_script_setup_true_lang-UXQOAqi7.js    0.92 kB │ gzip:  0.60 kB
+dist/assets/HqEmptyState.vue_vue_type_script_setup_true_lang-UY_eXRkL.js           1.17 kB │ gzip:  0.63 kB
+dist/assets/LoadingState.vue_vue_type_script_setup_true_lang-BuO-Khfs.js           1.55 kB │ gzip:  0.75 kB
+dist/assets/confirm--PEU-Baa.js                                                    1.74 kB │ gzip:  0.94 kB
+dist/assets/PlaceholderPage-DMYejHCx.js                                            1.74 kB │ gzip:  1.10 kB
+dist/assets/HqTextarea.vue_vue_type_script_setup_true_lang-B0YTw4mB.js             1.88 kB │ gzip:  0.89 kB
+dist/assets/native-utils-Ca-hJrEq.js                                               2.40 kB │ gzip:  1.57 kB
+dist/assets/OfflineState.vue_vue_type_script_setup_true_lang-C0NGwhrZ.js           2.44 kB │ gzip:  1.19 kB
+dist/assets/HqInput.vue_vue_type_script_setup_true_lang-pO-dmCg-.js                2.51 kB │ gzip:  1.11 kB
+dist/assets/ResolveSourceBadge.vue_vue_type_script_setup_true_lang-BaM_3y0T.js     2.61 kB │ gzip:  1.42 kB
+dist/assets/team.store-VboXf8je.js                                                 3.73 kB │ gzip:  1.88 kB
+dist/assets/RemoteLoginPage-BJObrrUf.js                                            3.85 kB │ gzip:  1.86 kB
+dist/assets/HqDialog.vue_vue_type_script_setup_true_lang-DhmT2hJz.js               4.39 kB │ gzip:  2.02 kB
+dist/assets/ConnectPage-CT-X52uJ.js                                                5.09 kB │ gzip:  2.46 kB
+dist/assets/RemotePairingPage-Dv431PcH.js                                          6.23 kB │ gzip:  2.82 kB
+dist/assets/PairingScanner-CYeTwBqU.js                                             6.26 kB │ gzip:  3.41 kB
+dist/assets/task.store-D0rhA2g1.js                                                 6.99 kB │ gzip:  2.61 kB
+dist/assets/RemoteTokensPage-cRbNJJxo.js                                           7.59 kB │ gzip:  3.85 kB
+dist/assets/HqSelect.vue_vue_type_script_setup_true_lang-BuGN5n_x.js               7.62 kB │ gzip:  3.28 kB
+dist/assets/RemoteDevicesPage-BuF_dNXd.js                                          8.54 kB │ gzip:  3.75 kB
+dist/assets/WorkspacesPage-hWG-8Fzn.js                                             8.80 kB │ gzip:  3.50 kB
+dist/assets/TemplatesPage-CSA_x1vl.js                                              9.62 kB │ gzip:  4.27 kB
+dist/assets/SessionsPage-C8M_pyOU.js                                              10.58 kB │ gzip:  4.52 kB
+dist/assets/AgentsPage-BvOZoOGg.js                                                11.64 kB │ gzip:  4.06 kB
+dist/assets/TasksPage-DwgDb83v.js                                                 11.80 kB │ gzip:  4.69 kB
+dist/assets/OverviewPage-BZUwkyYb.js                                              12.12 kB │ gzip:  3.96 kB
+dist/assets/ApprovalsPage-C1G7dv6t.js                                             12.28 kB │ gzip:  4.97 kB
+dist/assets/OnboardingPage-NI2zM0oO.js                                            12.94 kB │ gzip:  4.92 kB
+dist/assets/TeamsPage-BQ8fOeXL.js                                                 16.12 kB │ gzip:  6.01 kB
+dist/assets/remote-chat.store-BiApmrb-.js                                         21.97 kB │ gzip:  7.05 kB
+dist/assets/TaskDetailPage-DJbdIRMa.js                                            23.47 kB │ gzip:  7.99 kB
+dist/assets/AttachmentDrafts.vue_vue_type_script_setup_true_lang-DhpObn8q.js      25.54 kB │ gzip: 10.21 kB
+dist/assets/ScenesPage-BcRs6Drj.js                                                25.69 kB │ gzip:  8.71 kB
+dist/assets/RemoteChatPage-DCW9N_1W.js                                            41.14 kB │ gzip: 12.86 kB
+dist/assets/RemoteLinkPage-BUgt_Njy.js                                            49.48 kB │ gzip: 18.89 kB
+dist/assets/ChatPage-Bmwsq9-D.js                                                  78.99 kB │ gzip: 23.95 kB
+dist/assets/jsQR-UMIdgYmG.js                                                     130.80 kB │ gzip: 47.46 kB
+dist/assets/vendor-BKKHNeE9.js                                                   149.77 kB │ gzip: 50.59 kB
+dist/assets/index-CtGVniNB.js                                                    230.72 kB │ gzip: 75.64 kB
+✓ built in 11.72s
+```
+
+保留了既有 router injection 测试警告、模拟 HUB_NOT_READY 日志和 echarts 空 chunk 构建提示；本轮所有测试通过。
+
+### 4. 截图与浏览器复现
+
+手机 375×812、电脑 1280×800，亮/暗各有默认折叠、展开、不可用说明，共 12 张，已查看检查。截图使用合成元数据，不读取用户真实 CLI 历史；示例版本不代表 Hub 的支持范围判定。
+
+| 场景 | 亮色 | 暗色 |
+| --- | --- | --- |
+| 手机默认列表及全部不可用空状态 | [亮色](screenshots/r16-p3-fix3/light-mobile-collapsed-375x812.png) | [暗色](screenshots/r16-p3-fix3/dark-mobile-collapsed-375x812.png) |
+| 手机展开不可用分组 | [亮色](screenshots/r16-p3-fix3/light-mobile-expanded-375x812.png) | [暗色](screenshots/r16-p3-fix3/dark-mobile-expanded-375x812.png) |
+| 手机不可用说明 | [亮色](screenshots/r16-p3-fix3/light-mobile-explanation-375x812.png) | [暗色](screenshots/r16-p3-fix3/dark-mobile-explanation-375x812.png) |
+| 电脑默认列表及全部不可用空状态 | [亮色](screenshots/r16-p3-fix3/light-desktop-collapsed-1280x800.png) | [暗色](screenshots/r16-p3-fix3/dark-desktop-collapsed-1280x800.png) |
+| 电脑展开不可用分组 | [亮色](screenshots/r16-p3-fix3/light-desktop-expanded-1280x800.png) | [暗色](screenshots/r16-p3-fix3/dark-desktop-expanded-1280x800.png) |
+| 电脑不可用说明 | [亮色](screenshots/r16-p3-fix3/light-desktop-explanation-1280x800.png) | [暗色](screenshots/r16-p3-fix3/dark-desktop-explanation-1280x800.png) |
+
+[复现脚本](screenshots/r16-p3-fix3/verify.py)、[结构化结果](screenshots/r16-p3-fix3/verification.json)、[原始输出](r16-p3-fix3-validation/browser.txt)。脚本检查两端的默认折叠、空状态、说明文案、零读取/导入请求、Esc 关闭及焦点返回、无横向溢出。
+
+```powershell
+$env:TEMP=(Join-Path $PWD '.tmp')
+$env:TMP=$env:TEMP
+pnpm --filter @hqagent/desktop exec vite --mode mock --host 127.0.0.1 --port 5198 --strictPort
+# 另一个终端，同一 worktree；使用本机已有 Python Playwright/Chromium：
+$env:PYTHONUTF8='1'
+python .hqagent/handoffs/screenshots/r16-p3-fix3/verify.py
+```
+
+真实输出（退出码 0）：
+
+```text
+{"checks": [{"mode": "light", "device": "mobile", "readable": 1, "unavailableByWorkspace": [2, 1], "defaultCollapsed": true, "emptyReadableWorkspaces": 1, "readOrImportRequests": 0, "focusReturned": true, "horizontalOverflow": false}, {"mode": "dark", "device": "mobile", "readable": 1, "unavailableByWorkspace": [2, 1], "defaultCollapsed": true, "emptyReadableWorkspaces": 1, "readOrImportRequests": 0, "focusReturned": true, "horizontalOverflow": false}, {"mode": "light", "device": "desktop", "readable": 1, "unavailableByWorkspace": [2, 1], "defaultCollapsed": true, "emptyReadableWorkspaces": 1, "readOrImportRequests": 0, "focusReturned": true, "horizontalOverflow": false}, {"mode": "dark", "device": "desktop", "readable": 1, "unavailableByWorkspace": [2, 1], "defaultCollapsed": true, "emptyReadableWorkspaces": 1, "readOrImportRequests": 0, "focusReturned": true, "horizontalOverflow": false}], "screenshots": 12, "browserErrors": 0, "source": "Chromium with synthetic mock metadata"}
+```
+
+### 5. 验证边界
+
+- 手机截图为 Chromium 375×812 模拟，未完成 iOS/Android 真机触控和读屏实测。
+- 未访问用户电脑的 56 个真实会话，未读取真实终端历史、发起真实导入或调用线上会话。Hub 版本范围修正不在本包；前端只依照服务端/Hub 返回的 format 状态展示，真实版本升级后的索引变化由主代理联调复验。
+- 未新增持久化存储或日志输出，不记录会话正文、凭据、Cookie、短码或令牌。
+- 未遇真实 429、0xC0000142 或 API 额度错误；测试中 Storage 抛错只是有意模拟浏览器偏好不可用。构建和测试串行，本轮开发服务已停止。
+- 实现和验收材料按主题提交到 feat/r15-web，逐次检查提交信息，不合并回 integration。
+
+
+## 返修 4：续接失败保留具体原因
+
+### 1. 基线和修改
+
+- 工作区 `r15-web` / 分支 `feat/r15-web`，已先执行 `git merge integration/phase1`，输出 `Already up to date.`；基线 `0983b9b`（含 Hub 返修 4）。
+- `SESSION_NOT_RESUMABLE` 优先显示 Hub/服务端提供的 message，不再用固定错误字典覆盖。仅缺失、空串或全空白时兜底：
+  - 场景对话：**无法接着上一轮继续，请点右上角 + 开启新话题**。
+  - 原生对话：**该原生会话暂时无法续接，请稍后重试或在电脑上核对**。
+- 共用错误函数的会话类型从生成物 `LocalConversationView['conversationKind']` 引用（scenario/native），未新增 DTO 或协议字段。
+- 本机/远程 HTTP 网关保留缺失原因，避免 HTTP `Conflict`、英文默认报错或提前生成的场景兜底掩盖实际缺失。Store 获取会话类型后选择正确文案；本机迟到错误仍保存在原会话名下。
+- 手机命令送达失败提示及本机原生错误提示复用同一规则；本机带附件发送若发生续接错误，不被通用附件错误提示覆盖。
+- 手机网关缺失续接原因时不创建空白网络诊断横幅，由 Store 显示对应会话兜底；已有原因仍正常显示。错误对象继续携带 code/status/requestId。
+- 续接错误区域改为换行，避免具体原因和界面指引被省略号截断。未改变自动新建会话、续接、重置上下文等执行逻辑。
+- `chat.reliability.test.ts` 的旧控件指引已更新；两处“不显示旧控件”的文本断言改为检查不存在 radio。前端搜索 `选择.*上下文|新一轮上下文|新上下文` 无匹配。
+
+### 2. 测试与真实验收输出
+
+新增 `stores/session-resumption.test.ts`，共 13 项：有安全原因时保留原文；场景/原生分别兜底；空白原因视为缺失；原生公共错误函数正确处理；其他错误代码映射保持原行为；本机和远程分别通过真实 HTTP 网关 + mocked fetch 验证发送错误进入对应 Store 显示字段，HTTP 状态文本不冒充业务原因。
+
+四项检查串行执行，TEMP/TMP 为 worktree 内被忽略的 `.tmp`，退出码全部为 0。原始完整输出：[lint](r16-p3-fix4-validation/lint.txt)、[typecheck](r16-p3-fix4-validation/typecheck.txt)、[vitest](r16-p3-fix4-validation/vitest.txt)、[build](r16-p3-fix4-validation/build.txt)。
+
+```text
+> pnpm --filter @hqagent/desktop lint
+$ eslint src
+
+> pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+
+> pnpm --filter @hqagent/desktop exec vitest run --minWorkers=1 --maxWorkers=2
+Test Files  69 passed (69)
+      Tests  491 passed (491)
+   Start at  09:50:22
+   Duration  51.04s (transform 3.42s, setup 0ms, collect 24.11s, tests 17.47s, environment 37.32s, prepare 5.85s)
+```
+
+```text
+> pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1854 modules transformed.
+Generated an empty chunk: "echarts".
+rendering chunks...
+computing gzip size...
+dist/index.html                                                                    2.56 kB │ gzip:  1.04 kB
+dist/assets/ChatPage-DQ8nlvA7.css                                                  0.24 kB │ gzip:  0.17 kB
+dist/assets/index-CxiKY7_w.css                                                    60.61 kB │ gzip: 11.23 kB
+dist/assets/echarts-l0sNRNKZ.js                                                    0.00 kB │ gzip:  0.02 kB
+dist/assets/RemoteRequestNotice.vue_vue_type_script_setup_true_lang-D9a1KLyg.js    0.92 kB │ gzip:  0.60 kB
+dist/assets/HqEmptyState.vue_vue_type_script_setup_true_lang-CkHf_PnH.js           1.17 kB │ gzip:  0.63 kB
+dist/assets/LoadingState.vue_vue_type_script_setup_true_lang-BuO-Khfs.js           1.55 kB │ gzip:  0.75 kB
+dist/assets/confirm-yNWjckwc.js                                                    1.74 kB │ gzip:  0.94 kB
+dist/assets/PlaceholderPage-BAOQqUxU.js                                            1.74 kB │ gzip:  1.10 kB
+dist/assets/HqTextarea.vue_vue_type_script_setup_true_lang-B0YTw4mB.js             1.88 kB │ gzip:  0.89 kB
+dist/assets/OfflineState.vue_vue_type_script_setup_true_lang-CamkzXts.js           2.44 kB │ gzip:  1.19 kB
+dist/assets/native-utils-Cad9vs7X.js                                               2.45 kB │ gzip:  1.60 kB
+dist/assets/HqInput.vue_vue_type_script_setup_true_lang-pO-dmCg-.js                2.51 kB │ gzip:  1.11 kB
+dist/assets/ResolveSourceBadge.vue_vue_type_script_setup_true_lang-BNkDMipx.js     2.61 kB │ gzip:  1.42 kB
+dist/assets/team.store-D74A1vKn.js                                                 3.73 kB │ gzip:  1.88 kB
+dist/assets/RemoteLoginPage-DAsjrIty.js                                            3.85 kB │ gzip:  1.85 kB
+dist/assets/HqDialog.vue_vue_type_script_setup_true_lang-DhmT2hJz.js               4.39 kB │ gzip:  2.02 kB
+dist/assets/ConnectPage-mGcZ77PU.js                                                5.09 kB │ gzip:  2.46 kB
+dist/assets/RemotePairingPage-DFiQ9Fs0.js                                          6.23 kB │ gzip:  2.82 kB
+dist/assets/PairingScanner-DzeTOmQj.js                                             6.26 kB │ gzip:  3.41 kB
+dist/assets/task.store-B_miRHhY.js                                                 6.99 kB │ gzip:  2.61 kB
+dist/assets/RemoteTokensPage-BwGmtVPG.js                                           7.59 kB │ gzip:  3.85 kB
+dist/assets/HqSelect.vue_vue_type_script_setup_true_lang-BuGN5n_x.js               7.62 kB │ gzip:  3.28 kB
+dist/assets/RemoteDevicesPage-BRkjg_ll.js                                          8.54 kB │ gzip:  3.75 kB
+dist/assets/WorkspacesPage-XEt1D58Y.js                                             8.80 kB │ gzip:  3.50 kB
+dist/assets/TemplatesPage-CKvwHbzG.js                                              9.62 kB │ gzip:  4.27 kB
+dist/assets/SessionsPage-CLi6CgNN.js                                              10.58 kB │ gzip:  4.52 kB
+dist/assets/AgentsPage-1KmJi9Ur.js                                                11.64 kB │ gzip:  4.06 kB
+dist/assets/TasksPage-CvsijX-q.js                                                 11.80 kB │ gzip:  4.69 kB
+dist/assets/OverviewPage-D-II-Egx.js                                              12.12 kB │ gzip:  3.96 kB
+dist/assets/ApprovalsPage-KLMdS1VJ.js                                             12.28 kB │ gzip:  4.96 kB
+dist/assets/OnboardingPage-brevqME4.js                                            12.94 kB │ gzip:  4.92 kB
+dist/assets/TeamsPage-ChHbggUA.js                                                 16.12 kB │ gzip:  6.00 kB
+dist/assets/remote-chat.store-BPvzFMkN.js                                         22.06 kB │ gzip:  7.09 kB
+dist/assets/TaskDetailPage-Xqd3I9Kg.js                                            23.47 kB │ gzip:  8.00 kB
+dist/assets/AttachmentDrafts.vue_vue_type_script_setup_true_lang-DGlScKDy.js      25.54 kB │ gzip: 10.21 kB
+dist/assets/ScenesPage-BqBJlX7c.js                                                25.69 kB │ gzip:  8.71 kB
+dist/assets/RemoteChatPage-CzLt4hL9.js                                            41.31 kB │ gzip: 12.92 kB
+dist/assets/RemoteLinkPage-BTA7W2iZ.js                                            49.48 kB │ gzip: 18.89 kB
+dist/assets/ChatPage-Bn-imUOC.js                                                  79.05 kB │ gzip: 23.98 kB
+dist/assets/jsQR-UMIdgYmG.js                                                     130.80 kB │ gzip: 47.46 kB
+dist/assets/vendor-BKKHNeE9.js                                                   149.77 kB │ gzip: 50.59 kB
+dist/assets/index-BRSZaKYd.js                                                    230.97 kB │ gzip: 75.77 kB
+✓ built in 7.78s
+```
+
+保留既有 router injection 测试警告、模拟 HUB_NOT_READY 日志以及 echarts 空 chunk 构建提示；最终 69 个文件、491 项测试通过。
+
+### 3. 交接
+
+- 仅修改 `apps/desktop/**` 和 `.hqagent/handoffs/**`，无依赖、根配置、协议、Hub 或服务端变更。
+- 本轮验证为纯函数及 mocked HTTP 到 Store 的自动化链路，未操作线上真实续接或实体手机；未新增截图。
+- 未遇真实 429、0xC0000142 或 API 额度错误；未并行运行构建/测试，未新增持久化存储或敏感日志。
+- 提交标题：`fix(desktop): preserve session resumption failure reasons`。提交后运行 `git log -1 --format=%B` 自查，不包含署名或生成标记；只提交到 feat/r15-web，不合并回 integration。

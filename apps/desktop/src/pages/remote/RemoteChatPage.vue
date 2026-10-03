@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 import AttachmentDrafts from '@/shared/attachments/AttachmentDrafts.vue'
 import MessageAttachments from '@/shared/attachments/MessageAttachments.vue'
 import { Paperclip } from 'lucide-vue-next'
@@ -661,7 +662,7 @@ function getExecutionStatusLabel(status?: string): string {
           v-if="chatStore.actionError || chatStore.sendError"
           class="p-2 px-3 text-xs bg-danger/10 border-b border-danger/20 text-danger flex items-center justify-between shrink-0"
         >
-          <span class="truncate">{{ chatStore.actionError || chatStore.sendError }}</span>
+          <span class="min-w-0 break-words whitespace-pre-wrap">{{ chatStore.actionError || chatStore.sendError }}</span>
           <button
             type="button"
             class="text-[11px] underline ml-2 cursor-pointer shrink-0"
@@ -677,7 +678,7 @@ function getExecutionStatusLabel(status?: string): string {
           id="remote-status-details"
           class="p-2.5 bg-panel border-b border-border shrink-0 space-y-2 text-xs max-h-[30dvh] overflow-y-auto"
         >
-          <p v-if="deliveryFailure" class="text-danger">{{ deliveryFailure.error?.message || '送达失败或过期，请核对后重试' }}</p>
+          <p v-if="deliveryFailure" class="text-danger">{{ deliveryFailure.error?.code === 'SESSION_NOT_RESUMABLE' ? getRemoteErrorMessage(deliveryFailure.error.code, deliveryFailure.error.message, chatStore.activeConversation?.conversationKind) : deliveryFailure.error?.message || '送达失败或过期，请核对后重试' }}</p>
           <!-- Three Layers Display -->
           <div class="grid grid-cols-1 gap-1.5 sm:grid-cols-3 bg-bg-app/70 p-2 rounded-lg border border-border/60">
             <!-- Layer 1: Transport State -->

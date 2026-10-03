@@ -1,3 +1,4 @@
+import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 import { preflightAttachments } from '@/shared/attachments/preflight'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -731,6 +732,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
     sendError.value = null
 
     const convId = activeConversationId.value
+    const conversationKind = activeConversation.value?.conversationKind
     const intent = JSON.stringify([convId, text, attachmentIds, nativeConfirmation])
     const clientMessageId = attachmentIds.length ? (attachmentSendIntents.get(intent) || crypto.randomUUID()) : `cmsg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     if (attachmentIds.length) attachmentSendIntents.set(intent, clientMessageId)
@@ -790,7 +792,7 @@ export const useRemoteChatStore = defineStore('remoteChat', () => {
         messages.value.splice(tempIdx, 1)
       }
       if (err instanceof RemoteApiError) {
-        sendError.value = err.message
+        sendError.value = err.code === 'SESSION_NOT_RESUMABLE' ? getRemoteErrorMessage(err.code, err.message, conversationKind) : err.message
       } else {
         sendError.value = '发送消息失败，请重试'
       }

@@ -5,6 +5,8 @@ import { getLocalChatGateway, getRemoteGateway } from '@/shared/api'
 import { useChatStore } from '@/stores/chat.store'
 import { useRemoteChatStore } from '@/stores/remote-chat.store'
 import { HqDialog, HqButton } from '@/shared/ui'
+import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { overlayId } from '@/shared/ui/overlay-stack'
 import { activityLabel, agentLabel, closureText, NativeMessageAssembler, nativeFailure } from './native-utils'
 
 const props = withDefaults(defineProps<{ remote?: boolean; workerId?: string; online?: boolean; suspended?: boolean; revisions?: number[]; projects: { id: string; name: string }[] }>(), { remote: false, online: true, suspended: false })
@@ -28,7 +30,26 @@ let poll: ReturnType<typeof setTimeout> | undefined
 let alive = true
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 const supported = computed(() => !props.remote || !props.revisions || props.revisions.some((revision) => revision === 3 || revision === 4))
-const groups = computed(() => [...new Set(items.value.map((item) => item.workspaceId))].map((id) => ({ id, name: props.projects.find((p) => p.id === id)?.name || id, items: items.value.filter((item) => item.workspaceId === id) })))
+// UI state is ephemeral: no session metadata or disclosure preferences enter storage.
+const expandedWorkspaces = ref(new Set<string>())
+const disclosureId = overlayId()
+const selectedReadable = computed(() => selected.value?.format.status === 'readable')
+const groups = computed(() => [...new Set(items.value.map((item) => item.workspaceId))].map((id) => {
+  const sorted = items.value.filter((item) => item.workspaceId === id).sort((a, b) =>
+    (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0) || a.nativeSessionId.localeCompare(b.nativeSessionId))
+  return {
+    id, name: props.projects.find((project) => project.id === id)?.name || id,
+    readable: sorted.filter((item) => item.format.status === 'readable'),
+    unavailable: sorted.filter((item) => item.format.status !== 'readable'),
+  }
+}))
+function toggleUnavailable(workspaceId: string) {
+  if (expandedWorkspaces.value.has(workspaceId)) expandedWorkspaces.value.delete(workspaceId)
+  else expandedWorkspaces.value.add(workspaceId)
+}
+function formatLabel(session: NativeSessionIndex | RemoteNativeSessionView) {
+  return `${agentLabel(session.agentType)} · CLI ${session.format.cliVersion || '版本未知'}`
+}
 async function list(more = false) {
   if (!supported.value || (props.remote && !props.workerId)) return
   const current = generation
@@ -37,7 +58,12 @@ async function list(more = false) {
     const page = props.remote ? await getRemoteGateway().listNativeSessions(props.workerId!, more ? cursor.value : undefined) : await getLocalChatGateway().listNativeSessions(more ? cursor.value : undefined)
     if (!alive || current !== generation) return
     if (page.hasMore && !page.nextCursor) throw new Error('原生会话索引游标缺失')
-    items.value = more ? [...items.value, ...page.items] : page.items
+    items.value = [...new Map((more ? [...items.value, ...page.items] : page.items).map((item) => [item.nativeSessionId, item])).values()]
+    const latest = items.value.find((item) => item.nativeSessionId === selected.value?.nativeSessionId)
+    if (latest && selected.value && !pending.value) {
+      if (latest.format.status !== 'readable') open(latest)
+      else if (!selectedReadable.value) close()
+    }
     cursor.value = page.hasMore ? page.nextCursor : undefined
     if (!more && !page.hasMore && selected.value && !pending.value && !items.value.some((item) => item.nativeSessionId === selected.value?.nativeSessionId)) close()
   } catch (err) {
@@ -50,9 +76,8 @@ async function list(more = false) {
 }
 async function read(more = false) {
   const session = selected.value
-  if (!session) return
+  if (!session || session.format.status !== 'readable') return
   if (props.remote && !props.online) { error.value = { message: '电脑离线，无法读取原生会话内容' }; return }
-  if (session.format.status === 'unsupported') { error.value = { message: session.format.reason || '无法读取该版本的会话' }; return }
   const current = ++readGeneration
   reading.value = true; error.value = null
   if (!more) { assembler.reset(); messages.value = []; before.value = undefined }
@@ -67,16 +92,20 @@ async function read(more = false) {
   } catch (err) { if (current === readGeneration) { error.value = nativeFailure(err); assembler.reset(); messages.value = []; before.value = undefined } }
   finally { if (current === readGeneration) reading.value = false }
 }
-function open(session: NativeSessionIndex | RemoteNativeSessionView) { close(); error.value = null; selected.value = session; confirmed.value = false; void read() }
+function open(session: NativeSessionIndex | RemoteNativeSessionView) { close(); error.value = null; selected.value = session; confirmed.value = false; if (session.format.status === 'readable') void read() }
 function close() { readGeneration++; reading.value = false; selected.value = null; messages.value = []; assembler.reset(); before.value = undefined; confirmation.value = false; confirmed.value = false }
 async function prepareImport() {
-  if (!selected.value) return
+  if (!selected.value || !selectedReadable.value) return
   error.value = null; confirmed.value = false
   try {
     const id = selected.value.nativeSessionId
     const current = generation
     const latest = props.remote ? await getRemoteGateway().getNativeSession(id) : await getLocalChatGateway().getNativeSession(id)
-    if (alive && current === generation && selected.value?.nativeSessionId === id) { selected.value = latest; confirmation.value = true }
+    if (alive && current === generation && selected.value?.nativeSessionId === id) {
+      if (latest.format.status !== 'readable') { open(latest); return }
+      selected.value = latest
+      confirmation.value = true
+    }
   } catch (err) { error.value = nativeFailure(err) }
 }
 async function reconcile() {
@@ -105,7 +134,7 @@ async function reconcile() {
   if (alive && generation === current && pending.value) poll = setTimeout(() => { void reconcile() }, 2000)
 }
 async function importSession() {
-  if (!selected.value || !confirmed.value || importing.value || (props.remote && (!props.online || props.suspended))) return
+  if (!selected.value || !selectedReadable.value || !confirmed.value || importing.value || (props.remote && (!props.online || props.suspended))) return
   const session = selected.value; const current = generation
   importing.value = true; error.value = null
   const input = { terminalClosedConfirmed: true as const, sourceRevision: session.sourceRevision, expectedIndexVersion: session.indexVersion }
@@ -132,8 +161,8 @@ async function importSession() {
   } finally { if (generation === current) importing.value = false }
 }
 function copyId() { if (error.value?.requestId) void navigator.clipboard.writeText(error.value.requestId).catch(() => {}) }
-watch(() => props.workerId, () => { generation++; close(); items.value = []; pending.value = null; clearTimeout(poll); void list() }, { immediate: true })
-watch(() => props.online, (online) => { if (props.remote && !online) { readGeneration++; reading.value = false; messages.value = []; assembler.reset(); if (selected.value) error.value = { message: '电脑离线，无法读取原生会话内容' } } })
+watch(() => props.workerId, () => { generation++; close(); expandedWorkspaces.value.clear(); items.value = []; pending.value = null; clearTimeout(poll); void list() }, { immediate: true })
+watch(() => props.online, (online) => { if (props.remote && !online) { readGeneration++; reading.value = false; messages.value = []; assembler.reset(); if (selectedReadable.value) error.value = { message: '电脑离线，无法读取原生会话内容' } } })
 watch(supported, (available) => { if (!available) { items.value = []; close() } else void list() })
 onMounted(() => { refreshTimer = setInterval(() => { if (!document.hidden && !loading.value && !reading.value && !importing.value && !pending.value && !confirmation.value && !cursor.value) void list() }, 15000) })
 onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++; close(); clearTimeout(poll); items.value = [] })
@@ -141,22 +170,43 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
 
 <template>
   <section class="p-3 border-t border-border text-xs space-y-2 max-h-[40vh] overflow-y-auto shrink-0" data-testid="native-sessions">
-    <div class="flex justify-between items-center"><h2 class="font-semibold">原生会话</h2><button type="button" class="text-primary" :disabled="loading" @click="list()">刷新</button></div>
+    <div class="flex justify-between items-center"><h2 class="font-semibold">原生会话</h2><button type="button" class="min-h-[44px] min-w-[44px] text-primary" :disabled="loading" @click="list()">刷新</button></div>
     <p v-if="!supported" class="text-warning">电脑不支持修订 3，请升级电脑端后查看原生会话</p>
     <p v-else-if="loading" class="text-text-muted">正在读取原生会话索引…</p>
     <p v-else-if="!items.length && !error" class="text-text-muted">{{ remote ? '暂无可用的原生会话索引；请在电脑确认同步已开启、修订 3 连接已就绪。当前接口未提供同步开关状态。' : '没有已登记项目内的原生会话' }}</p>
-    <div v-for="group in groups" :key="group.id" class="space-y-1">
-      <h3 class="text-text-muted">{{ group.name }}</h3>
-      <button v-for="item in group.items" :key="item.nativeSessionId" type="button" class="block w-full text-left p-2 rounded hover:bg-panel-hover border border-border" @click="open(item)">
-        <span class="block truncate">{{ item.title }}</span><span class="block text-[10px] text-text-muted">{{ agentLabel(item.agentType) }} · {{ activityLabel(item.activity.activity) }}</span>
-        <span v-if="item.format.status === 'unsupported'" class="text-warning">{{ item.format.reason || '无法读取该版本的会话' }}</span>
+    <p v-if="cursor" class="text-content-secondary">以下数量仅统计已加载的会话</p>
+    <div v-for="(group, groupIndex) in groups" :key="group.id" class="space-y-1" :data-workspace="group.id">
+      <h3 class="text-content-secondary break-words">{{ group.name }} · 可用 {{ group.readable.length }}</h3>
+      <p v-if="!group.readable.length" class="py-2 text-content-secondary" data-testid="native-empty-readable">暂无可读取的原生会话</p>
+      <button v-for="item in group.readable" :key="item.nativeSessionId" type="button" data-testid="native-readable"
+        class="block w-full min-h-[44px] text-left p-2 rounded hover:bg-muted border border-border text-content-primary" @click="open(item)">
+        <span class="block truncate">{{ item.title }}</span><span class="block text-[10px] text-content-secondary">{{ agentLabel(item.agentType) }} · {{ activityLabel(item.activity.activity) }}</span>
       </button>
+      <template v-if="group.unavailable.length">
+        <button type="button" data-testid="native-unavailable-toggle" class="w-full min-h-[44px] flex items-center gap-1 text-left text-content-secondary rounded hover:bg-muted"
+          :aria-expanded="expandedWorkspaces.has(group.id)" :aria-controls="`${disclosureId}-${groupIndex}`" @click="toggleUnavailable(group.id)">
+          <component :is="expandedWorkspaces.has(group.id) ? ChevronDown : ChevronRight" class="w-4 h-4 shrink-0" />暂不支持（{{ group.unavailable.length }}）
+        </button>
+        <div v-if="expandedWorkspaces.has(group.id)" :id="`${disclosureId}-${groupIndex}`" class="space-y-1">
+          <button v-for="item in group.unavailable" :key="item.nativeSessionId" type="button" data-testid="native-unavailable"
+            class="block w-full min-h-[44px] text-left p-2 rounded border border-border text-content-secondary hover:bg-muted" @click="open(item)">
+            <span class="block truncate">{{ item.title }}</span>
+            <span class="block break-words">{{ formatLabel(item) }}</span>
+            <span class="block break-words">{{ item.format.reason || '当前记录格式尚未支持' }}</span>
+          </button>
+        </div>
+      </template>
     </div>
     <HqButton v-if="cursor" size="sm" :loading="loading" @click="list(true)">更多原生会话</HqButton>
     <p v-if="pending" role="status" class="text-primary">正在电脑上导入… 等待导入结果与对话同步</p>
     <div v-if="error" role="alert" class="text-danger break-words"><p>{{ error.message }}</p><button v-if="error.requestId" type="button" class="text-[10px] select-text" @click="copyId()">requestId: {{ error.requestId }}</button></div>
-    <HqDialog :open="Boolean(selected)" :title="selected?.title" @close="close">
-      <div class="space-y-3 text-xs">
+    <HqDialog :open="Boolean(selected)" :title="selectedReadable ? selected?.title : '暂不支持此会话'" @close="close">
+      <div v-if="selected && !selectedReadable" class="space-y-3 text-sm" data-testid="native-unavailable-explanation">
+        <p class="font-medium text-content-primary break-words">{{ selected.title }}</p>
+        <p>该会话由 {{ agentLabel(selected.agentType) }} {{ selected.format.cliVersion || '未知 CLI 版本' }} 生成，当前版本的记录格式尚未支持，无法读取或续接。</p>
+        <p class="text-content-secondary break-words">原因：{{ selected.format.reason || '当前记录格式尚未支持' }}</p>
+      </div>
+      <div v-else class="space-y-3 text-xs">
         <p v-if="selected">{{ agentLabel(selected.agentType) }} · {{ activityLabel(selected.activity.activity) }} · 只读历史</p>
         <p v-if="error" role="alert" class="text-danger">{{ error.message }} <span class="select-text">{{ error.requestId ? `requestId: ${error.requestId}` : '' }}</span></p>
         <HqButton size="sm" :loading="reading" @click="read()">重新读取</HqButton>
@@ -167,7 +217,7 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
         <p v-if="pending" role="status">正在电脑上导入…</p>
         <p v-if="remote && suspended" class="text-warning">这台电脑的远程操作已暂停</p>
       </div>
-      <template #footer><HqButton :disabled="Boolean(pending) || selected?.format.status === 'unsupported' || (remote && (!online || suspended))" :loading="importing" @click="prepareImport">接着对话</HqButton></template>
+      <template v-if="selectedReadable" #footer><HqButton :disabled="Boolean(pending) || (remote && (!online || suspended))" :loading="importing" @click="prepareImport">接着对话</HqButton></template>
     </HqDialog>
     <HqDialog :open="confirmation" title="确认终端已退出" @close="confirmation = false; confirmed = false">
       <p class="text-sm">{{ closureText }}</p>

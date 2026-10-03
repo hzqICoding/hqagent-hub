@@ -29,9 +29,9 @@ describe('ChatStore preserved reliability', () => {
     const store = useChatStore()
     await store.init()
     store.sessionMode = 'continue'
-    store.resumptionError = '该会话无法恢复，请选择新上下文'
+    store.resumptionError = '无法接着上一轮继续，请点右上角 + 开启新话题'
     const send = vi.spyOn(mockLocalChatGateway, 'sendLocalMessage')
-    await expect(store.sendMessage('请用中文')).rejects.toThrow('该会话无法恢复')
+    await expect(store.sendMessage('请用中文')).rejects.toThrow('无法接着上一轮继续')
     expect(send).not.toHaveBeenCalled()
     await store.sendMessage('请用中文', 'new')
     expect(send).toHaveBeenCalledTimes(1)

@@ -88,13 +88,18 @@ class HistoryStructureError(ValueError):
 class FileHistory:
     """Official history capability is absent in the current Adapter port.
 
-    This fallback requires a verified version series AND record validation:
+    This fallback requires a bounded version profile AND record validation:
     Codex session_meta.source=cli; Claude an interactive history.jsonl entry
     matching both exact sessionId and canonical project. Sidechains never qualify.
     """
-    verified_series = {"codex": (0, 153, 4), "claude": (2, 1, 261)}
-    structure_version = 'structures-v2'
-    version_policy = "verified-series-minimum-patch-and-record-structure"
+    # Local metadata-only census: .hqagent/reviews/native-versions-census.json.
+    # Optional metadata differs; the consumed identity/message fields do not.
+    # Non-terminal sources and inconsistent identities remain excluded.
+    verified_series = {"codex": (0, 98, 0), "claude": (2, 1, 251)}
+    surveyed_maximum = {"codex": (0, 159, 2), "claude": (2, 1, 288)}
+    structure_version = 'structures-v3'
+    version_policy = "census-range-and-same-major-future-record-structure-v1"
+    compatible_reason = "结构兼容、版本未逐一验证"
 
     def __init__(self, agent_type, data_root, *, runtime_id=None, secrets_provider=lambda: ()):
         self.agent_type = agent_type
@@ -116,19 +121,47 @@ class FileHistory:
                 "reason": "" if self.root.is_dir() else "Runtime历史目录不可用"}
 
     def series_description(self):
-        major, minor, patch = self.verified_series[self.agent_type]
-        return {"series": f"{major}.{minor}.x", "minimumPatch": patch}
+        lower = self.verified_series[self.agent_type]
+        upper = self.surveyed_maximum[self.agent_type]
+        return {"series": '.'.join(map(str, lower)) + '–' + '.'.join(map(str, upper)), "minimumPatch": lower[2]}
 
     def paths(self):
         return self.root.rglob('*.jsonl')
 
-    def verified_version(self, version):
+    @staticmethod
+    def version_tuple(version):
+        if not isinstance(version, str) or len(version) > 32:
+            return None
         match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version)
-        if match is None or len(version) > 32:
-            return False
-        major, minor, patch = map(int, match.groups())
-        verified_major, verified_minor, minimum = self.verified_series[self.agent_type]
-        return (major, minor) == (verified_major, verified_minor) and patch >= minimum
+        return tuple(map(int, match.groups())) if match else None
+
+    def verified_version(self, version):
+        value = self.version_tuple(version)
+        return value is not None and self.verified_series[self.agent_type] <= value <= self.surveyed_maximum[self.agent_type]
+
+    def version_rejection(self, version):
+        value = self.version_tuple(version)
+        if value is None:
+            return 'CLI版本不是有效的major.minor.patch'
+        minimum = self.verified_series[self.agent_type]
+        if value[0] != minimum[0]:
+            return 'CLI主版本不在当前读取器支持范围'
+        if value < minimum:
+            return 'CLI版本低于结构普查支持下限' + '.'.join(map(str, minimum))
+        # Future patches/minors may qualify only after the complete record
+        # validators pass. A header is an internal candidate, never that proof.
+        return ''
+
+    def record_diagnostic(self, source):
+        reported = source.version if self.version_tuple(source.version) else 'unknown'
+        if len(self.observed_versions) < 32:
+            self.observed_versions.add(reported)
+        diagnostic = (f"实际版本={reported}; 已验证系列={self.series_description()}; 判定方式={self.version_policy}; "
+                      + (source.reason or ('结构校验通过' if source.readable else '结构校验失败')))
+        if diagnostic not in self.version_diagnostics:
+            self.version_diagnostics = (self.version_diagnostics + [diagnostic])[-32:]
+        if not source.readable and source.reason not in self.diagnostics:
+            self.diagnostics.append(source.reason)
 
     def _bytes(self, path, snapshot=None):
         try:
@@ -251,19 +284,19 @@ class FileHistory:
             profile = self.agent_type + ".jsonl." + str(version) + '.' + self.structure_version
             source = HistorySource(Path(path), identity, len(content), hashlib.sha256(content).hexdigest(),
                 vendor, cwd, str(version), profile, self.agent_type, created, stamp(st.st_mtime), st.st_mtime,
-                self.verified_version(version) and not damaged, [])
+                not self.version_rejection(version) and not damaged, [])
             source.created_time_basis = "metadata" if source_time(created_raw) else "file_stat"
             # Only numeric versions enter diagnostics; arbitrary source text is
             # never reflected as a purported version or diagnostic detail.
             reported = version if re.fullmatch(r"[0-9.]{1,32}", version) else "unknown"
             if len(self.observed_versions) < 32:
                 self.observed_versions.add(reported)
-            diagnostic = f"实际版本={reported}; 已验证系列={self.series_description()}; 判定方式={self.version_policy}"
             if not source.readable:
-                source.reason = "该 CLI 版本尚未验证" if not self.verified_version(version) else "JSONL含损坏或未识别的完整记录"
-                self.version_diagnostics = (self.version_diagnostics + [diagnostic + "; " + source.reason])[-32:]
-                self.diagnostics.append(source.reason)
+                source.reason = self.version_rejection(version) or "JSONL含损坏或未识别的完整记录"
+                self.record_diagnostic(source)
                 return source
+            if not self.verified_version(version):
+                source.reason = self.compatible_reason
             if header_only:
                 return source
             try:
@@ -273,9 +306,7 @@ class FileHistory:
                 source.readable, source.reason = False, str(error)
             except (ValueError, KeyError, TypeError):
                 source.readable, source.reason = False, "消息块、角色或记录链结构不符合已验证读取器"
-            self.version_diagnostics = (self.version_diagnostics + [diagnostic + "; " + ("结构校验通过" if source.readable else source.reason)])[-32:]
-            if not source.readable:
-                self.diagnostics.append(source.reason)
+            self.record_diagnostic(source)
             self.structure_counts = dict(source.structure_counts)
             return source
         except (ValueError, KeyError, TypeError):
@@ -316,8 +347,11 @@ class FileHistory:
                         raise HistoryStructureError(f"第{index + 1}条记录的cwd缺失或不是绝对目录")
                     continue
                 if key in {"version", "cli_version"}:
-                    if not isinstance(actual, str) or not self.verified_version(actual):
-                        raise HistoryStructureError(f"第{index + 1}条记录的{key}：该 CLI 版本尚未验证")
+                    rejection = self.version_rejection(actual)
+                    if rejection:
+                        raise HistoryStructureError(f"第{index + 1}条记录的{key}：{rejection}")
+                    if not self.verified_version(actual):
+                        source.reason = self.compatible_reason
                     if len(self.observed_versions) < 32:
                         self.observed_versions.add(actual)
                     continue
@@ -413,7 +447,7 @@ class FileHistory:
                 if row.get('type') != 'response_item':
                     counts['unknownRecords'] += 1
                     continue
-                message = row['payload']
+                message = row.get('payload')
                 if not isinstance(message, dict):
                     raise HistoryStructureError(f'第{index + 1}条记录payload不是对象')
                 kind = message.get('type')

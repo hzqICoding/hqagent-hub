@@ -182,7 +182,7 @@ export class RealLocalChatGateway implements LocalChatGateway {
       const err = envelope.error
       const code = (err?.code || 'INTERNAL') as ErrorCode
       throw new HubApiError(
-        err?.message || `Request failed with code ${code}`,
+        err?.message || (code === 'SESSION_NOT_RESUMABLE' ? '' : `Request failed with code ${code}`),
         code,
         response.status,
         err?.detail as Record<string, unknown> | undefined,
