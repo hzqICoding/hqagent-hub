@@ -10,7 +10,7 @@ from core.errors import HubError
 from remote_support import System, until
 from storage.local_chat import now
 from test_r15_joint_server import RealPair, server_source
-from test_r16_attachments import headers, synced
+from test_r16_attachments import headers, synced, upload_phone, send_phone
 from test_r3_native import fixture_history, setup_native, indexed_listing
 
 
@@ -252,4 +252,60 @@ def test_offline_deletion_is_pending_until_real_ack_and_survives_restart(tmp_pat
             assert (await reopened.chat.delete_conversation(cid, 1, 'offline-delete')).remote_cleanup == 'pending'
         finally:
             await reopened.close()
+    asyncio.run(scenario())
+
+
+def test_unacked_content_is_redacted_and_server_ack_confirms_deletion(tmp_path):
+    async def scenario():
+        async with RealPair(tmp_path, revision=4, hold_history=True) as pair:
+            await asyncio.wait_for(pair.history_held.wait(), 8)
+            previous = next(f for f in pair.sent if f['type'] == 'sync.message.segment')
+            cid = previous['payload']['conversationId']
+            # Queue an immutable content slot while ACK processing is held.
+            # Deletion must cover this never-delivered slot without sending it.
+            with pair.system.db.transaction() as tx:
+                pair.system.repo.emit(tx, 'sync.message.segment', syncGeneration=previous['syncGeneration'],
+                    payload={**previous['payload'], 'messageRevision': previous['payload']['messageRevision'] + 1})
+                pair.system.repo.seal(tx)
+            result = await pair.system.chat.delete_conversation(cid, 1, 'unacked-delete')
+            assert result.remote_cleanup == 'pending'
+            with pair.system.db.locked_connection() as db:
+                proofs = [json.loads(r[0]) for r in db.execute('SELECT frame_json FROM remote_sync_redactions')]
+                scoped = [p for p in proofs if p.get('conversationId') == cid]
+                assert scoped and any(p['slots'] for p in scoped)
+                for row in db.execute('SELECT frame_json FROM remote_outbox'):
+                    frame = json.loads(row[0])
+                    assert not (frame.get('type') in {'sync.conversation.upserted', 'sync.message.segment', 'sync.run.state'}
+                                and frame.get('payload', {}).get('conversationId') == cid)
+            pair.release_history.set()
+            await until(lambda: pair.system.chat.deletions.receipt(cid).remote_cleanup == 'confirmed', timeout=15)
+            assert pair.cloud_conversation(cid) is None
+            assert pair.system.repo.get('link')['view']['state'] == 'paired'
+    asyncio.run(scenario())
+
+
+def test_deleted_remote_send_and_grant_replays_are_rejected_before_cache(tmp_path):
+    async def scenario():
+        async with RealPair(tmp_path, revision=4) as pair:
+            system = pair.system
+            system.worker.attachments.library.http_factory = lambda: httpx.AsyncClient(verify=pair.tls, follow_redirects=False, trust_env=False)
+            cloud_id, attachment = await upload_phone(pair)
+            command = await send_phone(pair, cloud_id, attachment)
+            await until(lambda: system.worker.delivery.row(command) and system.worker.delivery.row(command)['state'] == 'completed', timeout=15)
+            row = system.worker.delivery.row(command)
+            cid = row['local_id']
+            original = next(f for f in pair.received if f.get('type') == 'run.submit' and f.get('commandId') == command)
+            grant = next(f for f in pair.received if f.get('type') == 'command.delivery_granted' and f.get('commandId') == command)
+            starts = len(system.adapter.started)
+            result = await system.chat.delete_conversation(cid, 1, 'remote-delete')
+            assert result.local_deleted
+            await system.worker.stop()
+            for frame in (original, grant, {**original, 'commandId': 'late-after-delete'}):
+                receipt, _ = await system.worker.delivery.receive(frame)
+                assert receipt['type'] == 'command.rejected'
+                assert receipt['error']['code'] == 'NOT_FOUND'
+            assert len(system.adapter.started) == starts
+            assert system.db.connection.execute('SELECT COUNT(*) FROM local_conversations WHERE conversation_id=?', (cid,)).fetchone()[0] == 0
+            assert system.worker.delivery.row(command)['command_json'] is None
+            assert not system.db.connection.execute("SELECT 1 FROM remote2_delivery WHERE command_id='late-after-delete'").fetchone()
     asyncio.run(scenario())
