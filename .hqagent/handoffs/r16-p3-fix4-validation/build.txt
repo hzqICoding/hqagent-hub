@@ -1,0 +1,51 @@
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1854 modules transformed.
+Generated an empty chunk: "echarts".
+rendering chunks...
+computing gzip size...
+dist/index.html                                                                    2.56 kB │ gzip:  1.04 kB
+dist/assets/ChatPage-DQ8nlvA7.css                                                  0.24 kB │ gzip:  0.17 kB
+dist/assets/index-CxiKY7_w.css                                                    60.61 kB │ gzip: 11.23 kB
+dist/assets/echarts-l0sNRNKZ.js                                                    0.00 kB │ gzip:  0.02 kB
+dist/assets/RemoteRequestNotice.vue_vue_type_script_setup_true_lang-D9a1KLyg.js    0.92 kB │ gzip:  0.60 kB
+dist/assets/HqEmptyState.vue_vue_type_script_setup_true_lang-CkHf_PnH.js           1.17 kB │ gzip:  0.63 kB
+dist/assets/LoadingState.vue_vue_type_script_setup_true_lang-BuO-Khfs.js           1.55 kB │ gzip:  0.75 kB
+dist/assets/confirm-yNWjckwc.js                                                    1.74 kB │ gzip:  0.94 kB
+dist/assets/PlaceholderPage-BAOQqUxU.js                                            1.74 kB │ gzip:  1.10 kB
+dist/assets/HqTextarea.vue_vue_type_script_setup_true_lang-B0YTw4mB.js             1.88 kB │ gzip:  0.89 kB
+dist/assets/OfflineState.vue_vue_type_script_setup_true_lang-CamkzXts.js           2.44 kB │ gzip:  1.19 kB
+dist/assets/native-utils-Cad9vs7X.js                                               2.45 kB │ gzip:  1.60 kB
+dist/assets/HqInput.vue_vue_type_script_setup_true_lang-pO-dmCg-.js                2.51 kB │ gzip:  1.11 kB
+dist/assets/ResolveSourceBadge.vue_vue_type_script_setup_true_lang-BNkDMipx.js     2.61 kB │ gzip:  1.42 kB
+dist/assets/team.store-D74A1vKn.js                                                 3.73 kB │ gzip:  1.88 kB
+dist/assets/RemoteLoginPage-DAsjrIty.js                                            3.85 kB │ gzip:  1.85 kB
+dist/assets/HqDialog.vue_vue_type_script_setup_true_lang-DhmT2hJz.js               4.39 kB │ gzip:  2.02 kB
+dist/assets/ConnectPage-mGcZ77PU.js                                                5.09 kB │ gzip:  2.46 kB
+dist/assets/RemotePairingPage-DFiQ9Fs0.js                                          6.23 kB │ gzip:  2.82 kB
+dist/assets/PairingScanner-DzeTOmQj.js                                             6.26 kB │ gzip:  3.41 kB
+dist/assets/task.store-B_miRHhY.js                                                 6.99 kB │ gzip:  2.61 kB
+dist/assets/RemoteTokensPage-BwGmtVPG.js                                           7.59 kB │ gzip:  3.85 kB
+dist/assets/HqSelect.vue_vue_type_script_setup_true_lang-BuGN5n_x.js               7.62 kB │ gzip:  3.28 kB
+dist/assets/RemoteDevicesPage-BRkjg_ll.js                                          8.54 kB │ gzip:  3.75 kB
+dist/assets/WorkspacesPage-XEt1D58Y.js                                             8.80 kB │ gzip:  3.50 kB
+dist/assets/TemplatesPage-CKvwHbzG.js                                              9.62 kB │ gzip:  4.27 kB
+dist/assets/SessionsPage-CLi6CgNN.js                                              10.58 kB │ gzip:  4.52 kB
+dist/assets/AgentsPage-1KmJi9Ur.js                                                11.64 kB │ gzip:  4.06 kB
+dist/assets/TasksPage-CvsijX-q.js                                                 11.80 kB │ gzip:  4.69 kB
+dist/assets/OverviewPage-D-II-Egx.js                                              12.12 kB │ gzip:  3.96 kB
+dist/assets/ApprovalsPage-KLMdS1VJ.js                                             12.28 kB │ gzip:  4.96 kB
+dist/assets/OnboardingPage-brevqME4.js                                            12.94 kB │ gzip:  4.92 kB
+dist/assets/TeamsPage-ChHbggUA.js                                                 16.12 kB │ gzip:  6.00 kB
+dist/assets/remote-chat.store-BPvzFMkN.js                                         22.06 kB │ gzip:  7.09 kB
+dist/assets/TaskDetailPage-Xqd3I9Kg.js                                            23.47 kB │ gzip:  8.00 kB
+dist/assets/AttachmentDrafts.vue_vue_type_script_setup_true_lang-DGlScKDy.js      25.54 kB │ gzip: 10.21 kB
+dist/assets/ScenesPage-BqBJlX7c.js                                                25.69 kB │ gzip:  8.71 kB
+dist/assets/RemoteChatPage-CzLt4hL9.js                                            41.31 kB │ gzip: 12.92 kB
+dist/assets/RemoteLinkPage-BTA7W2iZ.js                                            49.48 kB │ gzip: 18.89 kB
+dist/assets/ChatPage-Bn-imUOC.js                                                  79.05 kB │ gzip: 23.98 kB
+dist/assets/jsQR-UMIdgYmG.js                                                     130.80 kB │ gzip: 47.46 kB
+dist/assets/vendor-BKKHNeE9.js                                                   149.77 kB │ gzip: 50.59 kB
+dist/assets/index-BRSZaKYd.js                                                    230.97 kB │ gzip: 75.77 kB
+✓ built in 7.78s
