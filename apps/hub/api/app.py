@@ -79,11 +79,13 @@ class LocalBoundaryMiddleware:
         token: str,
         allowed_origins: set[str] | frozenset[str],
         allowed_hosts: set[str] | frozenset[str],
+        shutting_down: Any = lambda: False,
     ) -> None:
         self.app = app
         self.token = token
         self.allowed_origins = allowed_origins
         self.allowed_hosts = allowed_hosts
+        self.shutting_down = shutting_down
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
@@ -144,6 +146,10 @@ class LocalBoundaryMiddleware:
                 await self._reject(send, HubError("UNAUTHORIZED", "未授权"), cors_headers)
                 return
 
+        if self.shutting_down() and scope["method"] not in {"GET", "HEAD", "OPTIONS"}:
+            await self._reject(send, HubError("HUB_MAINTENANCE", "Hub 正在停止，暂不接受写请求"), cors_headers)
+            return
+
         async def send_with_cors(message: dict[str, Any]) -> None:
             if message["type"] == "http.response.start" and cors_headers:
                 message["headers"] = list(message.get("headers", [])) + cors_headers
@@ -193,7 +199,7 @@ def create_application(
     from api.local_chat import install_local_routes
     from runtime.local_chat import LocalChatService
     from storage.local_chat import LocalChatRepository
-    local_auth = LocalBrowserAuth()
+    local_auth = LocalBrowserAuth(storage_path=paths.data / "browser-sessions.db")
     local_chat = LocalChatService(LocalChatRepository(database), resolved_ports)
     from runtime.composition import build_remote_worker
     from runtime.remote.api import install_remote_routes
@@ -202,19 +208,26 @@ def create_application(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "recover_pending"):
-            await resolved_ports.tasks.recover_pending()
-        await local_chat.start()
-        await remote_worker.start()
         try:
+            if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "recover_pending"):
+                await resolved_ports.tasks.recover_pending()
+            # EOF may arrive while startup recovery is awaiting I/O. Do not
+            # reopen command admission or schedule queued work after that point.
+            if not getattr(_app.state, "shutting_down", False):
+                await local_chat.start()
+            if not getattr(_app.state, "shutting_down", False):
+                await remote_worker.start()
             yield
         finally:
+            await remote_worker.attachments.verifications.close()
+            local_auth.close()
             await remote_worker.stop()
             await local_chat.stop()
             if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "shutdown"):
                 await resolved_ports.tasks.shutdown()
             if close_database_on_shutdown:
                 database.close()
+            _app.state.lifecycle_closed = True
 
     app = FastAPI(title="HQAgent-Hub Local Hub", version=APP_VERSION, lifespan=lifespan)
     app.state.local_auth = local_auth
@@ -223,9 +236,13 @@ def create_application(
     app.add_middleware(
         LocalBoundaryMiddleware,
         token=token,
+        shutting_down=lambda: getattr(app.state, "shutting_down", False),
         allowed_origins=allowed_origins or set(DEFAULT_ALLOWED_ORIGINS),
         allowed_hosts=allowed_hosts or {"127.0.0.1", "localhost"},
     )
+    from runtime.attachments.maintenance_api import MaintenanceBoundary, maintenance_router
+    app.add_middleware(MaintenanceBoundary)
+    app.include_router(maintenance_router(remote_worker.attachments), prefix='/api/v1')
     remote_router = install_remote_routes(app, remote_worker.link, remote_worker.sync, remote_worker.roots)
     from runtime.native.api import native_router
     app.include_router(native_router(remote_worker.native), prefix="/api/v1")
@@ -363,10 +380,8 @@ def create_application(
     ) -> JSONResponse:
         if maintenance.enabled:
             raise HubError("HUB_MAINTENANCE", "Local Hub 正在维护，暂不接受新任务")
-        if value.parent_task_id:
-            local_chat.repository.assert_local_task(value.parent_task_id)
-        local_chat.repository.assert_local_profile(value.profile_id)
-        return success_response(await resolved_ports.tasks.create_task(value, idempotency_key))
+        return success_response(await local_chat.guard_task_operation(value.parent_task_id or '',
+            lambda: resolved_ports.tasks.create_task(value, idempotency_key), profile_id=value.profile_id))
 
     @app.get("/api/v1/tasks/{task_id}")
     async def get_task(task_id: str) -> JSONResponse:
@@ -378,8 +393,8 @@ def create_application(
         value: TaskActionInput,
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ) -> JSONResponse:
-        local_chat.repository.assert_local_task(task_id)
-        return success_response(await resolved_ports.tasks.act(task_id, value, idempotency_key))
+        return success_response(await local_chat.guard_task_operation(task_id,
+            lambda: resolved_ports.tasks.act(task_id, value, idempotency_key)))
 
     @app.get("/api/v1/sessions")
     async def list_sessions(
@@ -400,7 +415,8 @@ def create_application(
         with database.locked_connection() as db:
             row = db.execute("SELECT task_id FROM sessions WHERE session_id=?", (session_id,)).fetchone()
         if row:
-            local_chat.repository.assert_local_task(row[0])
+            return success_response(await local_chat.guard_task_operation(row[0],
+                lambda: resolved_ports.sessions.resume(session_id, value)))
         return success_response(await resolved_ports.sessions.resume(session_id, value))
 
     @app.get("/api/v1/approvals")
@@ -572,6 +588,21 @@ def create_application(
         # A browser cookie alone must never be enough to mint pairing codes.
         response = success_response(LocalConnectionCodeView(
             code=local_auth.issue_code(), expires_in_seconds=int(local_auth.code_ttl)))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.post("/internal/remote/resync")
+    async def resync_remote_replica() -> JSONResponse:
+        # Operator Bearer only. Never let a cloud/browser credential bypass a freeze.
+        response = success_response(remote_worker.recovery.request())
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.post("/internal/auth/revoke-sessions")
+    async def revoke_browser_sessions() -> JSONResponse:
+        # Same operator-only boundary as connection-code renewal.
+        local_auth.revoke_sessions()
+        response = success_response({"revoked": True})
         response.headers["Cache-Control"] = "no-store"
         return response
 

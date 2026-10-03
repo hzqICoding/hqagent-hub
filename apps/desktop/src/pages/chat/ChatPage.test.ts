@@ -42,7 +42,7 @@ describe('ChatPage', () => {
     expect(wrapper.text()).toContain('新建任务')
     expect(wrapper.find('textarea').exists()).toBe(true)
     expect(wrapper.find('.hq-composer-row').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('新一轮上下文 (New)')
+    expect(wrapper.find('input[type=radio]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('继续已有Agent会话 (Continue)')
   })
 

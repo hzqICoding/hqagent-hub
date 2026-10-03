@@ -11,7 +11,7 @@ export function nativeFailure(error: unknown): { message: string; requestId?: st
     NATIVE_SESSION_CHANGED: '终端中有新内容，请重新确认',
     REMOTE_QUERY_TIMEOUT: '电脑在线查询超时，可以重试',
   }
-  return { code: value?.code, requestId: value?.requestId, message: guidance[value?.code || ''] || getRemoteErrorMessage(value?.code, value?.message || '操作失败，请重试') }
+  return { code: value?.code, requestId: value?.requestId, message: guidance[value?.code || ''] || getRemoteErrorMessage(value?.code, value?.code === 'SESSION_NOT_RESUMABLE' ? value.message : value?.message || '操作失败，请重试', 'native') }
 }
 export function nativeSyncNotice(link: RemoteLinkView | null, settings: RemoteSyncSettingsView | null): string {
   if (!link || !settings) return '已在本机导入，正在核对同步条件'

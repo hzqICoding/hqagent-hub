@@ -81,7 +81,7 @@ async function handleSend() {
     drafts?.sent()
     nativeConfirmed.value = false
   } catch (err) {
-    if (attachmentIds.length && chatStore.activeConversationId === conversationId) chatStore.sendError = attachmentErrorText(err)
+    if (attachmentIds.length && (err as { code?: string })?.code !== 'SESSION_NOT_RESUMABLE' && chatStore.activeConversationId === conversationId) chatStore.sendError = attachmentErrorText(err)
     if (chatStore.activeConversation?.conversationKind === 'native') { nativeError.value = nativeFailure(err); nativeConfirmed.value = false }
     // Restore only the original conversation's still-empty draft. A newer draft wins.
     if (chatStore.getConversationDraftRevision(conversationId) === clearedDraftRevision) {
@@ -179,7 +179,7 @@ function handleStopRun() {
           <AlertCircle class="w-4 h-4 shrink-0" />
           <div class="min-w-0">
             <p class="font-medium text-xs">会话恢复失败</p>
-            <p class="text-[11px] text-text-muted mt-0.5 truncate">
+            <p class="text-[11px] text-text-muted mt-0.5 break-words whitespace-pre-wrap">
               {{ chatStore.resumptionError }}
             </p>
           </div>

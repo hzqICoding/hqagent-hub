@@ -1,6 +1,8 @@
 """Cookie-authenticated local UI; no browser access to the legacy Hub token."""
 from __future__ import annotations
 
+import math
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request
@@ -27,9 +29,29 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
     directory_picker = LocalDirectoryPicker()
     def authenticated(request: Request) -> bool:
         bearer = request.headers.get("authorization", "")
-        return auth.valid(request.cookies.get(COOKIE_NAME)) or (
+        expiry = auth.expires_at(request.cookies.get(COOKIE_NAME))
+        if expiry is not None:
+            request.state.local_session_expiry = expiry
+        return expiry is not None or (
             bearer.startswith("Bearer ") and token_matches(bearer[7:], token)
         )
+
+    @app.middleware("http")
+    async def refresh_session_cookie(request: Request, call_next):
+        response = await call_next(request)
+        expiry = getattr(request.state, "local_session_expiry", None)
+        # Login/logout already set their own cookie. Never undo logout or switch
+        # a newly exchanged session back to the cookie supplied on the request.
+        if expiry is not None and request.url.path not in {
+            "/api/v2/auth/local-session", "/api/v2/auth/logout",
+        }:
+            response.set_cookie(
+                COOKIE_NAME, request.cookies[COOKIE_NAME],
+                max_age=max(0, math.ceil(expiry - time.time())), httponly=True,
+                samesite="strict", secure=request.url.scheme == "https", path="/",
+            )
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     def require_auth(request: Request) -> None:
         if not authenticated(request):
@@ -68,6 +90,11 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
     router.include_router(native_router(service.native))
     from runtime.attachments.api import attachment_router
     router.include_router(attachment_router(service.attachments))
+    from runtime.attachments.maintenance_api import maintenance_router
+    def maintenance_cookie(request: Request):
+        if auth.expires_at(request.cookies.get(COOKIE_NAME)) is None:
+            raise HubError('UNAUTHORIZED', '请先输入本机连接码')
+    router.include_router(maintenance_router(service.attachments), dependencies=[Depends(maintenance_cookie)])
     if remote_router is not None:
         router.include_router(remote_router)
 

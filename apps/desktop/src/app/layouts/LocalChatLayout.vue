@@ -33,6 +33,7 @@ async function disconnect() {
       <router-link to="/chat" class="font-semibold text-sm">HQAgent Hub</router-link>
       <nav class="flex items-center gap-4 text-xs">
         <router-link to="/chat" active-class="text-primary font-semibold">本地对话</router-link>
+        <router-link to="/agents" active-class="text-primary font-semibold">Agent 管理</router-link>
         <router-link to="/scenes" active-class="text-primary font-semibold">场景与角色</router-link>
         <router-link to="/remote-link" active-class="text-primary font-semibold">连接手机</router-link>
       </nav>

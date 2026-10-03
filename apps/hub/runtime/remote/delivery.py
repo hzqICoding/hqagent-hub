@@ -271,6 +271,9 @@ class DeliveryBridge(CommandBridge):
                 return self._skip(frame), []
             with self.repo.database.transaction() as tx:
                 self.expire(tx)
+                if tx.connection.execute('SELECT 1 FROM local_conversation_deletions WHERE conversation_id=?',
+                                         (frame.get('localConversationId'),)).fetchone():
+                    return self._conflict(tx, frame, 'NOT_FOUND'), []
                 old = self.row(frame["commandId"], tx)
                 if old:
                     if old["digest"] != request_hash(frame):
@@ -335,6 +338,9 @@ class DeliveryBridge(CommandBridge):
             if row is None:
                 # Without a durable receipt a grant can never create execution.
                 return self._conflict(tx, grant)
+            if tx.connection.execute('SELECT 1 FROM local_conversation_deletions WHERE conversation_id=?',
+                                     (row['local_id'],)).fetchone():
+                return self._conflict(tx, grant, 'NOT_FOUND')
             if row["state"] not in {"waiting", "provisional"}:
                 if row["grant_json"] and json.loads(row["grant_json"]) != grant:
                     return self._conflict(tx, grant)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import AsyncExitStack
 import json
 import logging
 import time
@@ -24,18 +25,27 @@ class LocalChatService:
         self._jobs: dict[str, asyncio.Task] = {}
         self._supervisor: asyncio.Task | None = None
         self._closed = False
+        self._quiescing = False
         self._wake = asyncio.Event()
         self._slots = asyncio.Semaphore(3)
         self._last_approval_check = 0.0
         self._conversation_locks: dict[str, asyncio.Lock] = {}
         self.remote_dispatch_guard = None
+        from runtime.conversation_deletion import ConversationDeletion
+        self.deletions = ConversationDeletion(self)
 
     async def start(self) -> None:
         self._closed = False
+        self._quiescing = False
+        await self.deletions.recover()
         if getattr(self, 'attachments', None):
             await self.attachments.recover()
         if self._supervisor is None:
             self._supervisor = asyncio.create_task(self._supervise())
+
+    def begin_shutdown(self) -> None:
+        self._quiescing = True
+        self._wake.set()
 
     async def stop(self) -> None:
         self._closed = True
@@ -54,6 +64,36 @@ class LocalChatService:
         if value.workspace_id not in {w.id for w in workspaces}:
             raise HubError("NOT_FOUND", "请先登记并选择本机项目目录")
         return self.repository.create_conversation(value, key)
+
+    async def delete_conversation(self, conversation_id: str, expected_version: int, key: str):
+        return await self.deletions.delete(conversation_id, expected_version, key)
+
+    async def guard_task_operation(self, task_id: str, operation, *, profile_id=None):
+        """Direct Task/session controls share every owning conversation boundary."""
+        with self.repository.database.locked_connection() as db:
+            conversations, seen, profiles, ancestor = set(), set(), {profile_id} if profile_id else set(), task_id
+            while ancestor and ancestor not in seen:
+                seen.add(ancestor)
+                conversations.update(row[0] for row in db.execute(
+                    'SELECT conversation_id FROM local_runs WHERE task_id=?', (ancestor,)))
+                task = db.execute('SELECT profile_id,payload_json FROM tasks WHERE task_id=?', (ancestor,)).fetchone()
+                if not task:
+                    break
+                profiles.add(task[0])
+                ancestor = json.loads(task[1]).get('parentTaskId')
+            for profile in profiles:
+                if profile and profile.startswith('local-profile:'):
+                    conversations.update(row[0] for row in db.execute(
+                        'SELECT conversation_id FROM local_runs WHERE run_id=?', (profile[len('local-profile:'):],)))
+        async with AsyncExitStack() as stack:
+            for conversation in sorted(conversations):
+                await stack.enter_async_context(self._conversation_lock(conversation))
+            self.repository.assert_local_task(task_id)
+            for profile in profiles:
+                self.repository.assert_local_profile(profile)
+            for conversation in conversations:
+                self.repository.assert_not_deleted(conversation)
+            return await operation()
 
     def _conversation_lock(self, conversation_id: str) -> asyncio.Lock:
         return self._conversation_locks.setdefault(conversation_id, asyncio.Lock())
@@ -75,6 +115,8 @@ class LocalChatService:
         return await update()
 
     def send(self, conversation_id: str, value: SendLocalMessageInput, key: str):
+        if self._quiescing:
+            raise HubError("HUB_MAINTENANCE", "Hub 正在停止，暂不接受新任务")
         receipt = self.repository.enqueue(conversation_id, value, key)
         self._wake.set()
         return receipt
@@ -98,11 +140,11 @@ class LocalChatService:
         if not key:
             raise HubError("VALIDATION_FAILED", "必须提供Idempotency-Key")
         record = self.repository.run_record(run_id)
-        if str(value.action) in {"append_instruction", "resume", "retry"}:
-            async with self._conversation_lock(record["conversation_id"]):
+        async with self._conversation_lock(record["conversation_id"]):
+            self.repository.assert_not_deleted(record['conversation_id'])
+            if str(value.action) in {"append_instruction", "resume", "retry"}:
                 self.repository.assert_execution_allowed(record["conversation_id"])
-                return await self._control(record, value, key)
-        return await self._control(record, value, key)
+            return await self._control(record, value, key)
 
     def wake_remote_queue(self) -> None:
         """Wake only after the inbox / run / receipt transaction commits."""
@@ -183,7 +225,7 @@ class LocalChatService:
                     )
 
     async def _supervise(self) -> None:
-        while not self._closed:
+        while not self._closed and not self._quiescing:
             if time.monotonic() - self._last_approval_check >= 5:
                 self._last_approval_check = time.monotonic()
                 if hasattr(type(self.ports.tasks), "expire_approvals"):
@@ -192,6 +234,8 @@ class LocalChatService:
                     except Exception:
                         logging.getLogger(__name__).error("工具审批过期检查失败，需要检查本机任务状态", exc_info=True)
             for conversation in self.repository.conversations(include_hidden=True, observe_native=False):
+                if self._quiescing:
+                    break
                 job = self._jobs.get(conversation.id)
                 if job and not job.done():
                     continue
@@ -212,7 +256,8 @@ class LocalChatService:
 
     async def _drive(self, record: dict) -> None:
         async with self._slots:
-            await self._execute(record)
+            if not self._quiescing:
+                await self._execute(record)
 
     async def _execute(self, record: dict) -> None:
         run_id = record["run_id"]
@@ -252,9 +297,26 @@ class LocalChatService:
             self.repository.complete_run(run_id, "failed", f"本轮未完成：{message}", error=message,
                 error_code=error.code if isinstance(error, HubError) else None)
 
+    def _context_needs_recovery(self, record: dict | None) -> bool:
+        if record is None:
+            return False
+        if record['status'] not in TERMINAL:
+            return True
+        busy = self.repository.busy_state
+        if busy is None:
+            return False
+        # Real execution evidence is authoritative even without pairing. Older
+        # ports without a structured observer keep their existing session checks.
+        observable = getattr(type(self.ports.tasks), 'activity_observation', None)
+        if not record['task_id'] or busy.enabled() or observable is not None:
+            return bool(busy.observe(record)['recoveryRequired'])
+        return False
+
     async def _task_input(self, record: dict) -> CreateTaskInput:
         if json.loads(record["scene_json"]).get("conversationKind") == "native":
-            return await self.native.task_input(record)
+            spec = await self.native.task_input(record)
+            self.repository.record_session_mode(record, 'continue', 'native_bound_session')
+            return spec
         scene = LocalSceneView.model_validate_json(record["scene_json"])
         conversation = self.repository.conversation(record["conversation_id"])
         roles = [r for r in scene.roles if r.enabled]
@@ -264,39 +326,35 @@ class LocalChatService:
         await self.ports.team_profiles.save_profile(profile_id, profile)
         resume_sessions = {}
         if record["session_mode"] == "continue":
-            busy = self.repository.busy_state
-            prior = [r for r in self.repository.runs(conversation.id)
-                     if r["message_sequence"] < record["message_sequence"]]
-            if busy is not None and busy.enabled() and prior and (
-                    prior[0]["status"] not in TERMINAL or busy.observe(prior[0])["recoveryRequired"]):
+            prior, old = self.repository.continuation_history(record)
+            if self._context_needs_recovery(prior):
                 raise HubError("SESSION_NOT_RESUMABLE", "上一轮仍需本机恢复核对，不能跳过它续接更早上下文")
-            previous = [r for r in self.repository.runs(conversation.id)
-                        if r["run_id"] != record["run_id"] and r["message_sequence"] < record["message_sequence"]
-                        and r["status"] in TERMINAL and r["task_id"]]
-            if not previous:
-                raise HubError("SESSION_NOT_RESUMABLE", "没有可继续的上一轮；请选择新一轮上下文")
-            old = previous[0]
-            old_scene = LocalSceneView.model_validate_json(old["scene_json"])
-            if str(scene.review_mode or "independent") != str(old_scene.review_mode or "independent"):
-                raise HubError("SESSION_NOT_RESUMABLE", "验收方式已变化，请选择新一轮上下文")
-            old_roles = {r.role_id: r for r in old_scene.roles if r.enabled}
-            detail = await self.ports.tasks.get_task(old["task_id"])
-            sessions = await self.ports.sessions.list_sessions({"taskId": old["task_id"]})
-            session_map = {s.id: s for s in sessions}
-            for role in roles:
-                if role.role_id not in old_roles or role.model_dump() != old_roles[role.role_id].model_dump():
-                    raise HubError("SESSION_NOT_RESUMABLE", "角色或模型配置已变化，请选择新一轮上下文")
-                if str(scene.review_mode) == "original_planner" and role.role_id == "reviewer":
-                    # Acceptance resolves the current planning node's exact session.
-                    continue
-                node = next((n for n in reversed(detail.nodes) if str(n.role_id) == role.role_id), None)
-                session = session_map.get(node.session_id) if node else None
-                if session is None or not session.is_valid or str(session.status) != "idle":
-                    if session is not None and str(session.status) == "closed":
-                        raise HubError("SESSION_NOT_RESUMABLE", f"角色{role.role_id}的上一轮会话已关闭，不能原生续接；请选择新一轮上下文，并附上需要继续处理的上一轮结果")
-                    raise HubError("SESSION_NOT_RESUMABLE", f"角色{role.role_id}没有可恢复会话，请明确选择新上下文")
-                resume_sessions[role.role_id] = session.id
-        return CreateTaskInput.model_validate({
+            if old is not None:
+                if self._context_needs_recovery(old):
+                    raise HubError('SESSION_NOT_RESUMABLE', '上一轮执行仍需本机恢复核对，不能开启新的执行')
+                old_scene = LocalSceneView.model_validate_json(old["scene_json"])
+                if str(scene.review_mode or "independent") != str(old_scene.review_mode or "independent"):
+                    raise HubError("SESSION_NOT_RESUMABLE", "验收方式已变化，请点右上角 + 开启新话题")
+                old_roles = {r.role_id: r for r in old_scene.roles if r.enabled}
+                if set(old_roles) != {r.role_id for r in roles}:
+                    raise HubError('SESSION_NOT_RESUMABLE', '角色或模型配置已变化，请点右上角 + 开启新话题')
+                detail = await self.ports.tasks.get_task(old["task_id"])
+                sessions = await self.ports.sessions.list_sessions({"taskId": old["task_id"]})
+                session_map = {s.id: s for s in sessions}
+                for role in roles:
+                    if role.role_id not in old_roles or role.model_dump() != old_roles[role.role_id].model_dump():
+                        raise HubError("SESSION_NOT_RESUMABLE", "角色或模型配置已变化，请点右上角 + 开启新话题")
+                    if str(scene.review_mode) == "original_planner" and role.role_id == "reviewer":
+                        # Acceptance resolves the current planning node's exact session.
+                        continue
+                    node = next((n for n in reversed(detail.nodes) if str(n.role_id) == role.role_id), None)
+                    session = session_map.get(node.session_id) if node else None
+                    if session is None or not session.is_valid or str(session.status) != "idle":
+                        if session is not None and str(session.status) == "closed":
+                            raise HubError("SESSION_NOT_RESUMABLE", f"角色{role.role_id}的上一轮会话已关闭，不能原生续接；请点右上角 + 开启新话题，并附上需要继续处理的上一轮结果")
+                        raise HubError("SESSION_NOT_RESUMABLE", f"角色{role.role_id}没有可恢复会话，请点右上角 + 开启新话题")
+                    resume_sessions[role.role_id] = session.id
+        spec = CreateTaskInput.model_validate({
             "objective": self.repository.run_text(record["run_id"]), "workspaceId": conversation.workspace_id,
             "profileId": profile_id, "source": "desktop", "workflowRoles": [r.role_id for r in roles],
             "roleOverrides": overrides,
@@ -304,6 +362,9 @@ class LocalChatService:
             "resumeSessions": resume_sessions or None,
             "reviewMode": scene.review_mode or "independent",
         })
+        self.repository.record_session_mode(record, 'continue' if resume_sessions else 'new',
+            'existing_execution' if resume_sessions else 'no_prior_execution' if record['session_mode'] == 'continue' else 'explicit_new')
+        return spec
 
     @staticmethod
     def _result_text(task: Any) -> str:

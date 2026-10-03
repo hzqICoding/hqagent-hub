@@ -7,6 +7,7 @@ import socket
 import sys
 import uuid
 from datetime import datetime, timezone
+from dataclasses import replace
 from pathlib import Path
 
 import uvicorn
@@ -17,8 +18,9 @@ from core.constants import APP_VERSION, PROTOCOL_VERSION
 from core.security import generate_startup_token
 from runtime.composition import bind_ports, build_ports
 from runtime.descriptor import RuntimeDescriptorFile
-from runtime.instance import SingleInstanceLock
+from runtime.instance import SingleInstanceLock, SingleInstanceError
 from runtime.paths import HubPaths
+from runtime.parent_process import ParentProcess, serve_with_parent
 
 
 def _parse_args() -> argparse.Namespace:
@@ -31,86 +33,105 @@ def _parse_args() -> argparse.Namespace:
 
 
 async def run(data_dir: Path | None = None, environment: str = "production", *, port: int = 0, web_dir: Path | None = None) -> None:
+    parent = ParentProcess.from_env()
+    if parent.stdio and port != 0:
+        raise ValueError("桌面托管模式必须使用随机端口（--port 0）")
     paths = HubPaths.resolve(data_dir)
+    # The per-data-root lock must not be bypassed by a different descriptor dir.
+    lock = SingleInstanceLock(paths.runtime / "hub.lock")
+    if parent.runtime_dir is not None:
+        paths = replace(paths, runtime=parent.runtime_dir)
     paths.create()
-    instance_id = f"hub_{uuid.uuid4().hex}"
+    instance_id = parent.instance_id or f"hub_{uuid.uuid4().hex}"
     token = generate_startup_token()
     started_at = datetime.now(timezone.utc)
     descriptor_file = RuntimeDescriptorFile(paths.runtime / "hub.json")
-    lock = SingleInstanceLock(paths.runtime / "hub.lock")
     lock.acquire()
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    listener.bind(("127.0.0.1", port))
-    listener.listen(128)
-    port = int(listener.getsockname()[1])
-    ports = build_ports()
-    application = create_application(
-        paths=paths,
-        token=token,
-        ports=ports,
-        instance_id=instance_id,
-        started_at=started_at,
-        environment=environment,
-    )
-    # Database 由 create_application 内部创建，所以补齐要放在它之后。
-    await bind_ports(application, ports)
-    if environment == "development":
-        # Existing middleware receives its set by reference at initialization.
-        for middleware in application.app.user_middleware:
-            if middleware.cls.__name__ == "LocalBoundaryMiddleware":
-                middleware.kwargs["allowed_origins"] = set(middleware.kwargs["allowed_origins"]) | {
-                    "http://localhost:5173", "http://127.0.0.1:5173",
-                }
-    if web_dir is not None:
-        from fastapi.staticfiles import StaticFiles
-        from starlette.exceptions import HTTPException
-
-        class LocalWebFiles(StaticFiles):
-            async def get_response(self, path, scope):
-                if path.startswith(("api/", "internal/", "ws/")):
-                    raise HTTPException(404)
-                try:
-                    return await super().get_response(path, scope)
-                except HTTPException as error:
-                    if error.status_code != 404 or "." in Path(path).name:
-                        raise
-                    return await super().get_response("index.html", scope)
-
-        application.app.mount("/", LocalWebFiles(directory=str(web_dir.resolve()), html=True), name="local-web")
-    code = application.local_auth.issue_code()
-    print(f"Local Hub: http://127.0.0.1:{port}", flush=True)
-    if sys.stdout.isatty():
-        print(f"Local connection code (one use, 10 minutes): {code}", flush=True)
-    descriptor = HubRuntimeDescriptor.model_validate(
-        {
-            "schemaVersion": 1,
-            "instanceId": instance_id,
-            "port": port,
-            "token": token,
-            "pid": os.getpid(),
-            "baseUrl": f"http://127.0.0.1:{port}",
-            "appVersion": APP_VERSION,
-            "protocolVersion": PROTOCOL_VERSION,
-            "startedAt": started_at.isoformat().replace("+00:00", "Z"),
-        }
-    )
-    descriptor_file.write(descriptor)
-    config = uvicorn.Config(
-        application.app,
-        host="127.0.0.1",
-        port=port,
-        access_log=False,
-        log_level="warning",
-        timeout_graceful_shutdown=12,
-    )
-    server = uvicorn.Server(config)
+    listener = None
+    application = None
+    server = None
     try:
-        await server.serve(sockets=[listener])
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", port))
+        listener.listen(128)
+        port = int(listener.getsockname()[1])
+        ports = build_ports()
+        application = create_application(
+            paths=paths,
+            token=token,
+            ports=ports,
+            instance_id=instance_id,
+            started_at=started_at,
+            environment=environment,
+        )
+        # Database 由 create_application 内部创建，所以补齐要放在它之后。
+        await bind_ports(application, ports)
+        if environment == "development":
+            # Existing middleware receives its set by reference at initialization.
+            for middleware in application.app.user_middleware:
+                if middleware.cls.__name__ == "LocalBoundaryMiddleware":
+                    middleware.kwargs["allowed_origins"] = set(middleware.kwargs["allowed_origins"]) | {
+                        "http://localhost:5173", "http://127.0.0.1:5173",
+                    }
+        if web_dir is not None:
+            from fastapi.staticfiles import StaticFiles
+            from starlette.exceptions import HTTPException
+
+            class LocalWebFiles(StaticFiles):
+                async def get_response(self, path, scope):
+                    if path.startswith(("api/", "internal/", "ws/")):
+                        raise HTTPException(404)
+                    try:
+                        return await super().get_response(path, scope)
+                    except HTTPException as error:
+                        if error.status_code != 404 or "." in Path(path).name:
+                            raise
+                        return await super().get_response("index.html", scope)
+
+            application.app.mount("/", LocalWebFiles(directory=str(web_dir.resolve()), html=True), name="local-web")
+        code = application.local_auth.issue_code()
+        print(f"Local Hub: http://127.0.0.1:{port}", flush=True)
+        if sys.stdout.isatty():
+            print(f"Local connection code (one use, 10 minutes): {code}", flush=True)
+        descriptor = HubRuntimeDescriptor.model_validate(
+            {
+                "schemaVersion": 1,
+                "instanceId": instance_id,
+                "port": port,
+                "token": token,
+                "pid": os.getpid(),
+                "baseUrl": f"http://127.0.0.1:{port}",
+                "appVersion": APP_VERSION,
+                "protocolVersion": PROTOCOL_VERSION,
+                "startedAt": started_at.isoformat().replace("+00:00", "Z"),
+            }
+        )
+        descriptor_file.write(descriptor)
+        config = uvicorn.Config(
+            application.app,
+            host="127.0.0.1",
+            port=port,
+            access_log=False,
+            log_level="warning",
+            timeout_graceful_shutdown=2 if parent.stdio else 12,
+        )
+        server = uvicorn.Server(config)
+        if parent.stdio:
+            if sys.stdin is None:
+                raise ValueError("stdio-v1 需要桌面壳提供 stdin 管道")
+            await serve_with_parent(server, listener, application, sys.stdin)
+        else:
+            await server.serve(sockets=[listener])
     finally:
         descriptor_file.remove(instance_id)
+        if (application is not None and not getattr(application.app.state, "lifecycle_closed", False)
+                and (server is None or not server.started)):
+            application.local_auth.close()
+            application.database.close()
+        if listener is not None:
+            listener.close()
         lock.release()
-        listener.close()
 
 
 def main() -> None:
@@ -119,7 +140,11 @@ def main() -> None:
         show_dialog(sys.argv[2])
         return
     args = _parse_args()
-    asyncio.run(run(args.data_dir, args.environment, port=args.port, web_dir=args.web_dir))
+    try:
+        asyncio.run(run(args.data_dir, args.environment, port=args.port, web_dir=args.web_dir))
+    except (ValueError, SingleInstanceError) as error:
+        print(str(error), file=sys.stderr)
+        raise SystemExit(2) from None
 
 
 if __name__ == "__main__":

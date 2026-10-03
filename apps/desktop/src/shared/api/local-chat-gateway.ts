@@ -2,6 +2,7 @@ import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 import { uploadAttachment as uploadBinary, attachmentBlob } from '@/shared/attachments/transport'
 import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
+  LocalImageVerificationPage, LocalImageVerificationJobView, StartLocalImageVerificationInput, LocalConversationDeletionView,
   AttachmentLimits, AttachmentDeletedView, LocalAttachmentView, AttachmentTargetCapabilities,
   LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
@@ -43,6 +44,19 @@ import type { LocalChatGateway } from './local-chat-gateway.interface'
 import { HubApiError } from './local-hub-gateway'
 
 export class RealLocalChatGateway implements LocalChatGateway {
+  listImageVerifications(options: { includeInactiveModels?: boolean; cursor?: string } = {}): Promise<LocalImageVerificationPage> {
+    const query = new URLSearchParams({ limit: '50', includeInactiveModels: String(options.includeInactiveModels ?? false), ...(options.cursor ? { cursor: options.cursor } : {}) })
+    return this.fetchApi(`/api/v2/agents/image-verifications?${query}`)
+  }
+  startImageVerification(input: StartLocalImageVerificationInput, key: string): Promise<LocalImageVerificationJobView> {
+    return this.fetchApi('/api/v2/agents/image-verification-jobs', { method: 'POST', body: JSON.stringify(input) }, key)
+  }
+  getImageVerificationJob(id: string): Promise<LocalImageVerificationJobView> { return this.fetchApi(`/api/v2/agents/image-verification-jobs/${encodeURIComponent(id)}`) }
+  cancelImageVerification(id: string, key: string): Promise<LocalImageVerificationJobView> { return this.fetchApi(`/api/v2/agents/image-verification-jobs/${encodeURIComponent(id)}/cancellations`, { method: 'POST', body: '{}' }, key) }
+  deleteLocalConversation(id: string, expectedVersion: number, key: string): Promise<LocalConversationDeletionView> {
+    return this.fetchApi(`/api/v2/conversations/${encodeURIComponent(id)}?expectedVersion=${expectedVersion}`, { method: 'DELETE' }, key)
+  }
+
   private attachmentError = (code: ErrorCode, status: number, requestId?: string): Error => {
     return new HubApiError(getRemoteErrorMessage(code), code, status, undefined, false, requestId)
   }
@@ -182,7 +196,7 @@ export class RealLocalChatGateway implements LocalChatGateway {
       const err = envelope.error
       const code = (err?.code || 'INTERNAL') as ErrorCode
       throw new HubApiError(
-        err?.message || `Request failed with code ${code}`,
+        err?.message || (code === 'SESSION_NOT_RESUMABLE' ? '' : `Request failed with code ${code}`),
         code,
         response.status,
         err?.detail as Record<string, unknown> | undefined,

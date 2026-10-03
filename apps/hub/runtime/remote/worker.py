@@ -40,6 +40,8 @@ class RemoteWorker:
         self.projector = Projector(bridge)
         self.busy = BusyState(repository, bridge.chat)
         self.sync = SyncService(repository, bridge.chat, link, self.busy)
+        from runtime.remote.recovery import SyncRecovery
+        self.recovery = SyncRecovery(repository, self.sync)
         self.delivery = DeliveryBridge(repository, bridge.chat, link, self.busy, self.sync)
         self.roots = AuthorizedRoots(repository, bridge.chat.repository)
         self.native = NativeService(repository, bridge.chat, link)
@@ -260,6 +262,7 @@ class RemoteWorker:
                 return
             self.repo.ack(hello["lastServerAck"])
             self.sync.on_ack()
+            self.recovery.on_hello(hello)
             if hello["commandDelivery"] == "frozen" and "reason" not in hello:
                 raise HubError("REMOTE_STORE_CHANGED", "服务端冻结响应缺少原因")
             if revision > active:
@@ -316,7 +319,7 @@ class RemoteWorker:
                 catalog_at = 0.0
                 native_scan = -1
                 while True:
-                    if generation != self.repo.get("link")["generation"]:
+                    if self.closed or generation != self.repo.get("link")["generation"]:
                         return
                     if not self.repo.check_continuity():
                         raise HubError("REMOTE_STORE_CHANGED", "本机存储需要对账")
@@ -369,7 +372,7 @@ class RemoteWorker:
                     await bridge.recover()
                 while True:
                     frame = await queue.get()
-                    if generation != self.repo.get("link")["generation"]:
+                    if self.closed or generation != self.repo.get("link")["generation"]:
                         return
                     resource = revision >= 3 and (frame["type"] in {"native.import","workspace.register"} or (frame["type"] == "command.delivery_granted" and ("conversationId" not in frame or self.resources.row(frame["commandId"]))))
                     receipt, gaps = await (self.resources.receive(frame) if resource else bridge.receive(frame))
@@ -384,7 +387,7 @@ class RemoteWorker:
                 nonlocal last_server_time
                 async for content in ws:
                     frame = decode(content, revision=revision)
-                    if generation != self.repo.get("link")["generation"]:
+                    if self.closed or generation != self.repo.get("link")["generation"]:
                         return
                     if frame["type"] == "worker.hello_rejected":
                         # P1 also uses this generated error envelope when an
