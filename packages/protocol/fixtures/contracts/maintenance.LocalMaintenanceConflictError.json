@@ -1,0 +1,12 @@
+{
+  "code": "CONFLICT",
+  "message": "存在待恢复轮次，请先完成核对",
+  "retryable": false,
+  "detail": {
+    "reason": "recovery_required",
+    "blockingRunIds": [
+      "run_example"
+    ],
+    "hasMoreBlockingRuns": false
+  }
+}

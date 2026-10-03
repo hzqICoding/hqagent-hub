@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer, model_validator
 
-PROTOCOL_VERSION = "0.10.0"
+PROTOCOL_VERSION = "0.10.1"
 
 
 class _Base(BaseModel):
@@ -819,6 +819,12 @@ class BootstrapView(_Base):
     hub_started_at: Timestamp = Field(alias="hubStartedAt")
 
 
+class CancelLocalImageVerificationInput(_RemoteBase):
+    """Cancel owned work only; never starts the cancel probe or new model inference."""
+
+    pass
+
+
 class CancelMode(StrEnum):
     GRACEFUL = "graceful"
     FORCE = "force"
@@ -1130,6 +1136,15 @@ class LocalConnectionCodeView(_Base):
     expires_in_seconds: int = Field(alias="expiresInSeconds")
 
 
+class LocalConversationDeletionView(_RemoteBase):
+    """200 only after Hub-owned rows/files erased. No false cloud completion. Same key/version replays minimal receipt; other key after deletion404. Vendor CLI records untouched."""
+
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    deleted_at: Timestamp = Field(alias="deletedAt", json_schema_extra={'wireNullable': False, 'wireType': None})
+    local_deleted: Literal[True] = Field(alias="localDeleted", json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    remote_cleanup: Literal["not_required", "pending", "confirmed", "unconfirmed"] = Field(alias="remoteCleanup", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
 class NativeActivity(StrEnum):
     UNKNOWN = "unknown"
     LIKELY_ACTIVE = "likely_active"
@@ -1187,6 +1202,159 @@ class LocalEventPage(_Base):
     events: list[HubEvent] = Field(alias="events")
     next_seq: int = Field(alias="nextSeq")
     has_more: bool = Field(alias="hasMore")
+
+
+class LocalImageProbeDiagnostic(_RemoteBase):
+    """Allowlisted verification.py diagnostics only. Omit None codes; unknown exception classes become UnknownError. No raw/message/output/prompt/path fields."""
+
+    result: Literal["ok", "exception", "adapter_failure"] | None = Field(default=None, alias="result", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    elapsed_ms: int | None = Field(default=None, alias="elapsedMs", ge=0, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    matched: bool | None = Field(default=None, alias="matched", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    kind: AdapterFailureKind | None = Field(default=None, alias="kind", json_schema_extra={'wireNullable': False, 'wireType': None})
+    code: ErrorCode | None = Field(default=None, alias="code", json_schema_extra={'wireNullable': False, 'wireType': None})
+    retryable: bool | None = Field(default=None, alias="retryable", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    exception_type: str | None = Field(default=None, alias="exceptionType", min_length=1, max_length=80, pattern='^[A-Za-z_][A-Za-z0-9_]*$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    startup_stage: Literal["process.start", "initialize", "model/list", "thread/start", "thread/resume", "turn/start"] | None = Field(default=None, alias="startupStage", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    os_error: int | None = Field(default=None, alias="osError", ge=-2147483648, le=4294967295, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    win_error: int | None = Field(default=None, alias="winError", ge=-2147483648, le=4294967295, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    outcome: CancelOutcome | None = Field(default=None, alias="outcome", json_schema_extra={'wireNullable': False, 'wireType': None})
+    orphan_process_ids: list[Annotated[int, Field(strict=True, ge=1, le=4294967295)]] | None = Field(default=None, alias="orphanProcessIds", max_length=64, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+
+
+class LocalImageProbeProgress(_RemoteBase):
+    """Structured stage hooks; not_run is not a failed completed probe."""
+
+    state: Literal["not_run", "running", "passed", "failed"] = Field(alias="state", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    started_at: Timestamp | None = Field(default=None, alias="startedAt", json_schema_extra={'wireNullable': False, 'wireType': None})
+    finished_at: Timestamp | None = Field(default=None, alias="finishedAt", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class LocalImageProbeProgressSet(_RemoteBase):
+    new: LocalImageProbeProgress = Field(alias="new", json_schema_extra={'wireNullable': False, 'wireType': None})
+    resume: LocalImageProbeProgress = Field(alias="resume", json_schema_extra={'wireNullable': False, 'wireType': None})
+    mixed_five: LocalImageProbeProgress = Field(alias="mixedFive", json_schema_extra={'wireNullable': False, 'wireType': None})
+    cancel: LocalImageProbeProgress = Field(alias="cancel", json_schema_extra={'wireNullable': False, 'wireType': None})
+    error: LocalImageProbeProgress = Field(alias="error", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class LocalImageProbeResults(_RemoteBase):
+    """Existing five boolean outcomes; unexecuted legacy outcomes remain false. API mixedFive maps exactly to persisted CLI probe mixed-five."""
+
+    new: bool = Field(alias="new", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    resume: bool = Field(alias="resume", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    mixed_five: bool = Field(alias="mixedFive", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    cancel: bool = Field(alias="cancel", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    error: bool = Field(alias="error", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+
+
+class LocalImageVerificationDiagnostics(_RemoteBase):
+    """Closed stage-key map. Legacy records can lack error.check; no arbitrary vendor diagnostic fields. API stage keys use camelCase; map source new.start to newStart etc. Do not dump raw storage keys or values."""
+
+    new_start: LocalImageProbeDiagnostic | None = Field(default=None, alias="newStart", json_schema_extra={'wireNullable': False, 'wireType': None})
+    new_collect: LocalImageProbeDiagnostic | None = Field(default=None, alias="newCollect", json_schema_extra={'wireNullable': False, 'wireType': None})
+    new_recognition: LocalImageProbeDiagnostic | None = Field(default=None, alias="newRecognition", json_schema_extra={'wireNullable': False, 'wireType': None})
+    resume_start: LocalImageProbeDiagnostic | None = Field(default=None, alias="resumeStart", json_schema_extra={'wireNullable': False, 'wireType': None})
+    resume_collect: LocalImageProbeDiagnostic | None = Field(default=None, alias="resumeCollect", json_schema_extra={'wireNullable': False, 'wireType': None})
+    resume_recognition: LocalImageProbeDiagnostic | None = Field(default=None, alias="resumeRecognition", json_schema_extra={'wireNullable': False, 'wireType': None})
+    mixed_five_start: LocalImageProbeDiagnostic | None = Field(default=None, alias="mixedFiveStart", json_schema_extra={'wireNullable': False, 'wireType': None})
+    mixed_five_collect: LocalImageProbeDiagnostic | None = Field(default=None, alias="mixedFiveCollect", json_schema_extra={'wireNullable': False, 'wireType': None})
+    mixed_five_recognition: LocalImageProbeDiagnostic | None = Field(default=None, alias="mixedFiveRecognition", json_schema_extra={'wireNullable': False, 'wireType': None})
+    cancel_start: LocalImageProbeDiagnostic | None = Field(default=None, alias="cancelStart", json_schema_extra={'wireNullable': False, 'wireType': None})
+    cancel_stop: LocalImageProbeDiagnostic | None = Field(default=None, alias="cancelStop", json_schema_extra={'wireNullable': False, 'wireType': None})
+    error_check: LocalImageProbeDiagnostic | None = Field(default=None, alias="errorCheck", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class LocalImageVerificationTarget(_RemoteBase):
+    """Exact local instance/runtime/configuration. Unknown version omitted. Opaque revision contains no path or credential; start requires a detected version and supported transport."""
+
+    agent_id: str = Field(alias="agentId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    agent_type: str = Field(alias="agentType", min_length=1, max_length=80, pattern='^[A-Za-z0-9._-]+$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    model_id_: str | None = Field(default=None, alias="modelId", min_length=1, max_length=160, pattern='^[A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*(?:[/:][A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*)*$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    cli_version: str | None = Field(default=None, alias="cliVersion", min_length=1, max_length=128, pattern='^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\\+[A-Za-z0-9.-]+)?$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    transport: str | None = Field(default=None, alias="transport", min_length=1, max_length=100, pattern='^[A-Za-z0-9._-]+$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target_revision: str = Field(alias="targetRevision", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class LocalImageVerificationRecord(_RemoteBase):
+    """Historical observation, not proof the current target is verified. Publish capability only after complete probes, confirmed cleanup and unchanged binding."""
+
+    record_id: str = Field(alias="recordId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target: LocalImageVerificationTarget = Field(alias="target", json_schema_extra={'wireNullable': False, 'wireType': None})
+    passed: bool = Field(alias="passed", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    probes: LocalImageProbeResults = Field(alias="probes", json_schema_extra={'wireNullable': False, 'wireType': None})
+    diagnostics: LocalImageVerificationDiagnostics = Field(alias="diagnostics", json_schema_extra={'wireNullable': False, 'wireType': None})
+    mime_types: list[Literal["image/png", "image/jpeg", "image/webp", "image/gif"]] = Field(alias="mimeTypes", max_length=4, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    observed_at: Timestamp = Field(alias="observedAt", json_schema_extra={'wireNullable': False, 'wireType': None})
+    job_id: str | None = Field(default=None, alias="jobId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class LocalImageVerificationJobView(_RemoteBase):
+    """Local maintenance job, not TaskStatus or a wire command. Cancellation request is not confirmed stop; interrupted/unconfirmed retains slot until exact execution ends."""
+
+    job_id: str = Field(alias="jobId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    target: LocalImageVerificationTarget = Field(alias="target", json_schema_extra={'wireNullable': False, 'wireType': None})
+    status: Literal["queued", "running", "cancel_requested", "succeeded", "failed", "cancelled", "interrupted"] = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    acknowledge_model_usage: Literal[True] = Field(alias="acknowledgeModelUsage", json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    acknowledged_at: Timestamp = Field(alias="acknowledgedAt", json_schema_extra={'wireNullable': False, 'wireType': None})
+    request_id: str = Field(alias="requestId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    created_at: Timestamp = Field(alias="createdAt", json_schema_extra={'wireNullable': False, 'wireType': None})
+    updated_at: Timestamp = Field(alias="updatedAt", json_schema_extra={'wireNullable': False, 'wireType': None})
+    started_at: Timestamp | None = Field(default=None, alias="startedAt", json_schema_extra={'wireNullable': False, 'wireType': None})
+    finished_at: Timestamp | None = Field(default=None, alias="finishedAt", json_schema_extra={'wireNullable': False, 'wireType': None})
+    probes: LocalImageProbeProgressSet = Field(alias="probes", json_schema_extra={'wireNullable': False, 'wireType': None})
+    diagnostics: LocalImageVerificationDiagnostics = Field(alias="diagnostics", json_schema_extra={'wireNullable': False, 'wireType': None})
+    result: LocalImageVerificationRecord | None = Field(default=None, alias="result", json_schema_extra={'wireNullable': False, 'wireType': None})
+    applied_to_current_target: bool = Field(alias="appliedToCurrentTarget", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    cleanup_state: Literal["not_started", "pending", "confirmed", "unconfirmed"] = Field(alias="cleanupState", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    execution_may_still_be_running: bool = Field(alias="executionMayStillBeRunning", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    orphan_process_ids: list[Annotated[int, Field(strict=True, ge=1, le=4294967295)]] = Field(alias="orphanProcessIds", max_length=64, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    slot_held: bool = Field(alias="slotHeld", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+
+
+class LocalImageVerificationUsage(_RemoteBase):
+    scene_id: str = Field(alias="sceneId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    role_id: str = Field(alias="roleId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class LocalImageVerificationState(_RemoteBase):
+    """One instance x exact selector. Omitted modelId=default. Effective passed=false for stale/unavailable. Old unbound records never auto-apply across instances/models."""
+
+    target: LocalImageVerificationTarget = Field(alias="target", json_schema_extra={'wireNullable': False, 'wireType': None})
+    in_use: bool = Field(alias="inUse", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    usages: list[LocalImageVerificationUsage] = Field(alias="usages", max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    usages_truncated: bool = Field(alias="usagesTruncated", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    status: Literal["unverified", "passed", "failed", "stale", "unavailable"] = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    passed: bool = Field(alias="passed", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    invalidated: bool = Field(alias="invalidated", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    invalidation_reasons: list[Literal["cli_version_changed", "model_changed", "runtime_changed", "configuration_changed", "legacy_unbound", "target_unavailable"]] = Field(alias="invalidationReasons", max_length=6, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    last_record: LocalImageVerificationRecord | None = Field(default=None, alias="lastRecord", json_schema_extra={'wireNullable': False, 'wireType': None})
+    active_job_id: str | None = Field(default=None, alias="activeJobId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    last_job_id: str | None = Field(default=None, alias="lastJobId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class LocalImageVerificationPage(_RemoteBase):
+    """Default50/max100; cursor binds filters and snapshot; hasMore requires nextCursor."""
+
+    items: list[LocalImageVerificationState] = Field(alias="items", max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    has_more: bool = Field(alias="hasMore", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    next_cursor: str | None = Field(default=None, alias="nextCursor", min_length=16, max_length=4096, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+
+
+class LocalMaintenanceConflictDetail(_RemoteBase):
+    """Inspect all associated runs/tasks, not recent200; truncate only returned IDs. No model outputs, paths or task specs."""
+
+    reason: Literal["verification_in_progress", "target_changed", "agent_unavailable", "version_mismatch", "active_runs", "recovery_required", "cancellation_unconfirmed", "deleting"] = Field(alias="reason", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    active_job_id: str | None = Field(default=None, alias="activeJobId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    current_version: int | None = Field(default=None, alias="currentVersion", ge=1, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    blocking_run_ids: list[Annotated[str, Field(strict=True, min_length=1, max_length=160)]] | None = Field(default=None, alias="blockingRunIds", max_length=100, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
+    has_more_blocking_runs: bool | None = Field(default=None, alias="hasMoreBlockingRuns", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+
+
+class LocalMaintenanceConflictError(_RemoteBase):
+    code: Literal["CONFLICT"] = Field(alias="code", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    message: str = Field(alias="message", min_length=1, max_length=200, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    retryable: Literal[False] = Field(alias="retryable", json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    detail: LocalMaintenanceConflictDetail = Field(alias="detail", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
 class LocalMessageReceipt(_Base):
@@ -5681,6 +5849,15 @@ class SessionView(_Base):
     is_valid: bool = Field(alias="isValid")
     summary: str | None = Field(default=None, alias="summary")
     turn_count: int | None = Field(default=None, alias="turnCount")
+
+
+class StartLocalImageVerificationInput(_RemoteBase):
+    """Explicit consent to multiple real model calls and potential charges for this exact target. No automatic model fallback/retry/restart. GET does not run probes."""
+
+    agent_id: str = Field(alias="agentId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    model_id_: str | None = Field(default=None, alias="modelId", min_length=1, max_length=160, pattern='^[A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*(?:[/:][A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*)*$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expected_target_revision: str = Field(alias="expectedTargetRevision", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    acknowledge_model_usage: Literal[True] = Field(alias="acknowledgeModelUsage", json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
 
 
 class SubscribeEventsInput(_Base):

@@ -6,7 +6,7 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.10.0"
+const Version = "0.10.1"
 
 type AdapterId = string
 
@@ -259,6 +259,14 @@ type LocalAuthorizedRootInput struct {
 	RootId *string `json:"rootId,omitempty"`
 	DisplayName string `json:"displayName"`
 	Path string `json:"path"`
+}
+
+type LocalImageProbeResults struct {
+	New bool `json:"new"`
+	Resume bool `json:"resume"`
+	MixedFive bool `json:"mixedFive"`
+	Cancel bool `json:"cancel"`
+	Error bool `json:"error"`
 }
 
 type UpdateChannel string

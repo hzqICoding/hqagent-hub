@@ -470,3 +470,8 @@ unknown按活跃只读；明确确认终端关闭并留审计后才可接续，�
 **取舍**：raw body、64KiB流块，服务端按逻辑附件大小计账号额度、按hash去重物理存储，引用归零才删除共享blob。浏览器上传→uploaded→reserved命令pin→Worker消息attached；电脑先同步pending_upload消息，再上传并发布available或明确unavailable。下载每附件最多3次、每次60s、整轮总300s，崩溃准备轮次明确失败/可手动重试，不永久busy。关闭同步/删除对话/删除设备清所有对应引用、内容及缩略图，直接查存储验收，不以UI隐藏代替真删除。
 
 **边界**：本机v1/v2附件库与能力/缩略图代理入口同时冻结，避免下游自行造接口；内部AgentTaskSpec.inputAttachments可带受控路径，但公开HTTP/WSS绝无路径/凭据/内容。附件PAT scopes只预留，不开放。第二期产物回传、Range/断点续传、OSS直传不在本轮。细则见packages/protocol/remote/R1.6-contract.md，P1/P2/P3业务与真CLI验证另行实施。
+
+
+**D52补充（0.10.1，本机图片验证与删除对话，2026-10-02）**：本机v1 Bearer/v2 Cookie增加验证矩阵、显式费用确认的异步作业、进度/结果和取消；同实例+精确模型选择器全入口唯一，CLI与HTTP共享协调/记录，未确认停止不释放槽。默认modelId省略，不跨模型或实例复用记录；旧未绑定记录作为失效历史。只返回现有五probe和白名单诊断，不返回模型输出/提示词/路径；catalog仍只结论。验证不会在GET/失败重试/Hub重启时自动收费运行。
+
+本机DELETE对话需要expectedVersion CAS及全部关联任务均终结、无准备/暂停/恢复/取消不明；清本机业务记录、独占执行关联、附件库及文件，持久删除栅栏防旧请求复活。同步删除沿既有sync.conversation.deleted/D52真删除，未确认云端则pending/unconfirmed；CLI原始记录和项目源码不动，原生导入只清Hub侧。本轮无云端/手机删除或付费验证入口，手机删除作为后续needs-decision F1，非本轮阻塞。仅本机HTTP增量，包0.10.1、线路4不变，无新增错误码，冲突复用CONFLICT加结构化原因。

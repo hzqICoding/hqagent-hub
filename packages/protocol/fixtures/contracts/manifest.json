@@ -1,6 +1,6 @@
 {
   "$comment": "原子 Contract Fixture 清单。每个文件是单个协议类型的 Golden 样本，不是完整 UI 场景（裁决 D10）。前端的组合场景放在 apps/desktop/src/shared/api/scenarios/ 下，引用这里的文件，不在这里堆 UI 状态。",
-  "protocolVersion": "0.10.0",
+  "protocolVersion": "0.10.1",
   "fixtures": {
     "bootstrap.happy.json": "BootstrapView",
     "agents.discovery-partial.json": "AgentDiscoveryResult",
@@ -374,6 +374,26 @@
     "r16.image-manifest.json": "AttachmentManifestItem",
     "r16.verified-image-capability.json": "ImageInputCapability",
     "r16.image-submit.json": "RemoteV4RunSubmitCommand",
-    "r16.input-preparation-cancelled.json": "RemoteV4ControlConfirmed"
+    "r16.input-preparation-cancelled.json": "RemoteV4ControlConfirmed",
+    "maintenance.LocalImageVerificationTarget.json": "LocalImageVerificationTarget",
+    "maintenance.LocalImageProbeResults.json": "LocalImageProbeResults",
+    "maintenance.LocalImageProbeDiagnostic.json": "LocalImageProbeDiagnostic",
+    "maintenance.LocalImageVerificationDiagnostics.json": "LocalImageVerificationDiagnostics",
+    "maintenance.LocalImageVerificationRecord.json": "LocalImageVerificationRecord",
+    "maintenance.LocalImageVerificationUsage.json": "LocalImageVerificationUsage",
+    "maintenance.StartLocalImageVerificationInput.json": "StartLocalImageVerificationInput",
+    "maintenance.CancelLocalImageVerificationInput.json": "CancelLocalImageVerificationInput",
+    "maintenance.LocalImageProbeProgress.json": "LocalImageProbeProgress",
+    "maintenance.LocalImageProbeProgressSet.json": "LocalImageProbeProgressSet",
+    "maintenance.LocalMaintenanceConflictDetail.json": "LocalMaintenanceConflictDetail",
+    "maintenance.LocalConversationDeletionView.json": "LocalConversationDeletionView",
+    "maintenance.LocalMaintenanceConflictError.json": "LocalMaintenanceConflictError",
+    "maintenance.LocalImageVerificationState.json": "LocalImageVerificationState",
+    "maintenance.LocalImageVerificationPage.json": "LocalImageVerificationPage",
+    "maintenance.LocalImageVerificationJobView.json": "LocalImageVerificationJobView",
+    "maintenance.default-model.json": "LocalImageVerificationState",
+    "maintenance.start-default.json": "StartLocalImageVerificationInput",
+    "maintenance.stale-version.json": "LocalImageVerificationState",
+    "maintenance.interrupted-job.json": "LocalImageVerificationJobView"
   }
 }

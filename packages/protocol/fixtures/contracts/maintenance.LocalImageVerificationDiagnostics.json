@@ -1,0 +1,9 @@
+{
+  "newStart": {
+    "result": "adapter_failure",
+    "elapsedMs": 12,
+    "code": "INTERNAL",
+    "retryable": false,
+    "startupStage": "process.start"
+  }
+}

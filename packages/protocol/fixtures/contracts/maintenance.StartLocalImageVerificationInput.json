@@ -1,0 +1,6 @@
+{
+  "agentId": "local.claude.default",
+  "modelId": "opus",
+  "expectedTargetRevision": "opaque-target-revision-001",
+  "acknowledgeModelUsage": true
+}

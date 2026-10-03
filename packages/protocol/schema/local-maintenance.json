@@ -1,0 +1,698 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "local-maintenance.json",
+  "$defs": {
+    "LocalImageVerificationTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "agentId",
+        "agentType",
+        "targetRevision"
+      ],
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "agentType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "modelId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*(?:[/:][A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*)*$",
+          "description": "Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name."
+        },
+        "cliVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\\+[A-Za-z0-9.-]+)?$"
+        },
+        "transport": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "targetRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Exact local instance/runtime/configuration. Unknown version omitted. Opaque revision contains no path or credential; start requires a detected version and supported transport."
+    },
+    "LocalImageProbeResults": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "new",
+        "resume",
+        "mixedFive",
+        "cancel",
+        "error"
+      ],
+      "properties": {
+        "new": {
+          "type": "boolean"
+        },
+        "resume": {
+          "type": "boolean"
+        },
+        "mixedFive": {
+          "type": "boolean"
+        },
+        "cancel": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "boolean"
+        }
+      },
+      "description": "Existing five boolean outcomes; unexecuted legacy outcomes remain false. API mixedFive maps exactly to persisted CLI probe mixed-five.",
+      "x-go": true
+    },
+    "LocalImageProbeDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [],
+      "properties": {
+        "result": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "exception",
+            "adapter_failure"
+          ]
+        },
+        "elapsedMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "matched": {
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "adapter-port.json#/$defs/AdapterFailureKind"
+        },
+        "code": {
+          "$ref": "common.json#/$defs/ErrorCode"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "exceptionType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "startupStage": {
+          "type": "string",
+          "enum": [
+            "process.start",
+            "initialize",
+            "model/list",
+            "thread/start",
+            "thread/resume",
+            "turn/start"
+          ]
+        },
+        "osError": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 4294967295
+        },
+        "winError": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 4294967295
+        },
+        "outcome": {
+          "$ref": "adapter-port.json#/$defs/CancelOutcome"
+        },
+        "orphanProcessIds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "maxItems": 64
+        }
+      },
+      "description": "Allowlisted verification.py diagnostics only. Omit None codes; unknown exception classes become UnknownError. No raw/message/output/prompt/path fields."
+    },
+    "LocalImageVerificationDiagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [],
+      "properties": {
+        "newStart": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "newCollect": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "newRecognition": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "resumeStart": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "resumeCollect": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "resumeRecognition": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "mixedFiveStart": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "mixedFiveCollect": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "mixedFiveRecognition": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "cancelStart": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "cancelStop": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        },
+        "errorCheck": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeDiagnostic"
+        }
+      },
+      "description": "Closed stage-key map. Legacy records can lack error.check; no arbitrary vendor diagnostic fields. API stage keys use camelCase; map source new.start to newStart etc. Do not dump raw storage keys or values."
+    },
+    "LocalImageVerificationRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "recordId",
+        "target",
+        "passed",
+        "probes",
+        "diagnostics",
+        "mimeTypes",
+        "observedAt"
+      ],
+      "properties": {
+        "recordId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "target": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageVerificationTarget"
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "probes": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeResults"
+        },
+        "diagnostics": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageVerificationDiagnostics"
+        },
+        "mimeTypes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/webp",
+              "image/gif"
+            ]
+          },
+          "maxItems": 4
+        },
+        "observedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Historical observation, not proof the current target is verified. Publish capability only after complete probes, confirmed cleanup and unchanged binding."
+    },
+    "LocalImageVerificationUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "sceneId",
+        "roleId"
+      ],
+      "properties": {
+        "sceneId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "roleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": ""
+    },
+    "LocalImageVerificationState": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "target",
+        "inUse",
+        "usages",
+        "usagesTruncated",
+        "status",
+        "passed",
+        "invalidated",
+        "invalidationReasons"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageVerificationTarget"
+        },
+        "inUse": {
+          "type": "boolean"
+        },
+        "usages": {
+          "type": "array",
+          "items": {
+            "$ref": "local-maintenance.json#/$defs/LocalImageVerificationUsage"
+          },
+          "maxItems": 100
+        },
+        "usagesTruncated": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "unverified",
+            "passed",
+            "failed",
+            "stale",
+            "unavailable"
+          ]
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "invalidated": {
+          "type": "boolean"
+        },
+        "invalidationReasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "cli_version_changed",
+              "model_changed",
+              "runtime_changed",
+              "configuration_changed",
+              "legacy_unbound",
+              "target_unavailable"
+            ]
+          },
+          "maxItems": 6
+        },
+        "lastRecord": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageVerificationRecord"
+        },
+        "activeJobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "lastJobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "One instance x exact selector. Omitted modelId=default. Effective passed=false for stale/unavailable. Old unbound records never auto-apply across instances/models."
+    },
+    "LocalImageVerificationPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "items",
+        "hasMore"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "local-maintenance.json#/$defs/LocalImageVerificationState"
+          },
+          "maxItems": 100
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 4096
+        }
+      },
+      "description": "Default50/max100; cursor binds filters and snapshot; hasMore requires nextCursor."
+    },
+    "StartLocalImageVerificationInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "agentId",
+        "expectedTargetRevision",
+        "acknowledgeModelUsage"
+      ],
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "modelId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*(?:[/:][A-Za-z0-9][A-Za-z0-9._+\\[\\]-]*)*$",
+          "description": "Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name."
+        },
+        "expectedTargetRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "acknowledgeModelUsage": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "description": "Explicit consent to multiple real model calls and potential charges for this exact target. No automatic model fallback/retry/restart. GET does not run probes."
+    },
+    "CancelLocalImageVerificationInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [],
+      "properties": {},
+      "description": "Cancel owned work only; never starts the cancel probe or new model inference."
+    },
+    "LocalImageProbeProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "not_run",
+            "running",
+            "passed",
+            "failed"
+          ]
+        },
+        "startedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "finishedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        }
+      },
+      "description": "Structured stage hooks; not_run is not a failed completed probe."
+    },
+    "LocalImageProbeProgressSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "new",
+        "resume",
+        "mixedFive",
+        "cancel",
+        "error"
+      ],
+      "properties": {
+        "new": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeProgress"
+        },
+        "resume": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeProgress"
+        },
+        "mixedFive": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeProgress"
+        },
+        "cancel": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeProgress"
+        },
+        "error": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeProgress"
+        }
+      },
+      "description": ""
+    },
+    "LocalImageVerificationJobView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "jobId",
+        "target",
+        "status",
+        "acknowledgeModelUsage",
+        "acknowledgedAt",
+        "requestId",
+        "createdAt",
+        "updatedAt",
+        "probes",
+        "diagnostics",
+        "appliedToCurrentTarget",
+        "cleanupState",
+        "executionMayStillBeRunning",
+        "orphanProcessIds",
+        "slotHeld"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "target": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageVerificationTarget"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "cancel_requested",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "acknowledgeModelUsage": {
+          "type": "boolean",
+          "const": true
+        },
+        "acknowledgedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "updatedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "startedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "finishedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "probes": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageProbeProgressSet"
+        },
+        "diagnostics": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageVerificationDiagnostics"
+        },
+        "result": {
+          "$ref": "local-maintenance.json#/$defs/LocalImageVerificationRecord"
+        },
+        "appliedToCurrentTarget": {
+          "type": "boolean"
+        },
+        "cleanupState": {
+          "type": "string",
+          "enum": [
+            "not_started",
+            "pending",
+            "confirmed",
+            "unconfirmed"
+          ]
+        },
+        "executionMayStillBeRunning": {
+          "type": "boolean"
+        },
+        "orphanProcessIds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "maxItems": 64
+        },
+        "slotHeld": {
+          "type": "boolean"
+        }
+      },
+      "description": "Local maintenance job, not TaskStatus or a wire command. Cancellation request is not confirmed stop; interrupted/unconfirmed retains slot until exact execution ends."
+    },
+    "LocalMaintenanceConflictDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "verification_in_progress",
+            "target_changed",
+            "agent_unavailable",
+            "version_mismatch",
+            "active_runs",
+            "recovery_required",
+            "cancellation_unconfirmed",
+            "deleting"
+          ]
+        },
+        "activeJobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "currentVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "blockingRunIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "maxItems": 100
+        },
+        "hasMoreBlockingRuns": {
+          "type": "boolean"
+        }
+      },
+      "description": "Inspect all associated runs/tasks, not recent200; truncate only returned IDs. No model outputs, paths or task specs."
+    },
+    "LocalMaintenanceConflictError": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "detail"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "const": "CONFLICT"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "retryable": {
+          "type": "boolean",
+          "const": false
+        },
+        "detail": {
+          "$ref": "local-maintenance.json#/$defs/LocalMaintenanceConflictDetail"
+        }
+      },
+      "description": ""
+    },
+    "LocalConversationDeletionView": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "conversationId",
+        "deletedAt",
+        "localDeleted",
+        "remoteCleanup"
+      ],
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "deletedAt": {
+          "$ref": "common.json#/$defs/Timestamp"
+        },
+        "localDeleted": {
+          "type": "boolean",
+          "const": true
+        },
+        "remoteCleanup": {
+          "type": "string",
+          "enum": [
+            "not_required",
+            "pending",
+            "confirmed",
+            "unconfirmed"
+          ]
+        }
+      },
+      "description": "200 only after Hub-owned rows/files erased. No false cloud completion. Same key/version replays minimal receipt; other key after deletion404. Vendor CLI records untouched."
+    }
+  }
+}

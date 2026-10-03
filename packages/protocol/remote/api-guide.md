@@ -1,4 +1,4 @@
-# Hub Server 对外接口规范（协议包 0.10.0）
+# Hub Server 对外接口规范（协议包 0.10.1）
 
 R3完整约束见[R3-contract.md](R3-contract.md)。原生接口仅Cookie；附件浏览器/Worker分别用Cookie/设备凭据，不扩展PAT白名单。电脑是原生会话内容与目录安全的唯一权威。
 
@@ -9,7 +9,7 @@ R3完整约束见[R3-contract.md](R3-contract.md)。原生接口仅Cookie；附�
 ## 1. 基础约定
 
 - HTTPS Base URL：`https://<部署域名>`，资源前缀`/api/v2`。示例域名`hub.example.invalid`及全部示例ID/令牌均是合成数据，不能用于真实认证。
-- `protocolVersion`是协议包版本，当前0.10.0；URI版本仍v2。Worker线路修订支持[1,2,3,4]，以wireRevision协商，不能拿包版本相等当接入条件。
+- `protocolVersion`是协议包版本，当前0.10.1；URI版本仍v2。Worker线路修订支持[1,2,3,4]，以wireRevision协商，不能拿包版本相等当接入条件。
 - 请求和响应JSON使用UTF-8、camelCase。写入通常`Content-Type: application/json`；无请求体的DELETE不要求伪造JSON。拒绝未声明的输入字段，不接受客户端传owner/账号归属字段。
 - 时间统一RFC3339 UTC `Z`，例如`2026-09-27T12:00:00.000Z`。ID是不可解析的有界字符串，按Schema长度限制，拼URL时编码路径段。安全整数上限2^53-1。
 - 成功信封：`{success:true,data,requestId,protocolVersion}`；失败：`{success:false,error,requestId,protocolVersion}`。两者互斥，不以HTTP200包装失败，不在失败时返回业务data。
@@ -19,7 +19,7 @@ R3完整约束见[R3-contract.md](R3-contract.md)。原生接口仅Cookie；附�
 示例错误（已授权资源的CAS冲突）：
 
 ```json
-{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.10.0"}
+{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.10.1"}
 ```
 
 ## 2. 鉴权矩阵与凭据边界
@@ -589,7 +589,7 @@ curl -X POST "$BASE/api/v2/devices/worker_demo/workspaces" --cookie "__Host-hqre
 云端GET /devices/{workerId}/native-sessions、GET /native-sessions/{nativeSessionId}、GET /native-sessions/{nativeSessionId}/messages统一遵循：认证/归属→设备不存在或已删除404→同步关闭409。暂停不影响读取；同步关闭也先于正文在线查询。详情/读取未知或跨账号ID仍404，只有已核实的ID归属映射才能判断所属设备的开关。
 
 ```json
-{"success":false,"error":{"code":"REMOTE_SYNC_DISABLED","message":"这台电脑已关闭同步","retryable":false},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.10.0"}
+{"success":false,"error":{"code":"REMOTE_SYNC_DISABLED","message":"这台电脑已关闭同步","retryable":false},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.10.1"}
 ```
 
 三个接口均返回HTTP409及上述错误，X-Request-Id与信封一致，Cache-Control:no-store。前端显示“这台电脑已关闭同步”，不能显示“没有原生会话”；提示去电脑开启同步，等待补传后刷新，不自动重试。同步开启而确实没有会话时，列表才返回200空页（items=[]、hasMore=false），不存在的详情/读取仍404。sync.reset不保留内容，仅允许无内容的归属映射用于区分已关闭；设备删除优先404。本机原生会话接口不受此门禁影响。
@@ -667,3 +667,10 @@ Worker上传不创建任何用户消息；必须先同步pending_upload消息，
 桌面使用**本机**v1 Bearer/v2 Cookie的同名附件库操作（详见两个local OpenAPI），还可GET /conversations/{id}/attachment-capabilities获取实际能力。仅手机侧账号配额由远程查询提供，本机无配对不伪造云用量。本机thumbnail是服务端生成缩略图的认证代理，不在电脑解码原图；离线/未同步显示图标。云端与本机ID/Cookie不可互换。
 
 只记录附件ID/大小/hash前缀/requestId和既有固定状态字段，不记录文件名、内容、URL或凭据。排查仍用requestId匹配journalctl；真删除要按契约直接检查存储、引用和缩略图，不能只凭列表隐藏判定。
+
+
+## 15. 本机维护接口（0.10.1，不属于云端Base URL）
+
+图片能力验证与删除对话仅在电脑Local Hub：两个local OpenAPI各有v1 Bearer/v2 localSession Cookie等价路由。GET /agents/image-verifications查询实例×场景实际模型及默认模型（省略modelId）的验证事实；POST /agents/image-verification-jobs必须明确acknowledgeModelUsage=true，会发起真实模型调用并可能收费；GET /agents/image-verification-jobs/{jobId}读取进度，POST其/cancellations仅取消已有工作。任何GET不得触发验证，失败/重启不自动重新收费。云端和手机没有这些路由，catalog仅传已有能力结论。
+
+本机DELETE /conversations/{conversationId}?expectedVersion=N只允许无活动或待恢复任务的对话，200表示本机记录与文件已清理；remoteCleanup单独表示云端是否确认。CLI原始记录不删。手机删除是后续needs-decision，本轮不开放。完整费用、锁、失效、诊断白名单与删除幂等规则见R1.6-contract §9，不能把本机Cookie/Hub Token带到云端接口。
