@@ -130,20 +130,32 @@ impl ShellConfigStore {
 pub fn configured_executable(
     configured: Option<&Path>,
     environment_key: &str,
+    resource_dir: &Path,
     default_name: &str,
 ) -> Result<PathBuf, ShellError> {
-    if let Some(value) = env::var_os(environment_key).filter(|value| !value.is_empty()) {
-        return Ok(PathBuf::from(value));
+    resolve_executable(
+        configured,
+        env::var_os(environment_key),
+        resource_dir,
+        default_name,
+    )
+}
+
+fn resolve_executable(
+    configured: Option<&Path>,
+    environment: Option<std::ffi::OsString>,
+    resource_dir: &Path,
+    default_name: &str,
+) -> Result<PathBuf, ShellError> {
+    let path = environment
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| configured.map(Path::to_path_buf))
+        .unwrap_or_else(|| resource_dir.join(default_name));
+    if !path.is_absolute() {
+        return Err(ShellError::InvalidConfig("进程路径必须为绝对路径".into()));
     }
-    if let Some(path) = configured {
-        return Ok(path.to_path_buf());
-    }
-    let current = env::current_exe()
-        .map_err(|error| ShellError::InvalidConfig(format!("无法定位桌面程序: {error}")))?;
-    let parent = current
-        .parent()
-        .ok_or_else(|| ShellError::InvalidConfig("桌面程序路径没有父目录".into()))?;
-    Ok(parent.join(default_name))
+    Ok(path)
 }
 
 #[cfg(test)]
@@ -156,11 +168,35 @@ mod tests {
     }
 
     #[test]
+    fn bundle_maps_full_onedir_and_limits_connections_to_loopback() {
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(config["bundle"]["resources"]["../../../dist/hqagent-core/"], "core/");
+        assert_eq!(config["bundle"]["resources"]["../dist/"], "web/");
+        assert_eq!(config["bundle"]["windows"]["nsis"]["installMode"], "currentUser");
+        let connect = config["app"]["security"]["csp"]["connect-src"].as_array().unwrap();
+        assert!(connect.contains(&serde_json::json!("http://127.0.0.1:*")));
+        assert!(connect.contains(&serde_json::json!("ws://127.0.0.1:*")));
+        assert!(!connect.iter().any(|v| matches!(v.as_str(), Some("*" | "http:" | "https:" | "https://*"))));
+    }
+
+    #[test]
     fn config_store_persists_autostart_choice() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("desktop-shell.json");
         let store = ShellConfigStore::load(path.clone()).expect("load");
         store.set_autostart(false).expect("save");
         assert!(!ShellConfigStore::load(path).expect("reload").get().autostart);
+    }
+
+    #[test]
+    fn resource_paths_and_overrides_are_independent_of_working_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let packaged = root.path().join("core/hqagent-core.exe");
+        let configured = root.path().join("custom.exe");
+        let environment = root.path().join("override.exe");
+        assert_eq!(super::resolve_executable(None, None, root.path(), "core/hqagent-core.exe").unwrap(), packaged);
+        assert_eq!(super::resolve_executable(Some(&configured), None, root.path(), "core/hqagent-core.exe").unwrap(), configured);
+        assert_eq!(super::resolve_executable(Some(&configured), Some(environment.clone().into_os_string()), root.path(), "core/hqagent-core.exe").unwrap(), environment);
+        assert!(super::resolve_executable(Some(std::path::Path::new("relative.exe")), None, root.path(), "core/hqagent-core.exe").is_err());
     }
 }
