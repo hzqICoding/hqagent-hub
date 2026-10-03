@@ -2,13 +2,12 @@
 import json
 import os
 from pathlib import Path
-import re
 import tomllib
 
+from adapters.versions import cli_version
 from storage.idempotency import request_hash
 
 TRANSPORTS = {'claude': 'stream-json-image-v1', 'codex': 'app-server-localImage-v1'}
-VERSION = re.compile(r'^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$')
 # Authentication rotation and presentation settings intentionally do not invalidate
 # paid observations. Only observable routing/model/input settings contribute.
 CONFIG_KEYS = {'model', 'model_provider', 'model_providers', 'base_url', 'wire_api',
@@ -51,7 +50,8 @@ def target_for(agent_id, kind, version, model, adapter):
     target = {'agentId': agent_id, 'agentType': kind}
     if model is not None:
         target['modelId'] = model
-    if version and VERSION.fullmatch(version):
+    version = cli_version(version)
+    if version is not None:
         target['cliVersion'] = version
     if kind in TRANSPORTS:
         target['transport'] = TRANSPORTS[kind]

@@ -9,6 +9,7 @@ from protocol.generated.python import (AdapterFailure, CancelRequest, ERROR_CATA
     LocalImageProbeDiagnostic, LocalImageVerificationJobView, LocalImageVerificationPage,
     LocalImageVerificationRecord, StartLocalImageVerificationInput)
 from core.errors import HubError
+from adapters.versions import cli_version
 from runtime.remote.security import CredentialVault
 from runtime.attachments.capabilities import VerificationStore, REQUIRED_PROBES
 from runtime.attachments.verification_target import target_for
@@ -56,11 +57,11 @@ def diagnostics_view(raw):
 def record_view(record, target):
     historical = record.get('target')
     if not historical:
-        from runtime.attachments.verification_target import VERSION
         historical = {**target, 'targetRevision': 'legacy_unbound'}
         historical.pop('cliVersion', None)
-        if isinstance(record.get('version'), str) and VERSION.fullmatch(record['version']):
-            historical['cliVersion'] = record['version']
+        version = cli_version(record.get('version'))
+        if version is not None:
+            historical['cliVersion'] = version
     value = dict(recordId=record.get('recordId', 'legacy-' + request_hash(record)[:32]),
         target=historical, passed=bool(record['passed']),
         probes={k.replace('mixed-five', 'mixedFive'): bool(record['probes'].get(k, False)) for k in REQUIRED_PROBES},
