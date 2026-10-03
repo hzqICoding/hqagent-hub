@@ -33,6 +33,11 @@ class NativeService:
             # Never guess a device for an unknown or another owner's public ID.
             mapping = tx.sync_reverse(owner, 'native-index', identifier)
             require(mapping is not None and not mapping['deleted'], 'NOT_FOUND')
+            from .client_features import legacy_request
+            require(not legacy_request() or not tx.get(owner,'pi-resource','native-index:'+identifier),'NOT_FOUND')
+            index = tx.get(owner,'native-index',identifier)
+            if index is not None:
+                self.projection.require_visible(tx,owner,index)
             device = self.get(tx, owner, 'device', mapping['worker'])
             require(device['workerStoreId'] == mapping['store'], 'NOT_FOUND')
             self.native_sync_enabled(tx, owner, mapping['worker'])
@@ -49,12 +54,12 @@ class NativeService:
         device = self.native_sync_enabled(tx, owner, worker)
         limit = int(query.get('limit', 50)); require(1 <= limit <= 100)
         workspace, agent = query.get('workspaceId'), query.get('agentType')
-        require(agent is None or agent in {'claude', 'codex'})
+        require(agent is None or agent in {'claude', 'codex', 'pi'})
         if workspace:
             self.workspace_local(tx, owner, worker, device['workerStoreId'], workspace)
         scope = digest(['native-index', worker, device['workerStoreId'], workspace, agent])
         rows = [v for v in tx.list(owner, 'native-index', worker=worker, store=device['workerStoreId'])
-                if (not workspace or v['workspaceId'] == workspace) and (not agent or v['agentType'] == agent)]
+                if self.projection.allowed(tx,owner,v) and (not workspace or v['workspaceId'] == workspace) and (not agent or v['agentType'] == agent)]
         def order(v): return [v['updatedAt'], v['nativeSessionId']]
         rows.sort(key=order, reverse=True)
         claim = self.untoken(owner, scope, query['cursor']) if query.get('cursor') else dict(data=dict(cut=order(rows[0]) if rows else ['', ''], before=None), expires=int(self.settings.clock()+self.settings.cursor_ttl))
@@ -78,6 +83,7 @@ class NativeService:
     def import_native(self, tx, owner, identifier, body, request_id):
         value = self.native_get(tx, owner, identifier)
         connection = self.r3_ready(tx, owner, value['workerId'])
+        require(value['agentType'] != 'pi' or connection.revision == 5, 'REMOTE_REVISION_REQUIRED')
         require(value['format']['status'] == 'readable', 'NATIVE_SESSION_UNSUPPORTED')
         require(body['terminalClosedConfirmed'] is True)
         require(value['indexVersion'] == body['expectedIndexVersion'] and value['sourceRevision'] == body['sourceRevision'], 'NATIVE_SESSION_CHANGED')
@@ -137,6 +143,7 @@ class NativeService:
         if operation == 'native_read':
             value = self.native_get(tx, owner, path['nativeSessionId'], check_sync=True)
             connection = self.r3_ready(tx, owner, value['workerId'], read=True)
+            require(value['agentType'] != 'pi' or connection.revision == 5, 'REMOTE_REVISION_REQUIRED')
             require(value['format']['status'] == 'readable', 'NATIVE_SESSION_UNSUPPORTED')
             payload = dict(nativeSessionId=value['_localId'], limit=int(query.get('limit', 50)))
             if 'before' in query: payload['before'] = query['before']
