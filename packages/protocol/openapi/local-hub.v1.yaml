@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HQAgent-Hub Local Hub API
-  version: 0.10.1
+  version: 0.11.0
   description: |
     Vue 与 Tauri 桌面壳的**唯一**网络契约（裁决 D1）。Update Agent 的内部 API 见
     `update-agent.internal.v1.yaml`，它不向 Vue 暴露第二个 Base URL、第二个 Token
@@ -90,6 +90,14 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope.data; no model output or path.
@@ -172,7 +180,7 @@ paths:
                         lastJobId: verification_job_example
                       hasMore: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '401':
           description: ApiEnvelope.error
           headers:
@@ -197,7 +205,7 @@ paths:
                       message: 缺少或错误的 Bearer token；token 只能来自 hub.json
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '403':
           description: ApiEnvelope.error
           headers:
@@ -223,7 +231,7 @@ paths:
                         HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '404':
           description: ApiEnvelope.error
           headers:
@@ -248,7 +256,7 @@ paths:
                       message: 目标资源不存在
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '422':
           description: ApiEnvelope.error
           headers:
@@ -273,7 +281,7 @@ paths:
                       message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '500':
           description: ApiEnvelope.error
           headers:
@@ -298,7 +306,7 @@ paths:
                       message: 未分类的内部错误，detail 里带 requestId 供查日志
                       retryable: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '400':
           description: ApiEnvelope.error
           headers:
@@ -323,7 +331,7 @@ paths:
                       message: 游标无效或与当前资源/认证范围不符，不泄露游标归属
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '410':
           description: ApiEnvelope.error
           headers:
@@ -348,7 +356,7 @@ paths:
                       message: 浏览器opaque游标已失效，需重新获取owner范围快照
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
       x-error-codes:
       - UNAUTHORIZED
       - ORIGIN_NOT_ALLOWED
@@ -378,6 +386,14 @@ paths:
           type: string
           minLength: 1
           maxLength: 200
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '202':
           description: ApiEnvelope.data; no model output or path.
@@ -433,7 +449,7 @@ paths:
                       orphanProcessIds: []
                       slotHeld: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '401':
           description: ApiEnvelope.error
           headers:
@@ -458,7 +474,7 @@ paths:
                       message: 缺少或错误的 Bearer token；token 只能来自 hub.json
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '403':
           description: ApiEnvelope.error
           headers:
@@ -484,7 +500,7 @@ paths:
                         HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '404':
           description: ApiEnvelope.error
           headers:
@@ -509,7 +525,7 @@ paths:
                       message: 目标资源不存在
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '422':
           description: ApiEnvelope.error
           headers:
@@ -534,7 +550,7 @@ paths:
                       message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '500':
           description: ApiEnvelope.error
           headers:
@@ -559,7 +575,7 @@ paths:
                       message: 未分类的内部错误，detail 里带 requestId 供查日志
                       retryable: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '409':
           description: ApiEnvelope.error
           headers:
@@ -584,7 +600,7 @@ paths:
                       message: 相同 Idempotency-Key 复用于不同请求体
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
                 CONFLICT:
                   value:
                     success: false
@@ -596,7 +612,7 @@ paths:
                         reason: verification_in_progress
                         activeJobId: verification_job_example
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
           x-errorVariantSchema:
             $ref: ../schema/local-maintenance.json#/$defs/LocalMaintenanceConflictError
       requestBody:
@@ -633,6 +649,14 @@ paths:
           type: string
           minLength: 1
           maxLength: 160
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope.data; no model output or path.
@@ -688,7 +712,7 @@ paths:
                       orphanProcessIds: []
                       slotHeld: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '401':
           description: ApiEnvelope.error
           headers:
@@ -713,7 +737,7 @@ paths:
                       message: 缺少或错误的 Bearer token；token 只能来自 hub.json
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '403':
           description: ApiEnvelope.error
           headers:
@@ -739,7 +763,7 @@ paths:
                         HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '404':
           description: ApiEnvelope.error
           headers:
@@ -764,7 +788,7 @@ paths:
                       message: 目标资源不存在
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '422':
           description: ApiEnvelope.error
           headers:
@@ -789,7 +813,7 @@ paths:
                       message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '500':
           description: ApiEnvelope.error
           headers:
@@ -814,7 +838,7 @@ paths:
                       message: 未分类的内部错误，detail 里带 requestId 供查日志
                       retryable: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
       x-error-codes:
       - UNAUTHORIZED
       - ORIGIN_NOT_ALLOWED
@@ -849,6 +873,14 @@ paths:
           type: string
           minLength: 1
           maxLength: 200
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '202':
           description: ApiEnvelope.data; no model output or path.
@@ -904,7 +936,7 @@ paths:
                       orphanProcessIds: []
                       slotHeld: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '200':
           description: ApiEnvelope.data; no model output or path.
           headers:
@@ -960,7 +992,7 @@ paths:
                       slotHeld: false
                       finishedAt: '2026-10-02T12:00:00Z'
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '401':
           description: ApiEnvelope.error
           headers:
@@ -985,7 +1017,7 @@ paths:
                       message: 缺少或错误的 Bearer token；token 只能来自 hub.json
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '403':
           description: ApiEnvelope.error
           headers:
@@ -1011,7 +1043,7 @@ paths:
                         HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '404':
           description: ApiEnvelope.error
           headers:
@@ -1036,7 +1068,7 @@ paths:
                       message: 目标资源不存在
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '422':
           description: ApiEnvelope.error
           headers:
@@ -1061,7 +1093,7 @@ paths:
                       message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '500':
           description: ApiEnvelope.error
           headers:
@@ -1086,7 +1118,7 @@ paths:
                       message: 未分类的内部错误，detail 里带 requestId 供查日志
                       retryable: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '409':
           description: ApiEnvelope.error
           headers:
@@ -1111,7 +1143,7 @@ paths:
                       message: 相同 Idempotency-Key 复用于不同请求体
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
                 CONFLICT:
                   value:
                     success: false
@@ -1123,7 +1155,7 @@ paths:
                         reason: verification_in_progress
                         activeJobId: verification_job_example
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
           x-errorVariantSchema:
             $ref: ../schema/local-maintenance.json#/$defs/LocalMaintenanceConflictError
       requestBody:
@@ -1166,6 +1198,14 @@ paths:
         schema:
           type: string
         example: attachment_demo
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: Authenticated streaming bytes, not ApiEnvelope; errors before streaming use JSON error envelope. No
@@ -1290,6 +1330,14 @@ paths:
           maxLength: 36
           pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
         example: 12345678-1234-4234-9234-123456789abc
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope data; no raw authentication credential in JSON.
@@ -1561,6 +1609,14 @@ paths:
           type: string
           pattern: ^[0-9a-f]{64}$
         example: e2dbfe68423abd2a4aae75a697a9f47ef0298a44f8b40def76f878ee228a9e8d
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '201':
           description: ApiEnvelope data; no raw authentication credential in JSON.
@@ -1840,6 +1896,14 @@ paths:
         schema:
           type: string
         example: attachment_demo
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope data; no raw authentication credential in JSON.
@@ -2054,6 +2118,14 @@ paths:
         schema:
           type: string
         example: attachment_demo
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope data; no raw authentication credential in JSON.
@@ -2266,6 +2338,14 @@ paths:
         schema:
           type: string
         example: attachment_demo
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: Authenticated streaming bytes, not ApiEnvelope; errors before streaming use JSON error envelope. No
@@ -2476,6 +2556,14 @@ paths:
         schema:
           type: string
         example: conversation_demo
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope data; no raw authentication credential in JSON.
@@ -2537,7 +2625,7 @@ paths:
         in: query
         required: false
         schema:
-          $ref: ../schema/remote-native.json#/$defs/NativeAgentType
+          $ref: ../schema/remote-pi.json#/$defs/RuntimeNativeAgentType
       - name: cursor
         in: query
         required: false
@@ -2553,6 +2641,14 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
@@ -2680,6 +2776,14 @@ paths:
           type: string
           minLength: 1
           maxLength: 160
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
@@ -2689,7 +2793,7 @@ paths:
                 type: string
                 const: no-store
           x-dataSchema:
-            $ref: ../schema/remote-native.json#/$defs/NativeSessionIndex
+            $ref: ../schema/remote-pi.json#/$defs/RuntimeNativeSessionIndex
           content:
             application/json:
               schema:
@@ -2781,6 +2885,14 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
@@ -2935,6 +3047,14 @@ paths:
         required: true
         schema:
           type: string
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '201':
           description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
@@ -3086,7 +3206,15 @@ paths:
               schema:
                 type: string
                 const: no-store
-      parameters: []
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
     put:
       operationId: putLocalAuthorizedRootsV1
       security:
@@ -3144,6 +3272,14 @@ paths:
         required: true
         schema:
           type: string
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -3190,6 +3326,14 @@ paths:
           type: string
           minLength: 1
           maxLength: 200
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope.data; no model output or path.
@@ -3218,7 +3362,7 @@ paths:
                       localDeleted: true
                       remoteCleanup: pending
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '401':
           description: ApiEnvelope.error
           headers:
@@ -3243,7 +3387,7 @@ paths:
                       message: 缺少或错误的 Bearer token；token 只能来自 hub.json
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '403':
           description: ApiEnvelope.error
           headers:
@@ -3269,7 +3413,7 @@ paths:
                         HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '404':
           description: ApiEnvelope.error
           headers:
@@ -3294,7 +3438,7 @@ paths:
                       message: 目标资源不存在
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '422':
           description: ApiEnvelope.error
           headers:
@@ -3319,7 +3463,7 @@ paths:
                       message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '500':
           description: ApiEnvelope.error
           headers:
@@ -3344,7 +3488,7 @@ paths:
                       message: 未分类的内部错误，detail 里带 requestId 供查日志
                       retryable: true
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
         '409':
           description: ApiEnvelope.error
           headers:
@@ -3369,7 +3513,7 @@ paths:
                       message: 相同 Idempotency-Key 复用于不同请求体
                       retryable: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
                 CONFLICT:
                   value:
                     success: false
@@ -3383,7 +3527,7 @@ paths:
                         - run_example
                         hasMoreBlockingRuns: false
                     requestId: req_maintenance_example
-                    protocolVersion: 0.10.1
+                    protocolVersion: 0.11.0
           x-errorVariantSchema:
             $ref: ../schema/local-maintenance.json#/$defs/LocalMaintenanceConflictError
       x-error-codes:
@@ -3413,6 +3557,14 @@ paths:
         required: true
         schema:
           type: string
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -3461,6 +3613,14 @@ paths:
         required: false
         schema:
           type: string
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       security:
       - bearerAuth: []
       description: Computer list excludes mobile_only by default. includeHidden=true recovers hidden rows for
@@ -3487,6 +3647,15 @@ paths:
                 $ref: ../schema/envelope.json#/$defs/ApiEnvelope
           x-dataSchema:
             $ref: ../schema/remote-sync.json#/$defs/RemoteSyncSettingsView
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
     put:
       operationId: setSyncSettingsV1
       security: *id001
@@ -3501,6 +3670,14 @@ paths:
           type: string
           minLength: 1
           maxLength: 200
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -3541,6 +3718,15 @@ paths:
             $ref: "../schema/remote-link.json#/$defs/RemoteLinkView"
         "401":
           $ref: "#/components/responses/Error"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/remote/pairing:
     post:
       tags: [system]
@@ -3557,6 +3743,14 @@ paths:
           in: header
           required: true
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -3593,6 +3787,14 @@ paths:
           in: header
           required: true
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           description: ApiEnvelope.data为RemoteLinkView，state=unpaired；不再返回短码。
@@ -3622,6 +3824,14 @@ paths:
           in: header
           required: true
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           description: ApiEnvelope.data为RemoteLinkView，state=unpaired；仅保证本机已断开并清理凭据。
@@ -3651,6 +3861,15 @@ paths:
               schema:
                 $ref: "../schema/envelope.json#/$defs/HealthView"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/bootstrap:
     get:
       tags: [system]
@@ -3659,6 +3878,15 @@ paths:
         "200":
           $ref: "#/components/responses/Bootstrap"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/auth/ws-ticket:
     post:
       tags: [system]
@@ -3675,6 +3903,15 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/agents:
     get:
       tags: [agents]
@@ -3683,6 +3920,15 @@ paths:
         "200":
           $ref: "#/components/responses/AgentList"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/agents/discovery:
     post:
       tags: [agents]
@@ -3691,6 +3937,15 @@ paths:
         "200":
           $ref: "#/components/responses/AgentDiscovery"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/workspaces:
     get:
       tags: [workspaces]
@@ -3698,6 +3953,14 @@ paths:
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1 } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           $ref: "#/components/responses/WorkspaceList"
@@ -3717,6 +3980,15 @@ paths:
         "200":
           $ref: "#/components/responses/Workspace"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/workspaces/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -3728,6 +4000,15 @@ paths:
         "200":
           $ref: "#/components/responses/Ok"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/workspaces/{id}/init-git:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -3741,6 +4022,15 @@ paths:
         "200":
           $ref: "#/components/responses/Workspace"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/workspaces/{id}/init-memory:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -3751,6 +4041,15 @@ paths:
         "200":
           $ref: "#/components/responses/Workspace"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/team-profiles:
     get:
       tags: [team-profiles]
@@ -3759,6 +4058,15 @@ paths:
         "200":
           $ref: "#/components/responses/TeamProfileList"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/team-profiles/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -3770,6 +4078,15 @@ paths:
           $ref: "#/components/responses/TeamProfile"
         "404":
           $ref: "#/components/responses/Error"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
     put:
       tags: [team-profiles]
       summary: 保存 Team Profile
@@ -3783,6 +4100,15 @@ paths:
         "200":
           $ref: "#/components/responses/TeamProfile"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/team-profiles/resolve:
     post:
       tags: [team-profiles]
@@ -3797,6 +4123,15 @@ paths:
         "200":
           $ref: "#/components/responses/ResolvedTeam"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/tasks:
     get:
       tags: [tasks]
@@ -3807,6 +4142,14 @@ paths:
         - { name: status, in: query, schema: { $ref: "../schema/common.json#/$defs/TaskStatus" } }
         - { name: workspaceId, in: query, schema: { type: string } }
         - { name: search, in: query, schema: { type: string } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           $ref: "#/components/responses/TaskPage"
@@ -3818,6 +4161,14 @@ paths:
         不要靠前端自己猜测能否创建。
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -3840,6 +4191,15 @@ paths:
         "200":
           $ref: "#/components/responses/TaskDetail"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/tasks/{id}/actions:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -3848,6 +4208,14 @@ paths:
       summary: 暂停 / 继续 / 取消 / 重试 / 追加指令
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -3868,6 +4236,14 @@ paths:
         - { name: onlyValid, in: query, schema: { type: boolean } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
         - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           $ref: "#/components/responses/SessionPage"
@@ -3893,6 +4269,15 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/approvals:
     get:
       tags: [approvals]
@@ -3900,6 +4285,14 @@ paths:
       parameters:
         - { name: status, in: query, schema: { $ref: "../schema/common.json#/$defs/ApprovalStatus" } }
         - { name: taskId, in: query, schema: { type: string } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           $ref: "#/components/responses/ApprovalList"
@@ -3912,6 +4305,14 @@ paths:
       summary: 批准或拒绝
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -3932,6 +4333,15 @@ paths:
         "200":
           $ref: "#/components/responses/UserSettings"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/settings/appearance:
     put:
       tags: [settings]
@@ -3947,6 +4357,15 @@ paths:
           $ref: "#/components/responses/Appearance"
 
   # ---- 升级：9 条细路径，由 Local Hub 代理到 Update Agent（裁决 D1）----
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/state:
     get:
       tags: [updates]
@@ -3954,6 +4373,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/check:
     post:
       tags: [updates]
@@ -3961,6 +4389,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/download:
     post:
       tags: [updates]
@@ -3968,6 +4405,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/cancel:
     post:
       tags: [updates]
@@ -3975,6 +4421,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/install:
     post:
       tags: [updates]
@@ -3991,6 +4446,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/defer:
     post:
       tags: [updates]
@@ -4004,6 +4468,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/releases:
     get:
       tags: [updates]
@@ -4011,6 +4484,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ReleaseList"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/result:
     get:
       tags: [updates]
@@ -4018,6 +4500,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateResult"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/result/acknowledge:
     post:
       tags: [updates]
@@ -4033,6 +4524,15 @@ paths:
           $ref: "#/components/responses/UpdateResult"
 
   # ---- 事件 ----
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/events:
     get:
       tags: [events]
@@ -4044,6 +4544,14 @@ paths:
           schema: { type: integer, minimum: 0 }
           description: 客户端最后确认的 seq，返回 (after, now] 区间
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000 } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           $ref: "#/components/responses/EventPage"
@@ -4059,6 +4567,14 @@ paths:
       parameters:
         - { name: ticket, in: query, required: true, schema: { type: string } }
         - { name: after, in: query, schema: { type: integer, minimum: 0 } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "101":
           description: 切换协议成功，后续帧为 HubEvent
@@ -4073,6 +4589,15 @@ paths:
       responses:
         "200":
           description: OK
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /internal/drain/state:
     get:
       tags: [internal]
@@ -4084,6 +4609,15 @@ paths:
             application/json:
               schema:
                 $ref: "../schema/update-state.json#/$defs/DrainProgress"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /internal/drain/start:
     post:
       tags: [internal]
@@ -4091,6 +4625,15 @@ paths:
       responses:
         "200":
           description: OK
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /internal/backup/database:
     post:
       tags: [internal]
@@ -4099,6 +4642,15 @@ paths:
         "200":
           description: OK
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
 components:
   securitySchemes:
     bearerAuth:
@@ -4257,3 +4809,12 @@ components:
         application/json:
           schema:
             $ref: "../schema/envelope.json#/$defs/EventPage"
+
+x-pi-client-compatibility:
+  feature: pi-v1
+  header: X-HQ-Client-Features
+  default: 0.10.1 projection; omit PI resources and new optional guard/model/format fields. Direct PI resource without opt-in
+    returns existing NOT_FOUND, never relabels agentType.
+  cursor: Bind negotiated feature set to list/event cursors and WS tickets. Reset snapshot on feature change; no cursor reuse
+    between projections.
+  authorization: Display/decoder capability only. No authentication, approval, runtime or billing privilege.

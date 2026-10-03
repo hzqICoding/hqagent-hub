@@ -1,0 +1,16 @@
+{
+  "roleId": "analyst",
+  "agentId": "local.pi.synthetic",
+  "imageInput": {
+    "support": "unknown",
+    "cliEntry": "supported",
+    "runtimeImplemented": false,
+    "verified": false,
+    "mimeTypes": [],
+    "maxBytes": 0,
+    "reason": "实际传输尚未验证"
+  },
+  "agentType": "pi",
+  "modelId": "1aicode/deepseek/deepseek-v4-flash-vision-exp",
+  "transport": "pi-rpc-images-v1"
+}

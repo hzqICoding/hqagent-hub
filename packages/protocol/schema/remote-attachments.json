@@ -545,12 +545,12 @@
         "roles": {
           "type": "array",
           "items": {
-            "$ref": "remote-attachments.json#/$defs/RoleImageCapability"
+            "$ref": "remote-pi.json#/$defs/RuntimeRoleImageCapability"
           },
           "maxItems": 32
         },
         "native": {
-          "$ref": "remote-attachments.json#/$defs/NativeImageCapability"
+          "$ref": "remote-pi.json#/$defs/RuntimeNativeImageCapability"
         }
       },
       "description": "All selected scenario roles, not only executor; native uses exactly one native entry and no scenario roles. Missing role or stale information fails closed."

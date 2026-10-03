@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "sessionId": "hub-session-synthetic",
+  "guardRevision": "guard-v1",
+  "policyRevision": "policy-1",
+  "toolInventorySha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "isolation": "hub_extension_only",
+  "activeTools": [
+    "read",
+    "grep",
+    "find",
+    "ls"
+  ]
+}
