@@ -4,11 +4,12 @@ import { setActivePinia, createPinia } from 'pinia'
 import AgentsPage from './AgentsPage.vue'
 import { useAppStore } from '@/stores/app.store'
 import { useAgentStore } from '@/stores/agent.store'
-import { mockGateway } from '@/shared/api'
+import { setLocalChatGatewayMode, mockGateway } from '@/shared/api'
 
 describe('AgentsPage', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    setLocalChatGatewayMode('mock')
     mockGateway.setDelay(0)
   })
 

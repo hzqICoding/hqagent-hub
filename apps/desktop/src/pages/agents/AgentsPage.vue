@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ImageVerificationPanel from './ImageVerificationPanel.vue'
 import { ref, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app.store'
 import { useAgentStore } from '@/stores/agent.store'
@@ -92,6 +93,8 @@ function handleCloseDiagnosis() {
         </HqButton>
       </div>
     </div>
+
+    <ImageVerificationPanel :agents="agentStore.agents" />
 
     <!-- Status Filter Tabs & Search Bar -->
     <div class="p-3 bg-panel border border-border-subtle rounded-xl flex flex-col md:flex-row items-center justify-between gap-3 shadow-2xs">

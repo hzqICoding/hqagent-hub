@@ -19,7 +19,7 @@ import type {
   TaskStatus,
 } from '@hqagent/protocol'
 import { getLocalChatGateway, HubApiError } from '@/shared/api'
-import { pendingOperation, completeOperation, definiteRejection, clearVolatileOperations } from '@/shared/api/local-pending-operation'
+import { pendingOperation, completeOperation, definiteRejection, clearVolatileOperations, forgetConversationOperations } from '@/shared/api/local-pending-operation'
 
 export interface ActivityItem {
   id: string
@@ -79,6 +79,7 @@ export const useChatStore = defineStore('chat', () => {
   const sendErrorsByConversation = ref<Record<string, string>>({})
   const resumptionErrorsByConversation = ref<Record<string, string>>({})
   const loadError = ref<string | null>(null)
+  const deletedConversationIds = new Set<string>()
   let viewGeneration = 0
   let pinnedRunId: string | null = null
 
@@ -268,7 +269,7 @@ export const useChatStore = defineStore('chat', () => {
         includeHidden: includeHiddenConversations.value,
       })
       if (generation !== viewGeneration) return
-      conversations.value = items.map((conversation) => {
+      conversations.value = items.filter(conversation => !deletedConversationIds.has(conversation.id)).map((conversation) => {
         const normalized = {
           ...conversation,
           version: conversation.version ?? 1,
@@ -412,6 +413,29 @@ export const useChatStore = defineStore('chat', () => {
     } catch {
       // ignore
     }
+  }
+
+  async function removeDeletedConversation(id: string): Promise<void> {
+    deletedConversationIds.add(id)
+    conversations.value = conversations.value.filter(conversation => conversation.id !== id)
+    delete conversationDrafts.value[id]; delete conversationDraftRevisions.value[id]
+    delete sendErrorsByConversation.value[id]; delete resumptionErrorsByConversation.value[id]
+    allQueuedMessages.value = allQueuedMessages.value.filter(message => message.conversationId !== id)
+    forgetConversationOperations(id)
+    if (activeConversationId.value !== id) return
+    viewGeneration++; pinnedRunId = null; activeConversationId.value = null
+    messages.value = []; conversationRuns.value = []; activeRun.value = null; approvals.value = []
+    activitiesByTaskId.value = {}; activitiesByRunId.value = {}; pendingContextReset.value = false
+    sendError.value = null; resumptionError.value = null; loadError.value = null; actionError.value = null
+    isLoadingMessages.value = false; isLoadingRun.value = false; isLoadingConversations.value = false
+    const next = conversations.value.find(conversation => !conversation.archived) || conversations.value[0]
+    if (next) await selectConversation(next.id)
+  }
+  async function openBlockingRun(conversationId: string, runId: string): Promise<void> {
+    const run = await getLocalChatGateway().getLocalRun(runId)
+    if (run.conversationId !== conversationId) throw new Error('运行不属于该对话')
+    await selectConversation(conversationId)
+    pinnedRunId = runId; activeRun.value = run
   }
 
   async function createConversation(
@@ -1178,6 +1202,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function reset(): void {
     clearVolatileOperations()
+    deletedConversationIds.clear()
     stopPolling()
     viewGeneration++
     pinnedRunId = null
@@ -1268,6 +1293,8 @@ export const useChatStore = defineStore('chat', () => {
     setIncludeHiddenConversations,
     setConversationVisibility,
     selectConversation,
+    removeDeletedConversation,
+    openBlockingRun,
     fetchMessages,
     fetchConversationRuns,
     fetchApprovals,

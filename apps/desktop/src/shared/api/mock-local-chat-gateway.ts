@@ -1,6 +1,8 @@
+import { MockVerifications } from '@/shared/maintenance/mock-verifications'
 import { MockAttachmentLibrary } from '@/shared/attachments/mock-library'
 import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
+  LocalImageVerificationPage, LocalImageVerificationJobView, StartLocalImageVerificationInput, LocalConversationDeletionView,
   AttachmentLimits, AttachmentDeletedView, LocalAttachmentView, AttachmentTargetCapabilities,
   LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
@@ -52,6 +54,28 @@ import analyzeSceneFixture from '@hqagent/fixtures/local-scene.analyze.json'
 import agentsDiscoveryFixture from '@hqagent/fixtures/agents.discovery-partial.json'
 
 export class MockLocalChatGateway implements LocalChatGateway {
+  verification = new MockVerifications()
+  deletionCleanup: LocalConversationDeletionView['remoteCleanup'] = 'pending'
+  private deletionReceipts = new Map<string, { id: string; version: number; result: LocalConversationDeletionView }>()
+  async listImageVerifications(options: { includeInactiveModels?: boolean; cursor?: string } = {}): Promise<LocalImageVerificationPage> { return { items: structuredClone(this.verification.states.filter(s=>s.inUse||options.includeInactiveModels).sort((a,b)=>a.target.agentId.localeCompare(b.target.agentId)||(a.target.modelId??'').localeCompare(b.target.modelId??''))), hasMore:false } }
+  async startImageVerification(input: StartLocalImageVerificationInput, key:string): Promise<LocalImageVerificationJobView> { return this.verification.start(input,key) }
+  async getImageVerificationJob(id:string): Promise<LocalImageVerificationJobView> { return this.verification.get(id) }
+  async cancelImageVerification(id:string, _key:string): Promise<LocalImageVerificationJobView> { return this.verification.cancel(id) }
+  async deleteLocalConversation(id:string, version:number, key:string): Promise<LocalConversationDeletionView> {
+    const previous=this.deletionReceipts.get(key)
+    if(previous){if(previous.id!==id||previous.version!==version)throw new HubApiError('幂等意图不同','IDEMPOTENCY_MISMATCH',409);return previous.result}
+    const conversation=this.conversations.find(c=>c.id===id)
+    if(!conversation)throw new HubApiError('对话不存在','NOT_FOUND',404)
+    if((conversation.version??1)!==version)throw new HubApiError('版本已变化','CONFLICT',409,{reason:'version_mismatch',currentVersion:conversation.version??1})
+    const blockers=[...this.runs.values()].filter(r=>r.conversationId===id&&['queued','running','waiting_approval','paused'].includes(r.status))
+    if(blockers.length)throw new HubApiError('运行未结束','CONFLICT',409,{reason:'active_runs',blockingRunIds:blockers.map(r=>r.id),hasMoreBlockingRuns:false})
+    this.conversations=this.conversations.filter(c=>c.id!==id);this.messages.delete(id)
+    for(const [runId,run] of this.runs)if(run.conversationId===id)this.runs.delete(runId)
+    for(const [attachmentId,record] of this.attachmentLibrary.records)if(record.local.conversationId===id)this.attachmentLibrary.records.delete(attachmentId)
+    const result: LocalConversationDeletionView={conversationId:id,localDeleted:true,deletedAt:new Date().toISOString(),remoteCleanup:this.deletionCleanup}
+    this.deletionReceipts.set(key,{id,version,result});return result
+  }
+
   public attachmentLibrary = new MockAttachmentLibrary()
   async getAttachmentLimits(): Promise<AttachmentLimits> { return this.attachmentLibrary.limits }
   async uploadAttachment(conversationId: string, file: Blob, options: UploadOptions): Promise<LocalAttachmentView> { return (await this.attachmentLibrary.upload(conversationId, file, options)).local }
@@ -124,6 +148,7 @@ export class MockLocalChatGateway implements LocalChatGateway {
   }
 
   reset(): void {
+    this.verification.reset();this.deletionReceipts.clear();this.deletionCleanup='pending'
     this.attachmentLibrary.reset()
     this.authorizedRoots = { version: 1, roots: [] }
     this.importedNativeIds.clear()

@@ -53,3 +53,11 @@ export function definiteRejection(error: unknown): boolean {
   const status = (error as { status?: number })?.status
   return typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429
 }
+
+export function forgetConversationOperations(id: string): void {
+  const matches = (key: string) => key.startsWith(`send:${id}:`) || key.startsWith(`conversation-metadata:${id}:`)
+  for (const key of volatile.keys()) if (matches(key)) volatile.delete(key)
+  const [name, data] = bucket()
+  for (const key of Object.keys(data)) if (matches(key)) delete data[key]
+  persist(name, data)
+}
