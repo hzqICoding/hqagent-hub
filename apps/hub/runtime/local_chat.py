@@ -25,6 +25,7 @@ class LocalChatService:
         self._jobs: dict[str, asyncio.Task] = {}
         self._supervisor: asyncio.Task | None = None
         self._closed = False
+        self._quiescing = False
         self._wake = asyncio.Event()
         self._slots = asyncio.Semaphore(3)
         self._last_approval_check = 0.0
@@ -35,11 +36,16 @@ class LocalChatService:
 
     async def start(self) -> None:
         self._closed = False
+        self._quiescing = False
         await self.deletions.recover()
         if getattr(self, 'attachments', None):
             await self.attachments.recover()
         if self._supervisor is None:
             self._supervisor = asyncio.create_task(self._supervise())
+
+    def begin_shutdown(self) -> None:
+        self._quiescing = True
+        self._wake.set()
 
     async def stop(self) -> None:
         self._closed = True
@@ -109,6 +115,8 @@ class LocalChatService:
         return await update()
 
     def send(self, conversation_id: str, value: SendLocalMessageInput, key: str):
+        if self._quiescing:
+            raise HubError("HUB_MAINTENANCE", "Hub 正在停止，暂不接受新任务")
         receipt = self.repository.enqueue(conversation_id, value, key)
         self._wake.set()
         return receipt
@@ -217,7 +225,7 @@ class LocalChatService:
                     )
 
     async def _supervise(self) -> None:
-        while not self._closed:
+        while not self._closed and not self._quiescing:
             if time.monotonic() - self._last_approval_check >= 5:
                 self._last_approval_check = time.monotonic()
                 if hasattr(type(self.ports.tasks), "expire_approvals"):
@@ -226,6 +234,8 @@ class LocalChatService:
                     except Exception:
                         logging.getLogger(__name__).error("工具审批过期检查失败，需要检查本机任务状态", exc_info=True)
             for conversation in self.repository.conversations(include_hidden=True, observe_native=False):
+                if self._quiescing:
+                    break
                 job = self._jobs.get(conversation.id)
                 if job and not job.done():
                     continue
@@ -246,7 +256,8 @@ class LocalChatService:
 
     async def _drive(self, record: dict) -> None:
         async with self._slots:
-            await self._execute(record)
+            if not self._quiescing:
+                await self._execute(record)
 
     async def _execute(self, record: dict) -> None:
         run_id = record["run_id"]
