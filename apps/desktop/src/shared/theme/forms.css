@@ -1,0 +1,102 @@
+/* Shared editable-control contract: every native text control uses hq-form-control.
+   Token aliases also work inside teleported dialogs and browser autofill surfaces. */
+:root {
+  --hq-field-bg: var(--color-bg-panel, #ffffff);
+  --hq-field-fg: var(--color-text-primary, #0f172a);
+  --hq-field-placeholder: var(--color-text-muted, #64748b);
+  --hq-field-border: var(--color-text-muted, #64748b);
+  --hq-field-focus: var(--color-focus-ring, #2563eb);
+  --hq-field-disabled-bg: var(--color-bg-muted, #f1f5f9);
+  --hq-field-disabled-fg: var(--color-text-secondary, #475569);
+  color-scheme: light;
+  color: var(--color-text-primary, #0f172a);
+  background-color: var(--color-bg-app, #f6f8fc);
+}
+:root[data-theme-mode='dark'] { color-scheme: dark; }
+body { color: var(--color-text-primary); background-color: var(--color-bg-app); }
+
+:is(input, textarea, select, button).hq-form-control,
+.hq-form-field {
+  color: var(--hq-field-fg);
+  background-color: var(--hq-field-bg);
+  border-color: var(--hq-field-border);
+  caret-color: var(--hq-field-fg);
+  color-scheme: inherit;
+  opacity: 1;
+}
+:is(input, textarea, select).hq-form-control {
+  -webkit-text-fill-color: var(--hq-field-fg);
+}
+:is(input, textarea).hq-form-control::placeholder,
+.hq-form-control .hq-form-placeholder {
+  color: var(--hq-field-placeholder);
+  -webkit-text-fill-color: var(--hq-field-placeholder);
+  opacity: 1;
+  font-weight: 400;
+}
+:is(input, textarea, select, button).hq-form-control:focus-visible,
+.hq-form-field:focus-within {
+  border-color: var(--hq-field-focus);
+  outline: 2px solid var(--hq-field-focus);
+  outline-offset: 2px;
+}
+:is(input, textarea, select, button).hq-form-control:disabled,
+.hq-form-field[data-disabled='true'] {
+  --hq-field-bg: var(--hq-field-disabled-bg);
+  --hq-field-fg: var(--hq-field-disabled-fg);
+  color: var(--hq-field-fg);
+  background-color: var(--hq-field-bg);
+  -webkit-text-fill-color: var(--hq-field-fg);
+  border-color: var(--color-border-strong);
+  cursor: not-allowed;
+  opacity: 1;
+}
+:is(input, textarea).hq-form-control[readonly] {
+  --hq-field-bg: var(--hq-field-disabled-bg);
+}
+:is(input, textarea, select, button).hq-form-control[aria-invalid='true'],
+.hq-form-field[data-invalid='true'] {
+  --hq-field-border: var(--color-status-danger);
+  --hq-field-focus: var(--color-status-danger);
+  border-color: var(--hq-field-border);
+}
+:is(input, textarea).hq-form-control.hq-form-control--embedded {
+  border: 0;
+  border-radius: inherit;
+  outline: none;
+  box-shadow: none;
+}
+select.hq-form-control { appearance: auto; }
+select.hq-form-control :is(option, optgroup) {
+  color: var(--hq-field-fg);
+  background-color: var(--hq-field-bg);
+}
+.hq-form-option[aria-disabled='true'] {
+  color: var(--hq-field-disabled-fg);
+  background-color: var(--hq-field-disabled-bg);
+  opacity: 1;
+  cursor: not-allowed;
+}
+.hq-form-choice { accent-color: var(--color-focus-ring); color-scheme: inherit; }
+.hq-form-choice:focus-visible { outline: 2px solid var(--hq-field-focus); outline-offset: 2px; }
+
+/* Chromium/Safari apply internal autofill !important colors. Inset paint and
+   text-fill keep the selected theme readable without logging or reading values. */
+input.hq-form-control:is(:autofill, :-webkit-autofill) {
+  -webkit-text-fill-color: var(--hq-field-fg) !important;
+  caret-color: var(--hq-field-fg);
+  -webkit-box-shadow: 0 0 0 1000px var(--hq-field-bg) inset !important;
+  box-shadow: 0 0 0 1000px var(--hq-field-bg) inset !important;
+}
+
+.hq-choice-field[data-disabled='true'] .hq-choice-label,
+.hq-choice-field[data-disabled='true'] .hq-choice-label * {
+  color: var(--hq-field-disabled-fg);
+  opacity: 1;
+}
+
+/* Shared composer geometry: keep controls aligned when a draft grows to multiple lines. */
+.hq-composer-row { display: flex; align-items: flex-end; gap: 8px; min-width: 0; }
+.hq-composer-row .hq-composer-text { flex: 1; min-width: 0; min-height: 44px; max-height: 132px; resize: none; overflow-y: auto; border-radius: 12px; padding: 10px 12px; line-height: 22px; box-sizing: border-box; }
+.hq-composer-row .hq-composer-icon { flex: none; width: 44px; height: 44px; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; }
+.hq-composer-row .hq-composer-send { flex: none; width: 48px; height: 44px; min-width: 48px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; }

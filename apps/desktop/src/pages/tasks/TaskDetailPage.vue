@@ -578,13 +578,13 @@ const currentTask = computed(() => taskStore.currentTask)
               v-model="taskStore.eventSearch"
               type="text"
               placeholder="搜索事件与报文..."
-              class="w-full pl-8 pr-2 py-1 bg-surface border border-border rounded text-text placeholder:text-text-muted"
+              class="hq-form-control w-full pl-8 pr-2 py-1 bg-surface border border-border rounded text-text placeholder:text-text-muted"
             />
           </div>
 
           <select
             v-model="taskStore.eventFilterType"
-            class="px-2 py-1 bg-surface border border-border rounded text-text"
+            class="hq-form-control px-2 py-1 bg-surface border border-border rounded text-text"
           >
             <option value="all">全部事件类型</option>
             <option value="agent.progress">agent.progress (进度)</option>
@@ -599,7 +599,7 @@ const currentTask = computed(() => taskStore.currentTask)
 
           <select
             v-model="taskStore.eventFilterNodeId"
-            class="px-2 py-1 bg-surface border border-border rounded text-text"
+            class="hq-form-control px-2 py-1 bg-surface border border-border rounded text-text"
           >
             <option value="all">全部节点</option>
             <option v-for="node in taskStore.currentNodes" :key="node.id" :value="node.id">
@@ -610,7 +610,7 @@ const currentTask = computed(() => taskStore.currentTask)
 
         <div class="flex items-center gap-3">
           <label class="inline-flex items-center gap-1.5 cursor-pointer text-text-muted hover:text-text">
-            <input v-model="autoScrollEvents" type="checkbox" class="rounded border-border" />
+            <input v-model="autoScrollEvents" type="checkbox" class="hq-form-choice rounded border-border" />
             自动滚动至最新
           </label>
           <span class="text-text-muted">共 {{ taskStore.filteredEvents.length }} 条事件</span>

@@ -3,18 +3,18 @@ import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { RemoteApiTokenView } from '@hqagent/protocol'
 import { getRemoteGateway, RemoteApiError } from '@/shared/api'
-import { HqButton, HqDialog, HqBadge } from '@/shared/ui'
+import { HqButton, HqBadge, useConfirm } from '@/shared/ui'
 import RemoteTokenIssueDialog from './RemoteTokenIssueDialog.vue'
 import RemoteRequestNotice from './RemoteRequestNotice.vue'
 
 const router = useRouter()
+const confirm = useConfirm()
 const tokens = ref<RemoteApiTokenView[]>([])
 const includeRevoked = ref(false)
 const nextCursor = ref<string | undefined>()
 const loading = ref(false)
 const error = ref('')
 const issueOpen = ref(false)
-const revokeId = ref<string | null>(null)
 const revoking = ref(false)
 let request = 0
 async function fetchTokens(more = false) {
@@ -32,13 +32,13 @@ async function fetchTokens(more = false) {
     if (current === request) error.value = err instanceof RemoteApiError ? err.message : '读取令牌列表失败，请重试'
   } finally { if (current === request) loading.value = false }
 }
-async function revoke() {
-  if (!revokeId.value || revoking.value) return
+async function requestRevoke(tokenId: string) {
+  if (revoking.value) return
+  if (!await confirm({ title: '确认吊销 API 令牌？', description: '吊销后，使用此令牌的外部工具将立即失去访问权限。此操作不能恢复。', confirmText: '确认吊销', danger: true })) return
   revoking.value = true
   error.value = ''
   try {
-    await getRemoteGateway().revokeApiToken(revokeId.value)
-    revokeId.value = null
+    await getRemoteGateway().revokeApiToken(tokenId)
     await fetchTokens()
   } catch (err: unknown) { error.value = err instanceof RemoteApiError ? err.message : '吊销失败，请重试' }
   finally { revoking.value = false }
@@ -58,7 +58,7 @@ onBeforeUnmount(() => { request++ })
     <RemoteRequestNotice />
     <main class="flex-1 min-h-0 overflow-y-auto w-full max-w-lg mx-auto p-4 space-y-4">
       <p class="text-xs text-text-muted">用于外部工具管理设备。令牌秘密仅在首次签发时展示，请按需授予权限。</p>
-      <label class="text-xs flex gap-2 items-center"><input v-model="includeRevoked" type="checkbox" />显示已吊销</label>
+      <label class="text-xs flex gap-2 items-center"><input class="hq-form-choice" v-model="includeRevoked" type="checkbox" />显示已吊销</label>
       <p v-if="error" role="alert" class="text-xs text-danger">{{ error }} <button type="button" class="underline" @click="fetchTokens()">重试</button></p>
       <p v-if="loading" class="text-xs text-text-muted">正在读取令牌…</p>
       <p v-else-if="!tokens.length" class="text-sm text-text-muted py-8 text-center">暂无 API 令牌</p>
@@ -67,15 +67,11 @@ onBeforeUnmount(() => { request++ })
         <p class="break-all select-text text-text-muted">{{ token.tokenPrefix }}</p>
         <p class="break-words">权限：{{ token.scopes.join('、') }}</p>
         <dl class="space-y-1 text-text-muted"><div>创建时间：{{ time(token.createdAt) }}</div><div>最后使用：{{ time(token.lastUsedAt) }}</div><div>到期时间：{{ time(token.expiresAt) }}</div></dl>
-        <HqButton v-if="token.status !== 'revoked'" variant="danger" size="sm" @click="error = ''; revokeId = token.tokenId">吊销</HqButton>
+        <HqButton v-if="token.status !== 'revoked'" variant="danger" size="sm" @click="requestRevoke(token.tokenId)">吊销</HqButton>
       </article>
       <HqButton v-if="nextCursor" variant="secondary" :loading="loading" @click="fetchTokens(true)">加载更多</HqButton>
     </main>
-    <RemoteTokenIssueDialog v-if="issueOpen" @close="issueOpen = false" @created="fetchTokens()" @revoke="revokeId = $event" />
-    <HqDialog :open="Boolean(revokeId)" title="确认吊销 API 令牌？" @close="revokeId = null">
-      <p class="text-xs">吊销后，使用此令牌的外部工具将立即失去访问权限。此操作不能恢复。</p>
-      <p v-if="error" role="alert" class="text-xs text-danger mt-3">{{ error }}</p><RemoteRequestNotice />
-      <template #footer><HqButton variant="ghost" :disabled="revoking" @click="revokeId = null">取消</HqButton><HqButton variant="danger" :loading="revoking" @click="revoke">确认吊销</HqButton></template>
-    </HqDialog>
+    <RemoteTokenIssueDialog v-if="issueOpen" @close="issueOpen = false" @created="fetchTokens()" @revoke="requestRevoke($event)" />
+
   </div>
 </template>

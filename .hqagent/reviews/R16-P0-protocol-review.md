@@ -67,3 +67,19 @@ python -X utf8 -B -m pytest packages/protocol/tests scripts/protocol/tests -q -p
 - 真实联调（joint/hub-data16 全新配对，r16joint.py）：直接协商修订 4；catalog 图片能力 unknown；手机上传 markdown 201 → 发送 202 → Worker 下载校验 → 交给 Agent 链路通，但 Agent 未读取附件（角色提示词禁止读取根目录外文件，附件路径被 JSON 转义）。
 - verify-image：Claude Code 2.1.285 五项全通过；codex-cli 0.159.2 new / error 通过，resume / mixed-five / cancel 失败（续接轮被提前终止、取消探测未启动第二会话、128px 探测图识别不稳）。另 Hub 日志有 GBK 解码后台线程异常。
 - 返修 1（01a0de45，medium）已派：提示词附件授权与原样路径、Codex 续接回合结束判定、取消探测、探测图放大、GBK 解码。
+
+## 10. 联调第二、三轮（2026-09-30 ~ 10-01）
+
+- 返修 1 后：手机发 markdown，Agent（Codex）读出暗号与端口，附件读取修复确认；GBK 异常消失；Codex verify-image new / resume / cancel 通过，mixed-five 因 shell 读取附件被 PathGuard 判 PATH_NOT_ALLOWED。
+- 同轮验收通过：图片上传生成缩略图（ready，attachment + nosniff）；未验证 Agent 发送前 422 AGENT_IMAGE_UNSUPPORTED；exe 改名 .txt 与 SVG 上传 415；限制值由接口下发。
+- 返修 2（cd5cc32，精确附件只读 shell 放行）合入后：Codex verify-image 五项全通过；catalog native 两个 Agent 均 supported。
+- 新发现：默认场景角色未绑定 Agent，能力解析与执行解析不一致，场景图片能力恒为 unknown。返修 3（01a0de45，medium）已派。
+- 主代理脚本修正：r16joint.send_and_wait 改为只认发送后新出现的回复（首次复测曾误读上一轮旧回复）。
+
+## 11. 用户真机反馈后的界面返修与二次部署（2026-10-03）
+
+- 前端返修 1（8615a72 / fac5125）：暗色主题输入框对比度统一修复、手机顶栏可见；配对页内扫码（同源校验、jsqr 懒加载 47KB gzip、释放摄像头）。443 项通过。
+- 前端返修 2（66ce28f）：共用确认弹窗与底部选择面板，退出二次确认；去掉重复状态文字，在线绿 / 离线橙；顶部「+」新话题，去掉单选，默认继续上下文；输入行等高对齐；占位提示减弱。462 项通过。主代理补设备列表离线标签为橙色。
+- 服务端 set-password 命令（8c71c7b）：改密后删除该账号浏览器会话，PAT 保留。304 项通过。
+- 电脑连接手机页默认服务器 https://hqremote.hylucky.top（0f5a8e0）。
+- CI c23d375 三平台全绿；部署 serverD（仅服务端代码与 web，依赖未变），线上网页 bundle 与构建一致。

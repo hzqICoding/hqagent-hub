@@ -35,9 +35,10 @@ function toggle() {
 
 <template>
   <label
+    :data-disabled="disabled || undefined"
     :class="[
-      'inline-flex items-center gap-2 select-none',
-      disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+      'hq-choice-field inline-flex items-center gap-2 select-none',
+      disabled ? 'cursor-not-allowed' : 'cursor-pointer',
     ]"
   >
     <div
@@ -60,7 +61,7 @@ function toggle() {
       <Check v-else-if="isChecked" class="h-3 w-3 stroke-[3]" />
     </div>
 
-    <span v-if="label || $slots.default" class="text-sm text-content-primary">
+    <span v-if="label || $slots.default" class="hq-choice-label text-sm text-content-primary">
       <slot>{{ label }}</slot>
     </span>
   </label>

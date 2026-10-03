@@ -41,7 +41,7 @@ describe('ChatPage', () => {
     expect(wrapper.text()).toContain('项目任务')
     expect(wrapper.text()).toContain('新建任务')
     expect(wrapper.find('textarea').exists()).toBe(true)
-    expect(wrapper.text()).toContain('当前任务连续对话')
+    expect(wrapper.find('.hq-composer-row').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('新一轮上下文 (New)')
     expect(wrapper.text()).not.toContain('继续已有Agent会话 (Continue)')
   })
@@ -95,11 +95,10 @@ describe('ChatPage', () => {
     const resetSpy = vi.spyOn(store, 'requestContextReset')
 
     await wrapper.find('button[title="更多任务操作"]').trigger('click')
-    const resetMenuItem = wrapper.findAll('button').find(button =>
-      button.text().includes('重置 Agent 上下文')
-    )
-    expect(resetMenuItem?.attributes('disabled')).toBeUndefined()
-    await resetMenuItem!.trigger('click')
+    await flushPromises()
+    const resetMenuItem = [...document.body.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(button => button.textContent?.includes('重置 Agent 上下文'))
+    expect(resetMenuItem?.disabled).toBe(false)
+    resetMenuItem!.click(); await flushPromises()
 
     expect(document.body.textContent).toContain('新会话不会自动携带全部历史')
     const confirm = Array.from(document.body.querySelectorAll('button')).find(button =>
@@ -113,10 +112,9 @@ describe('ChatPage', () => {
     const wrapper = await mountInitializedPage()
 
     await wrapper.find('button[title="更多任务操作"]').trigger('click')
-    const resetMenuItem = wrapper.findAll('button').find(button =>
-      button.text().includes('重置 Agent 上下文')
-    )
-    expect(resetMenuItem?.attributes('disabled')).toBeDefined()
+    await flushPromises()
+    const resetMenuItem = [...document.body.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(button => button.textContent?.includes('重置 Agent 上下文'))
+    expect(resetMenuItem?.disabled).toBe(true)
   })
 
   it('shows returned custom scene names and generic starter prompts', async () => {

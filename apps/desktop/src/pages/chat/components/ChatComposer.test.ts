@@ -106,7 +106,7 @@ describe('ChatComposer', () => {
     const cancelContextReset = vi.spyOn(store, 'cancelContextReset')
     const wrapper = mount(ChatComposer)
 
-    expect(wrapper.text()).toContain('当前任务连续对话')
+    expect(wrapper.find('.hq-composer-row').exists()).toBe(true)
     expect(wrapper.text()).toContain('下一条消息将使用新的 Agent 会话')
     expect(wrapper.text()).not.toContain('新一轮上下文 (New)')
     expect(wrapper.text()).not.toContain('继续已有Agent会话 (Continue)')

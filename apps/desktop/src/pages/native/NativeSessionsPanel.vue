@@ -171,7 +171,7 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
     </HqDialog>
     <HqDialog :open="confirmation" title="确认终端已退出" @close="confirmation = false; confirmed = false">
       <p class="text-sm">{{ closureText }}</p>
-      <label class="flex gap-2 mt-4 text-sm"><input v-model="confirmed" type="checkbox" />我已在终端退出该会话</label>
+      <label class="flex gap-2 mt-4 text-sm"><input class="hq-form-choice" v-model="confirmed" type="checkbox" />我已在终端退出该会话</label>
       <p v-if="error" class="mt-3 text-xs text-danger">{{ error.message }} <span class="select-text">{{ error.requestId ? `requestId: ${error.requestId}` : '' }}</span></p>
       <template #footer><HqButton :disabled="!confirmed || (remote && (!online || suspended))" :loading="importing" @click="importSession">确认导入</HqButton></template>
     </HqDialog>

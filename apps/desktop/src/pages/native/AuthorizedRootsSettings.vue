@@ -51,7 +51,7 @@ onBeforeUnmount(() => { alive = false; roots.value = []; view.value = null })
     <p v-if="error" role="alert" class="text-xs text-danger">{{ error.message }} <button v-if="error.requestId" class="select-text" @click="copyId">requestId: {{ error.requestId }}</button></p>
     <p v-if="!roots.length" class="text-xs">未授权任何根目录</p>
     <div v-for="(root, index) in roots" :key="root.rootId || index" class="flex flex-wrap items-center gap-2">
-      <input v-model="root.displayName" :disabled="loading" aria-label="根目录显示名称" maxlength="120" class="p-2 text-xs bg-bg-app border border-border rounded" />
+      <input v-model="root.displayName" :disabled="loading" aria-label="根目录显示名称" maxlength="120" class="hq-form-control p-2 text-xs bg-bg-app border border-border rounded" />
       <span class="text-xs text-text-muted break-all flex-1">{{ root.path }}</span>
       <HqButton size="sm" variant="danger" :disabled="loading" @click="roots.splice(index, 1)">移除</HqButton>
     </div>

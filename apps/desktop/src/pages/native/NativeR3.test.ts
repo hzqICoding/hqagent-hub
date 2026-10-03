@@ -161,7 +161,8 @@ describe('R3 roots and workspace registration', () => {
     remote.catalog.authorizedRoots = [{ rootId: 'root_example', displayName: '授权开发目录', version: 1 }]
     await useRemoteChatStore().fetchCatalog()
     const wrapper = mount(RemoteWorkspaceDialog, options)
-    await wrapper.get('select').setValue('root_example'); await flushPromises()
+    await wrapper.get('button[aria-label="授权根目录"]').trigger('click'); await flushPromises()
+    await wrapper.get('[role=option]').trigger('click'); await flushPromises()
     return wrapper
   }
   it('uses token breadcrumbs, returns to parent and warns for non-Git selections', async () => {
@@ -221,11 +222,12 @@ describe('R3 roots and workspace registration', () => {
     const wrapper = mount(RemoteChatPage, options); await flushPromises()
     await button(wrapper, '新建任务').trigger('click'); await flushPromises()
     await button(wrapper, '添加项目').trigger('click'); await flushPromises()
-    await wrapper.get('select[aria-label="授权根目录"]').setValue('root_example'); await flushPromises()
+    await wrapper.get('button[aria-label="授权根目录"]').trigger('click'); await flushPromises()
+    await wrapper.get('[role=option]').trigger('click'); await flushPromises()
     await button(wrapper, '示例资料').trigger('click')
     await button(wrapper, '添加为项目').trigger('click'); await flushPromises()
     await vi.advanceTimersByTimeAsync(1000); await flushPromises()
-    expect((wrapper.get('#new-conv-workspace').element as HTMLSelectElement).value).toMatch(/^workspace_registered_/)
+    expect(wrapper.get('#new-conv-workspace').text()).toBe('示例资料')
   })
   it('disables directory actions while suspended and leaves historic read available', async () => {
     const wrapper = await directory()
