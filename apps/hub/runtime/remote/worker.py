@@ -319,7 +319,7 @@ class RemoteWorker:
                 catalog_at = 0.0
                 native_scan = -1
                 while True:
-                    if generation != self.repo.get("link")["generation"]:
+                    if self.closed or generation != self.repo.get("link")["generation"]:
                         return
                     if not self.repo.check_continuity():
                         raise HubError("REMOTE_STORE_CHANGED", "本机存储需要对账")
@@ -372,7 +372,7 @@ class RemoteWorker:
                     await bridge.recover()
                 while True:
                     frame = await queue.get()
-                    if generation != self.repo.get("link")["generation"]:
+                    if self.closed or generation != self.repo.get("link")["generation"]:
                         return
                     resource = revision >= 3 and (frame["type"] in {"native.import","workspace.register"} or (frame["type"] == "command.delivery_granted" and ("conversationId" not in frame or self.resources.row(frame["commandId"]))))
                     receipt, gaps = await (self.resources.receive(frame) if resource else bridge.receive(frame))
@@ -387,7 +387,7 @@ class RemoteWorker:
                 nonlocal last_server_time
                 async for content in ws:
                     frame = decode(content, revision=revision)
-                    if generation != self.repo.get("link")["generation"]:
+                    if self.closed or generation != self.repo.get("link")["generation"]:
                         return
                     if frame["type"] == "worker.hello_rejected":
                         # P1 also uses this generated error envelope when an
