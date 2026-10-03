@@ -1,5 +1,6 @@
 import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
+  LocalImageVerificationPage, LocalImageVerificationJobView, StartLocalImageVerificationInput, LocalConversationDeletionView,
   AttachmentLimits, AttachmentDeletedView, LocalAttachmentView, AttachmentTargetCapabilities,
   LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
@@ -36,6 +37,11 @@ import type {
 } from '@hqagent/protocol'
 
 export interface LocalChatGateway {
+  listImageVerifications(options?: { includeInactiveModels?: boolean; cursor?: string }): Promise<LocalImageVerificationPage>
+  startImageVerification(input: StartLocalImageVerificationInput, key: string): Promise<LocalImageVerificationJobView>
+  getImageVerificationJob(jobId: string): Promise<LocalImageVerificationJobView>
+  cancelImageVerification(jobId: string, key: string): Promise<LocalImageVerificationJobView>
+  deleteLocalConversation(id: string, expectedVersion: number, key: string): Promise<LocalConversationDeletionView>
   getAttachmentLimits(): Promise<AttachmentLimits>
   uploadAttachment(conversationId: string, file: Blob, options: UploadOptions): Promise<LocalAttachmentView>
   getAttachment(id: string): Promise<LocalAttachmentView>
