@@ -93,6 +93,10 @@ class AttachmentLibrary:
         return text
 
     async def upload(self, conversation, request):
+        async with self.worker.bridge.chat._conversation_lock(conversation):
+            return await self._upload(conversation, request)
+
+    async def _upload(self, conversation, request):
         self.worker.bridge.chat.repository.conversation(conversation)
         length, hash_, name, key = self.headers(request.headers)
         digest = request_hash([length, hash_, name])
@@ -164,6 +168,33 @@ class AttachmentLibrary:
             self.worker.repo.seal(tx)
         self.erase(row)
         return {'attachmentId': identifier, 'deleted': True}
+
+    async def erase_conversation(self, conversation):
+        """Close readers and writers before removing only Hub-owned attachment files."""
+        with self.db.locked_connection() as db:
+            rows = [dict(row) for row in db.execute(
+                'SELECT * FROM local_attachments WHERE conversation_id=?', (conversation,))]
+        identifiers = {row['attachment_id'] for row in rows}
+        sync = self.worker.attachments.sync
+        jobs = [task for key, task in list(sync.jobs.items()) if key[-1] in identifiers]
+        for task in jobs:
+            task.cancel()
+        await asyncio.gather(*jobs, return_exceptions=True)
+        for identifier in identifiers:
+            for stream in list(self.streams.pop(identifier, ())):
+                stream.close()
+        directory = self.root / self.directory_key(conversation)
+        if not directory.exists():
+            return
+        if directory.is_symlink() or directory.resolve().parent != self.root.resolve():
+            raise OSError('invalid attachment directory')
+        # Storage owns this flat per-conversation directory; never follow links,
+        # recurse into a workspace, or touch a vendor history source.
+        for path in directory.iterdir():
+            if path.is_dir() and not path.is_symlink():
+                raise OSError('unexpected attachment directory')
+            path.unlink(missing_ok=True)
+        directory.rmdir()
 
     def erase(self, row):
         for stream in list(self.streams.get(row['attachment_id'], ())):
