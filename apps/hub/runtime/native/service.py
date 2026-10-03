@@ -523,7 +523,7 @@ class NativeService:
     def authorize_send(self, tx, conversation, value):
         row = self.row(conversation, conversation=True)
         if value.session_mode != "continue":
-            raise HubError("SESSION_NOT_RESUMABLE", "原生对话必须续接精确会话，不能新建上下文")
+            raise HubError("SESSION_NOT_RESUMABLE", "原生对话只能续接已导入的会话；如需新话题，请另建对话")
         source = self.cached_source(row)
         supplied = value.native_confirmation
         confirmation = None

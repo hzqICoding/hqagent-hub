@@ -167,7 +167,7 @@ def test_grant_rechecks_real_approval_expiry_before_accepting(tmp_path):
     asyncio.run(scenario())
 
 
-def test_unresumable_context_returns_structured_code_without_starting_new_session(tmp_path):
+def test_initial_continue_starts_new_session_without_prior_execution(tmp_path):
     async def scenario():
         system = System(tmp_path)
         try:
@@ -178,9 +178,9 @@ def test_unresumable_context_returns_structured_code_without_starting_new_sessio
                 frame["payload"]["sessionMode"] = "continue"
                 receipt = await receive(server, frame)
                 await server.send(grant(frame, receipt))
-                await until(lambda: command_events(server, "no-prior-context", "command.failed"))
-                assert command_events(server, "no-prior-context", "command.failed")[-1]["error"]["code"] == "SESSION_NOT_RESUMABLE"
-                assert not system.adapter.started and not system.adapter.resumed and not server.errors
+                await until(lambda: command_events(server, "no-prior-context", "command.completed"))
+                assert command_events(server, "no-prior-context", "command.completed")[-1]['resultStatus'] == 'succeeded'
+                assert len(system.adapter.started) == 1 and not system.adapter.resumed and not server.errors
         finally:
             await system.close()
     asyncio.run(scenario())
