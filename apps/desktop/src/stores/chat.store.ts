@@ -1,3 +1,4 @@
+import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 import { preflightAttachments } from '@/shared/attachments/preflight'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -608,7 +609,7 @@ export const useChatStore = defineStore('chat', () => {
       removeQueuedMessage(clientMessageId)
       if (activeConversationId.value === convId && err instanceof HubApiError) {
         if (err.code === 'SESSION_NOT_RESUMABLE') {
-          const message = err.message || '该会话无法恢复；可新建任务，或明确重置当前任务的 Agent 上下文后发送'
+          const message = getRemoteErrorMessage(err.code, err.message, conversation?.conversationKind)
           resumptionErrorsByConversation.value = {
             ...resumptionErrorsByConversation.value,
             [convId]: message,
@@ -624,7 +625,7 @@ export const useChatStore = defineStore('chat', () => {
       } else if (err instanceof HubApiError && err.code === 'SESSION_NOT_RESUMABLE') {
         resumptionErrorsByConversation.value = {
           ...resumptionErrorsByConversation.value,
-          [convId]: err.message,
+          [convId]: getRemoteErrorMessage(err.code, err.message, conversation?.conversationKind),
         }
       } else {
         const message = err instanceof Error ? err.message : '发送消息失败'

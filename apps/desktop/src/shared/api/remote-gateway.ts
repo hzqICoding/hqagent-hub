@@ -188,10 +188,12 @@ export class RemoteGateway implements IRemoteGateway {
     if (!response.ok || !envelope || !envelope.success) {
       const code = envelope?.error?.code || (response.status === 429 ? 'REMOTE_RATE_LIMITED' : 'INTERNAL')
       const rawMessage = envelope?.error?.message || response.statusText || '请求失败'
-      const localizedMessage = getRemoteErrorMessage(code, rawMessage)
+      // Keep a missing resume reason empty until the caller knows the conversation kind.
+      const localizedMessage = code === 'SESSION_NOT_RESUMABLE' ? envelope?.error?.message || '' : getRemoteErrorMessage(code, rawMessage)
 
       const requestId = response.headers.get('X-Request-Id') || envelope?.requestId
-      recordRemoteFailure(endpoint, method, localizedMessage, requestId)
+      if (localizedMessage.trim()) recordRemoteFailure(endpoint, method, localizedMessage, requestId)
+      else clearRemoteFailureFor(endpoint, method)
       throw new RemoteApiError({
         message: localizedMessage,
         code,

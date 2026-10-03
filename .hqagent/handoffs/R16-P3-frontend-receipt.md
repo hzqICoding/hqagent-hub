@@ -685,3 +685,103 @@ python .hqagent/handoffs/screenshots/r16-p3-fix3/verify.py
 - 未新增持久化存储或日志输出，不记录会话正文、凭据、Cookie、短码或令牌。
 - 未遇真实 429、0xC0000142 或 API 额度错误；测试中 Storage 抛错只是有意模拟浏览器偏好不可用。构建和测试串行，本轮开发服务已停止。
 - 实现和验收材料按主题提交到 feat/r15-web，逐次检查提交信息，不合并回 integration。
+
+
+## 返修 4：续接失败保留具体原因
+
+### 1. 基线和修改
+
+- 工作区 `r15-web` / 分支 `feat/r15-web`，已先执行 `git merge integration/phase1`，输出 `Already up to date.`；基线 `0983b9b`（含 Hub 返修 4）。
+- `SESSION_NOT_RESUMABLE` 优先显示 Hub/服务端提供的 message，不再用固定错误字典覆盖。仅缺失、空串或全空白时兜底：
+  - 场景对话：**无法接着上一轮继续，请点右上角 + 开启新话题**。
+  - 原生对话：**该原生会话暂时无法续接，请稍后重试或在电脑上核对**。
+- 共用错误函数的会话类型从生成物 `LocalConversationView['conversationKind']` 引用（scenario/native），未新增 DTO 或协议字段。
+- 本机/远程 HTTP 网关保留缺失原因，避免 HTTP `Conflict`、英文默认报错或提前生成的场景兜底掩盖实际缺失。Store 获取会话类型后选择正确文案；本机迟到错误仍保存在原会话名下。
+- 手机命令送达失败提示及本机原生错误提示复用同一规则；本机带附件发送若发生续接错误，不被通用附件错误提示覆盖。
+- 手机网关缺失续接原因时不创建空白网络诊断横幅，由 Store 显示对应会话兜底；已有原因仍正常显示。错误对象继续携带 code/status/requestId。
+- 续接错误区域改为换行，避免具体原因和界面指引被省略号截断。未改变自动新建会话、续接、重置上下文等执行逻辑。
+- `chat.reliability.test.ts` 的旧控件指引已更新；两处“不显示旧控件”的文本断言改为检查不存在 radio。前端搜索 `选择.*上下文|新一轮上下文|新上下文` 无匹配。
+
+### 2. 测试与真实验收输出
+
+新增 `stores/session-resumption.test.ts`，共 13 项：有安全原因时保留原文；场景/原生分别兜底；空白原因视为缺失；原生公共错误函数正确处理；其他错误代码映射保持原行为；本机和远程分别通过真实 HTTP 网关 + mocked fetch 验证发送错误进入对应 Store 显示字段，HTTP 状态文本不冒充业务原因。
+
+四项检查串行执行，TEMP/TMP 为 worktree 内被忽略的 `.tmp`，退出码全部为 0。原始完整输出：[lint](r16-p3-fix4-validation/lint.txt)、[typecheck](r16-p3-fix4-validation/typecheck.txt)、[vitest](r16-p3-fix4-validation/vitest.txt)、[build](r16-p3-fix4-validation/build.txt)。
+
+```text
+> pnpm --filter @hqagent/desktop lint
+$ eslint src
+
+> pnpm --filter @hqagent/desktop typecheck
+$ vue-tsc --noEmit
+
+> pnpm --filter @hqagent/desktop exec vitest run --minWorkers=1 --maxWorkers=2
+Test Files  69 passed (69)
+      Tests  491 passed (491)
+   Start at  09:50:22
+   Duration  51.04s (transform 3.42s, setup 0ms, collect 24.11s, tests 17.47s, environment 37.32s, prepare 5.85s)
+```
+
+```text
+> pnpm --filter @hqagent/desktop build
+$ vue-tsc --noEmit && vite build
+vite v5.4.21 building for production...
+transforming...
+✓ 1854 modules transformed.
+Generated an empty chunk: "echarts".
+rendering chunks...
+computing gzip size...
+dist/index.html                                                                    2.56 kB │ gzip:  1.04 kB
+dist/assets/ChatPage-DQ8nlvA7.css                                                  0.24 kB │ gzip:  0.17 kB
+dist/assets/index-CxiKY7_w.css                                                    60.61 kB │ gzip: 11.23 kB
+dist/assets/echarts-l0sNRNKZ.js                                                    0.00 kB │ gzip:  0.02 kB
+dist/assets/RemoteRequestNotice.vue_vue_type_script_setup_true_lang-D9a1KLyg.js    0.92 kB │ gzip:  0.60 kB
+dist/assets/HqEmptyState.vue_vue_type_script_setup_true_lang-CkHf_PnH.js           1.17 kB │ gzip:  0.63 kB
+dist/assets/LoadingState.vue_vue_type_script_setup_true_lang-BuO-Khfs.js           1.55 kB │ gzip:  0.75 kB
+dist/assets/confirm-yNWjckwc.js                                                    1.74 kB │ gzip:  0.94 kB
+dist/assets/PlaceholderPage-BAOQqUxU.js                                            1.74 kB │ gzip:  1.10 kB
+dist/assets/HqTextarea.vue_vue_type_script_setup_true_lang-B0YTw4mB.js             1.88 kB │ gzip:  0.89 kB
+dist/assets/OfflineState.vue_vue_type_script_setup_true_lang-CamkzXts.js           2.44 kB │ gzip:  1.19 kB
+dist/assets/native-utils-Cad9vs7X.js                                               2.45 kB │ gzip:  1.60 kB
+dist/assets/HqInput.vue_vue_type_script_setup_true_lang-pO-dmCg-.js                2.51 kB │ gzip:  1.11 kB
+dist/assets/ResolveSourceBadge.vue_vue_type_script_setup_true_lang-BNkDMipx.js     2.61 kB │ gzip:  1.42 kB
+dist/assets/team.store-D74A1vKn.js                                                 3.73 kB │ gzip:  1.88 kB
+dist/assets/RemoteLoginPage-DAsjrIty.js                                            3.85 kB │ gzip:  1.85 kB
+dist/assets/HqDialog.vue_vue_type_script_setup_true_lang-DhmT2hJz.js               4.39 kB │ gzip:  2.02 kB
+dist/assets/ConnectPage-mGcZ77PU.js                                                5.09 kB │ gzip:  2.46 kB
+dist/assets/RemotePairingPage-DFiQ9Fs0.js                                          6.23 kB │ gzip:  2.82 kB
+dist/assets/PairingScanner-DzeTOmQj.js                                             6.26 kB │ gzip:  3.41 kB
+dist/assets/task.store-B_miRHhY.js                                                 6.99 kB │ gzip:  2.61 kB
+dist/assets/RemoteTokensPage-BwGmtVPG.js                                           7.59 kB │ gzip:  3.85 kB
+dist/assets/HqSelect.vue_vue_type_script_setup_true_lang-BuGN5n_x.js               7.62 kB │ gzip:  3.28 kB
+dist/assets/RemoteDevicesPage-BRkjg_ll.js                                          8.54 kB │ gzip:  3.75 kB
+dist/assets/WorkspacesPage-XEt1D58Y.js                                             8.80 kB │ gzip:  3.50 kB
+dist/assets/TemplatesPage-CKvwHbzG.js                                              9.62 kB │ gzip:  4.27 kB
+dist/assets/SessionsPage-CLi6CgNN.js                                              10.58 kB │ gzip:  4.52 kB
+dist/assets/AgentsPage-1KmJi9Ur.js                                                11.64 kB │ gzip:  4.06 kB
+dist/assets/TasksPage-CvsijX-q.js                                                 11.80 kB │ gzip:  4.69 kB
+dist/assets/OverviewPage-D-II-Egx.js                                              12.12 kB │ gzip:  3.96 kB
+dist/assets/ApprovalsPage-KLMdS1VJ.js                                             12.28 kB │ gzip:  4.96 kB
+dist/assets/OnboardingPage-brevqME4.js                                            12.94 kB │ gzip:  4.92 kB
+dist/assets/TeamsPage-ChHbggUA.js                                                 16.12 kB │ gzip:  6.00 kB
+dist/assets/remote-chat.store-BPvzFMkN.js                                         22.06 kB │ gzip:  7.09 kB
+dist/assets/TaskDetailPage-Xqd3I9Kg.js                                            23.47 kB │ gzip:  8.00 kB
+dist/assets/AttachmentDrafts.vue_vue_type_script_setup_true_lang-DGlScKDy.js      25.54 kB │ gzip: 10.21 kB
+dist/assets/ScenesPage-BqBJlX7c.js                                                25.69 kB │ gzip:  8.71 kB
+dist/assets/RemoteChatPage-CzLt4hL9.js                                            41.31 kB │ gzip: 12.92 kB
+dist/assets/RemoteLinkPage-BTA7W2iZ.js                                            49.48 kB │ gzip: 18.89 kB
+dist/assets/ChatPage-Bn-imUOC.js                                                  79.05 kB │ gzip: 23.98 kB
+dist/assets/jsQR-UMIdgYmG.js                                                     130.80 kB │ gzip: 47.46 kB
+dist/assets/vendor-BKKHNeE9.js                                                   149.77 kB │ gzip: 50.59 kB
+dist/assets/index-BRSZaKYd.js                                                    230.97 kB │ gzip: 75.77 kB
+✓ built in 7.78s
+```
+
+保留既有 router injection 测试警告、模拟 HUB_NOT_READY 日志以及 echarts 空 chunk 构建提示；最终 69 个文件、491 项测试通过。
+
+### 3. 交接
+
+- 仅修改 `apps/desktop/**` 和 `.hqagent/handoffs/**`，无依赖、根配置、协议、Hub 或服务端变更。
+- 本轮验证为纯函数及 mocked HTTP 到 Store 的自动化链路，未操作线上真实续接或实体手机；未新增截图。
+- 未遇真实 429、0xC0000142 或 API 额度错误；未并行运行构建/测试，未新增持久化存储或敏感日志。
+- 提交标题：`fix(desktop): preserve session resumption failure reasons`。提交后运行 `git log -1 --format=%B` 自查，不包含署名或生成标记；只提交到 feat/r15-web，不合并回 integration。
