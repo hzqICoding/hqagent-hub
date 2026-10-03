@@ -408,14 +408,30 @@ def test_execution_handles_and_session_only_caches_are_erased(tmp_path):
                 tx.connection.execute('INSERT INTO local_commands VALUES(?,?,?,?)', ('session-only', 'secret-key', 'hash', json.dumps({'id': session, 'output': 'SENSITIVE_CACHED_OUTPUT'})))
                 tx.connection.execute('INSERT INTO idempotency_records VALUES(?,?,?,?,?)', ('cache', '/sessions/' + session, 'hash', json.dumps({'id': session, 'private': 'SENSITIVE_CACHED_OUTPUT'}), now()))
                 tx.connection.execute('INSERT INTO remote_state VALUES(?,?)', ('session-cache', json.dumps({'sessionId': session, 'body': 'SENSITIVE_CACHED_OUTPUT'})))
+                tx.connection.execute('INSERT INTO approvals VALUES(?,?,?,?,?,?,?)',
+                    ('exclusive-approval', task, node, 'git_push', '{}', 'approved', now()))
+                projection_keys = ['message:' + receipt.message_id, 'run:' + receipt.run_id,
+                                   'approval:exclusive-approval']
+                for projection in [*projection_keys, 'message:retained-unrelated']:
+                    tx.connection.execute('INSERT INTO remote_projections VALUES(?,?)', (projection, 'digest'))
+                system.repo.put('sync-work', {'phase': 'synced', 'store': system.repo.get('identity', tx)['store'],
+                    'generation': 1, 'backfillId': 'retained-backfill', 'cursor': 0, 'high': 0, 'batch': 0}, tx)
                 event, _ = system.events.append(tx, EventDraft(aggregate_type='session', aggregate_id=session, type='session.test', payload={'private': 'SENSITIVE_CACHED_OUTPUT'}))
                 system.repo.seal(tx)
+            persistent = {key: system.repo.get(key) for key in ('identity', 'link', 'sync-work')}
             result = await system.chat.delete_conversation(cid, 1, 'delete-exclusive')
             assert result.local_deleted
             assert system.adapter.registry.get(session) is None
             for table, field in [('local_commands', 'response_json'), ('idempotency_records', 'response_json'), ('remote_state', 'value_json'), ('events', 'payload_json')]:
                 assert not any('SENSITIVE_CACHED_OUTPUT' in row[0] for row in system.db.connection.execute(f'SELECT {field} FROM {table}'))
             assert system.db.connection.execute('SELECT payload_json FROM events WHERE seq=?', (event.seq,)).fetchone()[0] == '{}'
+            assert [r[0] for r in system.db.connection.execute('SELECT key FROM remote_projections')] == ['message:retained-unrelated']
+            for key in ('link', 'sync-work'):
+                assert system.repo.get(key) == persistent[key]
+            identity = system.repo.get('identity')
+            assert identity['revision'] > persistent['identity']['revision']
+            assert {k: v for k, v in identity.items() if k != 'revision'} == {
+                k: v for k, v in persistent['identity'].items() if k != 'revision'}
         finally:
             await system.close()
     asyncio.run(scenario())
