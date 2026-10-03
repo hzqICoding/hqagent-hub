@@ -591,3 +591,162 @@ $env:PYTHONIOENCODING='utf-8'
 ```
 
 返修代码提交：`2908437`（共用执行选择/发现快照）、`0ba51aa`（能力映射、刷新和回归）。逐次运行 `git log -1 --format=%B` 自查，无署名。`git diff --check` 通过。原始输出在 `.tmp/r16-repair3-hub.txt` / `.tmp/r16-repair3-server.txt`。
+
+
+## 返修 5：原生会话 CLI 版本范围与结构门禁（2026-10-02）
+
+基线 `97e0b723035580e4876102607c5125489d971144`；实施提交 `61aee66`。工作区 `E:/OtherPro/HQAgent-Hub-worktrees/hub-native-versions`，分支 `feat/hub-native-versions`。任务末尾的 `feat/remote-worker` 与明确指定的隔离工作区及“另一任务正在使用、不要动”冲突；已提出澄清，未收到改派，因此提交保留在指定分支，供主代理整合。没有合并 integration，没有修改 remote-worker 工作区、其 venv、local_chat.py、协议、server 或桌面代码。
+
+### 结构普查与证据范围
+
+脚本：[`../native_structure_census.py`](../native_structure_census.py)。运行命令（cwd 为本工作区根）：
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+$env:PYTHONIOENCODING='utf-8'
+& 'E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.venv/Scripts/python.exe' -B .hqagent/native_structure_census.py --output .hqagent/reviews/native-versions-census.json > .hqagent/reviews/native-versions-census-summary.jsonl
+```
+
+扫描两个指定根的 JSONL：初始清点 Codex 851 个文件、Claude 55 个文件。每文件固定打开时的字节上限，忽略不完整尾行；正在运行的会话会使不同轮普查的计数变化，以下以最终存档为准，不是全机原子快照。
+
+脚本仅扫描 JSON 结构，将真实正文字符串在 JSON 解码前替换成占位值；按结构路径限制枚举/版本读取，工具参数中的同名 type/version/cwd 不会误入元数据路径。身份仅为临时哈希、cwd 仅保留是否绝对目录；它们均不输出。没有调用真实会话的 inspect/list/read，没有复制正文作 fixture，没有加载凭据或额外读取 Claude history.jsonl。结构投影调用现有 `_validate_identity` / `_messages`（含父链校验），只绕过稳定版版本范围门槛。
+
+产物仅含版本、记录类型、字段名/类型、计数及固定失败类别：
+
+- [完整字段类型普查](../reviews/native-versions-census.json)：顶层、payload/message、内容块的字段集合与类型；任意工具输入/返回对象保持不透明。
+- [逐版本类型与校验汇总](../reviews/native-versions-census-summary.jsonl)：每类记录数量、R3 记录校验和独立消息结构校验数量。
+- `validation` 计入来源、身份和结构失败；`structure_validation` 独立验证消息/块/父链，避免把“非终端来源”误称为版本结构变化。`files` 是包含相应版本的文件数，跨版本会话可重复计入不同版本；信封前辅助记录单列 unknown，不能解释成“未知版本已获支持”。普查不替代终端来源证明、UUID 信封检查、资源配额或真实读取前的完整校验。
+
+最终汇总：Codex 336671 条，消息结构 336671 通过；R3 记录校验 336281 通过，369 条 source 来源校验失败，21 条 id 身份不一致。Claude 82149 条，其中 81964 条通过，185 条为信封前辅助记录。JSON 损坏/不完整尾行/IO 错误均为 0。
+
+下表仅含版本、类型数及计数；每种类型的名字和数量见上面的逐版本汇总。
+
+| 版本 | 记录类型数 | 记录数 | 消息结构通过 | R3记录通过 | R3记录失败 | 信封前辅助记录 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| claude:2.1.251 | 17 | 14012 | 14012 | 14012 | 0 | 0 |
+| claude:2.1.258 | 15 | 1716 | 1716 | 1716 | 0 | 0 |
+| claude:2.1.259 | 14 | 1638 | 1638 | 1638 | 0 | 0 |
+| claude:2.1.260 | 14 | 5058 | 5058 | 5058 | 0 | 0 |
+| claude:2.1.261 | 14 | 4550 | 4550 | 4550 | 0 | 0 |
+| claude:2.1.263 | 14 | 6337 | 6337 | 6337 | 0 | 0 |
+| claude:2.1.266 | 14 | 8465 | 8465 | 8465 | 0 | 0 |
+| claude:2.1.267 | 14 | 1852 | 1852 | 1852 | 0 | 0 |
+| claude:2.1.268 | 12 | 165 | 165 | 165 | 0 | 0 |
+| claude:2.1.269 | 12 | 142 | 142 | 142 | 0 | 0 |
+| claude:2.1.270 | 14 | 1220 | 1220 | 1220 | 0 | 0 |
+| claude:2.1.272 | 13 | 6064 | 6064 | 6064 | 0 | 0 |
+| claude:2.1.273 | 13 | 6539 | 6539 | 6539 | 0 | 0 |
+| claude:2.1.274 | 13 | 2682 | 2682 | 2682 | 0 | 0 |
+| claude:2.1.278 | 13 | 4267 | 4267 | 4267 | 0 | 0 |
+| claude:2.1.280 | 13 | 3730 | 3730 | 3730 | 0 | 0 |
+| claude:2.1.281 | 14 | 1648 | 1648 | 1648 | 0 | 0 |
+| claude:2.1.282 | 11 | 131 | 131 | 131 | 0 | 0 |
+| claude:2.1.283 | 14 | 10182 | 10182 | 10182 | 0 | 0 |
+| claude:2.1.284 | 12 | 1311 | 1311 | 1311 | 0 | 0 |
+| claude:2.1.285 | 12 | 109 | 109 | 109 | 0 | 0 |
+| claude:2.1.288 | 8 | 146 | 146 | 146 | 0 | 0 |
+| claude:unknown | 6 | 185 | 0 | 0 | 0 | 185 |
+| codex:0.108.0-alpha.12 | 4 | 57 | 57 | 54 | 3 | 0 |
+| codex:0.111.0 | 4 | 45600 | 45600 | 45596 | 4 | 0 |
+| codex:0.116.0 | 4 | 115 | 115 | 115 | 0 | 0 |
+| codex:0.119.0-alpha.28 | 4 | 1449 | 1449 | 1448 | 1 | 0 |
+| codex:0.122.0-alpha.1 | 4 | 2083 | 2083 | 2072 | 11 | 0 |
+| codex:0.130.0-alpha.5 | 4 | 917 | 917 | 909 | 8 | 0 |
+| codex:0.131.0-alpha.9 | 4 | 72 | 72 | 71 | 1 | 0 |
+| codex:0.133.0 | 7 | 109121 | 109121 | 109101 | 20 | 0 |
+| codex:0.144.2 | 5 | 28 | 28 | 26 | 2 | 0 |
+| codex:0.144.4 | 6 | 28727 | 28727 | 28711 | 16 | 0 |
+| codex:0.146.0 | 6 | 5053 | 5053 | 5043 | 10 | 0 |
+| codex:0.147.0 | 7 | 56148 | 56148 | 56057 | 91 | 0 |
+| codex:0.153.4 | 8 | 86346 | 86346 | 86140 | 206 | 0 |
+| codex:0.159.2 | 6 | 672 | 672 | 655 | 17 | 0 |
+| codex:0.98.0 | 4 | 283 | 283 | 283 | 0 | 0 |
+
+### 版本策略、限制与风险
+
+1. 稳定版本支持区间：Codex `0.98.0–0.159.2`、Claude `2.1.251–2.1.288`，每次读取仍逐条检查结构。这是由已发现样本推导的兼容范围，不声称逐一实测了范围中的每个发行版本。`0.159.2` 新增的 runtime_workspace_roots 等为未消费的附加元数据；身份、角色、消息内容块的必需结构未见不兼容变化，旧版本无需猜测读取映射。
+2. 高于普查上限、相同 major 的新 minor/patch（含 Codex `0.159.x` 后续补丁）必须通过完整结构校验；成功使用既有 `format.status=readable`、`format.reason=结构兼容、版本未逐一验证`，保留真实 `cliVersion`，同时写既有 versionDiagnostics。缓存命中/重启后也恢复诊断。跨 major、低于下限、非稳定三段式版本仍拒绝，并给出主版本/下限/版本格式的具体原因。未新增协议状态、原因码或字段。
+3. 本次没有发现稳定版消息结构本身的不兼容。普查中的 `source` / `id` 失败没有被放行：`source=cli`、精确身份、Claude 终端来源证明和 sidechain 排除保持不变。尤其本机 `0.159.2` 的 17 份样本都不满足终端来源门槛；只能据其结构及合成终端 fixture 证明读取配置兼容，不能宣称这 17 份会被收录。预发布样本也都是非终端来源，保持排除；稳定三段式配置不包含预发布后缀。
+4. 已知或未来版本的必需字段损坏，均返回 `unsupported` 和具体字段原因，例如 `content结构非法`、`text不是字符串`、`role非法`、`channel未知`、`payload不是对象`；不会退回笼统“尚未验证”。未知辅助记录/块维持 R3 既有忽略/占位规则，不输出未知正文。
+5. **风险**：字段形状一致不能证明未来 CLI 的所有语义一致，尤其 0.x 的 minor 可能含破坏性变化。保护为完整记录校验、精确身份、父链、稳定文件/前缀校验、资源限额、未知内容保守隐藏以及既有凭据/思考内容过滤。版本放宽仅改变读取配置资格；续接写入仍要求 `closed_confirmed`、当前 sourceRevision 的关闭确认及精确会话写锁，活跃进程不能被确认覆盖。此次未修改这些门禁，也没有通过真实会话写入验证来扩大任务范围。
+
+### 索引失效与回归
+
+- `structures-v3` 进入 readerId/sourceRevision；持久索引策略摘要同时包含结构版本、版本策略、上下限。旧策略索引在 load 时失效，下一次既有后台扫描或按需 refresh 自动重算，不要求用户删除缓存。
+- 内存索引也检查策略；重算后保留 nativeSessionId，更新 sourceRevision/indexVersion；先前 sourceRevision 的关闭确认不能沿用。
+- 合成测试覆盖普查稳定版本、上/下边界、未来 patch/minor、跨 major、后续记录版本变化、缺失 content、非法 text/role/channel、非终端 source、缓存恢复诊断、追加损坏、凭据过滤和三种旧 unsupported 持久索引重启重算。
+- 普查脚本合成测试拦截 JSON 解码，确认不会解码正文/标题/工具输入字符串，输出无正文、路径和身份；脚本最终调整后的补跑为 `2 passed, 1 warning in 0.26s`，见 [脚本测试输出](../reviews/native-versions-census-tests.txt)。
+
+### 验证命令与真实输出
+
+以下两套全量串行运行，先 Hub 后 server，均退出码 0。使用指定共享解释器，设置 `-B` / `PYTHONDONTWRITEBYTECODE`，没有安装依赖或修改 venv。临时目录位于本工作区已忽略的 `.hqagent/r3-tmp`。
+
+Hub（cwd `apps/hub`）：
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+$env:PYTHONIOENCODING='utf-8'
+$env:TEMP=(Resolve-Path ../../.hqagent/r3-tmp).Path
+$env:TMP=$env:TEMP
+& 'E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.venv/Scripts/python.exe' -B -m pytest -q -p no:cacheprovider --basetemp ../../.hqagent/r3-tmp/native-versions-hub --tb=short 2>&1 | Tee-Object -FilePath ../../.hqagent/reviews/native-versions-hub.txt
+```
+
+```text
+........................................................................ [ 11%]
+........................................................................ [ 22%]
+...........................................s................ssssssss.... [ 33%]
+........................................................................ [ 44%]
+........................................................................ [ 55%]
+........................................................................ [ 66%]
+........................................................................ [ 77%]
+........................................................................ [ 88%]
+........................................................................ [ 99%]
+远程送达预留清理暂未完成，将重试
+..                                                                       [100%]
+============================== warnings summary ===============================
+..\..\..\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_posix_credentials.py:166: POSIX mode bits
+SKIPPED [1] tests\test_posix_path_guard.py:50: POSIX absolute redirect path
+SKIPPED [1] tests\test_posix_path_guard.py:68: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:76: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:84: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:101: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:108: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:115: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:122: POSIX executable symlink and directory-fd semantics
+641 passed, 9 skipped, 4 warnings in 283.12s (0:04:43)
+```
+
+server（cwd `apps/server`，环境同上）：
+
+```powershell
+& 'E:/OtherPro/HQAgent-Hub-worktrees/remote-worker/.venv/Scripts/python.exe' -B -m pytest -q -p no:cacheprovider --basetemp ../../.hqagent/r3-tmp/native-versions-server --tb=short 2>&1 | Tee-Object -FilePath ../../.hqagent/reviews/native-versions-server.txt
+```
+
+```text
+........................................................................ [ 23%]
+........................................................................ [ 47%]
+........................................................................ [ 71%]
+........................................................................ [ 94%]
+................                                                         [100%]
+============================== warnings summary ===============================
+..\..\..\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+304 passed, 1 warning in 92.96s (0:01:32)
+```
+
+Hub 的 9 项跳过为 Windows 上的 POSIX 专项；warnings 为已有依赖弃用提示。通用预留清理重试日志如实保留。`git diff --check` 通过；未遇 429、0xC0000142 或额度错误。实施与回执按主题提交，每次提交后均执行 `git log -1 --format=%B` 自查；未合回 integration，未推送远端。
