@@ -324,7 +324,7 @@ def test_matrix_snapshot_cursor_history_and_real_scene_selectors(tmp_path, monke
     async def scenario():
         coordinator, adapter, request = setup(tmp_path, monkeypatch)
         class Capabilities:
-            agents = {'agent': object(), 'agent-b': object()}
+            agents = {'agent': SimpleNamespace(adapter_id='claude'), 'agent-b': SimpleNamespace(adapter_id='claude')}
             usages = {('agent', 'model-scene'): [{'sceneId': 'scene', 'roleId': 'planner'}]}
             async def refresh(self):
                 pass
@@ -349,6 +349,11 @@ def test_matrix_snapshot_cursor_history_and_real_scene_selectors(tmp_path, monke
         history = await coordinator.matrix(inactive=True)
         assert 'retired-model' not in [r.target.model_id_ for r in normal.items]
         assert 'retired-model' in [r.target.model_id_ for r in history.items]
+        coordinator.store.record('claude', adapter.version, 'retired-legacy', {k: True for k in REQUIRED_PROBES}, ['image/png'])
+        legacy = await coordinator.matrix(inactive=True)
+        legacy = [r for r in legacy.items if r.target.model_id_ == 'retired-legacy']
+        assert len(legacy) == 2
+        assert all(r.last_record.passed and not r.passed and r.invalidation_reasons == ['legacy_unbound'] for r in legacy)
         adapter.version = '1.2.4'
         stale = await coordinator.matrix(agent_id='agent', model='retired-model')
         assert stale.items[0].last_record.passed and not stale.items[0].passed

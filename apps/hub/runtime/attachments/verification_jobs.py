@@ -409,6 +409,12 @@ class VerificationCoordinator:
                     record = json.loads(path.read_text('utf-8'))
                     if record.get('target'):
                         selectors.add(self.slot(record['target']))
+                    else:
+                        # Legacy observations remain discoverable as history even
+                        # after their model stops appearing in active scenes.
+                        selectors.update((identifier, record.get('model'))
+                            for identifier, agent in self.capabilities.agents.items()
+                            if str(getattr(agent, 'adapter_id', '')) == record.get('agent'))
                 except (OSError, ValueError):
                     continue
         if model is not None:
