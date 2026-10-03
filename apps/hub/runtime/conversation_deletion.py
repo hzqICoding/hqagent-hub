@@ -95,6 +95,10 @@ class ConversationDeletion:
 
     def _blockers(self, tx, conversation, runs, tasks):
         blockers, reasons = set(), set()
+        if self.worker and self.worker.repo.get('link', tx)['view'].get('workerId'):
+            # Include not-yet-projected source slots in the same preflight.
+            # The ordinary Worker pump will deliver them if this check blocks.
+            self.worker.repo.cover_private(tx)
         by_task = {r['task_id']: r['run_id'] for r in runs if r['task_id']}
         by_profile = {'local-profile:' + r['run_id']: r['run_id'] for r in runs}
         ids = {r['run_id'] for r in runs}
@@ -172,6 +176,15 @@ class ConversationDeletion:
         for inbox in tx.connection.execute("SELECT run_id FROM remote_inbox WHERE status IN ('admitted','executing')"):
             if inbox[0] in ids:
                 blockers.add(inbox[0]); reasons.add('active_runs')
+        for outbox in tx.connection.execute('SELECT frame_json FROM remote_outbox'):
+            frame = json.loads(outbox[0])
+            if frame.get('type') == 'approval.state_changed' and frame.get('conversationId') == conversation:
+                # Existing wire revisions deliberately forbid redacting
+                # approval/control facts. Never claim erasure while their
+                # immutable targetSummary body remains pending transport ACK.
+                ref = frame.get('payload', {}).get('resultRef', {})
+                blockers.update([ref['runId']] if ref.get('runId') else ids)
+                reasons.add('cancellation_unconfirmed')
         if reasons:
             reason = next(r for r in ('cancellation_unconfirmed', 'recovery_required', 'active_runs') if r in reasons)
             ordered = sorted(blockers)
