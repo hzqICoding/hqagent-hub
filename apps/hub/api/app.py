@@ -576,6 +576,13 @@ def create_application(
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    @app.post("/internal/remote/resync")
+    async def resync_remote_replica() -> JSONResponse:
+        # Operator Bearer only. Never let a cloud/browser credential bypass a freeze.
+        response = success_response(remote_worker.recovery.request())
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.post("/internal/auth/revoke-sessions")
     async def revoke_browser_sessions() -> JSONResponse:
         # Same operator-only boundary as connection-code renewal.
