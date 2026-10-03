@@ -74,8 +74,8 @@ def test_old_fixture_files_byte_identical():
 
 def test_each_new_type_and_every_revision3_frame_has_fixture():
     assert set(R3) <= {n for f,n in M.items() if f.startswith('r3.')}
-    assert models.PROTOCOL_VERSION==API['info']['version']=='0.10.0'
-    assert set(API['x-worker-websocket']['revisions'])=={1,2,3,4}
+    assert models.PROTOCOL_VERSION==API['info']['version']=='0.11.0'
+    assert set(API['x-worker-websocket']['revisions'])=={1,2,3,4,5}
     assert all(v['properties']['wireRevision']['const']==3 for v in R3.values() if 'wireRevision' in v.get('properties',{}))
 
 
@@ -247,7 +247,7 @@ def test_native_read_sync_disabled_is_explicit_409_not_empty_or_missing(path):
     error=examples['REMOTE_SYNC_DISABLED']['value']
     assert error['success'] is False and 'data' not in error
     assert error['error']=={'code':'REMOTE_SYNC_DISABLED','message':'这台电脑已关闭同步','retryable':False}
-    assert error['protocolVersion']=='0.10.0'
+    assert error['protocolVersion']=='0.11.0'
     assert op['responses']['409']['headers']['Cache-Control']['schema']['const']=='no-store'
     assert 'REMOTE_DEVICE_SUSPENDED' not in op['x-error-codes']
     assert 'authentication and ownership first' in op['description']

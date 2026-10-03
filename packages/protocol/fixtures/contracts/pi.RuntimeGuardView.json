@@ -1,0 +1,8 @@
+{
+  "status": "unverified",
+  "isolation": "unknown",
+  "checkedAt": "2026-10-04T00:00:00Z",
+  "reasons": [
+    "guard_not_loaded"
+  ]
+}

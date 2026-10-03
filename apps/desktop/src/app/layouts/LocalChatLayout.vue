@@ -2,22 +2,24 @@
 import { watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useLocalAuthStore } from '@/stores/local-auth.store'
+import { isDesktopShell } from '@/shared/api/desktop-endpoint'
 
 const auth = useLocalAuthStore()
 const route = useRoute()
 const router = useRouter()
 let timer: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
-  timer = setInterval(() => { if (!auth.isMockMode) void auth.checkAuthStatus() }, 15000)
+  if (!isDesktopShell()) timer = setInterval(() => { if (!auth.isMockMode) void auth.checkAuthStatus() }, 15000)
 })
 onUnmounted(() => { if (timer) clearInterval(timer) })
 
 watch(() => [auth.authenticated, auth.isChecking, auth.isMockMode], () => {
-  if (!auth.authenticated && !auth.isChecking && !auth.isMockMode) {
+  if (!isDesktopShell() && !auth.authenticated && !auth.isChecking && !auth.isMockMode) {
     void router.replace({ path: '/connect', query: { redirect: route.fullPath } })
   }
 })
 watch(() => auth.currentMode, () => {
+  if (isDesktopShell()) return
   void router.replace({ path: '/connect', query: { redirect: route.fullPath } })
 })
 
@@ -33,13 +35,14 @@ async function disconnect() {
       <router-link to="/chat" class="font-semibold text-sm">HQAgent Hub</router-link>
       <nav class="flex items-center gap-4 text-xs">
         <router-link to="/chat" active-class="text-primary font-semibold">本地对话</router-link>
+        <router-link to="/agents" active-class="text-primary font-semibold">Agent 管理</router-link>
         <router-link to="/scenes" active-class="text-primary font-semibold">场景与角色</router-link>
         <router-link to="/remote-link" active-class="text-primary font-semibold">连接手机</router-link>
       </nav>
       <span class="ml-auto text-xs" :class="auth.isMockMode ? 'text-warning' : 'text-text-muted'">
         {{ auth.isMockMode ? '演示数据 · 不会执行真实任务' : '本机 Worker' }}
       </span>
-      <button type="button" class="text-xs text-primary hover:underline" @click="disconnect">退出连接</button>
+      <button v-if="!isDesktopShell()" type="button" class="text-xs text-primary hover:underline" @click="disconnect">退出连接</button>
     </header>
     <main class="flex-1 min-h-0 overflow-hidden flex flex-col"><router-view /></main>
   </div>

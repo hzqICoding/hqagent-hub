@@ -79,3 +79,12 @@ class SessionRegistry:
 
     def values(self) -> tuple[AdapterSessionState, ...]:
         return tuple(self._items.values())
+
+    def forget_finished(self, session_id: str) -> None:
+        """Forget an exclusively owned stopped session without issuing a cancel."""
+        state = self._items.get(session_id)
+        if state is None:
+            return
+        if not state.finished.is_set() or (state.process is not None and state.process.returncode is None):
+            raise ValueError('session termination is not confirmed')
+        self._items.pop(session_id, None)

@@ -5,12 +5,13 @@ import json
 from pathlib import Path
 from protocol.generated.python import ImageInputCapability, AttachmentTargetCapabilities
 from core.errors import HubError
+from adapters.versions import cli_version
 from runtime.remote.security import CredentialVault
-from storage.local_chat import now
+from storage.local_chat import now, uid
+from runtime.attachments.verification_target import target_for, TRANSPORTS
 from orchestrator.domain import ProfileSnapshot, ResolutionRequest, ResolutionGap
 from runtime.execution_selection import scene_execution, native_execution_candidate
 from storage.idempotency import request_hash
-TRANSPORTS = {'claude': 'stream-json-image-v1', 'codex': 'app-server-localImage-v1'}
 REQUIRED_PROBES = frozenset({'new', 'resume', 'mixed-five', 'cancel', 'error'})
 
 class VerificationStore:
@@ -21,19 +22,35 @@ class VerificationStore:
     def key(self, agent, model):
         return hashlib.sha256(json.dumps([agent, model]).encode()).hexdigest() + '.json'
 
-    def record(self, agent, version, model, outcomes, mime_types, *, diagnostics=None):
+    def record(self, agent, version, model, outcomes, mime_types, *, diagnostics=None, target=None, job_id=None, cleanup_confirmed=False, completed=True):
         self.root.mkdir(parents=True, exist_ok=True)
+        version = cli_version(version)
         result = dict(agent=agent, version=version, model=model, transport=TRANSPORTS[agent], observedAt=now(), passed=REQUIRED_PROBES <= outcomes.keys() and all(outcomes.values()), probes=outcomes, mimeTypes=mime_types)
+        result['passed'] = result['passed'] and completed
         if diagnostics is not None:
             result['diagnostics'] = diagnostics
-        CredentialVault.atomic_write(self.root / self.key(agent, model), json.dumps(result).encode())
+        if target is not None:
+            result.update(target=target, recordId=uid('verification'), jobId=job_id,
+                          cleanupConfirmed=cleanup_confirmed)
+        else:
+            result['legacy_unbound'] = True
+        CredentialVault.atomic_write(self.root / self.key(target['agentId'] if target else agent, model), json.dumps(result).encode())
         return result
 
-    def capability(self, agent, version, model=None):
+    def latest(self, agent_id, kind, model):
+        for identifier in (agent_id, kind):
+            try:
+                return json.loads((self.root / self.key(identifier, model)).read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                continue
+        return None
+
+    def capability(self, agent, version, model=None, *, target=None):
         valid = None
+        version = cli_version(version)
         try:
-            record = json.loads((self.root / self.key(agent, model)).read_text(encoding='utf-8'))
-            if record['version'] == version and record['model'] == model and (record['transport'] == TRANSPORTS.get(agent)) and record['passed'] and (REQUIRED_PROBES <= record['probes'].keys()) and all(record['probes'].values()):
+            record = self.latest(target['agentId'] if target else agent, agent, model)
+            if version and target and record and record.get('target') == target and record.get('cleanupConfirmed') and cli_version(record['version']) == version and record['model'] == model and (record['transport'] == TRANSPORTS.get(agent)) and record['passed'] and (REQUIRED_PROBES <= record['probes'].keys()) and all(record['probes'].values()):
                 valid = record
         except (OSError, ValueError, KeyError, TypeError):
             pass
@@ -62,7 +79,9 @@ class ImageCapabilities:
         view = self.agents.get(candidate.instance_id)
         if view is None or str(view.status) != 'ready' or str(view.adapter_id) != str(candidate.adapter_id):
             return self.unknown('解析到的Agent没有一致且可用的当前状态', str(candidate.adapter_id))
-        return self.store.capability(str(candidate.adapter_id), view.version, model)
+        adapter = self.worker.bridge.chat.ports.tasks.directory.adapter_for(candidate.instance_id)
+        target = target_for(candidate.instance_id, str(candidate.adapter_id), view.version, model, adapter)
+        return self.store.capability(str(candidate.adapter_id), view.version, model, target=target)
 
     async def _refresh(self):
         ports = self.worker.bridge.chat.ports
@@ -74,6 +93,7 @@ class ImageCapabilities:
             self.agents = {}
             self.candidates = ()
         resolved = {}
+        self.usages = {}
         for scene in self.worker.bridge.chat.repository.scenes():
             roles = []
             profile, overrides, options = scene_execution(scene, 'preview:' + str(scene.id))
@@ -98,7 +118,9 @@ class ImageCapabilities:
                         cap = self.unknown(decision.reason)
                     else:
                         identifier = decision.agent.instance_id
-                        cap = self.selected(decision.agent, options[role.role_id]['modelId'])
+                        model = options[role.role_id]['modelId']
+                        self.usages.setdefault((identifier, model), []).append(dict(sceneId=scene.id, roleId=str(role.role_id)))
+                        cap = self.selected(decision.agent, model)
                         if str(role.role_id) == 'planner':
                             planner = identifier
                 except Exception:

@@ -83,7 +83,7 @@ async function handleLogin() {
               type="text"
               autocomplete="username"
               placeholder="请输入 Hub 账号"
-              class="w-full pl-9 pr-3 py-2 text-sm bg-bg-app border border-border rounded-lg text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors"
+              class="hq-form-control w-full pl-9 pr-3 py-2 text-sm bg-bg-app border border-border rounded-lg text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors"
               :disabled="authStore.isLoading || Boolean(authStore.retryAfter)"
             />
           </div>
@@ -101,7 +101,7 @@ async function handleLogin() {
               type="password"
               autocomplete="current-password"
               placeholder="请输入登录口令"
-              class="w-full pl-9 pr-3 py-2 text-sm bg-bg-app border border-border rounded-lg text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors"
+              class="hq-form-control w-full pl-9 pr-3 py-2 text-sm bg-bg-app border border-border rounded-lg text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors"
               :disabled="authStore.isLoading || Boolean(authStore.retryAfter)"
             />
           </div>

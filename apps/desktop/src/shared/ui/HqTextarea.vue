@@ -45,19 +45,22 @@ function onChange(e: Event) {
 <template>
   <div class="w-full flex flex-col gap-1">
     <div
+      :data-disabled="disabled || undefined"
+      :data-invalid="hasError || undefined"
       :class="[
-        'w-full border bg-panel transition-colors rounded-[var(--radius-sm)] p-2.5',
+        'hq-form-field w-full border bg-panel transition-colors rounded-[var(--radius-sm)] p-2.5',
         'focus-within:ring-2 focus-within:ring-ring focus-within:border-transparent',
         hasError
           ? 'border-status-danger focus-within:ring-status-danger'
           : 'border-border hover:border-border-strong',
-        disabled ? 'opacity-50 cursor-not-allowed bg-muted' : '',
+        disabled ? 'cursor-not-allowed' : '',
       ]"
     >
-      <textarea
+      <textarea class="hq-form-control hq-form-control--embedded"
         :value="modelValue"
         :placeholder="placeholder"
         :disabled="disabled"
+        :aria-invalid="hasError || undefined"
         :readonly="readonly"
         :rows="rows"
         :maxlength="maxlength"

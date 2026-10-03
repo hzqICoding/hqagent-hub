@@ -1,0 +1,17 @@
+{
+  "new": {
+    "state": "not_run"
+  },
+  "resume": {
+    "state": "not_run"
+  },
+  "mixedFive": {
+    "state": "not_run"
+  },
+  "cancel": {
+    "state": "not_run"
+  },
+  "error": {
+    "state": "not_run"
+  }
+}

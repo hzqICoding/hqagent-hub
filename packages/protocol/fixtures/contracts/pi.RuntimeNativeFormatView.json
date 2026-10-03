@@ -1,0 +1,5 @@
+{
+  "status": "unsupported",
+  "unsupportedReason": "reader_not_implemented",
+  "reason": "PI native reader is reserved for phase 2"
+}

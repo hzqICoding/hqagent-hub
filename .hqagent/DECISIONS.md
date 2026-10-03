@@ -470,3 +470,22 @@ unknown按活跃只读；明确确认终端关闭并留审计后才可接续，�
 **取舍**：raw body、64KiB流块，服务端按逻辑附件大小计账号额度、按hash去重物理存储，引用归零才删除共享blob。浏览器上传→uploaded→reserved命令pin→Worker消息attached；电脑先同步pending_upload消息，再上传并发布available或明确unavailable。下载每附件最多3次、每次60s、整轮总300s，崩溃准备轮次明确失败/可手动重试，不永久busy。关闭同步/删除对话/删除设备清所有对应引用、内容及缩略图，直接查存储验收，不以UI隐藏代替真删除。
 
 **边界**：本机v1/v2附件库与能力/缩略图代理入口同时冻结，避免下游自行造接口；内部AgentTaskSpec.inputAttachments可带受控路径，但公开HTTP/WSS绝无路径/凭据/内容。附件PAT scopes只预留，不开放。第二期产物回传、Range/断点续传、OSS直传不在本轮。细则见packages/protocol/remote/R1.6-contract.md，P1/P2/P3业务与真CLI验证另行实施。
+
+
+**D52补充（0.10.1，本机图片验证与删除对话，2026-10-02）**：本机v1 Bearer/v2 Cookie增加验证矩阵、显式费用确认的异步作业、进度/结果和取消；同实例+精确模型选择器全入口唯一，CLI与HTTP共享协调/记录，未确认停止不释放槽。默认modelId省略，不跨模型或实例复用记录；旧未绑定记录作为失效历史。只返回现有五probe和白名单诊断，不返回模型输出/提示词/路径；catalog仍只结论。验证不会在GET/失败重试/Hub重启时自动收费运行。
+
+本机DELETE对话需要expectedVersion CAS及全部关联任务均终结、无准备/暂停/恢复/取消不明；清本机业务记录、独占执行关联、附件库及文件，持久删除栅栏防旧请求复活。同步删除沿既有sync.conversation.deleted/D52真删除，未确认云端则pending/unconfirmed；CLI原始记录和项目源码不动，原生导入只清Hub侧。本轮无云端/手机删除或付费验证入口，手机删除作为后续needs-decision F1，非本轮阻塞。仅本机HTTP增量，包0.10.1、线路4不变，无新增错误码，冲突复用CONFLICT加结构化原因。
+
+### D53 PI Runtime、独立修订5与两期类型冻结（PI-P0，2026-10-04）
+
+**决定**：按PI适配方案v0.2，第一期调度/安全/图片，第二期原生读取/导入/精确续接；协议一次覆盖两期。包0.11.0、wireRevision新增5，服务端支持1–5；旧1–4定义、递归引用与Fixture不变。旧NativeAgentType保留claude/codex，当前HTTP/本机及新线路使用RuntimeNativeAgentType含pi，避免新增枚举偷偷放宽旧codec。
+
+4→5沿既有双向栅栏、持久修订和周期探测；unconfirmed只作控制尝试终态，不证明进程已停。PI相关catalog/会话/原生索引/能力只在5完成协商后同步。旧HTTP严格客户端通过可选X-HQ-Client-Features:pi-v1显式接受新枚举/字段；无此头保留0.10.1投影，直接PI资源NOT_FOUND，游标/WS票据绑定能力集。该头不授予访问/执行/审批或费用权限。
+
+**模型与图片**：同一个modelId标量按首个斜线分成provider和完整model ID，例1aicode/deepseek/deepseek-v4-pro；角色、模型列表、Adapter输入、验证作业和catalog一致，不能按最后斜线拆分。pro/flash/flash-vision-exp分别为规划审核/执行/看图建议，须本机可用；无密钥或渠道URL。pi-rpc-images-v1复用0.10.1五probe验证，方案单次图片实测不等于支持结论；实例/CLI/模型/默认模型变化都失效。
+
+**保护与原生格式**：只读核对本机PI1.0.1安装包，--no-extensions关闭自动发现而显式-e可保留Hub保护扩展；独占进程RPC UI握手及tool_call判定采用冻结内部DTO，不新增公网/本机HTTP路由。不能确认隔离或保护不可用则fail-closed；审批精确绑定请求、参数hash、策略和期限，一次消费，不覆盖路径约束。公开只给RuntimeGuardView。新PI错误只入HTTP/线路5，不入旧错误域。
+
+原生reader冻结pi.jsonl.v3.tree；按磁盘最后完整entry为叶沿parentId线性化已保存分支，不猜活跃终端内存选择，不拼旁支；context_edit不得泄露被隐藏的旧文本。第一期reader未实现则unsupported/reader_not_implemented。沿D51活跃保守、关闭确认留痕、精确sessionId/sessionFile绑定和唯一写锁；取消以agent_settled或进程终止证据为准，不能只看agent_end/abort应答。具体约束与安全边界见PI-contract.md。
+
+**影响**：Hub适配器/guard及前端/服务端分线实施。协议测试不调用模型，也未读取用户会话正文或凭据配置；本次不宣称业务或实际传输验收通过。

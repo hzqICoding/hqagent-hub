@@ -1,6 +1,7 @@
 import type { LocalChatGateway } from './local-chat-gateway.interface'
 import { realLocalChatGateway } from './local-chat-gateway'
 import { mockLocalChatGateway } from './mock-local-chat-gateway'
+import { isDesktopShell } from './desktop-endpoint'
 
 export type LocalChatGatewayMode = 'real' | 'mock'
 
@@ -22,10 +23,11 @@ let currentMode: LocalChatGatewayMode = (() => {
 })()
 
 export function getLocalChatGatewayMode(): LocalChatGatewayMode {
-  return currentMode
+  return isDesktopShell() ? 'real' : currentMode
 }
 
 export function setLocalChatGatewayMode(mode: LocalChatGatewayMode): void {
+  if (isDesktopShell()) { currentMode = 'real'; return }
   currentMode = mode
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, mode)
@@ -42,7 +44,7 @@ export function getLocalChatGateway(): LocalChatGateway {
   if (currentGatewayOverride) {
     return currentGatewayOverride
   }
-  if (currentMode === 'mock') {
+  if (getLocalChatGatewayMode() === 'mock') {
     return mockLocalChatGateway
   }
   return realLocalChatGateway

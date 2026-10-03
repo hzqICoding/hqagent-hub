@@ -232,3 +232,21 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 80新类型、48个修订4帧、84份合成Fixture；原1/2/3闭包和289份Fixture不变。清单走WSS、字节走鉴权HTTPS；有界准备/取消/恢复、能力三层验证、逻辑配额与CAS引用、真删除、电脑/手机双向及本机接口一并定义。
 
 验证：507类型/373Fixture；api-contract 39现有+8新增HTTP、92错误码；全量608 passed。此为协议验收，不是CLI图片或业务真删除已完成。见[R1.6契约](../packages/protocol/remote/R1.6-contract.md)、[回执与下游实施要点](handoffs/R16-P0-protocol.md)。
+
+
+## 0.10.1 本机维护接口补冻（2026-10-02）
+
+冻结SHA：`7f9c8d23dd69a93af5b0f617544465e5dff79345`。D52补充；v1/v2各增加验证矩阵、显式费用确认异步作业、进度、取消，以及CAS删除对话。模型默认选择器省略modelId；实例/型号绑定不跨用，安全诊断不含输出/提示/路径，清理未确认不假取消。删除本机数据及附件，CLI原生日志不动，远端确认状态另列。手机删除为后续needs-decision F1，本轮无云端操作。
+
+线路4不变、无新错误码；16新类型/20合成Fixture；523类型/393Fixture校验通过，协议全量643 passed，api-contract47现有操作通过。P2/P3按[回执0.10.1节](handoffs/R16-P0-protocol.md)实施，未合回integration。
+
+
+## PI-P0 / 0.11.0 冻结（D53，2026-10-04）
+
+- 冻结SHA：`36c472eb72a4e7c101db26ec62c355b1007b672a`（feat/remote-protocol，未合并integration）。
+- PI Runtime协议0.11.0已冻结，Hub适配器/hub-guard、前端、服务端可开工；原生读取实现属于第二期，类型本次一并冻结。
+- wireRevision新增5、支持1–5；修订1–4及其递归类型/Fixture不变，4→5须完成双向升级栅栏。
+- 当前HTTP/本机DTO使用RuntimeNativeAgentType含pi；旧客户端缺省0.10.1投影，显式X-HQ-Client-Features:pi-v1启用，游标/WS票据绑定能力集。
+- provider/modelId按首斜线拆分，pi-rpc-images-v1沿本机五probe；无新HTTP路由、模型凭据或云端模型调用。
+- 606类型 / 485 Fixture；validate -CheckGenerated及api-contract通过，全量协议测试768 passed。
+- 契约：packages/protocol/remote/PI-contract.md；回执：.hqagent/handoffs/PI-P0-protocol.md；真实输出：.hqagent/reviews/pi-p0/。

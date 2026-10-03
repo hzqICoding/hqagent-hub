@@ -1,3 +1,5 @@
+import type { LocalConversationView } from '@hqagent/protocol'
+
 export const REMOTE_ERROR_MESSAGES: Record<string, string> = {
   ATTACHMENT_TOO_LARGE: "附件超过大小限制",
   ATTACHMENT_TYPE_UNSUPPORTED: "不支持此附件类型",
@@ -37,7 +39,7 @@ export const REMOTE_ERROR_MESSAGES: Record<string, string> = {
   AGENT_INCOMPATIBLE: "Agent 版本低于适配器要求的最低版本",
   CAPABILITY_MISSING: "目标角色要求的硬能力在候选 Agent 上缺失，detail 里列能力缺口",
   ROLE_UNRESOLVED: "主选和备用链都无法解析出可用 Agent，需要用户选择或暂停节点",
-  SESSION_NOT_RESUMABLE: "外部会话已失效或适配器不支持恢复，只能新建会话",
+  SESSION_NOT_RESUMABLE: "无法接着上一轮继续，请点右上角 + 开启新话题",
   TASK_NOT_CANCELLABLE: "任务已处于终态，无法取消",
   TASK_ACTION_INVALID: "当前任务状态不支持该动作",
   WORKTREE_BUSY: "目标 worktree 被占用",
@@ -93,7 +95,14 @@ export const REMOTE_ERROR_MESSAGES: Record<string, string> = {
   REMOTE_FRAME_TOO_LARGE: '数据超出最大限制 (256KiB)',
 }
 
-export function getRemoteErrorMessage(code?: string | null, fallback = '远程服务请求失败'): string {
+export function getRemoteErrorMessage(code?: string | null, message?: string | null, conversationKind?: LocalConversationView['conversationKind']): string {
+  if (code === 'SESSION_NOT_RESUMABLE') {
+    if (message?.trim()) return message
+    return conversationKind === 'native'
+      ? '该原生会话暂时无法续接，请稍后重试或在电脑上核对'
+      : REMOTE_ERROR_MESSAGES.SESSION_NOT_RESUMABLE
+  }
+  const fallback = message ?? '远程服务请求失败'
   if (!code) return fallback
   return REMOTE_ERROR_MESSAGES[code] || fallback
 }

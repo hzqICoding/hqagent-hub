@@ -284,7 +284,7 @@ function onScenarioChange(event: Event) {
       <select
         :value="appStore.activeScenario"
         @change="onScenarioChange"
-        class="w-full text-2xs bg-panel border border-border-default rounded px-2 py-1 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+        class="hq-form-control w-full text-2xs bg-panel border border-border-default rounded px-2 py-1 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
       >
         <option v-for="s in scenarios" :key="s.id" :value="s.id">
           {{ s.name }}

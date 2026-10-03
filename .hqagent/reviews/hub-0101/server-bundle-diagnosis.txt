@@ -1,0 +1,4 @@
+Packaged OpenAPI version: 0.10.0
+Protocol OpenAPI version: 0.10.1
+Packaged asset unchanged from baseline: True
+Prepared integration patch: 5807 lines

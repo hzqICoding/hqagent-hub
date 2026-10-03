@@ -460,3 +460,18 @@ errors:
     cause: 附件准备被中断，请重新尝试
     handling: 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型
     surface: R1.6 HTTP / revision 4; download/interrupted errors also command.failed
+  PI_GUARD_UNAVAILABLE:
+    message: PI 工具保护尚未就绪
+    cause: Hub 扩展隔离、工具策略或审批校验未通过
+    handling: 在电脑检查扩展隔离与审批；不得自动重试、降低保护或绕过审批
+    surface: PI local result / revision 5 command.failed; no model output or arguments
+  PI_UNCONTROLLED_EXTENSIONS:
+    message: PI 存在未受控扩展
+    cause: Hub 扩展隔离、工具策略或审批校验未通过
+    handling: 在电脑检查扩展隔离与审批；不得自动重试、降低保护或绕过审批
+    surface: PI local result / revision 5 command.failed; no model output or arguments
+  PI_TOOL_CALL_BLOCKED:
+    message: PI 工具调用已被阻止
+    cause: Hub 扩展隔离、工具策略或审批校验未通过
+    handling: 在电脑检查扩展隔离与审批；不得自动重试、降低保护或绕过审批
+    surface: PI local result / revision 5 command.failed; no model output or arguments

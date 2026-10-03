@@ -1,0 +1,13 @@
+{
+  "conversationId": "conversation_demo",
+  "targetWorkerId": "worker_demo",
+  "authority": "remote",
+  "title": "Remote test conversation",
+  "workspaceId": "workspace_demo",
+  "sceneId": "analyze",
+  "sceneVersion": 1,
+  "createdAt": "2026-09-26T12:00:00Z",
+  "updatedAt": "2026-09-26T12:00:00Z",
+  "workerStoreId": "store_demo",
+  "agentType": "pi"
+}

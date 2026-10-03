@@ -42,9 +42,10 @@ function select(opt: RadioOption) {
     <label
       v-for="opt in options"
       :key="opt.value"
+      :data-disabled="disabled || opt.disabled || undefined"
       :class="[
-        'inline-flex items-start gap-2.5 select-none',
-        disabled || opt.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+        'hq-choice-field inline-flex items-start gap-2.5 select-none',
+        disabled || opt.disabled ? 'cursor-not-allowed' : 'cursor-pointer',
       ]"
       @click.prevent="select(opt)"
     >
@@ -67,7 +68,7 @@ function select(opt: RadioOption) {
         />
       </div>
 
-      <div class="text-sm">
+      <div class="hq-choice-label text-sm">
         <div class="text-content-primary leading-tight">{{ opt.label }}</div>
         <div v-if="opt.description" class="text-xs text-content-muted mt-0.5">
           {{ opt.description }}

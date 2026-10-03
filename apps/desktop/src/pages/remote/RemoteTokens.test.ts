@@ -91,7 +91,7 @@ describe('D50 API token page', () => {
     expect(button(wrapper, '复制令牌')).toBeUndefined()
     await button(wrapper, '吊销此令牌').trigger('click')
     expect(revoke).not.toHaveBeenCalled()
-    await button(wrapper, '确认吊销').trigger('click'); await flushPromises()
+    ;[...document.body.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === '确认吊销')!.click(); await flushPromises()
     expect(revoke).toHaveBeenCalledWith('pat_example')
     expect(wrapper.text()).not.toContain('测试工具')
   })

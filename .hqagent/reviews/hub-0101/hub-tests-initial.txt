@@ -1,0 +1,152 @@
+........................................................................ [ 10%]
+.........................................................FF.FF.F........ [ 20%]
+...F.................................................................... [ 30%]
+....................s................ssssssss........................... [ 41%]
+........................................................................ [ 51%]
+........................................................................ [ 61%]
+........................................................................ [ 72%]
+........................................................................ [ 82%]
+........................................................................ [ 92%]
+...................................................                      [100%]
+================================== FAILURES ===================================
+____________ test_default_scenes_share_actual_execution_resolution ____________
+tests\test_image_target_resolution.py:83: in test_default_scenes_share_actual_execution_resolution
+    asyncio.run(scenario())
+E:\SoftWare\Python313\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_image_target_resolution.py:70: in scenario
+    assert selected['imageInput']['support'] == 'supported'
+E   AssertionError: assert 'unknown' == 'supported'
+E
+E     - supported
+E     + unknown
+___ test_explicit_model_availability_and_version_use_matching_verification ____
+tests\test_image_target_resolution.py:112: in test_explicit_model_availability_and_version_use_matching_verification
+    asyncio.run(scenario())
+E:\SoftWare\Python313\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_image_target_resolution.py:100: in scenario
+    assert role(caps)['imageInput']['support'] == 'supported'
+E   AssertionError: assert 'unknown' == 'supported'
+E
+E     - supported
+E     + unknown
+___ test_native_capability_uses_bound_runtime_not_other_same_type_instances ___
+tests\test_image_target_resolution.py:163: in test_native_capability_uses_bound_runtime_not_other_same_type_instances
+    asyncio.run(scenario())
+E:\SoftWare\Python313\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_image_target_resolution.py:143: in scenario
+    assert caps.native('codex')['imageInput']['support'] == 'supported'
+E   AssertionError: assert 'unknown' == 'supported'
+E
+E     - supported
+E     + unknown
+_________ test_catalog_revision_and_require_track_resolution_changes __________
+tests\test_image_target_resolution.py:211: in test_catalog_revision_and_require_track_resolution_changes
+    asyncio.run(scenario())
+E:\SoftWare\Python313\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_image_target_resolution.py:189: in scenario
+    assert system.worker.projector.capability_revision() > initial
+E   assert 1 > 1
+E    +  where 1 = capability_revision()
+E    +    where capability_revision = <runtime.remote.projection.Projector object at 0x00000218F837BD10>.capability_revision
+E    +      where <runtime.remote.projection.Projector object at 0x00000218F837BD10> = <runtime.remote.worker.RemoteWorker object at 0x00000218F83BC5F0>.projector
+E    +        where <runtime.remote.worker.RemoteWorker object at 0x00000218F83BC5F0> = <remote_support.System object at 0x00000218F4526650>.worker
+______________ test_real_phone_image_uses_unbound_default_scene _______________
+tests\test_image_target_resolution.py:265: in test_real_phone_image_uses_unbound_default_scene
+    asyncio.run(scenario())
+E:\SoftWare\Python313\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_image_target_resolution.py:256: in scenario
+    command = await send_phone(pair, conversation, item)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_r16_attachments.py:30: in send_phone
+    assert response.status_code == 202, response.text
+E   AssertionError: {"success":false,"requestId":"N7jYffdKxkwPzh2b35rWS9iCKj2iVUNT","protocolVersion":"0.10.1","error":{"code":"AGENT_IMAGE_UNSUPPORTED","message":"目标Agent尚不支持此图片输入","retryable":false}}
+E   assert 422 == 202
+E    +  where 422 = <Response [422 Unprocessable Content]>.status_code
+____________ test_real_phone_create_then_first_continue_with_image ____________
+tests\test_initial_continue.py:210: in test_real_phone_create_then_first_continue_with_image
+    asyncio.run(scenario())
+E:\SoftWare\Python313\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_initial_continue.py:198: in scenario
+    assert sent.status_code == 202, sent.text
+E   AssertionError: {"success":false,"requestId":"PVlMmKwG5gVH4YTWo1oGiG1_GvGTMues","protocolVersion":"0.10.1","error":{"code":"AGENT_IMAGE_UNSUPPORTED","message":"目标Agent尚不支持此图片输入","retryable":false}}
+E   assert 422 == 202
+E    +  where 422 = <Response [422 Unprocessable Content]>.status_code
+============================== warnings summary ===============================
+..\..\..\vnext-integration\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\vnext-integration\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\vnext-integration\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_posix_credentials.py:166: POSIX mode bits
+SKIPPED [1] tests\test_posix_path_guard.py:50: POSIX absolute redirect path
+SKIPPED [1] tests\test_posix_path_guard.py:68: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:76: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:84: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:101: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:108: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:115: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:122: POSIX executable symlink and directory-fd semantics
+FAILED tests/test_image_target_resolution.py::test_default_scenes_share_actual_execution_resolution
+远程送达预留清理暂未完成，将重试
+远程送达预留清理暂未完成，将重试
+FAILED tests/test_image_target_resolution.py::test_explicit_model_availability_and_version_use_matching_verification
+FAILED tests/test_image_target_resolution.py::test_native_capability_uses_bound_runtime_not_other_same_type_instances
+FAILED tests/test_image_target_resolution.py::test_catalog_revision_and_require_track_resolution_changes
+FAILED tests/test_image_target_resolution.py::test_real_phone_image_uses_unbound_default_scene
+FAILED tests/test_initial_continue.py::test_real_phone_create_then_first_continue_with_image
+6 failed, 684 passed, 9 skipped, 4 warnings in 292.53s (0:04:52)

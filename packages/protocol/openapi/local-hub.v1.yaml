@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HQAgent-Hub Local Hub API
-  version: 0.10.0
+  version: 0.11.0
   description: |
     Vue 与 Tauri 桌面壳的**唯一**网络契约（裁决 D1）。Update Agent 的内部 API 见
     `update-agent.internal.v1.yaml`，它不向 Vue 暴露第二个 Base URL、第二个 Token
@@ -43,6 +43,1136 @@ tags:
   - name: internal
 
 paths:
+  /api/v1/agents/image-verifications:
+    get:
+      operationId: listImageVerificationStatesV1
+      summary: listImageVerificationStates
+      description: 本机只读实例×模型验证矩阵：默认模型（省略modelId）和场景真实执行解析使用的模型；agentId+modelId可显式查询额外命名模型，modelId过滤必须带agentId。includeInactiveModels包含不再被场景使用的旧记录。无模型调用或收费。默认50/最多100，游标绑定筛选及快照；模型未指定表示不过滤而不是把字符串null当默认。
+        仅本机现有鉴权/Host/Origin边界，无云端或PAT入口；所有成功/错误/重放no-store。详见R1.6-contract的0.10.1节。
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agentId
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 160
+      - name: modelId
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 160
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._+\[\]-]*(?:[/:][A-Za-z0-9][A-Za-z0-9._+\[\]-]*)*$
+          description: Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects
+            CLI default, not an invented model name.
+      - name: includeInactiveModels
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 4096
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
+      responses:
+        '200':
+          description: ApiEnvelope.data; no model output or path.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          x-dataSchema:
+            $ref: ../schema/local-maintenance.json#/$defs/LocalImageVerificationPage
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      items:
+                      - target:
+                          agentId: local.claude.default
+                          agentType: claude
+                          cliVersion: 1.2.3
+                          transport: stream-json-image-v1
+                          targetRevision: opaque-default-revision-001
+                        inUse: false
+                        usages: []
+                        usagesTruncated: false
+                        status: unverified
+                        passed: false
+                        invalidated: false
+                        invalidationReasons: []
+                      - target:
+                          agentId: local.claude.default
+                          agentType: claude
+                          modelId: opus
+                          cliVersion: 1.2.3
+                          transport: stream-json-image-v1
+                          targetRevision: opaque-target-revision-001
+                        inUse: true
+                        usages:
+                        - sceneId: analyze
+                          roleId: analyst
+                        usagesTruncated: false
+                        status: failed
+                        passed: false
+                        invalidated: false
+                        invalidationReasons: []
+                        lastRecord:
+                          recordId: verification_record_example
+                          target:
+                            agentId: local.claude.default
+                            agentType: claude
+                            modelId: opus
+                            cliVersion: 1.2.3
+                            transport: stream-json-image-v1
+                            targetRevision: opaque-target-revision-001
+                          passed: false
+                          probes:
+                            new: false
+                            resume: false
+                            mixedFive: false
+                            cancel: false
+                            error: false
+                          diagnostics:
+                            newStart:
+                              result: adapter_failure
+                              elapsedMs: 12
+                              code: INTERNAL
+                              retryable: false
+                              startupStage: process.start
+                          mimeTypes: []
+                          observedAt: '2026-10-02T12:00:00Z'
+                          jobId: verification_job_example
+                        lastJobId: verification_job_example
+                      hasMore: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '401':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    error:
+                      code: UNAUTHORIZED
+                      message: 缺少或错误的 Bearer token；token 只能来自 hub.json
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '403':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                ORIGIN_NOT_ALLOWED:
+                  value:
+                    success: false
+                    error:
+                      code: ORIGIN_NOT_ALLOWED
+                      message: Host 或 Origin 不在白名单。与 UNAUTHORIZED 区分开：那条是「没带对 token」， 这条是「token 对但来源不对」。混用会让排障时分不清是凭据问题还是来源问题。
+                        HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '404':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                NOT_FOUND:
+                  value:
+                    success: false
+                    error:
+                      code: NOT_FOUND
+                      message: 目标资源不存在
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '422':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                VALIDATION_FAILED:
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_FAILED
+                      message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '500':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                INTERNAL:
+                  value:
+                    success: false
+                    error:
+                      code: INTERNAL
+                      message: 未分类的内部错误，detail 里带 requestId 供查日志
+                      retryable: true
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '400':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                REMOTE_CURSOR_INVALID:
+                  value:
+                    success: false
+                    error:
+                      code: REMOTE_CURSOR_INVALID
+                      message: 游标无效或与当前资源/认证范围不符，不泄露游标归属
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '410':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                REMOTE_CURSOR_EXPIRED:
+                  value:
+                    success: false
+                    error:
+                      code: REMOTE_CURSOR_EXPIRED
+                      message: 浏览器opaque游标已失效，需重新获取owner范围快照
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+      x-error-codes:
+      - UNAUTHORIZED
+      - ORIGIN_NOT_ALLOWED
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - INTERNAL
+      - REMOTE_CURSOR_INVALID
+      - REMOTE_CURSOR_EXPIRED
+  /api/v1/agents/image-verification-jobs:
+    post:
+      operationId: startImageVerificationV1
+      summary: startImageVerification
+      description: 会发起多次真实模型调用并可能产生费用；必须acknowledgeModelUsage=true。目标是具体Agent实例+精确模型（省略modelId=默认）；expectedTargetRevision防目标变化。同一实例+模型全入口最多一个作业，CLI和HTTP共用锁；未确认终止也占槽。持久化费用确认和作业后异步执行，202不是验证通过；同键重放同jobId，不再次收费启动。
+        仅本机现有鉴权/Host/Origin边界，无云端或PAT入口；所有成功/错误/重放no-store。详见R1.6-contract的0.10.1节。
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
+      responses:
+        '202':
+          description: ApiEnvelope.data; no model output or path.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          x-dataSchema:
+            $ref: ../schema/local-maintenance.json#/$defs/LocalImageVerificationJobView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      jobId: verification_job_example
+                      target:
+                        agentId: local.claude.default
+                        agentType: claude
+                        modelId: opus
+                        cliVersion: 1.2.3
+                        transport: stream-json-image-v1
+                        targetRevision: opaque-target-revision-001
+                      status: queued
+                      acknowledgeModelUsage: true
+                      acknowledgedAt: '2026-10-02T12:00:00Z'
+                      requestId: req_verification_example
+                      createdAt: '2026-10-02T12:00:00Z'
+                      updatedAt: '2026-10-02T12:00:00Z'
+                      probes:
+                        new:
+                          state: not_run
+                        resume:
+                          state: not_run
+                        mixedFive:
+                          state: not_run
+                        cancel:
+                          state: not_run
+                        error:
+                          state: not_run
+                      diagnostics: {}
+                      appliedToCurrentTarget: false
+                      cleanupState: not_started
+                      executionMayStillBeRunning: false
+                      orphanProcessIds: []
+                      slotHeld: true
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '401':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    error:
+                      code: UNAUTHORIZED
+                      message: 缺少或错误的 Bearer token；token 只能来自 hub.json
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '403':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                ORIGIN_NOT_ALLOWED:
+                  value:
+                    success: false
+                    error:
+                      code: ORIGIN_NOT_ALLOWED
+                      message: Host 或 Origin 不在白名单。与 UNAUTHORIZED 区分开：那条是「没带对 token」， 这条是「token 对但来源不对」。混用会让排障时分不清是凭据问题还是来源问题。
+                        HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '404':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                NOT_FOUND:
+                  value:
+                    success: false
+                    error:
+                      code: NOT_FOUND
+                      message: 目标资源不存在
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '422':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                VALIDATION_FAILED:
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_FAILED
+                      message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '500':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                INTERNAL:
+                  value:
+                    success: false
+                    error:
+                      code: INTERNAL
+                      message: 未分类的内部错误，detail 里带 requestId 供查日志
+                      retryable: true
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '409':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                IDEMPOTENCY_MISMATCH:
+                  value:
+                    success: false
+                    error:
+                      code: IDEMPOTENCY_MISMATCH
+                      message: 相同 Idempotency-Key 复用于不同请求体
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+                CONFLICT:
+                  value:
+                    success: false
+                    error:
+                      code: CONFLICT
+                      message: 该实例与模型已有验证作业或待确认清理
+                      retryable: false
+                      detail:
+                        reason: verification_in_progress
+                        activeJobId: verification_job_example
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+          x-errorVariantSchema:
+            $ref: ../schema/local-maintenance.json#/$defs/LocalMaintenanceConflictError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-maintenance.json#/$defs/StartLocalImageVerificationInput
+            example:
+              agentId: local.claude.default
+              modelId: opus
+              expectedTargetRevision: opaque-target-revision-001
+              acknowledgeModelUsage: true
+      x-error-codes:
+      - UNAUTHORIZED
+      - ORIGIN_NOT_ALLOWED
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - INTERNAL
+      - IDEMPOTENCY_MISMATCH
+      - CONFLICT
+  /api/v1/agents/image-verification-jobs/{jobId}:
+    get:
+      operationId: getImageVerificationJobV1
+      summary: getImageVerificationJob
+      description: 查询结构化进度、五项probe、结果和清理证据；无模型调用，不返回模型输出/提示词/路径/raw。取消请求与确认停止区分；旧目标结果不发布到当前catalog。 仅本机现有鉴权/Host/Origin边界，无云端或PAT入口；所有成功/错误/重放no-store。详见R1.6-contract的0.10.1节。
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 160
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
+      responses:
+        '200':
+          description: ApiEnvelope.data; no model output or path.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          x-dataSchema:
+            $ref: ../schema/local-maintenance.json#/$defs/LocalImageVerificationJobView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      jobId: verification_job_example
+                      target:
+                        agentId: local.claude.default
+                        agentType: claude
+                        modelId: opus
+                        cliVersion: 1.2.3
+                        transport: stream-json-image-v1
+                        targetRevision: opaque-target-revision-001
+                      status: queued
+                      acknowledgeModelUsage: true
+                      acknowledgedAt: '2026-10-02T12:00:00Z'
+                      requestId: req_verification_example
+                      createdAt: '2026-10-02T12:00:00Z'
+                      updatedAt: '2026-10-02T12:00:00Z'
+                      probes:
+                        new:
+                          state: not_run
+                        resume:
+                          state: not_run
+                        mixedFive:
+                          state: not_run
+                        cancel:
+                          state: not_run
+                        error:
+                          state: not_run
+                      diagnostics: {}
+                      appliedToCurrentTarget: false
+                      cleanupState: not_started
+                      executionMayStillBeRunning: false
+                      orphanProcessIds: []
+                      slotHeld: true
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '401':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    error:
+                      code: UNAUTHORIZED
+                      message: 缺少或错误的 Bearer token；token 只能来自 hub.json
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '403':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                ORIGIN_NOT_ALLOWED:
+                  value:
+                    success: false
+                    error:
+                      code: ORIGIN_NOT_ALLOWED
+                      message: Host 或 Origin 不在白名单。与 UNAUTHORIZED 区分开：那条是「没带对 token」， 这条是「token 对但来源不对」。混用会让排障时分不清是凭据问题还是来源问题。
+                        HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '404':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                NOT_FOUND:
+                  value:
+                    success: false
+                    error:
+                      code: NOT_FOUND
+                      message: 目标资源不存在
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '422':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                VALIDATION_FAILED:
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_FAILED
+                      message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '500':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                INTERNAL:
+                  value:
+                    success: false
+                    error:
+                      code: INTERNAL
+                      message: 未分类的内部错误，detail 里带 requestId 供查日志
+                      retryable: true
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+      x-error-codes:
+      - UNAUTHORIZED
+      - ORIGIN_NOT_ALLOWED
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - INTERNAL
+  /api/v1/agents/image-verification-jobs/{jobId}/cancellations:
+    post:
+      operationId: cancelImageVerificationJobV1
+      summary: cancelImageVerificationJob
+      description: 取消已有验证作业，不运行五项中的cancel probe、不发起新的模型推理。202表示正在停止；只有实际确认所有本作业句柄结束才能cancelled并释放槽。无法确认则interrupted/unconfirmed保留槽，允许再次取消核对。已有终态且已确认清理返回200，不新增作业。
+        仅本机现有鉴权/Host/Origin边界，无云端或PAT入口；所有成功/错误/重放no-store。详见R1.6-contract的0.10.1节。
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 160
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
+      responses:
+        '202':
+          description: ApiEnvelope.data; no model output or path.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          x-dataSchema:
+            $ref: ../schema/local-maintenance.json#/$defs/LocalImageVerificationJobView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      jobId: verification_job_example
+                      target:
+                        agentId: local.claude.default
+                        agentType: claude
+                        modelId: opus
+                        cliVersion: 1.2.3
+                        transport: stream-json-image-v1
+                        targetRevision: opaque-target-revision-001
+                      status: cancel_requested
+                      acknowledgeModelUsage: true
+                      acknowledgedAt: '2026-10-02T12:00:00Z'
+                      requestId: req_verification_example
+                      createdAt: '2026-10-02T12:00:00Z'
+                      updatedAt: '2026-10-02T12:00:00Z'
+                      probes:
+                        new:
+                          state: not_run
+                        resume:
+                          state: not_run
+                        mixedFive:
+                          state: not_run
+                        cancel:
+                          state: not_run
+                        error:
+                          state: not_run
+                      diagnostics: {}
+                      appliedToCurrentTarget: false
+                      cleanupState: pending
+                      executionMayStillBeRunning: true
+                      orphanProcessIds: []
+                      slotHeld: true
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '200':
+          description: ApiEnvelope.data; no model output or path.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          x-dataSchema:
+            $ref: ../schema/local-maintenance.json#/$defs/LocalImageVerificationJobView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      jobId: verification_job_example
+                      target:
+                        agentId: local.claude.default
+                        agentType: claude
+                        modelId: opus
+                        cliVersion: 1.2.3
+                        transport: stream-json-image-v1
+                        targetRevision: opaque-target-revision-001
+                      status: cancelled
+                      acknowledgeModelUsage: true
+                      acknowledgedAt: '2026-10-02T12:00:00Z'
+                      requestId: req_verification_example
+                      createdAt: '2026-10-02T12:00:00Z'
+                      updatedAt: '2026-10-02T12:00:00Z'
+                      probes:
+                        new:
+                          state: not_run
+                        resume:
+                          state: not_run
+                        mixedFive:
+                          state: not_run
+                        cancel:
+                          state: not_run
+                        error:
+                          state: not_run
+                      diagnostics: {}
+                      appliedToCurrentTarget: false
+                      cleanupState: confirmed
+                      executionMayStillBeRunning: false
+                      orphanProcessIds: []
+                      slotHeld: false
+                      finishedAt: '2026-10-02T12:00:00Z'
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '401':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    error:
+                      code: UNAUTHORIZED
+                      message: 缺少或错误的 Bearer token；token 只能来自 hub.json
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '403':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                ORIGIN_NOT_ALLOWED:
+                  value:
+                    success: false
+                    error:
+                      code: ORIGIN_NOT_ALLOWED
+                      message: Host 或 Origin 不在白名单。与 UNAUTHORIZED 区分开：那条是「没带对 token」， 这条是「token 对但来源不对」。混用会让排障时分不清是凭据问题还是来源问题。
+                        HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '404':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                NOT_FOUND:
+                  value:
+                    success: false
+                    error:
+                      code: NOT_FOUND
+                      message: 目标资源不存在
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '422':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                VALIDATION_FAILED:
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_FAILED
+                      message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '500':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                INTERNAL:
+                  value:
+                    success: false
+                    error:
+                      code: INTERNAL
+                      message: 未分类的内部错误，detail 里带 requestId 供查日志
+                      retryable: true
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '409':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                IDEMPOTENCY_MISMATCH:
+                  value:
+                    success: false
+                    error:
+                      code: IDEMPOTENCY_MISMATCH
+                      message: 相同 Idempotency-Key 复用于不同请求体
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+                CONFLICT:
+                  value:
+                    success: false
+                    error:
+                      code: CONFLICT
+                      message: 该实例与模型已有验证作业或待确认清理
+                      retryable: false
+                      detail:
+                        reason: verification_in_progress
+                        activeJobId: verification_job_example
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+          x-errorVariantSchema:
+            $ref: ../schema/local-maintenance.json#/$defs/LocalMaintenanceConflictError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schema/local-maintenance.json#/$defs/CancelLocalImageVerificationInput
+            example: {}
+      x-error-codes:
+      - UNAUTHORIZED
+      - ORIGIN_NOT_ALLOWED
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - INTERNAL
+      - IDEMPOTENCY_MISMATCH
+      - CONFLICT
   /api/v1/attachments/{attachmentId}/thumbnail:
     get:
       operationId: getLocalAttachmentThumbnailV1
@@ -68,6 +1198,14 @@ paths:
         schema:
           type: string
         example: attachment_demo
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: Authenticated streaming bytes, not ApiEnvelope; errors before streaming use JSON error envelope. No
@@ -192,6 +1330,14 @@ paths:
           maxLength: 36
           pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
         example: 12345678-1234-4234-9234-123456789abc
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope data; no raw authentication credential in JSON.
@@ -463,6 +1609,14 @@ paths:
           type: string
           pattern: ^[0-9a-f]{64}$
         example: e2dbfe68423abd2a4aae75a697a9f47ef0298a44f8b40def76f878ee228a9e8d
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '201':
           description: ApiEnvelope data; no raw authentication credential in JSON.
@@ -742,6 +1896,14 @@ paths:
         schema:
           type: string
         example: attachment_demo
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope data; no raw authentication credential in JSON.
@@ -956,6 +2118,14 @@ paths:
         schema:
           type: string
         example: attachment_demo
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope data; no raw authentication credential in JSON.
@@ -1168,6 +2338,14 @@ paths:
         schema:
           type: string
         example: attachment_demo
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: Authenticated streaming bytes, not ApiEnvelope; errors before streaming use JSON error envelope. No
@@ -1378,6 +2556,14 @@ paths:
         schema:
           type: string
         example: conversation_demo
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope data; no raw authentication credential in JSON.
@@ -1439,7 +2625,7 @@ paths:
         in: query
         required: false
         schema:
-          $ref: ../schema/remote-native.json#/$defs/NativeAgentType
+          $ref: ../schema/remote-pi.json#/$defs/RuntimeNativeAgentType
       - name: cursor
         in: query
         required: false
@@ -1455,6 +2641,14 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
@@ -1582,6 +2776,14 @@ paths:
           type: string
           minLength: 1
           maxLength: 160
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
@@ -1591,7 +2793,7 @@ paths:
                 type: string
                 const: no-store
           x-dataSchema:
-            $ref: ../schema/remote-native.json#/$defs/NativeSessionIndex
+            $ref: ../schema/remote-pi.json#/$defs/RuntimeNativeSessionIndex
           content:
             application/json:
               schema:
@@ -1683,6 +2885,14 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '200':
           description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
@@ -1837,6 +3047,14 @@ paths:
         required: true
         schema:
           type: string
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         '201':
           description: ApiEnvelope.data; synchronous local commit for import, never a delivery receipt.
@@ -1988,7 +3206,15 @@ paths:
               schema:
                 type: string
                 const: no-store
-      parameters: []
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
     put:
       operationId: putLocalAuthorizedRootsV1
       security:
@@ -2046,6 +3272,14 @@ paths:
         required: true
         schema:
           type: string
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -2058,6 +3292,252 @@ paths:
               - displayName: synthetic_displayName
                 path: E:/tmp/r3-example
   /api/v1/conversations/{conversationId}:
+    delete:
+      operationId: deleteLocalConversationV1
+      summary: deleteLocalConversation
+      description: 仅本机删除。expectedVersion为当前元数据CAS；在与发送/运行/控制共享的事务/互斥边界检查全部关联任务，无活动/暂停/待恢复/未确认取消/准备下载才能删除，否则CONFLICT并给原因。200须完成本机对话/消息/运行/附件记录及文件清理；已有云端副本排入既有sync.conversation.deleted，离线pending不冒称云端已删。原生导入仅删Hub数据，不删除任何CLI原始记录。
+        仅本机现有鉴权/Host/Origin边界，无云端或PAT入口；所有成功/错误/重放no-store。详见R1.6-contract的0.10.1节。
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 160
+      - name: expectedVersion
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
+      responses:
+        '200':
+          description: ApiEnvelope.data; no model output or path.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          x-dataSchema:
+            $ref: ../schema/local-maintenance.json#/$defs/LocalConversationDeletionView
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                success:
+                  value:
+                    success: true
+                    data:
+                      conversationId: conversation_example
+                      deletedAt: '2026-10-02T12:00:00Z'
+                      localDeleted: true
+                      remoteCleanup: pending
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '401':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    error:
+                      code: UNAUTHORIZED
+                      message: 缺少或错误的 Bearer token；token 只能来自 hub.json
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '403':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                ORIGIN_NOT_ALLOWED:
+                  value:
+                    success: false
+                    error:
+                      code: ORIGIN_NOT_ALLOWED
+                      message: Host 或 Origin 不在白名单。与 UNAUTHORIZED 区分开：那条是「没带对 token」， 这条是「token 对但来源不对」。混用会让排障时分不清是凭据问题还是来源问题。
+                        HTTP 与 WebSocket 两种传输必须用同一语义，WS 侧以关闭码 4403 表达。
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '404':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                NOT_FOUND:
+                  value:
+                    success: false
+                    error:
+                      code: NOT_FOUND
+                      message: 目标资源不存在
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '422':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                VALIDATION_FAILED:
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_FAILED
+                      message: 请求体通过了格式检查但违反业务约束，detail 里给字段级原因
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '500':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                INTERNAL:
+                  value:
+                    success: false
+                    error:
+                      code: INTERNAL
+                      message: 未分类的内部错误，detail 里带 requestId 供查日志
+                      retryable: true
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+        '409':
+          description: ApiEnvelope.error
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Request-Id:
+              schema:
+                type: string
+              example: req_maintenance_example
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/envelope.json#/$defs/ApiEnvelope
+              examples:
+                IDEMPOTENCY_MISMATCH:
+                  value:
+                    success: false
+                    error:
+                      code: IDEMPOTENCY_MISMATCH
+                      message: 相同 Idempotency-Key 复用于不同请求体
+                      retryable: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+                CONFLICT:
+                  value:
+                    success: false
+                    error:
+                      code: CONFLICT
+                      message: 存在待恢复轮次，请先完成核对
+                      retryable: false
+                      detail:
+                        reason: recovery_required
+                        blockingRunIds:
+                        - run_example
+                        hasMoreBlockingRuns: false
+                    requestId: req_maintenance_example
+                    protocolVersion: 0.11.0
+          x-errorVariantSchema:
+            $ref: ../schema/local-maintenance.json#/$defs/LocalMaintenanceConflictError
+      x-error-codes:
+      - UNAUTHORIZED
+      - ORIGIN_NOT_ALLOWED
+      - NOT_FOUND
+      - VALIDATION_FAILED
+      - INTERNAL
+      - IDEMPOTENCY_MISMATCH
+      - CONFLICT
     patch:
       operationId: updateLocalConversationV1
       description: Worker-owned conversation metadata; title/archived/visibility with expectedVersion CAS and
@@ -2077,6 +3557,14 @@ paths:
         required: true
         schema:
           type: string
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -2125,6 +3613,14 @@ paths:
         required: false
         schema:
           type: string
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       security:
       - bearerAuth: []
       description: Computer list excludes mobile_only by default. includeHidden=true recovers hidden rows for
@@ -2151,6 +3647,15 @@ paths:
                 $ref: ../schema/envelope.json#/$defs/ApiEnvelope
           x-dataSchema:
             $ref: ../schema/remote-sync.json#/$defs/RemoteSyncSettingsView
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
     put:
       operationId: setSyncSettingsV1
       security: *id001
@@ -2165,6 +3670,14 @@ paths:
           type: string
           minLength: 1
           maxLength: 200
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -2205,6 +3718,15 @@ paths:
             $ref: "../schema/remote-link.json#/$defs/RemoteLinkView"
         "401":
           $ref: "#/components/responses/Error"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/remote/pairing:
     post:
       tags: [system]
@@ -2221,6 +3743,14 @@ paths:
           in: header
           required: true
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -2257,6 +3787,14 @@ paths:
           in: header
           required: true
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           description: ApiEnvelope.data为RemoteLinkView，state=unpaired；不再返回短码。
@@ -2286,6 +3824,14 @@ paths:
           in: header
           required: true
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           description: ApiEnvelope.data为RemoteLinkView，state=unpaired；仅保证本机已断开并清理凭据。
@@ -2315,6 +3861,15 @@ paths:
               schema:
                 $ref: "../schema/envelope.json#/$defs/HealthView"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/bootstrap:
     get:
       tags: [system]
@@ -2323,6 +3878,15 @@ paths:
         "200":
           $ref: "#/components/responses/Bootstrap"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/auth/ws-ticket:
     post:
       tags: [system]
@@ -2339,6 +3903,15 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/agents:
     get:
       tags: [agents]
@@ -2347,6 +3920,15 @@ paths:
         "200":
           $ref: "#/components/responses/AgentList"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/agents/discovery:
     post:
       tags: [agents]
@@ -2355,6 +3937,15 @@ paths:
         "200":
           $ref: "#/components/responses/AgentDiscovery"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/workspaces:
     get:
       tags: [workspaces]
@@ -2362,6 +3953,14 @@ paths:
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1 } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           $ref: "#/components/responses/WorkspaceList"
@@ -2381,6 +3980,15 @@ paths:
         "200":
           $ref: "#/components/responses/Workspace"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/workspaces/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -2392,6 +4000,15 @@ paths:
         "200":
           $ref: "#/components/responses/Ok"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/workspaces/{id}/init-git:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -2405,6 +4022,15 @@ paths:
         "200":
           $ref: "#/components/responses/Workspace"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/workspaces/{id}/init-memory:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -2415,6 +4041,15 @@ paths:
         "200":
           $ref: "#/components/responses/Workspace"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/team-profiles:
     get:
       tags: [team-profiles]
@@ -2423,6 +4058,15 @@ paths:
         "200":
           $ref: "#/components/responses/TeamProfileList"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/team-profiles/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -2434,6 +4078,15 @@ paths:
           $ref: "#/components/responses/TeamProfile"
         "404":
           $ref: "#/components/responses/Error"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
     put:
       tags: [team-profiles]
       summary: 保存 Team Profile
@@ -2447,6 +4100,15 @@ paths:
         "200":
           $ref: "#/components/responses/TeamProfile"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/team-profiles/resolve:
     post:
       tags: [team-profiles]
@@ -2461,6 +4123,15 @@ paths:
         "200":
           $ref: "#/components/responses/ResolvedTeam"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/tasks:
     get:
       tags: [tasks]
@@ -2471,6 +4142,14 @@ paths:
         - { name: status, in: query, schema: { $ref: "../schema/common.json#/$defs/TaskStatus" } }
         - { name: workspaceId, in: query, schema: { type: string } }
         - { name: search, in: query, schema: { type: string } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           $ref: "#/components/responses/TaskPage"
@@ -2482,6 +4161,14 @@ paths:
         不要靠前端自己猜测能否创建。
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -2504,6 +4191,15 @@ paths:
         "200":
           $ref: "#/components/responses/TaskDetail"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/tasks/{id}/actions:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -2512,6 +4208,14 @@ paths:
       summary: 暂停 / 继续 / 取消 / 重试 / 追加指令
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -2532,6 +4236,14 @@ paths:
         - { name: onlyValid, in: query, schema: { type: boolean } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
         - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           $ref: "#/components/responses/SessionPage"
@@ -2557,6 +4269,15 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/approvals:
     get:
       tags: [approvals]
@@ -2564,6 +4285,14 @@ paths:
       parameters:
         - { name: status, in: query, schema: { $ref: "../schema/common.json#/$defs/ApprovalStatus" } }
         - { name: taskId, in: query, schema: { type: string } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           $ref: "#/components/responses/ApprovalList"
@@ -2576,6 +4305,14 @@ paths:
       summary: 批准或拒绝
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       requestBody:
         required: true
         content:
@@ -2596,6 +4333,15 @@ paths:
         "200":
           $ref: "#/components/responses/UserSettings"
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/settings/appearance:
     put:
       tags: [settings]
@@ -2611,6 +4357,15 @@ paths:
           $ref: "#/components/responses/Appearance"
 
   # ---- 升级：9 条细路径，由 Local Hub 代理到 Update Agent（裁决 D1）----
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/state:
     get:
       tags: [updates]
@@ -2618,6 +4373,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/check:
     post:
       tags: [updates]
@@ -2625,6 +4389,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/download:
     post:
       tags: [updates]
@@ -2632,6 +4405,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/cancel:
     post:
       tags: [updates]
@@ -2639,6 +4421,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/install:
     post:
       tags: [updates]
@@ -2655,6 +4446,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/defer:
     post:
       tags: [updates]
@@ -2668,6 +4468,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateState"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/releases:
     get:
       tags: [updates]
@@ -2675,6 +4484,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ReleaseList"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/result:
     get:
       tags: [updates]
@@ -2682,6 +4500,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/UpdateResult"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/updates/result/acknowledge:
     post:
       tags: [updates]
@@ -2697,6 +4524,15 @@ paths:
           $ref: "#/components/responses/UpdateResult"
 
   # ---- 事件 ----
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /api/v1/events:
     get:
       tags: [events]
@@ -2708,6 +4544,14 @@ paths:
           schema: { type: integer, minimum: 0 }
           description: 客户端最后确认的 seq，返回 (after, now] 区间
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000 } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "200":
           $ref: "#/components/responses/EventPage"
@@ -2723,6 +4567,14 @@ paths:
       parameters:
         - { name: ticket, in: query, required: true, schema: { type: string } }
         - { name: after, in: query, schema: { type: integer, minimum: 0 } }
+        - name: X-HQ-Client-Features
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+            - pi-v1
+          description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
       responses:
         "101":
           description: 切换协议成功，后续帧为 HubEvent
@@ -2737,6 +4589,15 @@ paths:
       responses:
         "200":
           description: OK
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /internal/drain/state:
     get:
       tags: [internal]
@@ -2748,6 +4609,15 @@ paths:
             application/json:
               schema:
                 $ref: "../schema/update-state.json#/$defs/DrainProgress"
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /internal/drain/start:
     post:
       tags: [internal]
@@ -2755,6 +4625,15 @@ paths:
       responses:
         "200":
           description: OK
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
   /internal/backup/database:
     post:
       tags: [internal]
@@ -2763,6 +4642,15 @@ paths:
         "200":
           description: OK
 
+      parameters:
+      - name: X-HQ-Client-Features
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - pi-v1
+        description: Opt in to PI enum values and safe optional Runtime fields. Missing header retains the 0.10.1 projection. Bind this feature set to cursors and WS tickets; never grants authorization.
 components:
   securitySchemes:
     bearerAuth:
@@ -2921,3 +4809,12 @@ components:
         application/json:
           schema:
             $ref: "../schema/envelope.json#/$defs/EventPage"
+
+x-pi-client-compatibility:
+  feature: pi-v1
+  header: X-HQ-Client-Features
+  default: 0.10.1 projection; omit PI resources and new optional guard/model/format fields. Direct PI resource without opt-in
+    returns existing NOT_FOUND, never relabels agentType.
+  cursor: Bind negotiated feature set to list/event cursors and WS tickets. Reset snapshot on feature change; no cursor reuse
+    between projections.
+  authorization: Display/decoder capability only. No authentication, approval, runtime or billing privilege.

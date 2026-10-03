@@ -115,6 +115,15 @@ impl ProcessSupervisor {
         let records = Arc::new(RwLock::new(HashMap::new()));
         let mut workers = Vec::with_capacity(specs.len());
         for spec in specs {
+            set_record(
+                &records,
+                spec.component,
+                ProcessStatus::Starting {
+                    component: spec.component,
+                    path: spec.executable.display().to_string(),
+                },
+                None,
+            );
             let stop = Arc::new(AtomicBool::new(false));
             let worker_records = Arc::clone(&records);
             let worker_stop = Arc::clone(&stop);
@@ -232,15 +241,22 @@ fn supervise(
             .as_deref()
             .and_then(|descriptor| existing_instance_id(spec.component, descriptor));
         let launched_at = Utc::now();
-        let spawn_result = Command::new(&spec.executable)
-            .args(&spec.args)
+        let mut command = Command::new(&spec.executable);
+        command.args(&spec.args)
             .env("HQAGENT_INSTANCE_ID", &launch_nonce)
             .env("HQAGENT_RUNTIME_DIR", &spec.runtime_dir)
             .env("HQAGENT_PARENT_CONTROL", "stdio-v1")
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn();
+            // Relative files from children must never be written into the install directory.
+            .current_dir(&spec.runtime_dir);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000); // CREATE_NO_WINDOW, stdin pipe remains available.
+        }
+        let spawn_result = command.spawn();
 
         let mut child = match spawn_result {
             Ok(child) => child,
@@ -383,11 +399,15 @@ fn set_record(
 }
 
 fn stop_child(child: &mut Child) -> bool {
+    stop_child_with_timeout(child, GRACEFUL_SHUTDOWN_TIMEOUT)
+}
+
+fn stop_child_with_timeout(child: &mut Child, timeout: Duration) -> bool {
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(b"shutdown\n");
         let _ = stdin.flush();
     }
-    let deadline = Instant::now() + GRACEFUL_SHUTDOWN_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         match child.try_wait() {
             Ok(Some(_)) => return false,
@@ -425,7 +445,7 @@ const fn executable_environment_key(component: Component) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, process::Command, thread, time::Duration};
+    use std::{io::Read, path::PathBuf, process::Command, thread, time::{Duration, Instant}};
 
     use super::{restart_delay, Component, ProcessSpec, ProcessStatus, ProcessSupervisor};
 
@@ -457,35 +477,110 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn killed_child_restarts_within_ten_seconds() {
-        let python = PathBuf::from("E:/SoftWare/Python313/python.exe");
-        if !python.is_file() {
-            eprintln!("python stub unavailable; skipping process restart test");
-            return;
-        }
-        let supervisor = ProcessSupervisor::start(vec![ProcessSpec {
-            component: Component::Core,
-            executable: python,
-            args: vec![
-                "-c".into(),
-                "import sys; line=sys.stdin.readline(); sys.exit(0 if line.strip() == 'shutdown' else 1)"
-                    .into(),
-            ],
-            runtime_dir: std::env::temp_dir(),
-            descriptor_path: None,
-        }]);
+    fn abnormal_child_exit_restarts_within_ten_seconds() {
+        let dir = tempfile::tempdir().unwrap();
+        let supervisor = ProcessSupervisor::start(vec![fixture_spec(dir.path())]);
 
         let first_pid = wait_for_pid(&supervisor, None);
-        let status = Command::new("taskkill.exe")
-            .args(["/PID", &first_pid.to_string(), "/F"])
-            .status()
-            .expect("taskkill");
-        assert!(status.success());
+        // Ask the fixture to crash, rather than depending on taskkill privileges.
+        // It exits abnormally without going through the supervisor shutdown path.
+        std::fs::write(dir.path().join("terminate"), "").unwrap();
         let started = std::time::Instant::now();
         let second_pid = wait_for_pid(&supervisor, Some(first_pid));
         assert_ne!(first_pid, second_pid);
         assert!(started.elapsed() < Duration::from_secs(10));
         supervisor.shutdown();
+    }
+
+    // The test binary doubles as a real managed child, so no machine-specific Python is needed.
+    #[test]
+    fn managed_child_fixture() {
+        if std::env::var("HQAGENT_PARENT_CONTROL").as_deref() != Ok("stdio-v1") { return; }
+        let runtime = PathBuf::from(std::env::var_os("HQAGENT_RUNTIME_DIR").unwrap());
+        assert_eq!(std::env::current_dir().unwrap(), runtime);
+        assert!(!std::env::var("HQAGENT_INSTANCE_ID").unwrap().is_empty());
+        if runtime.join("crash").exists() { std::process::exit(17); }
+        let crash_signal = runtime.join("terminate");
+        thread::spawn(move || loop {
+            if crash_signal.exists() {
+                std::fs::remove_file(&crash_signal).unwrap();
+                std::process::exit(17);
+            }
+            thread::sleep(Duration::from_millis(25));
+        });
+        std::fs::write(runtime.join("ready"), "ready").unwrap();
+        let mut input = String::new();
+        std::io::stdin().read_to_string(&mut input).unwrap(); // Must receive shutdown THEN EOF.
+        std::fs::write(runtime.join("stdin.txt"), input).unwrap();
+        if runtime.join("ignore-shutdown").exists() { thread::sleep(Duration::from_secs(60)); }
+        std::process::exit(0);
+    }
+
+    fn fixture_spec(runtime: &std::path::Path) -> ProcessSpec {
+        ProcessSpec {
+            component: Component::Core,
+            executable: std::env::current_exe().unwrap(),
+            args: vec!["--exact".into(), "process_supervisor::tests::managed_child_fixture".into(), "--nocapture".into()],
+            runtime_dir: runtime.to_path_buf(),
+            descriptor_path: None,
+        }
+    }
+
+    fn wait_until(mut condition: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !condition() {
+            assert!(Instant::now() < deadline, "managed child condition timed out");
+            thread::sleep(Duration::from_millis(25));
+        }
+    }
+
+    #[test]
+    fn shutdown_writes_command_then_eof_and_missing_update_agent_does_not_block_core() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut missing = fixture_spec(dir.path());
+        missing.component = Component::UpdateAgent;
+        missing.executable = dir.path().join("missing-update-agent.exe");
+        let supervisor = ProcessSupervisor::start(vec![fixture_spec(dir.path()), missing]);
+        wait_until(|| dir.path().join("ready").exists() && supervisor.statuses().iter().any(|s| matches!(s, ProcessStatus::Missing { component: Component::UpdateAgent, .. })));
+        assert!(supervisor.identity(Component::Core).is_some());
+        let started = Instant::now();
+        supervisor.shutdown();
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(std::fs::read_to_string(dir.path().join("stdin.txt")).unwrap(), "shutdown\n");
+        assert!(matches!(supervisor.statuses()[0], ProcessStatus::Stopped { forced: false, .. }));
+    }
+
+    #[test]
+    fn crashing_child_restarts_with_increasing_backoff_and_stop_interrupts_wait() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("crash"), "").unwrap();
+        let supervisor = ProcessSupervisor::start(vec![fixture_spec(dir.path())]);
+        wait_until(|| matches!(supervisor.statuses()[0], ProcessStatus::Backoff { restart_in_ms: 1000, .. }));
+        let first = Instant::now();
+        wait_until(|| matches!(supervisor.statuses()[0], ProcessStatus::Backoff { restart_in_ms: 2000, .. }));
+        assert!(first.elapsed() >= Duration::from_millis(900));
+        let stop = Instant::now();
+        supervisor.shutdown();
+        assert!(stop.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn force_termination_only_after_grace_period() {
+        assert_eq!(super::GRACEFUL_SHUTDOWN_TIMEOUT, Duration::from_secs(15));
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("ignore-shutdown"), "").unwrap();
+        let spec = fixture_spec(dir.path());
+        let mut child = Command::new(spec.executable).args(spec.args)
+            .current_dir(dir.path()).env("HQAGENT_RUNTIME_DIR", dir.path())
+            .env("HQAGENT_INSTANCE_ID", "test-instance").env("HQAGENT_PARENT_CONTROL", "stdio-v1")
+            .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null())
+            .spawn().unwrap();
+        wait_until(|| dir.path().join("ready").exists());
+        let start = Instant::now();
+        assert!(super::stop_child_with_timeout(&mut child, Duration::from_millis(500)));
+        assert!(start.elapsed() >= Duration::from_millis(500));
+        assert_eq!(std::fs::read_to_string(dir.path().join("stdin.txt")).unwrap(), "shutdown\n");
+        assert!(child.try_wait().unwrap().is_some());
     }
 
     #[cfg(windows)]

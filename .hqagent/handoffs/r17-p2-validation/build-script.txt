@@ -1,0 +1,2 @@
+PowerShell parser: 0 errors
+git diff --check: exit_code=0

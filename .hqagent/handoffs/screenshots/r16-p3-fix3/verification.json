@@ -1,0 +1,63 @@
+{
+  "checks": [
+    {
+      "mode": "light",
+      "device": "mobile",
+      "readable": 1,
+      "unavailableByWorkspace": [
+        2,
+        1
+      ],
+      "defaultCollapsed": true,
+      "emptyReadableWorkspaces": 1,
+      "readOrImportRequests": 0,
+      "focusReturned": true,
+      "horizontalOverflow": false
+    },
+    {
+      "mode": "dark",
+      "device": "mobile",
+      "readable": 1,
+      "unavailableByWorkspace": [
+        2,
+        1
+      ],
+      "defaultCollapsed": true,
+      "emptyReadableWorkspaces": 1,
+      "readOrImportRequests": 0,
+      "focusReturned": true,
+      "horizontalOverflow": false
+    },
+    {
+      "mode": "light",
+      "device": "desktop",
+      "readable": 1,
+      "unavailableByWorkspace": [
+        2,
+        1
+      ],
+      "defaultCollapsed": true,
+      "emptyReadableWorkspaces": 1,
+      "readOrImportRequests": 0,
+      "focusReturned": true,
+      "horizontalOverflow": false
+    },
+    {
+      "mode": "dark",
+      "device": "desktop",
+      "readable": 1,
+      "unavailableByWorkspace": [
+        2,
+        1
+      ],
+      "defaultCollapsed": true,
+      "emptyReadableWorkspaces": 1,
+      "readOrImportRequests": 0,
+      "focusReturned": true,
+      "horizontalOverflow": false
+    }
+  ],
+  "screenshots": 12,
+  "browserErrors": 0,
+  "source": "Chromium with synthetic mock metadata"
+}

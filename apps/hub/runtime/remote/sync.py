@@ -46,6 +46,10 @@ class SyncService:
             changed = {"mirrorEnabled": value.mirror_enabled, "version": old["version"] + 1,
                        "syncGeneration": old["syncGeneration"] + 1}
             self.repo.put("sync-settings", changed, tx)
+            recovery = self.repo.get("sync-recovery", tx) or {}
+            if recovery.get("phase") in {"requested", "waiting_reset_ack", "backfilling"}:
+                recovery["phase"] = "cancelled"
+                self.repo.put("sync-recovery", recovery, tx)
             tx.after_commit(self.cancel_queries)
             if not value.mirror_enabled:
                 tx.after_commit(self.chat.attachments.sync.cancel_pending)
@@ -81,6 +85,11 @@ class SyncService:
                 "authority": str(value.authority or "local")}
 
     def _stage(self, tx, batch, kind, row, *, force=False):
+        if row['conversation_id'] and tx.connection.execute(
+            'SELECT 1 FROM local_conversation_deletions WHERE conversation_id=?',
+            (row['conversation_id'],),
+        ).fetchone():
+            return
         store, generation = self.context()
         text = None
         revision3 = self.repo.get("identity", tx).get("wireRevision", 1) >= 3
@@ -283,9 +292,28 @@ class SyncService:
             work = self.repo.get("sync-work", tx) or {}
             changed = False
             if work.get("phase") == "waiting_reset_ack" and ack >= work["resetSeq"]:
-                work["phase"], changed = "disabled", True
+                recovery = self.repo.get("sync-recovery", tx) or {}
+                if (self.settings().mirror_enabled and recovery.get("phase") == "waiting_reset_ack"
+                        and recovery.get("store") == identity["store"]
+                        and recovery.get("generation") == self.settings().sync_generation):
+                    # reset closes its generation permanently. Rebuild only in
+                    # a strictly newer generation after its contiguous ACK.
+                    settings = self.repo.get("sync-settings", tx)
+                    settings.update(version=settings["version"] + 1, syncGeneration=settings["syncGeneration"] + 1)
+                    self.repo.put("sync-settings", settings, tx)
+                    self.capture(tx)
+                    work = self.repo.get("sync-work", tx)
+                    recovery.update(phase="backfilling", generation=settings["syncGeneration"])
+                    self.repo.put("sync-recovery", recovery, tx)
+                    changed = True
+                else:
+                    work["phase"], changed = "disabled", True
             if work.get("phase") == "waiting_complete_ack" and ack >= work["waitAck"]:
                 work.update(phase="synced", waitAck=None)
+                recovery = self.repo.get("sync-recovery", tx) or {}
+                if recovery.get("store") == identity["store"] and recovery.get("generation") == self.settings().sync_generation:
+                    recovery["phase"] = "complete"
+                    self.repo.put("sync-recovery", recovery, tx)
                 changed = True
             if changed:
                 self.repo.put("sync-work", work, tx)
