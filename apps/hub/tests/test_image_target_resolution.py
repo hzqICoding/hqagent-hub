@@ -37,8 +37,12 @@ def configure(system, values):
     return system.worker.attachments.capabilities
 
 
-def verify(caps, version='0.159.2', model=None):
-    caps.store.record('codex', version, model, {name: True for name in REQUIRED_PROBES}, ['image/png'])
+def verify(caps, version='0.159.2', model=None, identifier='local.codex.default'):
+    from runtime.attachments.verification_target import target_for
+    adapter = caps.worker.bridge.chat.ports.tasks.directory.adapter_for(identifier)
+    target = target_for(identifier, 'codex', version, model, adapter)
+    caps.store.record('codex', version, model, {name: True for name in REQUIRED_PROBES}, ['image/png'],
+                      target=target, cleanup_confirmed=True)
 
 
 def role(caps, scene='analyze'):
@@ -150,7 +154,7 @@ def test_native_capability_uses_bound_runtime_not_other_same_type_instances(tmp_
                 conversation_kind='native', agent_type='codex'))
             monkeypatch.setattr(system.worker.native, 'row', lambda *a, **kw: {'runtime_id': values[1].id})
             assert caps.target('bound-other').native.image_input.support == 'unknown'
-            verify(caps, version='0.159.3')
+            verify(caps, version='0.159.3', identifier=values[1].id)
             await caps.refresh()
             assert caps.target('bound-other').native.image_input.support == 'supported'
             values[1] = values[1].model_copy(update={'status': 'offline'})

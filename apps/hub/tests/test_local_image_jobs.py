@@ -159,6 +159,33 @@ def test_target_change_interrupts_following_probes_and_prevents_publish(tmp_path
     asyncio.run(scenario())
 
 
+def test_five_results_do_not_substitute_for_confirmed_owned_cleanup(tmp_path, monkeypatch):
+    async def scenario():
+        coordinator, adapter, request = setup(tmp_path, monkeypatch)
+        original = adapter.cancel
+        refuse = [True]
+        async def cancel(value):
+            if refuse[0] and value.session_id == adapter.started[0].session_id:
+                adapter.cancels.append(value)
+                return dto.CancelResult(outcome='refused', completedAt='2026-10-01T00:00:00Z')
+            return await original(value)
+        adapter.cancel = cancel
+        job = await coordinator.start(request(), 'key', 'req')
+        await coordinator.tasks[job.job_id]
+        view = coordinator.view(job.job_id)
+        assert all(coordinator.job(job.job_id)['outcomes'].values())
+        assert view.status == 'interrupted' and view.cleanup_state == 'unconfirmed'
+        assert view.execution_may_still_be_running and view.slot_held
+        assert not view.result.passed and not view.applied_to_current_target
+        assert len({c.session_id for c in adapter.cancels}) == 2
+        refuse[0] = False
+        await coordinator.cancel(job.job_id, 'reconcile')
+        assert not coordinator.view(job.job_id).slot_held
+        assert not coordinator.view(job.job_id).applied_to_current_target
+        assert len(adapter.started) == 2  # Reconciliation never repeats a probe.
+    asyncio.run(scenario())
+
+
 def test_restart_interrupted_does_not_replay_and_retains_uncertainty(tmp_path, monkeypatch):
     async def scenario():
         coordinator, adapter, request = setup(tmp_path, monkeypatch)
@@ -200,6 +227,23 @@ def test_diagnostics_are_closed_camelcase_safe_values():
     assert value == {'newStart': {'result': 'exception', 'exceptionType': 'UnknownError', 'elapsedMs': 5},
                      'mixedFiveRecognition': {'matched': True},
                      'cancelStop': {'orphanProcessIds': [123], 'outcome': 'refused'}}
+
+
+def test_adapter_cannot_transfer_verification_ownership_to_user_session(tmp_path, monkeypatch):
+    async def scenario():
+        coordinator, adapter, request = setup(tmp_path, monkeypatch)
+        original = adapter.start
+        async def wrong(spec):
+            handle = await original(spec)
+            return handle.model_copy(update={'session_id': 'unrelated-user-session'})
+        adapter.start = wrong
+        job = await coordinator.start(request(), 'key', 'req')
+        await coordinator.tasks[job.job_id]
+        assert coordinator.view(job.job_id).status == 'interrupted'
+        assert coordinator.view(job.job_id).slot_held
+        assert not adapter.cancels and not adapter.resumed
+        assert all(r['sessionId'] != 'unrelated-user-session' for r in coordinator.job(job.job_id)['resources'])
+    asyncio.run(scenario())
 
 
 def test_http_auth_cross_version_idempotency_progress_request_id(tmp_path):

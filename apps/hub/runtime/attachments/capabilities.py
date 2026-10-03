@@ -7,11 +7,10 @@ from protocol.generated.python import ImageInputCapability, AttachmentTargetCapa
 from core.errors import HubError
 from runtime.remote.security import CredentialVault
 from storage.local_chat import now, uid
-from runtime.attachments.verification_target import target_for
+from runtime.attachments.verification_target import target_for, TRANSPORTS
 from orchestrator.domain import ProfileSnapshot, ResolutionRequest, ResolutionGap
 from runtime.execution_selection import scene_execution, native_execution_candidate
 from storage.idempotency import request_hash
-TRANSPORTS = {'claude': 'stream-json-image-v1', 'codex': 'app-server-localImage-v1'}
 REQUIRED_PROBES = frozenset({'new', 'resume', 'mixed-five', 'cancel', 'error'})
 
 class VerificationStore:

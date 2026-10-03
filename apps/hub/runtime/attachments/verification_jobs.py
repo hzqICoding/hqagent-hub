@@ -1,6 +1,5 @@
 """Single-owner paid verification coordinator. CLI enters through Hub HTTP too."""
 import asyncio
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 import shutil
@@ -235,12 +234,13 @@ class VerificationCoordinator:
         job['view'].update(cleanupState='confirmed' if stopped else 'unconfirmed',
                            executionMayStillBeRunning=not stopped, slotHeld=not stopped)
 
-    async def cleanup(self, job, adapter):
+    async def cleanup(self, job, adapter, *, deadline=None):
         job['view']['cleanupState'] = 'pending'
         self.persist(job)
         orphans = set(job['view']['orphanProcessIds'])
         try:
-            async with asyncio.timeout(self.cleanup_budget):
+            remaining = self.cleanup_budget if deadline is None else max(0, deadline - asyncio.get_running_loop().time())
+            async with asyncio.timeout(remaining):
                 for resource in job['resources']:
                     if resource.get('stopped'):
                         continue
@@ -294,7 +294,7 @@ class VerificationCoordinator:
         adapter = self.adapters[identifier]
         status, mime_types = 'failed', []
         try:
-            async with asyncio.timeout(max(0, self.budget - (time.time() - job['createdEpoch']))):
+            async with asyncio.timeout(max(0, min(self.budget, self.budget - (time.time() - job['createdEpoch'])))):
                 await self.current(job)
                 if job['view']['status'] == 'cancel_requested':
                     raise asyncio.CancelledError()
@@ -322,13 +322,15 @@ class VerificationCoordinator:
         except Exception:
             status = 'interrupted'
         finally:
-            stopped = await self.cleanup(job, adapter)
+            cleanup_deadline = asyncio.get_running_loop().time() + self.cleanup_budget
+            stopped = await self.cleanup(job, adapter, deadline=cleanup_deadline)
             if job['view']['status'] == 'cancel_requested':
                 status = 'cancelled'
             if not stopped:
                 status = 'interrupted'
             try:
-                await self.current(job)
+                async with asyncio.timeout(max(0, cleanup_deadline - asyncio.get_running_loop().time())):
+                    await self.current(job)
                 current = True
             except Exception:
                 current = False
@@ -496,6 +498,13 @@ class OwnedAdapter:
                         finished.exception()
                     self.job['launchPending'] = False
                     for resource in self.job['resources']:
+                        # An operation that outlived cancellation may have opened
+                        # a turn after the previous stop proof. Reconcile again.
+                        resource['stopped'] = False
+                        if not finished.cancelled() and finished.exception() is None:
+                            handle = finished.result()
+                            if getattr(handle, 'session_id', None) == resource['sessionId']:
+                                resource.update(handleKnown=True, externalSessionId=handle.external_session_id)
                         self.coordinator.observe_resource(self.job, self.adapter, resource)
                     self.coordinator.persist(self.job)
                 task.add_done_callback(completed)
@@ -507,12 +516,17 @@ class OwnedAdapter:
         self.coordinator.persist(self.job)
         result = await self.launch(self.adapter.start(spec))
         if not isinstance(result, AdapterFailure):
-            resource.update(sessionId=result.session_id, externalSessionId=result.external_session_id, handleKnown=True)
+            if result.session_id != spec.session_id:
+                conflict('agent_unavailable')
+            resource.update(externalSessionId=result.external_session_id, handleKnown=True)
         # A failed start can have launched an unobservable process. Preserve intent.
         self.coordinator.persist(self.job)
         return result
 
     async def resume(self, request):
+        if not any(r['sessionId'] == request.session_id and r.get('externalSessionId') == request.external_session_id
+                   for r in self.job['resources']):
+            conflict('agent_unavailable')
         for resource in self.job['resources']:
             if resource['sessionId'] == request.session_id:
                 resource['stopped'] = False
@@ -527,7 +541,7 @@ class OwnedAdapter:
         if not isinstance(result, AdapterFailure):
             for resource in self.job['resources']:
                 if resource['sessionId'] == identifier:
-                    resource['stopped'] = True
+                    resource['resultCollected'] = True
             self.coordinator.persist(self.job)
         return result
 
