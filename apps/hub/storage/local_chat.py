@@ -504,6 +504,26 @@ class LocalChatRepository:
             rows = db.execute("SELECT r.*,m.sequence AS message_sequence FROM local_runs r JOIN local_messages m ON m.message_id=r.message_id WHERE r.conversation_id=? ORDER BY m.sequence DESC LIMIT 200", (conversation_id,)).fetchall()
         return [dict(row) for row in rows]
 
+    def continuation_history(self, record: dict) -> tuple[dict | None, dict | None]:
+        """Selection must not confuse a paginated history window with no context."""
+        with self.database.locked_connection() as db:
+            query = ("SELECT r.*,m.sequence AS message_sequence FROM local_runs r "
+                     "JOIN local_messages m ON m.message_id=r.message_id "
+                     "WHERE r.conversation_id=? AND m.sequence<? ")
+            args = (record['conversation_id'], record['message_sequence'])
+            latest = db.execute(query + 'ORDER BY m.sequence DESC LIMIT 1', args).fetchone()
+            executed = db.execute(query + "AND COALESCE(r.task_id,'')<>'' ORDER BY m.sequence DESC LIMIT 1", args).fetchone()
+        return (dict(latest) if latest else None, dict(executed) if executed else None)
+
+    def record_session_mode(self, record: dict, effective: str, reason: str) -> None:
+        # Local diagnostic metadata only: preserve the immutable request mode,
+        # command digest and public DTOs. This records a selection, not success.
+        value = {'requestedMode': record['session_mode'], 'effectiveMode': effective, 'reason': reason}
+        with self.database.transaction() as tx:
+            tx.connection.execute("INSERT INTO hub_state(key,value_json,updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
+                ('local-run-session-mode:' + record['run_id'], json.dumps(value), now()))
+
     def next_run(self, conversation_id: str) -> dict | None:
         with self.database.locked_connection() as db:
             native = db.execute("SELECT 1 FROM local_conversations WHERE conversation_id=? AND json_extract(payload_json,'$.conversationKind')='native'", (conversation_id,)).fetchone() is not None

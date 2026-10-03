@@ -252,9 +252,26 @@ class LocalChatService:
             self.repository.complete_run(run_id, "failed", f"本轮未完成：{message}", error=message,
                 error_code=error.code if isinstance(error, HubError) else None)
 
+    def _context_needs_recovery(self, record: dict | None) -> bool:
+        if record is None:
+            return False
+        if record['status'] not in TERMINAL:
+            return True
+        busy = self.repository.busy_state
+        if busy is None:
+            return False
+        # Real execution evidence is authoritative even without pairing. Older
+        # ports without a structured observer keep their existing session checks.
+        observable = getattr(type(self.ports.tasks), 'activity_observation', None)
+        if not record['task_id'] or busy.enabled() or observable is not None:
+            return bool(busy.observe(record)['recoveryRequired'])
+        return False
+
     async def _task_input(self, record: dict) -> CreateTaskInput:
         if json.loads(record["scene_json"]).get("conversationKind") == "native":
-            return await self.native.task_input(record)
+            spec = await self.native.task_input(record)
+            self.repository.record_session_mode(record, 'continue', 'native_bound_session')
+            return spec
         scene = LocalSceneView.model_validate_json(record["scene_json"])
         conversation = self.repository.conversation(record["conversation_id"])
         roles = [r for r in scene.roles if r.enabled]
@@ -264,39 +281,35 @@ class LocalChatService:
         await self.ports.team_profiles.save_profile(profile_id, profile)
         resume_sessions = {}
         if record["session_mode"] == "continue":
-            busy = self.repository.busy_state
-            prior = [r for r in self.repository.runs(conversation.id)
-                     if r["message_sequence"] < record["message_sequence"]]
-            if busy is not None and busy.enabled() and prior and (
-                    prior[0]["status"] not in TERMINAL or busy.observe(prior[0])["recoveryRequired"]):
+            prior, old = self.repository.continuation_history(record)
+            if self._context_needs_recovery(prior):
                 raise HubError("SESSION_NOT_RESUMABLE", "上一轮仍需本机恢复核对，不能跳过它续接更早上下文")
-            previous = [r for r in self.repository.runs(conversation.id)
-                        if r["run_id"] != record["run_id"] and r["message_sequence"] < record["message_sequence"]
-                        and r["status"] in TERMINAL and r["task_id"]]
-            if not previous:
-                raise HubError("SESSION_NOT_RESUMABLE", "没有可继续的上一轮；请选择新一轮上下文")
-            old = previous[0]
-            old_scene = LocalSceneView.model_validate_json(old["scene_json"])
-            if str(scene.review_mode or "independent") != str(old_scene.review_mode or "independent"):
-                raise HubError("SESSION_NOT_RESUMABLE", "验收方式已变化，请选择新一轮上下文")
-            old_roles = {r.role_id: r for r in old_scene.roles if r.enabled}
-            detail = await self.ports.tasks.get_task(old["task_id"])
-            sessions = await self.ports.sessions.list_sessions({"taskId": old["task_id"]})
-            session_map = {s.id: s for s in sessions}
-            for role in roles:
-                if role.role_id not in old_roles or role.model_dump() != old_roles[role.role_id].model_dump():
-                    raise HubError("SESSION_NOT_RESUMABLE", "角色或模型配置已变化，请选择新一轮上下文")
-                if str(scene.review_mode) == "original_planner" and role.role_id == "reviewer":
-                    # Acceptance resolves the current planning node's exact session.
-                    continue
-                node = next((n for n in reversed(detail.nodes) if str(n.role_id) == role.role_id), None)
-                session = session_map.get(node.session_id) if node else None
-                if session is None or not session.is_valid or str(session.status) != "idle":
-                    if session is not None and str(session.status) == "closed":
-                        raise HubError("SESSION_NOT_RESUMABLE", f"角色{role.role_id}的上一轮会话已关闭，不能原生续接；请选择新一轮上下文，并附上需要继续处理的上一轮结果")
-                    raise HubError("SESSION_NOT_RESUMABLE", f"角色{role.role_id}没有可恢复会话，请明确选择新上下文")
-                resume_sessions[role.role_id] = session.id
-        return CreateTaskInput.model_validate({
+            if old is not None:
+                if self._context_needs_recovery(old):
+                    raise HubError('SESSION_NOT_RESUMABLE', '上一轮执行仍需本机恢复核对，不能开启新的执行')
+                old_scene = LocalSceneView.model_validate_json(old["scene_json"])
+                if str(scene.review_mode or "independent") != str(old_scene.review_mode or "independent"):
+                    raise HubError("SESSION_NOT_RESUMABLE", "验收方式已变化，请点右上角 + 开启新话题")
+                old_roles = {r.role_id: r for r in old_scene.roles if r.enabled}
+                if set(old_roles) != {r.role_id for r in roles}:
+                    raise HubError('SESSION_NOT_RESUMABLE', '角色或模型配置已变化，请点右上角 + 开启新话题')
+                detail = await self.ports.tasks.get_task(old["task_id"])
+                sessions = await self.ports.sessions.list_sessions({"taskId": old["task_id"]})
+                session_map = {s.id: s for s in sessions}
+                for role in roles:
+                    if role.role_id not in old_roles or role.model_dump() != old_roles[role.role_id].model_dump():
+                        raise HubError("SESSION_NOT_RESUMABLE", "角色或模型配置已变化，请点右上角 + 开启新话题")
+                    if str(scene.review_mode) == "original_planner" and role.role_id == "reviewer":
+                        # Acceptance resolves the current planning node's exact session.
+                        continue
+                    node = next((n for n in reversed(detail.nodes) if str(n.role_id) == role.role_id), None)
+                    session = session_map.get(node.session_id) if node else None
+                    if session is None or not session.is_valid or str(session.status) != "idle":
+                        if session is not None and str(session.status) == "closed":
+                            raise HubError("SESSION_NOT_RESUMABLE", f"角色{role.role_id}的上一轮会话已关闭，不能原生续接；请点右上角 + 开启新话题，并附上需要继续处理的上一轮结果")
+                        raise HubError("SESSION_NOT_RESUMABLE", f"角色{role.role_id}没有可恢复会话，请点右上角 + 开启新话题")
+                    resume_sessions[role.role_id] = session.id
+        spec = CreateTaskInput.model_validate({
             "objective": self.repository.run_text(record["run_id"]), "workspaceId": conversation.workspace_id,
             "profileId": profile_id, "source": "desktop", "workflowRoles": [r.role_id for r in roles],
             "roleOverrides": overrides,
@@ -304,6 +317,9 @@ class LocalChatService:
             "resumeSessions": resume_sessions or None,
             "reviewMode": scene.review_mode or "independent",
         })
+        self.repository.record_session_mode(record, 'continue' if resume_sessions else 'new',
+            'existing_execution' if resume_sessions else 'no_prior_execution' if record['session_mode'] == 'continue' else 'explicit_new')
+        return spec
 
     @staticmethod
     def _result_text(task: Any) -> str:

@@ -2,10 +2,10 @@
 wp: R16-P2
 status: done
 scope_declared: [apps/hub/**, .hqagent/handoffs/R16-P2-hub.md]
-scope_touched: ["apps/hub/adapters/attachment_input.py", "apps/hub/adapters/claude_adapter.py", "apps/hub/adapters/codex_adapter.py", "apps/hub/adapters/path_guard.py", "apps/hub/api/app.py", "apps/hub/api/local_chat.py", "apps/hub/orchestrator/runtime.py", "apps/hub/orchestrator/sessions.py", "apps/hub/pyproject.toml", "apps/hub/requirements.local-lock.txt", "apps/hub/runtime/attachments/__init__.py", "apps/hub/runtime/attachments/api.py", "apps/hub/runtime/attachments/capabilities.py", "apps/hub/runtime/attachments/content.py", "apps/hub/runtime/attachments/library.py", "apps/hub/runtime/attachments/service.py", "apps/hub/runtime/attachments/sync.py", "apps/hub/runtime/attachments/transport.py", "apps/hub/runtime/attachments/verification.py", "apps/hub/runtime/cli.py", "apps/hub/runtime/local_chat.py", "apps/hub/runtime/remote/commands.py", "apps/hub/runtime/remote/delivery.py", "apps/hub/runtime/remote/projection.py", "apps/hub/runtime/remote/queries.py", "apps/hub/runtime/remote/resources.py", "apps/hub/runtime/remote/sync.py", "apps/hub/runtime/remote/wire.py", "apps/hub/runtime/remote/worker.py", "apps/hub/runtime/tasks.py", "apps/hub/storage/attachments.py", "apps/hub/storage/local_chat.py", "apps/hub/storage/migrations.py", "apps/hub/tests/remote_support.py", "apps/hub/tests/test_r15_joint_server.py", "apps/hub/tests/test_r15_recovery.py", "apps/hub/tests/test_r16_attachments.py", "apps/hub/tests/test_r3_wire.py", "apps/hub/tests/test_remote_worker.py", ".hqagent/handoffs/R16-P2-hub.md", "apps/hub/adapters/prompt.py", "apps/hub/runtime/descriptor.py", "apps/hub/security/worktrees.py", "apps/hub/tests/test_r16_joint_repair.py", "apps/hub/tests/test_attachment_shell_reads.py", "apps/hub/adapters/manager.py", "apps/hub/orchestrator/domain.py", "apps/hub/runtime/execution_selection.py", "apps/hub/runtime/native/service.py", "apps/hub/tests/test_image_target_resolution.py"]
+scope_touched: ["apps/hub/adapters/attachment_input.py", "apps/hub/adapters/claude_adapter.py", "apps/hub/adapters/codex_adapter.py", "apps/hub/adapters/path_guard.py", "apps/hub/api/app.py", "apps/hub/api/local_chat.py", "apps/hub/orchestrator/runtime.py", "apps/hub/orchestrator/sessions.py", "apps/hub/pyproject.toml", "apps/hub/requirements.local-lock.txt", "apps/hub/runtime/attachments/__init__.py", "apps/hub/runtime/attachments/api.py", "apps/hub/runtime/attachments/capabilities.py", "apps/hub/runtime/attachments/content.py", "apps/hub/runtime/attachments/library.py", "apps/hub/runtime/attachments/service.py", "apps/hub/runtime/attachments/sync.py", "apps/hub/runtime/attachments/transport.py", "apps/hub/runtime/attachments/verification.py", "apps/hub/runtime/cli.py", "apps/hub/runtime/local_chat.py", "apps/hub/runtime/remote/commands.py", "apps/hub/runtime/remote/delivery.py", "apps/hub/runtime/remote/projection.py", "apps/hub/runtime/remote/queries.py", "apps/hub/runtime/remote/resources.py", "apps/hub/runtime/remote/sync.py", "apps/hub/runtime/remote/wire.py", "apps/hub/runtime/remote/worker.py", "apps/hub/runtime/tasks.py", "apps/hub/storage/attachments.py", "apps/hub/storage/local_chat.py", "apps/hub/storage/migrations.py", "apps/hub/tests/remote_support.py", "apps/hub/tests/test_r15_joint_server.py", "apps/hub/tests/test_r15_recovery.py", "apps/hub/tests/test_r16_attachments.py", "apps/hub/tests/test_r3_wire.py", "apps/hub/tests/test_remote_worker.py", ".hqagent/handoffs/R16-P2-hub.md", "apps/hub/adapters/prompt.py", "apps/hub/runtime/descriptor.py", "apps/hub/security/worktrees.py", "apps/hub/tests/test_r16_joint_repair.py", "apps/hub/tests/test_attachment_shell_reads.py", "apps/hub/adapters/manager.py", "apps/hub/orchestrator/domain.py", "apps/hub/runtime/execution_selection.py", "apps/hub/runtime/native/service.py", "apps/hub/tests/test_image_target_resolution.py", "apps/hub/tests/test_initial_continue.py", "apps/hub/tests/test_r15_delivery_guards.py"]
 build: pass
 tests: pass
-commit: 0ba51aa2e62787eef6e80480beffa90ca4cb7805
+commit: da553a10d4e7b9f9efb8a7483ffdc87069ab5fd1
 open_questions: 0
 ---
 
@@ -591,3 +591,132 @@ $env:PYTHONIOENCODING='utf-8'
 ```
 
 返修代码提交：`2908437`（共用执行选择/发现快照）、`0ba51aa`（能力映射、刷新和回归）。逐次运行 `git log -1 --format=%B` 自查，无署名。`git diff --check` 通过。原始输出在 `.tmp/r16-repair3-hub.txt` / `.tmp/r16-repair3-server.txt`。
+
+## 返修 4：首条 continue 自动新建会话
+
+### 基线和行为
+
+开工 `git merge integration/phase1` 输出 `Already up to date.`，基线 `ab3a4e2 merge: sync integration with UI repairs`。改动只在 Hub 及本回执，不修改 desktop/server/protocol，不合回 integration，不调用真实模型。
+
+`runtime/local_chat.py::_task_input` 对场景对话区分“从未有历史执行任务”和“有任务但不可续接”：
+
+- 请求 continue，且此前没有带 task_id 的轮次：按 new 执行，resumeSessions 为空，让原 TaskEngine 创建新 Session。首条消息以及此前仅有未建任务的失败/取消轮次都适用。
+- 仍有未结束或需恢复核对的上一轮，保持 SESSION_NOT_RESUMABLE，不使用该规则跳过核对。未配对本机也读取实际 TaskService 的结构化恢复证据，不解析错误字符串。
+- 找到历史任务后，验收方式、角色集合/配置、模型、Session 有效性和可恢复状态仍需通过原检查。不能因不可续接而静默 new；例如配置变更后的失败轮次无 task_id，也不会掩盖更早的真实上下文。
+- `storage/local_chat.py::continuation_history` 只返回最近轮次及最近带任务的轮次，但查询覆盖完整历史，不依赖 UI 列表的 200 条截断。测试在 205 条未建任务的失败记录之后仍能正确续接更早的真实 Session。
+- 原生分支仍在这些判断之前，调用原 `native.task_input`。导入后的首条 continue 仍以精确 externalSessionId 恢复原会话，绝不按“没有 LocalRun”开新会话。
+
+手机与本机均通过同一 LocalChat 派发入口；不另行调用 HTTP 执行、不重新入队、不修改 Inbox 原命令或 commandDigest。
+
+### 实际模式记录
+
+现有公开 LocalRunView 没有请求模式/实际模式双字段，因此未新增协议字段、未改变 local_runs.session_mode 的请求语义。选择完成后在现有本机 hub_state 写诊断键 `local-run-session-mode:<runId>`，包含 requestedMode、effectiveMode、reason 和表内 updated_at：
+
+```json
+{"requestedMode":"continue","effectiveMode":"new","reason":"no_prior_execution"}
+```
+
+正常续接为 existing_execution，显式 new 为 explicit_new，原生为 native_bound_session。该记录描述派发前的模式选择，不宣称执行成功；执行成败仍由 LocalRun/Task/Session 决定。诊断不含正文或凭据，不上传、不增加公开字段。实际 AgentTaskSpec 的 reusePolicy 也仍反映真实新建/续接行为。
+
+### 文案和包外对接
+
+Hub 的场景拒绝提示改成“请点右上角 + 开启新话题”，恢复核对仍提示先在电脑核对。原生不允许同一绑定发 new，提示“原生对话只能续接已导入的会话；如需新话题，请另建对话”。通用 Session 失效保留“断开失效”事实描述，并提示新话题/原生另建对话。
+
+全仓检索结果及待主代理派发项：
+
+- `apps/desktop/src/shared/i18n/remote-errors.ts:40` 的 SESSION_NOT_RESUMABLE 仍是“外部会话已失效或适配器不支持恢复，只能新建会话”。请前端按具体原因和 conversationKind 提供新提示：场景配置/会话失效可提示右上角 +；恢复未确认提示本机核对；原生需另建对话，不建议在原生绑定里直接发 new。
+- `apps/desktop/src/stores/chat.reliability.test.ts:32` 的测试数据仍写“该会话无法恢复，请选择新上下文”，建议随前端提示规则同步。
+- `docs/vnext/前端独立开工说明.md:39` 仍描述旧单选及默认首条 new，主代理可更新为新界面约定。
+- ChatPage/ChatComposer 测试里的旧文案是“不应显示”的负向断言，不能据检索结果误删。协议说明/生成物中“失效只能新建”是技术约束，不在本轮越权改动。
+
+以上 desktop/docs/protocol 文件均未修改。Hub 生产代码已不再出现“请选择新一轮上下文/请选择新上下文”等旧控件提示。
+
+### 回归测试
+
+新增 `tests/test_initial_continue.py` 12 项，覆盖本机 Cookie 首条 continue、未建任务的失败轮次、下一轮正常续接同一 Hub Session、显式模型/角色职责/验收方式变化拒绝、closed/invalid/恢复核对拒绝、超过 200 条历史、两种原生导入后的首条精确续接，以及真实本机 P1 TLS 服务端“手机创建新对话 → 上传图片 → 首条 continue → 下载校验 → FakeAdapter 新建 Session 成功”。真实链路中原下行 sessionMode 仍为 continue，实际诊断为 new。
+
+仅调整被本任务明确推翻的一条旧测试：`tests/test_r15_delivery_guards.py::test_unresumable_context_returns_structured_code_without_starting_new_session` 改名为 `test_initial_continue_starts_new_session_without_prior_execution`；原先断言首条 continue 返回 SESSION_NOT_RESUMABLE 且不启动 Agent，改为 command.completed/succeeded、一次新建、零次 resume。不是放宽断言；其他已有不可续接与取消后续接断言保留。
+
+专项 42 passed。首轮全量曾有两项失败：一项是提示修改遗漏了原有“断开失效”措辞，已在代码中恢复，既有断言不变；另一项是未修改的重启导入联测返回 REMOTE_DELIVERY_EXPIRED，单独复跑通过，未修改该测试或期限规则，未据此断言环境就是根因。最终全量结果如下。
+
+### 验收
+
+Hub/server 串行运行，TEMP/TMP/--basetemp 均放本 worktree .tmp；没有跑 vitest，没有真实模型调用。未遇到 429、额度不足或 0xC0000142。真实服务端测试使用合成图片和 FakeAdapter，用户真机端到端由主代理复跑。
+
+最终真实输出如下。
+
+#### Hub 全量
+
+在 `apps/hub`：
+
+```powershell
+$env:TEMP=(Resolve-Path ../../.tmp).Path
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/hub-repair4-verified --tb=short
+```
+
+```text
+........................................................................ [ 11%]
+........................................................................ [ 23%]
+.....................................................s................ss [ 35%]
+ssssss.................................................................. [ 47%]
+........................................................................ [ 59%]
+........................................................................ [ 71%]
+........................................................................ [ 82%]
+........................................................................ [ 94%]
+远程送达预留清理暂未完成，将重试
+远程送达预留清理暂未完成，将重试
+................................                                         [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_posix_credentials.py:166: POSIX mode bits
+SKIPPED [1] tests\test_posix_path_guard.py:50: POSIX absolute redirect path
+SKIPPED [1] tests\test_posix_path_guard.py:68: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:76: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:84: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:101: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:108: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:115: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:122: POSIX executable symlink and directory-fd semantics
+599 passed, 9 skipped, 4 warnings in 284.27s (0:04:44)
+```
+
+#### server 全量
+
+在 `apps/server`：
+
+```powershell
+$env:TEMP=(Resolve-Path ../../.tmp).Path
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/hub-repair4-server --tb=short
+```
+
+```text
+........................................................................ [ 23%]
+........................................................................ [ 47%]
+........................................................................ [ 71%]
+........................................................................ [ 94%]
+................                                                         [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+304 passed, 1 warning in 90.07s (0:01:30)
+```
+
+代码提交 `da553a10d4e7b9f9efb8a7483ffdc87069ab5fd1`，逐次运行 `git log -1 --format=%B` 自查，无署名。`git diff --check` 通过。首轮输出 `.tmp/hub-repair4-full.txt` 及最终 `.tmp/hub-repair4-verified.txt` / `.tmp/hub-repair4-server.txt` 均保留在本 worktree 忽略目录，没有隐藏首轮失败或放宽期限断言。

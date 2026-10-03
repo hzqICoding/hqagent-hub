@@ -126,7 +126,7 @@ class SessionManager:
         if session is None:
             raise SessionNotResumableError(resume_session_id, "指定 Session 不存在")
         if session.status == SessionStatus.INVALID:
-            raise SessionNotResumableError(resume_session_id, "Session 已断开失效，只能新建")
+            raise SessionNotResumableError(resume_session_id, "Session 已断开失效，不能续接；请开启新话题，原生对话需另建对话")
         if session.status == SessionStatus.CLOSED:
             raise SessionNotResumableError(resume_session_id, "Session 已正常结束，不能继续")
         if session.status != SessionStatus.IDLE or not session.is_valid:
