@@ -442,6 +442,8 @@ class ConversationDeletion:
             ('native_commands', 'rowid', 'frame_json'), ('native_history_indexes', 'cache_key', 'metadata_json'),
         ):
             for row in db.execute(f'SELECT {key_column},{payload_column} FROM {table}').fetchall():
+                if table == 'remote_state' and row[0] in {'identity', 'link', 'sync-work'}:
+                    continue  # Binding identity and sync watermarks are shared, never conversation bodies.
                 if _contains(json.loads(row[1]), identifiers):
                     if table == 'events':
                         # Keep event identities/watermarks valid for the shared Outbox.
@@ -460,7 +462,8 @@ class ConversationDeletion:
             db.execute(f'DELETE FROM {table} WHERE conversation_id=?', (conversation,))
         for identifier in identifiers:
             db.execute('DELETE FROM remote_sync_versions WHERE resource_id=?', (identifier,))
-            db.execute('DELETE FROM remote_projections WHERE key=?', (identifier,))
+            db.execute('DELETE FROM remote_projections WHERE key IN (?,?,?,?)',
+                       (identifier, 'message:' + identifier, 'run:' + identifier, 'approval:' + identifier))
         db.execute('DELETE FROM local_conversations WHERE conversation_id=?', (conversation,))
         db.execute('DELETE FROM remote_sync_changes WHERE conversation_id=?', (conversation,))
 
