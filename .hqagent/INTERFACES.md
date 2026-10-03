@@ -250,3 +250,12 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 - provider/modelId按首斜线拆分，pi-rpc-images-v1沿本机五probe；无新HTTP路由、模型凭据或云端模型调用。
 - 606类型 / 485 Fixture；validate -CheckGenerated及api-contract通过，全量协议测试768 passed。
 - 契约：packages/protocol/remote/PI-contract.md；回执：.hqagent/handoffs/PI-P0-protocol.md；真实输出：.hqagent/reviews/pi-p0/。
+
+
+## PI-P0 补冻1 / 0.11.1
+
+- 冻结SHA：`3603166e5f8ded531d0cbb29a8c1772e21869d95`（协议投影提交139fa6c，合成页一致性补充3603166）。
+- RemoteBrowserLegacyApprovalEvent明确非PI旧形状；RemoteBrowserPiApprovalEvent作为HTTP联合新分支，仅pi-v1可见；线路1–5闭包不变。
+- Q1本机票据归Hub；P1按PI-contract §8投影，不使用conversation.updated冒充审批刷新。P1/P3可按此对接；P2无线路改动。
+- validate通过608类型/492 Fixture；API为47操作/95错误；全量协议测试788 passed in 55.61s。
+- 回执：.hqagent/handoffs/PI-P0-protocol.md「补冻1」；证据：.hqagent/reviews/pi-p0-supplement1/。未合回integration。
