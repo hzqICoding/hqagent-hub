@@ -1,0 +1,48 @@
+{
+  "target": {
+    "agentId": "local.claude.default",
+    "agentType": "claude",
+    "modelId": "opus",
+    "cliVersion": "2.0.0",
+    "transport": "stream-json-image-v1",
+    "targetRevision": "opaque-new-version-002"
+  },
+  "inUse": true,
+  "usages": [
+    {
+      "sceneId": "analyze",
+      "roleId": "analyst"
+    }
+  ],
+  "usagesTruncated": false,
+  "status": "stale",
+  "passed": false,
+  "invalidated": true,
+  "invalidationReasons": [
+    "cli_version_changed"
+  ],
+  "lastRecord": {
+    "recordId": "verification_record_example",
+    "target": {
+      "agentId": "local.claude.default",
+      "agentType": "claude",
+      "modelId": "opus",
+      "cliVersion": "1.2.3",
+      "transport": "stream-json-image-v1",
+      "targetRevision": "opaque-target-revision-001"
+    },
+    "passed": true,
+    "probes": {
+      "new": true,
+      "resume": true,
+      "mixedFive": true,
+      "cancel": true,
+      "error": true
+    },
+    "diagnostics": {},
+    "mimeTypes": [],
+    "observedAt": "2026-10-02T12:00:00Z",
+    "jobId": "verification_job_example"
+  },
+  "lastJobId": "verification_job_example"
+}
