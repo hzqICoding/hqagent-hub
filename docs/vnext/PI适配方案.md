@@ -4,6 +4,7 @@
 
 | 日期 | 版本 | 说明 |
 | --- | --- | --- |
+| 2026-10-04 | v0.2 | 用户确认 §6：排在 R1.7 之后、R2 之前；默认模型按建议（规划 / 审核 `deepseek/deepseek-v4-pro`，执行 `deepseek/deepseek-v4-flash`，看图 `deepseek/deepseek-v4-flash-vision-exp`）。协议 P0 先行开工。 |
 | 2026-10-04 | v0.1 | 用户确定先接入 PI（DSH 暂不考虑）。本机安装 PI CLI 1.0.1 并完成 RPC 实测，给出接入设计与分工。 |
 
 ## 1. 背景
