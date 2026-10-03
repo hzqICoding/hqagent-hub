@@ -63,6 +63,9 @@ class NativeService:
             row = db.execute(f"SELECT * FROM native_sources WHERE {field}=?", (identifier,)).fetchone()
         if row is None:
             raise HubError("NOT_FOUND", "原生会话未登记")
+        with self.db.locked_connection() as db:
+            if db.execute('SELECT 1 FROM local_deleted_native_bindings WHERE binding_key=?', (row['binding_key'],)).fetchone():
+                raise HubError('NOT_FOUND', '原生会话未登记')
         return dict(row)
 
     def plugin(self, row):
@@ -162,6 +165,20 @@ class NativeService:
             plugin.diagnostics.append("Runtime历史目录不可用")
             return []
         index = self.index_for(plugin)
+        # Persisted verification ownership also covers launch/crash windows where
+        # no vendor session ID was returned. Filter before storing message offsets.
+        internal_root = (self.repo.witness.parent.parent / 'image-verification').resolve()
+        internal_ids = set()
+        try:
+            jobs = json.loads((internal_root / 'jobs.json').read_text('utf-8'))['jobs']
+            for job in jobs.values():
+                if job.get('internal') and job['view']['target']['agentType'] == plugin.agent_type:
+                    internal_ids.update(r.get('externalSessionId') for r in job['resources'])
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError, KeyError):
+            # A damaged internal registry cannot authorize publishing unknown sessions.
+            raise HubError('REMOTE_STATE_NOT_READY', '内部会话归属尚未完成核对') from None
         terminals = plugin._terminal_history()
         values = []
         for count, path in enumerate(plugin.paths()):
@@ -175,8 +192,13 @@ class NativeService:
                 if cached and candidate and not any(candidate.cwd.is_relative_to(Path(w.path).resolve()) for w in workspaces):
                     if index.fingerprint(index._stat(path)) != cached['fingerprint']:
                         candidate = index._header(path, index._stat(path), terminals)
-                if candidate is None or not any(candidate.cwd.is_relative_to(Path(w.path).resolve()) for w in workspaces):
+                if candidate is None or candidate.vendor_id in internal_ids or candidate.cwd.resolve().is_relative_to(internal_root) or not any(candidate.cwd.is_relative_to(Path(w.path).resolve()) for w in workspaces):
                     continue
+                root_identity = plugin.root.stat()
+                binding = digest([plugin.runtime_id, (root_identity.st_dev, root_identity.st_ino), plugin.agent_type, candidate.vendor_id])
+                with self.db.locked_connection() as db:
+                    if db.execute('SELECT 1 FROM local_deleted_native_bindings WHERE binding_key=?', (binding,)).fetchone():
+                        continue
                 entry = index.refresh(path, terminals=terminals)
                 source = index.source(entry)
             except (HubError, OSError) as error:
@@ -259,6 +281,8 @@ class NativeService:
         with self.db.locked_connection() as db:
             excluded = {(r[0], r[1]) for r in db.execute("SELECT agent_instance_id,external_session_id FROM sessions WHERE external_session_id IS NOT NULL")}
             managed = {r[0] for r in db.execute("SELECT binding_key FROM native_sources WHERE conversation_id IS NOT NULL")}
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='local_deleted_native_bindings'").fetchone():
+                managed.update(r[0] for r in db.execute('SELECT binding_key FROM local_deleted_native_bindings'))
         found = []
         for plugin in self.plugins:
             for source, workspace in self.indexed_list(plugin, workspaces, excluded):
@@ -279,6 +303,8 @@ class NativeService:
                     except OSError:
                         pass  # A scan/permission failure is not a source deletion.
             for plugin, source, workspace, key in found:
+                if tx.connection.execute('SELECT 1 FROM local_deleted_native_bindings WHERE binding_key=?', (key,)).fetchone():
+                    continue
                 old = tx.connection.execute("SELECT * FROM native_sources WHERE binding_key=?", (key,)).fetchone()
                 if old and old["conversation_id"]:
                     continue  # A concurrent import won while discovery ran.

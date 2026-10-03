@@ -4,7 +4,6 @@ import hashlib
 import json
 from pathlib import Path
 import secrets
-import tempfile
 import time
 from core.errors import HubError
 from protocol.generated.python import AgentInputAttachment, AgentTaskSpec, AdapterFailure, CancelRequest, ResumeRequest
@@ -50,18 +49,37 @@ def recognizes(summary, colors, nonce=None):
         last = position
     return nonce is None or nonce in summary
 
-async def probe(adapter, inputs, colors, nonce, model, workspace, *, diagnostics=None):
+async def probe(adapter, inputs, colors, nonce, model, workspace, *, diagnostics=None, stage_hook=None, progress_hook=None):
     """Exercise the actual start/resume transport, never a help-only claim."""
     outcomes = {name: False for name in REQUIRED_PROBES}
     diagnostics = diagnostics if diagnostics is not None else {}
 
+    async def stage(name, detail=None):
+        if detail is not None:
+            diagnostics[name] = detail
+        if stage_hook:
+            await stage_hook(name, detail)
+
+    async def outcome(name, passed):
+        outcomes[name] = passed
+        if progress_hook:
+            await progress_hook(name, passed)
+
     async def observed(stage, operation):
         started = time.monotonic()
         try:
+            if stage_hook:
+                try:
+                    await stage_hook(stage, None)
+                except BaseException:
+                    operation.close()
+                    raise
             result = await operation
         except BaseException as error:
             diagnostics[stage] = {'result': 'exception', 'exceptionType': type(error).__name__,
                                   'elapsedMs': int((time.monotonic() - started) * 1000)}
+            if stage_hook:
+                await stage_hook(stage, diagnostics[stage])
             raise
         detail = {'result': 'ok', 'elapsedMs': int((time.monotonic() - started) * 1000)}
         if isinstance(result, AdapterFailure):
@@ -79,6 +97,8 @@ async def probe(adapter, inputs, colors, nonce, model, workspace, *, diagnostics
         elif hasattr(result, 'outcome'):
             detail.update(outcome=str(result.outcome), orphanProcessIds=result.orphan_process_ids or [])
         diagnostics[stage] = detail
+        if stage_hook:
+            await stage_hook(stage, detail)
         return result
     session_id = uid('image-probe')
     spec = AgentTaskSpec(sessionId=session_id, taskId=uid('probe-task'), nodeId=uid('probe-node'), workspaceId='image-verification', roleId='analyst', objective='Describe the four quadrant colors in row-major order, using English color names.', worktreePath=str(workspace), allowedPaths=[], readOnly=True, sessionPurpose='adhoc', reusePolicy='new_session', modelId=model, inputAttachments=[inputs[0]])
@@ -89,59 +109,66 @@ async def probe(adapter, inputs, colors, nonce, model, workspace, *, diagnostics
                 pass
             result = await observed(stage + '.collect', adapter.collect_result(identifier))
         recognized = not isinstance(result, AdapterFailure) and recognizes(result.summary, colors if expected_nonce else colors[:4], expected_nonce)
+        if stage_hook:
+            await stage_hook(stage + '.recognition', {'matched': recognized})
         diagnostics[stage + '.recognition'] = {'matched': recognized}
         return recognized
     handles = []
     try:
         handle = await observed('new.start', adapter.start(spec))
         if isinstance(handle, AdapterFailure):
+            await outcome('new', False)
             return outcomes
         handles.append(handle)
-        outcomes['new'] = await finished(handle.session_id, 'new')
+        await outcome('new', await finished(handle.session_id, 'new'))
         resume = ResumeRequest(sessionId=handle.session_id, externalSessionId=handle.external_session_id, message='Describe the current image quadrant colors in row-major order using English color names.', taskSpec=spec)
         result = await observed('resume.start', adapter.resume(resume))
         if not isinstance(result, AdapterFailure):
-            outcomes['resume'] = await finished(handle.session_id, 'resume')
+            await outcome('resume', await finished(handle.session_id, 'resume'))
+        else:
+            await outcome('resume', False)
         mixed = spec.model_copy(update={'input_attachments': inputs})
         result = await observed('mixed-five.start', adapter.resume(resume.model_copy(update={'task_spec': mixed, 'message': 'For EACH attached image in attachment order, report its four quadrant colors in row-major order using English color names (sixteen colors in total). Then read the attached text file and include its exact marker.'})))
         if not isinstance(result, AdapterFailure):
-            outcomes['mixed-five'] = await finished(handle.session_id, 'mixed-five', nonce)
+            await outcome('mixed-five', await finished(handle.session_id, 'mixed-five', nonce))
+        else:
+            await outcome('mixed-five', False)
         invalid = inputs[0].model_copy(update={'attachment': inputs[0].attachment.model_copy(update={'sha256': '0' * 64})})
+        await stage('error.check')
         try:
             checked_inputs([invalid])
         except HubError as error:
-            outcomes['error'] = error.code == 'ATTACHMENT_HASH_MISMATCH'
+            await outcome('error', error.code == 'ATTACHMENT_HASH_MISMATCH')
+        await stage('error.check', {'matched': outcomes['error']})
         cancel_spec = spec.model_copy(update={'session_id': uid('image-probe'), 'objective': 'Describe the image and then provide a long detailed visual analysis.'})
         cancel_handle = await observed('cancel.start', adapter.start(cancel_spec))
         if not isinstance(cancel_handle, AdapterFailure):
             handles.append(cancel_handle)
             result = await observed('cancel.stop', adapter.cancel(CancelRequest(sessionId=cancel_handle.session_id, mode='force')))
-            outcomes['cancel'] = str(result.outcome) in {'stopped_gracefully', 'force_killed', 'already_finished'} and (not result.orphan_process_ids)
+            await outcome('cancel', str(result.outcome) in {'stopped_gracefully', 'force_killed', 'already_finished'} and (not result.orphan_process_ids))
+        else:
+            await outcome('cancel', False)
     finally:
-        for handle in handles:
-            try:
-                await adapter.cancel(CancelRequest(sessionId=handle.session_id, mode='force'))
-            except Exception:
-                pass
+        # The coordinator owns bounded cleanup and publication. A probe must not
+        # swallow failed cancellation and thereby certify cleanup as successful.
+        pass
     return outcomes
 
 async def verify_images(root, agent, model=None, *, adapter=None):
-    from adapters.claude_adapter import ClaudeAdapter
-    from adapters.codex_adapter import CodexAdapter
-    adapter = adapter or (ClaudeAdapter() if agent == 'claude' else CodexAdapter())
-    descriptor = await adapter.detect()
-    if isinstance(descriptor, AdapterFailure):
-        raise RuntimeError('Runtime unavailable for image verification')
-    directory = Path(root) / 'image-verification'
-    directory.mkdir(parents=True, exist_ok=True)
-    outcomes = {name: False for name in REQUIRED_PROBES}
-    diagnostics = {}
-    with tempfile.TemporaryDirectory(prefix='probe-', dir=directory) as temporary:
-        inputs, colors, nonce = synthetic_inputs(Path(temporary))
-        workspace = Path(temporary) / 'workspace'
-        workspace.mkdir()
-        try:
-            outcomes = await probe(adapter, inputs, colors, nonce, model, workspace, diagnostics=diagnostics)
-        finally:
-            record = VerificationStore(root).record(agent, descriptor.detected_version, model, outcomes, [v.attachment.mime_type for v in inputs if v.attachment.kind == 'image'], diagnostics=diagnostics)
-    return record
+    """Injected-adapter harness. Operators use CLI -> HTTP -> running Hub owner."""
+    if adapter is None:
+        raise HubError('CONFLICT', '请通过运行中Hub的agents verify-image入口验证', detail={'reason': 'agent_unavailable'})
+    from runtime.attachments.verification_jobs import VerificationCoordinator
+    from runtime.attachments.verification_target import target_for
+    identifier = 'local.' + agent + '.default'
+    async def resolve(agent_id, selected):
+        descriptor = await adapter.detect()
+        return target_for(agent_id, agent, getattr(descriptor, 'detected_version', None), selected, adapter), adapter, not isinstance(descriptor, AdapterFailure)
+    coordinator = VerificationCoordinator(root, resolve)
+    target, _, _ = await resolve(identifier, model)
+    value = dict(agentId=identifier, expectedTargetRevision=target['targetRevision'], acknowledgeModelUsage=True)
+    if model is not None:
+        value['modelId'] = model
+    job = await coordinator.start(value, uid('test-verification'), uid('request'))
+    await coordinator.tasks[job.job_id]
+    return coordinator.store.latest(identifier, agent, model)

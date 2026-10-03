@@ -85,6 +85,11 @@ class SyncService:
                 "authority": str(value.authority or "local")}
 
     def _stage(self, tx, batch, kind, row, *, force=False):
+        if row['conversation_id'] and tx.connection.execute(
+            'SELECT 1 FROM local_conversation_deletions WHERE conversation_id=?',
+            (row['conversation_id'],),
+        ).fetchone():
+            return
         store, generation = self.context()
         text = None
         revision3 = self.repo.get("identity", tx).get("wireRevision", 1) >= 3

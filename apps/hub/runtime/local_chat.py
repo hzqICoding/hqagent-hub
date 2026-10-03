@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import AsyncExitStack
 import json
 import logging
 import time
@@ -29,9 +30,12 @@ class LocalChatService:
         self._last_approval_check = 0.0
         self._conversation_locks: dict[str, asyncio.Lock] = {}
         self.remote_dispatch_guard = None
+        from runtime.conversation_deletion import ConversationDeletion
+        self.deletions = ConversationDeletion(self)
 
     async def start(self) -> None:
         self._closed = False
+        await self.deletions.recover()
         if getattr(self, 'attachments', None):
             await self.attachments.recover()
         if self._supervisor is None:
@@ -54,6 +58,36 @@ class LocalChatService:
         if value.workspace_id not in {w.id for w in workspaces}:
             raise HubError("NOT_FOUND", "请先登记并选择本机项目目录")
         return self.repository.create_conversation(value, key)
+
+    async def delete_conversation(self, conversation_id: str, expected_version: int, key: str):
+        return await self.deletions.delete(conversation_id, expected_version, key)
+
+    async def guard_task_operation(self, task_id: str, operation, *, profile_id=None):
+        """Direct Task/session controls share every owning conversation boundary."""
+        with self.repository.database.locked_connection() as db:
+            conversations, seen, profiles, ancestor = set(), set(), {profile_id} if profile_id else set(), task_id
+            while ancestor and ancestor not in seen:
+                seen.add(ancestor)
+                conversations.update(row[0] for row in db.execute(
+                    'SELECT conversation_id FROM local_runs WHERE task_id=?', (ancestor,)))
+                task = db.execute('SELECT profile_id,payload_json FROM tasks WHERE task_id=?', (ancestor,)).fetchone()
+                if not task:
+                    break
+                profiles.add(task[0])
+                ancestor = json.loads(task[1]).get('parentTaskId')
+            for profile in profiles:
+                if profile and profile.startswith('local-profile:'):
+                    conversations.update(row[0] for row in db.execute(
+                        'SELECT conversation_id FROM local_runs WHERE run_id=?', (profile[len('local-profile:'):],)))
+        async with AsyncExitStack() as stack:
+            for conversation in sorted(conversations):
+                await stack.enter_async_context(self._conversation_lock(conversation))
+            self.repository.assert_local_task(task_id)
+            for profile in profiles:
+                self.repository.assert_local_profile(profile)
+            for conversation in conversations:
+                self.repository.assert_not_deleted(conversation)
+            return await operation()
 
     def _conversation_lock(self, conversation_id: str) -> asyncio.Lock:
         return self._conversation_locks.setdefault(conversation_id, asyncio.Lock())
@@ -98,11 +132,11 @@ class LocalChatService:
         if not key:
             raise HubError("VALIDATION_FAILED", "必须提供Idempotency-Key")
         record = self.repository.run_record(run_id)
-        if str(value.action) in {"append_instruction", "resume", "retry"}:
-            async with self._conversation_lock(record["conversation_id"]):
+        async with self._conversation_lock(record["conversation_id"]):
+            self.repository.assert_not_deleted(record['conversation_id'])
+            if str(value.action) in {"append_instruction", "resume", "retry"}:
                 self.repository.assert_execution_allowed(record["conversation_id"])
-                return await self._control(record, value, key)
-        return await self._control(record, value, key)
+            return await self._control(record, value, key)
 
     def wake_remote_queue(self) -> None:
         """Wake only after the inbox / run / receipt transaction commits."""
