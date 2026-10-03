@@ -232,3 +232,10 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 80新类型、48个修订4帧、84份合成Fixture；原1/2/3闭包和289份Fixture不变。清单走WSS、字节走鉴权HTTPS；有界准备/取消/恢复、能力三层验证、逻辑配额与CAS引用、真删除、电脑/手机双向及本机接口一并定义。
 
 验证：507类型/373Fixture；api-contract 39现有+8新增HTTP、92错误码；全量608 passed。此为协议验收，不是CLI图片或业务真删除已完成。见[R1.6契约](../packages/protocol/remote/R1.6-contract.md)、[回执与下游实施要点](handoffs/R16-P0-protocol.md)。
+
+
+## 0.10.1 本机维护接口补冻（2026-10-02）
+
+冻结SHA：`7f9c8d23dd69a93af5b0f617544465e5dff79345`。D52补充；v1/v2各增加验证矩阵、显式费用确认异步作业、进度、取消，以及CAS删除对话。模型默认选择器省略modelId；实例/型号绑定不跨用，安全诊断不含输出/提示/路径，清理未确认不假取消。删除本机数据及附件，CLI原生日志不动，远端确认状态另列。手机删除为后续needs-decision F1，本轮无云端操作。
+
+线路4不变、无新错误码；16新类型/20合成Fixture；523类型/393Fixture校验通过，协议全量643 passed，api-contract47现有操作通过。P2/P3按[回执0.10.1节](handoffs/R16-P0-protocol.md)实施，未合回integration。

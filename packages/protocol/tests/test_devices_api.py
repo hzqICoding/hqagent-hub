@@ -39,7 +39,7 @@ def test_new_fixtures_round_trip(filename,kind):
 
 def test_every_new_type_has_fixture_and_version_is_http_minor_only():
     assert set(NEW)<={k for f,k in MANIFEST.items() if f.startswith('devices.')}
-    assert models.PROTOCOL_VERSION==API['info']['version']=='0.10.0'
+    assert models.PROTOCOL_VERSION==API['info']['version']=='0.10.1'
     sync=json.loads((P/'schema/remote-sync.json').read_text(encoding='utf-8'))['$defs']
     assert {d['properties']['wireRevision']['const'] for d in sync.values() if 'wireRevision' in d.get('properties',{})}=={2}
 

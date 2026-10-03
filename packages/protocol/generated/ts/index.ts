@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.10.0' as const
+export const PROTOCOL_VERSION = '0.10.1' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -824,6 +824,10 @@ export interface BootstrapView {
   hubStartedAt: Timestamp
 }
 
+/** Cancel owned work only; never starts the cancel probe or new model inference. */
+export interface CancelLocalImageVerificationInput {
+}
+
 /** graceful=向 Agent 发出停止指令并等待它自行收尾；force=直接终止进程/连接。Hub 先 graceful，超时后升级到 force */
 export type CancelMode =
   | 'graceful'
@@ -1152,6 +1156,14 @@ export interface LocalConnectionCodeView {
   expiresInSeconds: number
 }
 
+/** 200 only after Hub-owned rows/files erased. No false cloud completion. Same key/version replays minimal receipt; other key after deletion404. Vendor CLI records untouched. */
+export interface LocalConversationDeletionView {
+  conversationId: string
+  deletedAt: Timestamp
+  localDeleted: true
+  remoteCleanup: 'not_required' | 'pending' | 'confirmed' | 'unconfirmed'
+}
+
 export type NativeActivity =
   | 'unknown'
   | 'likely_active'
@@ -1209,6 +1221,150 @@ export interface LocalEventPage {
   events: HubEvent[]
   nextSeq: number
   hasMore: boolean
+}
+
+/** Allowlisted verification.py diagnostics only. Omit None codes; unknown exception classes become UnknownError. No raw/message/output/prompt/path fields. */
+export interface LocalImageProbeDiagnostic {
+  result?: 'ok' | 'exception' | 'adapter_failure'
+  elapsedMs?: number
+  matched?: boolean
+  kind?: AdapterFailureKind
+  code?: ErrorCode
+  retryable?: boolean
+  exceptionType?: string
+  startupStage?: 'process.start' | 'initialize' | 'model/list' | 'thread/start' | 'thread/resume' | 'turn/start'
+  osError?: number
+  winError?: number
+  outcome?: CancelOutcome
+  orphanProcessIds?: number[]
+}
+
+/** Structured stage hooks; not_run is not a failed completed probe. */
+export interface LocalImageProbeProgress {
+  state: 'not_run' | 'running' | 'passed' | 'failed'
+  startedAt?: Timestamp
+  finishedAt?: Timestamp
+}
+
+export interface LocalImageProbeProgressSet {
+  new: LocalImageProbeProgress
+  resume: LocalImageProbeProgress
+  mixedFive: LocalImageProbeProgress
+  cancel: LocalImageProbeProgress
+  error: LocalImageProbeProgress
+}
+
+/** Existing five boolean outcomes; unexecuted legacy outcomes remain false. API mixedFive maps exactly to persisted CLI probe mixed-five. */
+export interface LocalImageProbeResults {
+  new: boolean
+  resume: boolean
+  mixedFive: boolean
+  cancel: boolean
+  error: boolean
+}
+
+/** Closed stage-key map. Legacy records can lack error.check; no arbitrary vendor diagnostic fields. API stage keys use camelCase; map source new.start to newStart etc. Do not dump raw storage keys or values. */
+export interface LocalImageVerificationDiagnostics {
+  newStart?: LocalImageProbeDiagnostic
+  newCollect?: LocalImageProbeDiagnostic
+  newRecognition?: LocalImageProbeDiagnostic
+  resumeStart?: LocalImageProbeDiagnostic
+  resumeCollect?: LocalImageProbeDiagnostic
+  resumeRecognition?: LocalImageProbeDiagnostic
+  mixedFiveStart?: LocalImageProbeDiagnostic
+  mixedFiveCollect?: LocalImageProbeDiagnostic
+  mixedFiveRecognition?: LocalImageProbeDiagnostic
+  cancelStart?: LocalImageProbeDiagnostic
+  cancelStop?: LocalImageProbeDiagnostic
+  errorCheck?: LocalImageProbeDiagnostic
+}
+
+/** Exact local instance/runtime/configuration. Unknown version omitted. Opaque revision contains no path or credential; start requires a detected version and supported transport. */
+export interface LocalImageVerificationTarget {
+  agentId: string
+  agentType: string
+  /** Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name. */
+  modelId?: string
+  cliVersion?: string
+  transport?: string
+  targetRevision: string
+}
+
+/** Historical observation, not proof the current target is verified. Publish capability only after complete probes, confirmed cleanup and unchanged binding. */
+export interface LocalImageVerificationRecord {
+  recordId: string
+  target: LocalImageVerificationTarget
+  passed: boolean
+  probes: LocalImageProbeResults
+  diagnostics: LocalImageVerificationDiagnostics
+  mimeTypes: ('image/png' | 'image/jpeg' | 'image/webp' | 'image/gif')[]
+  observedAt: Timestamp
+  jobId?: string
+}
+
+/** Local maintenance job, not TaskStatus or a wire command. Cancellation request is not confirmed stop; interrupted/unconfirmed retains slot until exact execution ends. */
+export interface LocalImageVerificationJobView {
+  jobId: string
+  target: LocalImageVerificationTarget
+  status: 'queued' | 'running' | 'cancel_requested' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted'
+  acknowledgeModelUsage: true
+  acknowledgedAt: Timestamp
+  requestId: string
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  startedAt?: Timestamp
+  finishedAt?: Timestamp
+  probes: LocalImageProbeProgressSet
+  diagnostics: LocalImageVerificationDiagnostics
+  result?: LocalImageVerificationRecord
+  appliedToCurrentTarget: boolean
+  cleanupState: 'not_started' | 'pending' | 'confirmed' | 'unconfirmed'
+  executionMayStillBeRunning: boolean
+  orphanProcessIds: number[]
+  slotHeld: boolean
+}
+
+export interface LocalImageVerificationUsage {
+  sceneId: string
+  roleId: string
+}
+
+/** One instance x exact selector. Omitted modelId=default. Effective passed=false for stale/unavailable. Old unbound records never auto-apply across instances/models. */
+export interface LocalImageVerificationState {
+  target: LocalImageVerificationTarget
+  inUse: boolean
+  usages: LocalImageVerificationUsage[]
+  usagesTruncated: boolean
+  status: 'unverified' | 'passed' | 'failed' | 'stale' | 'unavailable'
+  passed: boolean
+  invalidated: boolean
+  invalidationReasons: ('cli_version_changed' | 'model_changed' | 'runtime_changed' | 'configuration_changed' | 'legacy_unbound' | 'target_unavailable')[]
+  lastRecord?: LocalImageVerificationRecord
+  activeJobId?: string
+  lastJobId?: string
+}
+
+/** Default50/max100; cursor binds filters and snapshot; hasMore requires nextCursor. */
+export interface LocalImageVerificationPage {
+  items: LocalImageVerificationState[]
+  hasMore: boolean
+  nextCursor?: string
+}
+
+/** Inspect all associated runs/tasks, not recent200; truncate only returned IDs. No model outputs, paths or task specs. */
+export interface LocalMaintenanceConflictDetail {
+  reason: 'verification_in_progress' | 'target_changed' | 'agent_unavailable' | 'version_mismatch' | 'active_runs' | 'recovery_required' | 'cancellation_unconfirmed' | 'deleting'
+  activeJobId?: string
+  currentVersion?: number
+  blockingRunIds?: string[]
+  hasMoreBlockingRuns?: boolean
+}
+
+export interface LocalMaintenanceConflictError {
+  code: 'CONFLICT'
+  message: string
+  retryable: false
+  detail: LocalMaintenanceConflictDetail
 }
 
 export interface LocalMessageReceipt {
@@ -5517,6 +5673,15 @@ export interface SessionView {
   isValid: boolean
   summary?: string
   turnCount?: number
+}
+
+/** Explicit consent to multiple real model calls and potential charges for this exact target. No automatic model fallback/retry/restart. GET does not run probes. */
+export interface StartLocalImageVerificationInput {
+  agentId: string
+  /** Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name. */
+  modelId?: string
+  expectedTargetRevision: string
+  acknowledgeModelUsage: true
 }
 
 export interface SubscribeEventsInput {
