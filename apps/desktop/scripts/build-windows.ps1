@@ -43,7 +43,7 @@ try {
     }
     $overlayPath = Join-Path $repoRoot '.tmp/tauri-windows-build.json'
     $overlay | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $overlayPath -Encoding utf8
-    & pnpm exec tauri build --bundles nsis --config $overlayPath -- --offline
+    & pnpm exec tauri build --bundles nsis --config $overlayPath
     if ($LASTEXITCODE -ne 0) { throw "Tauri/NSIS build failed ($LASTEXITCODE)." }
     $bundleDir = Join-Path $env:CARGO_TARGET_DIR 'release/bundle/nsis'
     $installers = @(Get-ChildItem -LiteralPath $bundleDir -Filter '*.exe' -File)
