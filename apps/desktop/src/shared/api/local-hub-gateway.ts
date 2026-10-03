@@ -32,6 +32,7 @@ import type {
 } from '@hqagent/protocol'
 
 import type { UiGateway, EventSubscription } from './ui-gateway'
+import { getDesktopEndpoint, isDesktopShell } from './desktop-endpoint'
 
 export interface HubEndpoint {
   baseUrl: string
@@ -66,9 +67,8 @@ export class HubApiError extends Error {
 
 // Wrapper for Tauri invoke with strict validation (R1: no hardcoded fallback token)
 async function getHubEndpointFromTauri(): Promise<HubEndpoint> {
-  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    const { invoke } = await import('@tauri-apps/api/core')
-    return await invoke<HubEndpoint>('get_hub_endpoint')
+  if (isDesktopShell()) {
+    return getDesktopEndpoint()
   }
 
   // In browser dev mode, only read from explicit environment variables (R1)
@@ -99,7 +99,7 @@ export class LocalHubGateway implements UiGateway {
   }
 
   private async ensureEndpoint(): Promise<HubEndpoint> {
-    if (!this.endpoint) {
+    if (isDesktopShell() || !this.endpoint) {
       this.endpoint = await getHubEndpointFromTauri()
     }
     return this.endpoint
@@ -115,6 +115,8 @@ export class LocalHubGateway implements UiGateway {
     const res = await fetch(`${baseUrl}${path}`, {
       ...options,
       headers,
+      redirect: 'error',
+      credentials: 'omit',
     })
 
     // R4: Parse envelope first regardless of status code to preserve error codes
@@ -309,7 +311,8 @@ export class LocalHubGateway implements UiGateway {
 
     this.connectPromise = (async () => {
       try {
-        const [{ baseUrl }, ticket] = await Promise.all([this.ensureEndpoint(), this.acquireWsTicket()])
+        const ticket = await this.acquireWsTicket()
+        const { baseUrl } = this.endpoint!
         if (this.subscribers.size === 0) {
           return
         }

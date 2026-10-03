@@ -30,7 +30,7 @@ export const useAppStore = defineStore('app', () => {
   // State
   const bootstrap = ref<BootstrapView | null>(null)
   const connectionStatus = ref<ConnectionStatus>(
-    import.meta.env.VITE_GATEWAY_MODE === 'local' ? 'connecting' : 'mock'
+    gateway instanceof MockGateway ? 'mock' : 'connecting'
   )
   const isLoading = ref<boolean>(false)
   const error = ref<string | null>(null)
