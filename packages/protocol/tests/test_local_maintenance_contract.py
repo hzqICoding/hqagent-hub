@@ -42,7 +42,7 @@ def test_synthetic_maintenance_fixtures_round_trip(file,kind):
 
 def test_complete_coverage_and_no_wire_schema_changes():
     assert set(DEFS)=={k for f,k in M.items() if f.startswith('maintenance.')}
-    assert models.PROTOCOL_VERSION==(P/'VERSION').read_text().strip()=='0.11.0'
+    assert models.PROTOCOL_VERSION==(P/'VERSION').read_text().strip()=='0.11.1'
     current={f.name:json.loads(f.read_text(encoding='utf-8'))['$defs'] for f in (P/'schema').glob('*.json')}
     pending=[('remote.json','RemoteWorkerOutboundFrame'),('remote.json','RemoteServerOutboundFrame')]
     for revision,file in [(2,'remote-sync.json'),(3,'remote-native.json'),(4,'remote-attachments.json')]:

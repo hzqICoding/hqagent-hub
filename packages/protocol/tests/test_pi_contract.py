@@ -48,7 +48,7 @@ def test_pi_synthetic_fixture_roundtrip(file, kind):
 
 def test_all_new_types_have_fixture_and_version_is_independent():
     assert set(D) <= {n for f, n in M.items() if f.startswith('pi.')}
-    assert models.PROTOCOL_VERSION == (P / 'VERSION').read_text().strip() == '0.11.0'
+    assert models.PROTOCOL_VERSION == (P / 'VERSION').read_text().strip() == '0.11.1'
     for d in D.values():
         if 'wireRevision' in d.get('properties', {}):
             assert d['properties']['wireRevision'] == {'type': 'integer', 'const': 5}

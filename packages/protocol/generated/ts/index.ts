@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.11.0' as const
+export const PROTOCOL_VERSION = '0.11.1' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -2206,6 +2206,136 @@ export interface RemoteBrowserMessageEvent {
   payload: RemoteMessageView
 }
 
+/** Frozen revision 4 error domain. New registry codes never silently broaden older codecs. Missing/deleted/expired attachment uses existing NOT_FOUND after authorization. */
+export type RemoteWire5ErrorCode =
+  | 'BAD_REQUEST'
+  | 'VALIDATION_FAILED'
+  | 'UNAUTHORIZED'
+  | 'ORIGIN_NOT_ALLOWED'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'IDEMPOTENCY_MISMATCH'
+  | 'PROTOCOL_VERSION_MISMATCH'
+  | 'HUB_NOT_READY'
+  | 'HUB_MAINTENANCE'
+  | 'EVENT_CURSOR_EXPIRED'
+  | 'FEATURE_UNAVAILABLE'
+  | 'AGENT_NOT_FOUND'
+  | 'AGENT_OFFLINE'
+  | 'AGENT_NOT_LOGGED_IN'
+  | 'AGENT_INCOMPATIBLE'
+  | 'CAPABILITY_MISSING'
+  | 'ROLE_UNRESOLVED'
+  | 'SESSION_NOT_RESUMABLE'
+  | 'TASK_NOT_CANCELLABLE'
+  | 'TASK_ACTION_INVALID'
+  | 'WORKTREE_BUSY'
+  | 'PATH_NOT_ALLOWED'
+  | 'APPROVAL_REQUIRED'
+  | 'APPROVAL_EXPIRED'
+  | 'APPROVAL_ALREADY_DECIDED'
+  | 'UPDATE_NOT_AVAILABLE'
+  | 'UPDATE_BUSY'
+  | 'UPDATE_VERIFY_FAILED'
+  | 'UPDATE_DRAIN_TIMEOUT'
+  | 'INTERNAL'
+  | 'REMOTE_AUTH_REQUIRED'
+  | 'REMOTE_CSRF_REJECTED'
+  | 'REMOTE_DEVICE_OFFLINE'
+  | 'REMOTE_DEVICE_REVOKED'
+  | 'REMOTE_DEVICE_AUTH_FAILED'
+  | 'REMOTE_PAIRING_EXPIRED'
+  | 'REMOTE_PAIRING_CONFLICT'
+  | 'REMOTE_PAIRING_INVALID'
+  | 'REMOTE_COMMAND_EXPIRED'
+  | 'REMOTE_COMMAND_WITHDRAWN'
+  | 'REMOTE_WITHDRAWAL_UNCONFIRMED'
+  | 'REMOTE_STORE_CHANGED'
+  | 'REMOTE_EPOCH_STALE'
+  | 'REMOTE_PROTOCOL_UNSUPPORTED'
+  | 'REMOTE_EVENT_CONFLICT'
+  | 'REMOTE_ACK_CONFLICT'
+  | 'REMOTE_SEQUENCE_GAP'
+  | 'REMOTE_APPROVAL_FORBIDDEN'
+  | 'CONVERSATION_AUTHORITY_MISMATCH'
+  | 'REMOTE_TARGET_MISMATCH'
+  | 'REMOTE_SCENE_VERSION_MISMATCH'
+  | 'REMOTE_CURSOR_EXPIRED'
+  | 'REMOTE_CURSOR_INVALID'
+  | 'REMOTE_RATE_LIMITED'
+  | 'REMOTE_FRAME_TOO_LARGE'
+  | 'REMOTE_WITHDRAWAL_TOO_LATE'
+  | 'REMOTE_PAIRING_IN_PROGRESS'
+  | 'REMOTE_SERVER_UNREACHABLE'
+  | 'REMOTE_SERVER_ORIGIN_INVALID'
+  | 'REMOTE_CONVERSATION_BUSY'
+  | 'REMOTE_STATE_NOT_READY'
+  | 'REMOTE_SYNC_CONFLICT'
+  | 'REMOTE_SYNC_DISABLED'
+  | 'REMOTE_DELIVERY_EXPIRED'
+  | 'REMOTE_REVISION_REQUIRED'
+  | 'REMOTE_SYNC_RESOURCE_LIMIT'
+  | 'REMOTE_QUERY_TIMEOUT'
+  | 'REMOTE_QUERY_TOO_LARGE'
+  | 'NATIVE_SESSION_ACTIVE'
+  | 'NATIVE_SESSION_UNSUPPORTED'
+  | 'NATIVE_SESSION_CHANGED'
+  | 'NATIVE_SESSION_WRITER_CONFLICT'
+  | 'REMOTE_ROOT_NOT_AUTHORIZED'
+  | 'REMOTE_PATH_OUTSIDE_ROOT'
+  | 'REMOTE_DIRECTORY_CHANGED'
+  | 'ATTACHMENT_TOO_LARGE'
+  | 'ATTACHMENT_TYPE_UNSUPPORTED'
+  | 'ATTACHMENT_COUNT_EXCEEDED'
+  | 'ATTACHMENT_QUOTA_EXCEEDED'
+  | 'ATTACHMENT_HASH_MISMATCH'
+  | 'AGENT_IMAGE_UNSUPPORTED'
+  | 'ATTACHMENT_DOWNLOAD_FAILED'
+  | 'ATTACHMENT_NOT_READY'
+  | 'ATTACHMENT_IN_USE'
+  | 'ATTACHMENT_THUMBNAIL_UNAVAILABLE'
+  | 'ATTACHMENT_PREPARATION_INTERRUPTED'
+  | 'PI_GUARD_UNAVAILABLE'
+  | 'PI_UNCONTROLLED_EXTENSIONS'
+  | 'PI_TOOL_CALL_BLOCKED'
+
+/** Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely. */
+export interface RemoteWire5ApprovalView {
+  approvalId: string
+  resultRef: RemoteResultRef
+  action: DangerousAction
+  targetSummary: string
+  riskLevel: RiskLevel
+  status: ApprovalStatus
+  requestedAt: string
+  expiresAt: string
+  remoteApprovalAllowed: boolean
+  workerPolicyRevision: number
+  denialCode?: RemoteWire5ErrorCode
+}
+
+export interface RemoteV5ApprovalEvent {
+  type: 'approval.state_changed'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  payload: RemoteWire5ApprovalView
+}
+
+/** Browser-only PI approval projection. Emit only after owner/visibility and pi-v1 capability checks. Public IDs, sanitized summary; source wireRevision=5. Do not relay arbitrary revision 5 frames through this variant. */
+export interface RemoteBrowserPiApprovalEvent {
+  type: 'worker.event'
+  /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
+  serverCursor: string
+  recordedAt: string
+  payload: RemoteV5ApprovalEvent
+}
+
 export interface RemoteBrowserStoreReset {
   type: 'store.reset'
   /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
@@ -2756,7 +2886,7 @@ export interface RemoteBrowserWorkerEvent {
   payload: RemoteVisibleWorkerEvent
 }
 
-export type RemoteBrowserEvent = RemoteBrowserWorkerEvent | RemoteBrowserCommandEvent | RemoteBrowserConversationEvent | RemoteBrowserMessageEvent | RemoteBrowserV2WorkerEvent | RemoteBrowserConversationDeleted | RemoteBrowserStoreReset
+export type RemoteBrowserEvent = RemoteBrowserWorkerEvent | RemoteBrowserCommandEvent | RemoteBrowserConversationEvent | RemoteBrowserMessageEvent | RemoteBrowserV2WorkerEvent | RemoteBrowserConversationDeleted | RemoteBrowserStoreReset | RemoteBrowserPiApprovalEvent
 
 /** GET after opaque serverCursor. Unknown/expired cursor requires snapshot; never silently reset to zero. */
 export interface RemoteBrowserEventPage {
@@ -2764,6 +2894,15 @@ export interface RemoteBrowserEventPage {
   /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
   nextServerCursor: string
   hasMore: boolean
+}
+
+/** Browser-only compatibility projection, not a Worker transport frame. Source revision 5 stays unchanged in Inbox. Nested wireRevision=2 labels the legacy browser shape only; never feed it to Worker/ACK/grant or infer source revision from it. Authorized non-PI approval IDs are mapped to public IDs before projection. */
+export interface RemoteBrowserLegacyApprovalEvent {
+  type: 'worker.event'
+  /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
+  serverCursor: string
+  recordedAt: string
+  payload: RemoteV2ApprovalEvent
 }
 
 export type RemoteBrowserSessionView = RemoteAuthenticatedSession | RemoteAnonymousSession
@@ -5621,127 +5760,6 @@ export interface RemoteV5ApprovalDecisionCommand {
   payload: RemoteApprovalDecisionPayload
   deliverBy: string
   localConversationId: string
-}
-
-/** Frozen revision 4 error domain. New registry codes never silently broaden older codecs. Missing/deleted/expired attachment uses existing NOT_FOUND after authorization. */
-export type RemoteWire5ErrorCode =
-  | 'BAD_REQUEST'
-  | 'VALIDATION_FAILED'
-  | 'UNAUTHORIZED'
-  | 'ORIGIN_NOT_ALLOWED'
-  | 'NOT_FOUND'
-  | 'CONFLICT'
-  | 'IDEMPOTENCY_MISMATCH'
-  | 'PROTOCOL_VERSION_MISMATCH'
-  | 'HUB_NOT_READY'
-  | 'HUB_MAINTENANCE'
-  | 'EVENT_CURSOR_EXPIRED'
-  | 'FEATURE_UNAVAILABLE'
-  | 'AGENT_NOT_FOUND'
-  | 'AGENT_OFFLINE'
-  | 'AGENT_NOT_LOGGED_IN'
-  | 'AGENT_INCOMPATIBLE'
-  | 'CAPABILITY_MISSING'
-  | 'ROLE_UNRESOLVED'
-  | 'SESSION_NOT_RESUMABLE'
-  | 'TASK_NOT_CANCELLABLE'
-  | 'TASK_ACTION_INVALID'
-  | 'WORKTREE_BUSY'
-  | 'PATH_NOT_ALLOWED'
-  | 'APPROVAL_REQUIRED'
-  | 'APPROVAL_EXPIRED'
-  | 'APPROVAL_ALREADY_DECIDED'
-  | 'UPDATE_NOT_AVAILABLE'
-  | 'UPDATE_BUSY'
-  | 'UPDATE_VERIFY_FAILED'
-  | 'UPDATE_DRAIN_TIMEOUT'
-  | 'INTERNAL'
-  | 'REMOTE_AUTH_REQUIRED'
-  | 'REMOTE_CSRF_REJECTED'
-  | 'REMOTE_DEVICE_OFFLINE'
-  | 'REMOTE_DEVICE_REVOKED'
-  | 'REMOTE_DEVICE_AUTH_FAILED'
-  | 'REMOTE_PAIRING_EXPIRED'
-  | 'REMOTE_PAIRING_CONFLICT'
-  | 'REMOTE_PAIRING_INVALID'
-  | 'REMOTE_COMMAND_EXPIRED'
-  | 'REMOTE_COMMAND_WITHDRAWN'
-  | 'REMOTE_WITHDRAWAL_UNCONFIRMED'
-  | 'REMOTE_STORE_CHANGED'
-  | 'REMOTE_EPOCH_STALE'
-  | 'REMOTE_PROTOCOL_UNSUPPORTED'
-  | 'REMOTE_EVENT_CONFLICT'
-  | 'REMOTE_ACK_CONFLICT'
-  | 'REMOTE_SEQUENCE_GAP'
-  | 'REMOTE_APPROVAL_FORBIDDEN'
-  | 'CONVERSATION_AUTHORITY_MISMATCH'
-  | 'REMOTE_TARGET_MISMATCH'
-  | 'REMOTE_SCENE_VERSION_MISMATCH'
-  | 'REMOTE_CURSOR_EXPIRED'
-  | 'REMOTE_CURSOR_INVALID'
-  | 'REMOTE_RATE_LIMITED'
-  | 'REMOTE_FRAME_TOO_LARGE'
-  | 'REMOTE_WITHDRAWAL_TOO_LATE'
-  | 'REMOTE_PAIRING_IN_PROGRESS'
-  | 'REMOTE_SERVER_UNREACHABLE'
-  | 'REMOTE_SERVER_ORIGIN_INVALID'
-  | 'REMOTE_CONVERSATION_BUSY'
-  | 'REMOTE_STATE_NOT_READY'
-  | 'REMOTE_SYNC_CONFLICT'
-  | 'REMOTE_SYNC_DISABLED'
-  | 'REMOTE_DELIVERY_EXPIRED'
-  | 'REMOTE_REVISION_REQUIRED'
-  | 'REMOTE_SYNC_RESOURCE_LIMIT'
-  | 'REMOTE_QUERY_TIMEOUT'
-  | 'REMOTE_QUERY_TOO_LARGE'
-  | 'NATIVE_SESSION_ACTIVE'
-  | 'NATIVE_SESSION_UNSUPPORTED'
-  | 'NATIVE_SESSION_CHANGED'
-  | 'NATIVE_SESSION_WRITER_CONFLICT'
-  | 'REMOTE_ROOT_NOT_AUTHORIZED'
-  | 'REMOTE_PATH_OUTSIDE_ROOT'
-  | 'REMOTE_DIRECTORY_CHANGED'
-  | 'ATTACHMENT_TOO_LARGE'
-  | 'ATTACHMENT_TYPE_UNSUPPORTED'
-  | 'ATTACHMENT_COUNT_EXCEEDED'
-  | 'ATTACHMENT_QUOTA_EXCEEDED'
-  | 'ATTACHMENT_HASH_MISMATCH'
-  | 'AGENT_IMAGE_UNSUPPORTED'
-  | 'ATTACHMENT_DOWNLOAD_FAILED'
-  | 'ATTACHMENT_NOT_READY'
-  | 'ATTACHMENT_IN_USE'
-  | 'ATTACHMENT_THUMBNAIL_UNAVAILABLE'
-  | 'ATTACHMENT_PREPARATION_INTERRUPTED'
-  | 'PI_GUARD_UNAVAILABLE'
-  | 'PI_UNCONTROLLED_EXTENSIONS'
-  | 'PI_TOOL_CALL_BLOCKED'
-
-/** Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely. */
-export interface RemoteWire5ApprovalView {
-  approvalId: string
-  resultRef: RemoteResultRef
-  action: DangerousAction
-  targetSummary: string
-  riskLevel: RiskLevel
-  status: ApprovalStatus
-  requestedAt: string
-  expiresAt: string
-  remoteApprovalAllowed: boolean
-  workerPolicyRevision: number
-  denialCode?: RemoteWire5ErrorCode
-}
-
-export interface RemoteV5ApprovalEvent {
-  type: 'approval.state_changed'
-  wireRevision: 5
-  eventId: string
-  workerId: string
-  workerStoreId: string
-  workerEpoch: string
-  seq: number
-  occurredAt: string
-  conversationId: string
-  payload: RemoteWire5ApprovalView
 }
 
 export interface RemoteV5BackfillProgress {
