@@ -117,6 +117,8 @@ class Replica:
             self.s.save(tx, owner, 'conversation', conv['conversationId'], conv)
             if self.visible(tx, owner, conv['conversationId']):
                 self.s.event(tx, owner, 'conversation.updated', self.s.view(owner, 'conversation', conv))
+                if event['wireRevision'] == 5:
+                    self.s.browser_events.sync_run(tx, owner, event, value)
 
     def conversation(self, tx, owner, event):
         local_workspace = event['payload']['workspaceId']
@@ -265,9 +267,11 @@ class Replica:
         for old in tx.list(owner, 'sync-stage', worker=connection.worker, store=connection.store):
             tx.remove_record(owner, 'sync-stage', old['id'])
         for conv in tx.list(owner, 'conversation', worker=connection.worker, store=connection.store):
+            unchanged = (conv.get('_busyConnection') == connection.identifier and
+                         conv.get('_busy', False) == (conv.get('_localId') in ids) and fresh)
             conv.update(_busy=conv.get('_localId') in ids, _busyConnection=connection.identifier, _busyObservedAt=event['capturedAt'])
             self.s.save(tx, owner, 'conversation', conv['conversationId'], conv)
-            if conv.get('visibility', 'both') != 'pc_only':
+            if conv.get('visibility', 'both') != 'pc_only' and not (event['wireRevision'] == 5 and unchanged):
                 # The validated whole snapshot and its browser event commit
                 # together; connection.busy_fresh changes only after commit.
                 self.s.event(tx, owner, 'conversation.updated', self.s.view(owner, 'conversation', conv, busy_fresh=fresh))

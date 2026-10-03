@@ -120,6 +120,7 @@ class SyncEvents(Events):
         kind = event['type']; worker, store = event['workerId'], event['workerStoreId']
         if kind == 'capability.changed':
             payload = event['payload']
+            previous_catalog = tx.get(owner, 'catalog', worker)
             require(payload['workerId'] == worker and payload['workerStoreId'] == store, 'REMOTE_TARGET_MISMATCH')
             for group, key in [('workspaces','workspaceId'), ('scenes','sceneId')]:
                 require(len({v[key] for v in payload[group]}) == len(payload[group]), 'REMOTE_EVENT_CONFLICT')
@@ -129,6 +130,8 @@ class SyncEvents(Events):
             device = self.s.get(tx, owner, 'device', worker)
             device['capabilityRevision'] = payload['capabilityRevision']
             self.s.save(tx, owner, 'device', worker, device)
+            if event['wireRevision'] == 5:
+                self.s.browser_events.catalog(tx, owner, event, previous_catalog, payload)
             return
         value = None
         if 'commandId' in event:
@@ -145,6 +148,10 @@ class SyncEvents(Events):
         mapped = dict(event, conversationId=public)
         if 'resultRef' in event:
             mapped['resultRef'] = self.reference(tx, owner, event, event['resultRef'], local)
+            if event['wireRevision'] == 5 and kind == 'run.progress':
+                ref_id = mapped['resultRef']['runId']
+                known = tx.get(owner, 'run', ref_id) or tx.get(owner, 'run-ref', ref_id)
+                require(known is not None and known['conversationId'] == public, 'REMOTE_TARGET_MISMATCH')
         if kind.startswith('command.'):
             self.command_v2(tx, owner, event, mapped, value)
         elif kind == 'conversation.skip_recorded':
@@ -155,9 +162,12 @@ class SyncEvents(Events):
             if not tx.get(owner, 'conversation', public):
                 return
             payload = event['payload']; require(seconds(payload['expiresAt']) > seconds(payload['requestedAt']), 'REMOTE_EVENT_CONFLICT')
+            if event['wireRevision'] == 5:
+                require(not payload.get('denialCode') or not payload['remoteApprovalAllowed'], 'REMOTE_EVENT_CONFLICT')
             identifier = self.s.replica.bind(tx, owner, worker, store, 'approval', payload['approvalId'], local)
             ref = self.reference(tx, owner, event, payload['resultRef'], local)
-            self.s.get(tx, owner, 'run', ref['runId'])
+            run = self.s.get(tx, owner, 'run', ref['runId'])
+            require(run['conversationId'] == public, 'REMOTE_TARGET_MISMATCH')
             payload = dict(payload, approvalId=identifier, resultRef=ref)
             mapped['payload'] = payload
             self.s.save(tx, owner, 'approval', identifier, dict(payload, _localId=event['payload']['approvalId'], _worker=worker, _store=store, _conversation=public))
@@ -168,17 +178,23 @@ class SyncEvents(Events):
             payload = event['payload']
             require(payload['conversationId'] == local, 'REMOTE_TARGET_MISMATCH')
             mapped['payload'] = dict(payload, conversationId=public, runId=self.reference(tx, owner, event, dict(runId=payload['runId']), local)['runId'])
+            if event['wireRevision'] == 5:
+                run_id = mapped['payload']['runId']
+                known = tx.get(owner, 'run', run_id) or tx.get(owner, 'run-ref', run_id)
+                require(known is not None and known['conversationId'] == public, 'REMOTE_TARGET_MISMATCH')
+                if not known.get('observedAt') or seconds(payload['observedAt']) >= seconds(known['observedAt']):
+                    current = dict(mapped['payload'], workerOnline=False, _worker=worker, _store=store, _localId=payload['runId'])
+                    self.s.save(tx, owner, 'run', run_id, current)
         elif kind == 'message.appended':
             raise Fault('REMOTE_SYNC_CONFLICT')  # new producers must use bounded segments
         if self.s.replica.visible(tx, owner, public) or (kind.startswith('command.') and self.s.command_visible(tx, owner, public)):
             if event['wireRevision'] >= 4 and kind.startswith('command.'):
                 self.s.command_event(tx,owner,value)
             elif event['wireRevision'] >= 5:
-                # Public browser DTOs intentionally do not embed wire5 frames.
-                # Notify the existing conversation projection; snapshot/approval
-                # GETs expose the committed Worker fact under the same feature gate.
-                conv = self.s.get(tx,owner,'conversation',public)
-                self.s.event(tx,owner,'conversation.updated',self.s.view(owner,'conversation',conv))
+                if kind == 'approval.state_changed':
+                    self.s.browser_events.approval(tx, owner, mapped)
+                else:
+                    self.s.browser_events.execution(tx, owner, mapped)
             else:
                 self.s.event(tx, owner, 'worker.event', mapped)
 

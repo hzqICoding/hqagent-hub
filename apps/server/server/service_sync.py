@@ -16,6 +16,8 @@ class SyncService(NativeService, DeviceManagement, Service):
     def __init__(self, repo, settings, security):
         super().__init__(repo, settings, security)
         self.projection = ClientProjection(self)
+        from .browser_events import BrowserEvents
+        self.browser_events = BrowserEvents(self)
         self.replica = Replica(self)
         from .queries import Queries
         self.queries = Queries(self)
@@ -414,6 +416,17 @@ class SyncService(NativeService, DeviceManagement, Service):
             result['before'] = self.token(owner, scope, dict(cut=data['cut'], before=items[-1][0], generation=data['generation']), claims['expires'])
         return result
 
+    def cursor(self, tx, owner, scope, position):
+        from .opaque_cursor import seal
+        result = super().cursor(tx, owner, scope, position)
+        return seal(self.security, owner, result) if scope == 'events' else result
+
+    def position(self, tx, owner, scope, token):
+        from .opaque_cursor import unseal
+        if isinstance(token, str) and token.startswith('e1.'):
+            token = unseal(self.security, owner, token)
+        return super().position(tx, owner, scope, token)
+
     def conversations(self, tx, owner, cursor, limit, worker=None, workspace=None):
         if worker:
             self.get(tx, owner, 'device', worker)
@@ -441,12 +454,19 @@ class SyncService(NativeService, DeviceManagement, Service):
                 break
             for index, body in rows:
                 payload = body.get('payload', {})
-                conversation = body.get('conversationId') or payload.get('conversationId') or payload.get('resourceRef', {}).get('conversationId')
+                conversation = body.get('_conversation') or body.get('conversationId') or payload.get('conversationId') or payload.get('resourceRef', {}).get('conversationId')
                 command_event = body['type'] == 'command.updated' or (body['type'] == 'worker.event' and payload.get('type', '').startswith('command.'))
                 allowed = body['type'] in {'conversation.deleted', 'store.reset'} or conversation is None or self.replica.visible(tx, owner, conversation) or (command_event and self.command_visible(tx, owner, conversation))
                 allowed = allowed and self.projection.event_allowed(tx,owner,body)
+                worker = body.get('_worker', body.get('workerId', payload.get('workerId', payload.get('targetWorkerId'))))
+                store = body.get('_store', body.get('workerStoreId', payload.get('workerStoreId')))
+                if worker:
+                    device = tx.get(owner, 'device', worker)
+                    allowed = allowed and bool(device and not device.get('_deleted') and (not store or device.get('workerStoreId') == store))
+                snapshot_required = body.get('_snapshot_required')
                 body = {k:v for k,v in body.items() if not k.startswith('_')}
                 if allowed:
+                    require(not snapshot_required, 'REMOTE_CURSOR_EXPIRED')
                     if body['type'] == 'conversation.updated':
                         # Browser transport freshness is current, not an
                         # immutable Worker execution fact. Replaying an old
@@ -454,6 +474,11 @@ class SyncService(NativeService, DeviceManagement, Service):
                         current = self.view(owner, 'conversation', self.get(tx, owner, 'conversation', conversation))
                         body = dict(body, payload=dict(payload, **{key: current[key]
                             for key in ('busy', 'busyFresh', 'busyObservedAt') if key in current}))
+                    try:
+                        from .common import validated
+                        validated('RemoteBrowserEvent', dict(body, serverCursor='projection_validation_only'))
+                    except ValueError:
+                        raise Fault('REMOTE_CURSOR_EXPIRED') from None
                     added = len(canonical(body).encode())
                     if items and size + added > 33554432:
                         budget_full = True
