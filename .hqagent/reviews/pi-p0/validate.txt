@@ -1,0 +1,1 @@
+协议校验通过：606 个类型，485 个 Contract Fixture

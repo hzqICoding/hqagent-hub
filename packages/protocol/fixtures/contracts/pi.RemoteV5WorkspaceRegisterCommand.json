@@ -1,0 +1,16 @@
+{
+  "type": "workspace.register",
+  "wireRevision": 5,
+  "commandId": "synthetic_commandId",
+  "targetWorkerId": "synthetic_targetWorkerId",
+  "expectedWorkerStoreId": "synthetic_expectedWorkerStoreId",
+  "createdAt": "2026-09-28T12:00:00Z",
+  "expiresAt": "2026-09-28T12:00:20Z",
+  "deliverBy": "2026-09-28T12:00:20Z",
+  "requestId": "synthetic_requestId",
+  "payload": {
+    "rootId": "synthetic_rootId",
+    "rootVersion": 1,
+    "directoryToken": "opaque_synthetic_cursor_0001"
+  }
+}
