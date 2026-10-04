@@ -22,6 +22,7 @@ from protocol.generated.python import (
 )
 from adapters.base import AgentAdapter
 from adapters.attachment_input import checked_inputs, file_prompt
+from adapters.image_support import require_image_model
 from adapters.events import AdapterEvent, utc_timestamp
 from adapters.failures import parse_agent_result, failure_event
 from adapters.path_guard import PathGuard
@@ -42,6 +43,16 @@ class PiModelError(ValueError):
     pass
 
 
+class PiGuardError(ValueError):
+    """Only guard integrity, handshake and policy checks may poison guard state."""
+
+
+class PiConnectionFailure(Exception):
+    def __init__(self, cause, state, stopped):
+        super().__init__('PI connection startup failed')
+        self.cause, self.state, self.stopped = cause, state, stopped
+
+
 def denied(code='PI_GUARD_UNAVAILABLE', kind='capability_missing', *, message=None):
     messages = {
         'PI_GUARD_UNAVAILABLE': 'PI 安全扩展握手失败或保护状态已变化，未放行执行',
@@ -51,6 +62,7 @@ def denied(code='PI_GUARD_UNAVAILABLE', kind='capability_missing', *, message=No
         'PATH_NOT_ALLOWED': 'PI 工作目录不在授权范围内，未启动任务',
         'AGENT_OFFLINE': 'PI 连接已中断，执行状态仍需核对',
         'VALIDATION_FAILED': 'PI 模型选择或执行选项未通过本机清单校验',
+        'AGENT_IMAGE_UNSUPPORTED': '所选 PI 模型不支持图片输入，请选择支持图片的模型',
         'INTERNAL': 'PI 本轮未返回可验证的执行结果',
         'TASK_NOT_CANCELLABLE': 'PI 本轮已停止',
     }
@@ -133,6 +145,10 @@ class PiAdapter(AgentAdapter):
         self.secrets_provider = lambda: ()
         self.policy_state = lambda spec: None
         self.protected_paths = ()
+        self.failed_starts = {}
+
+    def failed_start_state(self, session_id):
+        return self.failed_starts.get(session_id)
 
     def _guard_view(self, status, reason=None, policy=None):
         return RuntimeGuardView(status=status, isolation='hub_extension_only' if status == 'ready' else 'unknown',
@@ -164,7 +180,7 @@ class PiAdapter(AgentAdapter):
         if not relative or (package / relative).resolve() != entry:
             raise PiIsolationError('unexpected PI entry')
         if hashlib.sha256(GUARD_PATH.read_bytes()).hexdigest() != GUARD_SHA256:
-            raise ValueError('guard integrity failed')
+            raise PiGuardError('guard integrity failed')
         self.install_root = package.resolve()
         return args
 
@@ -181,8 +197,10 @@ class PiAdapter(AgentAdapter):
                 verified = result.returncode == 0 and version == self.minimum_version
             except PiIsolationError:
                 self.guard = self._guard_view('blocked', 'uncontrolled_extensions')
-            except (OSError, ValueError, TimeoutError):
+            except PiGuardError:
                 self.guard = self._guard_view('blocked', 'guard_not_loaded')
+            except (OSError, ValueError, TimeoutError):
+                pass
         caps = ['orchestration', 'architecture', 'coding', 'review', 'testing', 'shell', 'file_write',
                 'git_worktree', 'session_resume', 'streaming_events', 'tool_approval', 'structured_output']
         return AdapterDescriptor(adapterId='pi', displayName='PI', integrationKind='cli_stream', authKind='local_login',
@@ -209,24 +227,27 @@ class PiAdapter(AgentAdapter):
         if not descriptor.installed or descriptor.detected_version != '1.0.1' or not all(c.supported for c in descriptor.capabilities):
             if 'uncontrolled_extensions' in self.guard.reasons:
                 raise PiIsolationError('PI isolation not verified')
-            raise ValueError('PI version not verified')
+            from core.errors import HubError
+            raise HubError('AGENT_INCOMPATIBLE', 'PI CLI 版本未通过核验')
         args = self._launch()
         worktree = Path(spec.worktree_path).resolve()
         data_root = self.root.parent
         if not metadata_only:
             if data_root.is_relative_to(worktree):
-                raise ValueError('application data cannot be a task workspace')
+                from core.errors import HubError
+                raise HubError('PATH_NOT_ALLOWED', 'PI 工作目录不可为应用数据目录')
             if worktree.is_relative_to(data_root):
                 relative = worktree.relative_to(data_root).parts
                 managed_worktree = len(relative) >= 2 and relative[0] == 'worktrees'
                 verification = len(relative) == 3 and relative[0] == 'image-verification' and relative[-1] == 'workspace'
                 if not (managed_worktree or verification):
-                    raise ValueError('application metadata cannot be a task workspace')
+                    from core.errors import HubError
+                    raise HubError('PATH_NOT_ALLOWED', 'PI 工作目录不可为应用元数据目录')
         self.root.mkdir(parents=True, exist_ok=True)
         directory = self.root / 'sessions' / secrets.token_hex(16)
         directory.mkdir(parents=True)
         if GUARD_PATH.resolve().is_relative_to(Path(spec.worktree_path).resolve()):
-            raise ValueError('guard is inside task root')
+            raise PiGuardError('guard is inside task root')
         state = PiState(spec.session_id, '', spec,
                         PathGuard(spec.worktree_path, spec.allowed_paths, input_attachments=spec.input_attachments),
                         launch_directory=directory, context=self._context(spec), policy_snapshot=sha(canonical(self.policy_state(spec))), private_roots=(self.root, self.install_root, Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1], self.root.parent / 'remote', self.root.parent / 'runtime', self.root.parent / 'data'))
@@ -243,12 +264,21 @@ class PiAdapter(AgentAdapter):
             args += ['--provider', provider, '--model', model]
         env = self._environment()
         env['HQAGENT_PI_GUARD_CONTEXT'] = canonical(state.context)
-        state.process = await self.runner.start(args, cwd=spec.worktree_path, env=env)
-        state.connection = PiRPC(state.process, lambda frame: self._event(state, frame), lambda: self._lost(state))
         try:
-            await asyncio.wait_for(state.ready.wait(), self.guard_timeout)
+            state.process = await self.runner.start(args, cwd=spec.worktree_path, env=env)
+            state.connection = PiRPC(state.process, lambda frame: self._event(state, frame), lambda: self._lost(state))
+            try:
+                await asyncio.wait_for(state.ready.wait(), self.guard_timeout)
+            except TimeoutError as error:
+                if state.failure is not None and state.failure.code not in {'PI_GUARD_UNAVAILABLE', 'PI_UNCONTROLLED_EXTENSIONS'}:
+                    from core.errors import HubError
+                    raise HubError(str(state.failure.code), 'PI 连接在握手完成前中断') from error
+                raise PiGuardError('guard handshake timed out') from error
             if state.failure:
-                raise ValueError('guard rejected')
+                if state.failure.code in {'PI_GUARD_UNAVAILABLE', 'PI_UNCONTROLLED_EXTENSIONS'}:
+                    raise PiGuardError('guard rejected')
+                from core.errors import HubError
+                raise HubError(str(state.failure.code or 'INTERNAL'), 'PI 启动连接失败')
             native = await state.connection.request('get_state')
             if (state.failure is not None or native.get('isStreaming') is not False
                     or native.get('isCompacting') is not False
@@ -263,10 +293,32 @@ class PiAdapter(AgentAdapter):
             if not metadata_only and selected != str(actual.get('provider', '')) + '/' + str(actual.get('id', '')):
                 raise PiModelError('PI selected another model')
             return state, native
-        except BaseException:
-            if await state.connection.force_close():
+        except BaseException as error:
+            stopped = await self._close_failed_start(state)
+            if isinstance(error, asyncio.CancelledError):
+                raise
+            raise PiConnectionFailure(error, state, stopped) from error
+
+    async def _close_failed_start(self, state):
+        self.failed_starts[state.session_id] = state
+        try:
+            if state.connection is not None:
+                if not await state.connection.force_close():
+                    return False
+            elif state.process is not None:
+                from adapters.process import terminate_process_tree
+                if not await terminate_process_tree(state.process):
+                    return False
+            self._release(state)
+            if state.spec.workspace_id == 'image-verification' and state.session_file is not None and state.session_file.parent == state.launch_directory:
+                self._remove_directory(state.launch_directory)
+                self._binding_path(state.external_session_id).unlink(missing_ok=True)
+            else:
                 self._remove_launch(state)
-            raise
+        except (OSError, ValueError, RuntimeError, TimeoutError):
+            return False
+        self.failed_starts.pop(state.session_id, None)
+        return True
 
     def _models(self, available, native, *, default=True):
         models, facts = [], []
@@ -294,9 +346,15 @@ class PiAdapter(AgentAdapter):
             if not models.verified:
                 return denied('VALIDATION_FAILED', message=models.reason)
             return AdapterHealth(status='ready', checkedAt=utc_timestamp(), authValid=True)
-        except Exception:
-            self.guard = self._guard_view('blocked', 'guard_not_loaded')
-            return denied()
+        except Exception as error:
+            cause = error.cause if isinstance(error, PiConnectionFailure) else error
+            if isinstance(cause, PiIsolationError):
+                self.guard = self._guard_view('blocked', 'uncontrolled_extensions')
+                return denied('PI_UNCONTROLLED_EXTENSIONS')
+            if isinstance(cause, PiGuardError):
+                self.guard = self._guard_view('blocked', 'guard_not_loaded')
+                return denied()
+            return denied('AGENT_OFFLINE', 'transport_error')
 
     async def list_models(self, agent_instance_id):
         from protocol.generated.python import AgentTaskSpec
@@ -310,9 +368,8 @@ class PiAdapter(AgentAdapter):
         # Snapshot this response before awaiting cleanup; concurrent execution
         # metadata must not replace the result of this particular request.
         models = list(self.models)
-        if not await state.connection.force_close():
-            raise ValueError('metadata process did not stop')
-        self._remove_launch(state)
+        if not await self._close_failed_start(state):
+            raise PiConnectionFailure(ValueError('metadata process did not stop'), state, False)
         return LocalAgentModelsView(agentInstanceId=agent_instance_id, verified=bool(models), models=models,
             **{} if models else {'reason': 'PI 模型目录未就绪或读取权限不足，请检查本机 PI 配置后重试'})
 
@@ -383,15 +440,21 @@ class PiAdapter(AgentAdapter):
         if self.admission is not None and not self.admission(spec):
             return denied('REMOTE_REVISION_REQUIRED', 'capability_missing')
         state = None
-        failure_code = 'PI_GUARD_UNAVAILABLE'
-        stage = '启动安全核验'
+        failure_code = 'INTERNAL'
+        stage = '启动输入检查'
         try:
             if not spec.worktree_path or not Path(spec.worktree_path).is_dir():
                 return denied('PATH_NOT_ALLOWED', 'path_violation')
             if spec.reasoning_effort:
                 return denied('VALIDATION_FAILED', 'agent_error')
-            if spec.model_id_ is None:
+            images = any(str(v.attachment.kind) == 'image' for v in spec.input_attachments or [])
+            if images:
+                require_image_model(self, spec.model_id_)
+                checked_inputs(spec.input_attachments)
+            if spec.model_id_ is None and not self.configuration_hash:
                 await self.list_models('local.pi.default')
+            if images:
+                require_image_model(self, spec.model_id_)
             state, native = await self._new_connection(spec)
             if spec.resume_session_id:
                 failure_code = 'SESSION_NOT_RESUMABLE'
@@ -413,9 +476,17 @@ class PiAdapter(AgentAdapter):
                 switched = await state.connection.request('switch_session', sessionPath=str(path))
                 if switched.get('cancelled'):
                     raise ValueError('switch refused')
-                await asyncio.wait_for(state.ready.wait(), self.guard_timeout)
+                try:
+                    await asyncio.wait_for(state.ready.wait(), self.guard_timeout)
+                except TimeoutError as error:
+                    if state.failure is not None and state.failure.code not in {'PI_GUARD_UNAVAILABLE', 'PI_UNCONTROLLED_EXTENSIONS'}:
+                        from core.errors import HubError
+                        raise HubError(str(state.failure.code), 'PI 续接连接已中断') from error
+                    raise PiGuardError('switch guard timed out') from error
                 if state.failure:
-                    raise ValueError('switch guard failed')
+                    if state.failure.code in {'PI_GUARD_UNAVAILABLE', 'PI_UNCONTROLLED_EXTENSIONS'}:
+                        raise PiGuardError('switch guard failed')
+                    raise ValueError('switch connection failed')
                 native = await state.connection.request('get_state')
                 stage = '切换会话后模型与当前选择不一致'
                 restored = native.get('model') or {}
@@ -432,10 +503,10 @@ class PiAdapter(AgentAdapter):
                 from runtime.pi_visibility import PI_IMAGE_TARGET
                 from runtime.attachments.verification_target import target_for
                 expected = PI_IMAGE_TARGET.get()
-                if 'image' not in self.model_inputs.get(spec.model_id_ or self.default_model, set()):
-                    raise ValueError('PI model does not accept images')
+                require_image_model(self, spec.model_id_)
                 if expected is not None and target_for(expected['agentId'], 'pi', '1.0.1', spec.model_id_, self) != expected:
-                    raise ValueError('PI image verification target changed')
+                    from core.errors import HubError
+                    raise HubError('AGENT_IMAGE_UNSUPPORTED', 'PI 图片验证目标已变化')
             old = self.registry.get(spec.session_id)
             if old:
                 if old.process is not None and old.process.returncode is None:
@@ -451,23 +522,32 @@ class PiAdapter(AgentAdapter):
             return AgentSessionHandle(adapterId='pi', sessionId=state.session_id, externalSessionId=state.external_session_id,
                                      startedAt=utc_timestamp(), supportsResume=True, workingDirectory=spec.worktree_path)
         except Exception as error:
-            if state:
-                stopped = await state.connection.force_close()
-                if stopped:
-                    self._release(state)
-                    self._remove_launch(state)
+            stopped = True
+            if isinstance(error, PiConnectionFailure):
+                state, stopped, error = error.state, error.stopped, error.cause
+            elif state:
+                stopped = await self._close_failed_start(state)
+            if state is not None and not stopped:
+                self.failed_starts[spec.session_id] = state
             from core.errors import HubError
             if isinstance(error, PiModelError):
-                return denied('VALIDATION_FAILED', 'agent_error')
-            if isinstance(error, PiIsolationError):
+                result = denied('VALIDATION_FAILED', 'agent_error')
+            elif isinstance(error, PiIsolationError):
                 self.guard = self._guard_view('blocked', 'uncontrolled_extensions')
-                return denied('PI_UNCONTROLLED_EXTENSIONS')
-            if isinstance(error, HubError):
-                return denied(error.code, 'agent_error', message=error.message)
-            if failure_code == 'PI_GUARD_UNAVAILABLE':
+                result = denied('PI_UNCONTROLLED_EXTENSIONS')
+            elif isinstance(error, PiGuardError):
                 self.guard = self._guard_view('blocked', 'guard_not_loaded')
-            return denied(failure_code, 'capability_missing' if failure_code == 'PI_GUARD_UNAVAILABLE' else 'agent_error',
-                message=('PI 会话续接失败：' + stage) if failure_code == 'SESSION_NOT_RESUMABLE' else None)
+                result = denied()
+            elif isinstance(error, HubError):
+                result = denied(error.code, 'agent_error', message=error.message)
+            else:
+                result = denied(failure_code, 'agent_error',
+                    message=('PI 会话续接失败：' + stage) if failure_code == 'SESSION_NOT_RESUMABLE' else None)
+            # Internal AdapterFailure evidence; HTTP diagnostics retain their
+            # existing allowlist and never expose this raw ownership record.
+            return result.model_copy(update={'raw': json.dumps({'cleanupConfirmed': stopped,
+                'executionMayStillBeRunning': not stopped,
+                'orphanProcessIds': [state.process.pid] if state and state.process and not stopped and state.process.returncode is None else []})})
 
     async def resume(self, request):
         state = self.registry.get(request.session_id)
@@ -787,6 +867,13 @@ class PiAdapter(AgentAdapter):
 
     async def cancel(self, request):
         started = time.monotonic()
+        failed = self.failed_starts.get(request.session_id)
+        if failed is not None:
+            stopped = await self._close_failed_start(failed)
+            if stopped:
+                self.failed_starts.pop(request.session_id, None)
+            return CancelResult(outcome='force_killed' if stopped else 'refused', completedAt=utc_timestamp(),
+                orphanProcessIds=[] if stopped or failed.process is None or failed.process.returncode is not None else [failed.process.pid])
         state = self.registry.get(request.session_id)
         outcome, orphans = 'not_found', []
         if state:

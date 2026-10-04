@@ -10,6 +10,7 @@ from protocol.generated.python import (AdapterFailure, CancelRequest, ERROR_CATA
     LocalImageVerificationRecord, StartLocalImageVerificationInput)
 from core.errors import HubError
 from adapters.versions import cli_version
+from adapters.image_support import image_model_support, require_image_model
 from runtime.remote.security import CredentialVault
 from runtime.attachments.capabilities import VerificationStore, REQUIRED_PROBES
 from runtime.attachments.verification_target import target_for
@@ -73,7 +74,7 @@ def record_view(record, target):
 
 
 class VerificationCoordinator:
-    def __init__(self, root, resolve, *, capabilities=None, budget=900, cleanup_budget=60):
+    def __init__(self, root, resolve, *, capabilities=None, budget=900, cleanup_budget=60, preflight=None):
         self.store = VerificationStore(root)
         self.root = self.store.root
         self.root.mkdir(parents=True, exist_ok=True)
@@ -81,6 +82,7 @@ class VerificationCoordinator:
             conflict('agent_unavailable')
         self.path = self.root / 'jobs.json'
         self.resolve = resolve
+        self.preflight = preflight
         self.capabilities = capabilities
         self.budget, self.cleanup_budget = budget, cleanup_budget
         self.lock = asyncio.Lock()
@@ -117,6 +119,12 @@ class VerificationCoordinator:
 
     @classmethod
     def for_service(cls, service):
+        def preflight(identifier, model):
+            try:
+                adapter = service.chat.ports.tasks.directory.adapter_for(identifier)
+            except (LookupError, AttributeError):
+                return
+            require_image_model(adapter, model)
         async def resolve(identifier, model):
             agents = await service.chat.ports.agents.list_agents()
             view = next((a for a in agents if a.id == identifier), None)
@@ -127,15 +135,55 @@ class VerificationCoordinator:
             except (LookupError, AttributeError):
                 conflict('agent_unavailable')
             if str(view.adapter_id) == 'pi':
-                models = await adapter.list_models(identifier)
-                if model is not None and model not in {m.id for m in models.models}:
+                # Discovery already owns model metadata. Never spawn a metadata
+                # process for each matrix row or each progress/target check.
+                if not adapter.configuration_hash:
+                    await adapter.list_models(identifier)
+                if model is not None and model not in {m['id'] for m in adapter.models}:
                     raise HubError('VALIDATION_FAILED', '模型选择器不在本机可用列表')
             descriptor = await adapter.detect()
             version = getattr(descriptor, 'detected_version', None)
             target = target_for(identifier, str(view.adapter_id), version, model, adapter)
             available = str(view.status) == 'ready' and not isinstance(descriptor, AdapterFailure)
             return target, adapter, available
-        return cls(service.worker.repo.witness.parent.parent, resolve, capabilities=service.capabilities)
+        return cls(service.worker.repo.witness.parent.parent, resolve, capabilities=service.capabilities, preflight=preflight)
+
+    async def recover_failed_starts(self, absence_check=None):
+        from runtime.attachments.verification_recovery import pi_processes_absent
+        candidates = []
+        for job in self.data['jobs'].values():
+            view = job['view']
+            diagnostic = job.get('diagnostics', {}).get('new.start', view.get('diagnostics', {}).get('newStart', {}))
+            if (job.get('internal') and view['target']['agentType'] == 'pi' and view['status'] == 'interrupted'
+                    and view['cleanupState'] == 'unconfirmed' and not view['orphanProcessIds']
+                    and not job.get('launchPending') and job['resources']
+                    and all(not r.get('handleKnown') and not r.get('processId') and r.get('internal') for r in job['resources'])
+                    and diagnostic.get('result') == 'adapter_failure'
+                    and not job.get('startFailureUnconfirmed')
+                    and not any(job.get('outcomes', {}).values())):
+                candidates.append(job)
+        if not candidates:
+            return
+        try:
+            absent = await asyncio.to_thread(absence_check or pi_processes_absent, self.root.parent)
+        except (OSError, ValueError):
+            return
+        if absent is not True:
+            return
+        for job in candidates:
+            # A returned failure plus proven absence differs from a crashed
+            # launch, lost handle, cancelled coroutine or still-running process.
+            for resource in job['resources']:
+                resource.update(stopped=True, startRejected=True)
+            job['view']['status'] = 'failed'
+            if not await self.cleanup(job, None):
+                job['view']['status'] = 'interrupted'
+            target = job['view']['target']
+            record = self.store.record('pi', target.get('cliVersion'), target.get('modelId'),
+                {k: False for k in REQUIRED_PROBES}, job.get('mimeTypes', []), diagnostics=job.get('diagnostics', {}),
+                target=target, job_id=job['view']['jobId'], completed=False)
+            job['view'].update(result=record_view(record, target), finishedAt=now(), appliedToCurrentTarget=False)
+            self.persist(job)
 
     def save(self):
         CredentialVault.atomic_write(self.path, json.dumps(self.data, ensure_ascii=False).encode())
@@ -185,7 +233,10 @@ class VerificationCoordinator:
                 if prior['digest'] != digest:
                     raise HubError('IDEMPOTENCY_MISMATCH', '幂等键已用于不同验证意图')
                 return self.view(prior['jobId'])
+            if self.preflight:
+                self.preflight(raw['agentId'], raw.get('modelId'))
             target, adapter, available = await self.resolve(raw['agentId'], raw.get('modelId'))
+            require_image_model(adapter, raw.get('modelId'))
             if not available or 'cliVersion' not in target or 'transport' not in target:
                 conflict('agent_unavailable')
             if target['targetRevision'] != raw['expectedTargetRevision']:
@@ -268,6 +319,8 @@ class VerificationCoordinator:
                 release = getattr(adapter, 'release_temporary_session', None)
                 if release is not None:
                     for resource in job['resources']:
+                        if resource.get('startRejected'):
+                            continue
                         if not await release(resource['sessionId']):
                             raise OSError('temporary session cleanup not confirmed')
                 directory = Path(job['directory'])
@@ -285,6 +338,8 @@ class VerificationCoordinator:
     def observe_resource(self, job, adapter, resource):
         registry = getattr(adapter, 'registry', None)
         state = registry.get(resource['sessionId']) if registry is not None else None
+        if state is None and hasattr(adapter, 'failed_start_state'):
+            state = adapter.failed_start_state(resource['sessionId'])
         if state is None:
             return
         # Registration is exact to the write-ahead session ID, never a global
@@ -411,6 +466,10 @@ class VerificationCoordinator:
         usages = getattr(self.capabilities, 'usages', {})
         selectors = {(identifier, None) for identifier in self.capabilities.agents}
         selectors.update(usages)
+        for identifier, agent in self.capabilities.agents.items():
+            if str(agent.adapter_id) == 'pi':
+                adapter = self.capabilities.worker.bridge.chat.ports.tasks.directory.adapter_for(identifier)
+                selectors.update((identifier, m['id']) for m in getattr(adapter, 'models', ()) if image_model_support(adapter, m['id']) is True)
         if inactive:
             for path in self.root.glob('*.json'):
                 if path.name == 'jobs.json':
@@ -434,11 +493,15 @@ class VerificationCoordinator:
             if agent_id and identifier != agent_id:
                 continue
             try:
-                target, _, available = await self.resolve(identifier, selected)
+                target, adapter, available = await self.resolve(identifier, selected)
             except HubError:
                 continue
             available = available and 'cliVersion' in target and 'transport' in target
             history = self.store.latest(identifier, target['agentType'], selected)
+            unsupported = image_model_support(adapter, selected) is False
+            if unsupported and not (inactive and history):
+                continue
+            available = available and not unsupported
             reasons = []
             if history:
                 old = history.get('target')
@@ -537,11 +600,29 @@ class OwnedAdapter:
         self.job['resources'].append(resource)
         self.coordinator.persist(self.job)
         result = await self.launch(self.adapter.start(spec))
-        if not isinstance(result, AdapterFailure):
+        if isinstance(result, AdapterFailure):
+            resource['startRejected'] = True
+            try:
+                evidence = json.loads(result.raw or '{}')
+                if not isinstance(evidence, dict):
+                    evidence = {}
+            except (ValueError, TypeError):
+                evidence = {}
+            orphans = evidence.get('orphanProcessIds', [])
+            known_orphans = [p for p in orphans if type(p) is int and 0 < p <= 4294967295] if isinstance(orphans, list) else []
+            uncertain = evidence.get('executionMayStillBeRunning') is True or evidence.get('cleanupConfirmed') is False or bool(known_orphans)
+            self.job['view']['orphanProcessIds'] = known_orphans[:64]
+            if not uncertain and (not resource.get('handleKnown') or evidence.get('cleanupConfirmed') is True):
+                resource.update(stopped=True, startRejected=True)
+            if uncertain:
+                self.job['startFailureUnconfirmed'] = True
+                resource['stopped'] = False
+        else:
             if result.session_id != spec.session_id:
                 conflict('agent_unavailable')
             resource.update(externalSessionId=result.external_session_id, handleKnown=True)
-        # A failed start can have launched an unobservable process. Preserve intent.
+        # AdapterFailure without a handle is a rejected/cleaned start unless
+        # explicit process/cleanup evidence says otherwise. Exceptions remain uncertain.
         self.coordinator.persist(self.job)
         return result
 
