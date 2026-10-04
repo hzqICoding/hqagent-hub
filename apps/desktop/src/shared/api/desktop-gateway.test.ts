@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { invoke } from '@tauri-apps/api/core'
+import { createPinia, setActivePinia } from 'pinia'
+import { useLocalAuthStore } from '@/stores/local-auth.store'
 import { RealLocalChatGateway } from './local-chat-gateway'
 import { LocalHubGateway } from './local-hub-gateway'
 import { getDesktopEndpoint } from './desktop-endpoint'
@@ -14,9 +16,31 @@ const second = { baseUrl: 'http://127.0.0.1:45002', token: 'synthetic-second-tok
 const internals = window as unknown as Record<string, unknown>
 
 beforeEach(() => { internals.__TAURI_INTERNALS__ = {}; mockedInvoke.mockReset(); mockedInvoke.mockResolvedValue(first) })
-afterEach(() => { delete internals.__TAURI_INTERNALS__; vi.unstubAllGlobals(); vi.restoreAllMocks(); setLocalChatGatewayMode('real') })
+afterEach(() => { delete internals.__TAURI_INTERNALS__; vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); setLocalChatGatewayMode('real') })
 
 describe('desktop gateway authentication', () => {
+  it('does not apply the 15s business request timeout while shell readiness is pending', async () => {
+    vi.useFakeTimers()
+    let resolve!: (endpoint: typeof first) => void
+    mockedInvoke.mockReturnValueOnce(new Promise(done => { resolve = done }))
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ success: true, data: { authenticated: true } })))
+    vi.stubGlobal('fetch', fetch)
+    const pending = new RealLocalChatGateway().getLocalAuthStatus()
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(fetch).not.toHaveBeenCalled()
+    resolve(first)
+    await expect(pending).resolves.toMatchObject({ authenticated: true })
+  })
+
+  it('preserves the Chinese ShellError reason through the local auth store', async () => {
+    setActivePinia(createPinia())
+    const message = 'Hub 尚未就绪: 就绪探测 bootstrap 超时（30 秒），将自动重试'
+    mockedInvoke.mockRejectedValueOnce({ code: 'HUB_UNAVAILABLE', message })
+    const auth = useLocalAuthStore()
+    expect(await auth.checkAuthStatus()).toBe(false)
+    expect(auth.authError).toBe(message)
+  })
+
   it('refreshes v1 and v2 endpoints after restart, uses Bearer and never stores credentials', async () => {
     const localWrite = vi.spyOn(Storage.prototype, 'setItem')
     const fetch = vi.fn(async () => new Response(JSON.stringify({ success: true, data: { authenticated: true } })))

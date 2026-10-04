@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { PROTOCOL_VERSION } from '@hqagent/protocol'
 import { useChatStore } from './chat.store'
 import { useScenesStore } from './scenes.store'
-import { isDesktopShell } from '@/shared/api/desktop-endpoint'
+import { isDesktopShell, ShellConnectionError } from '@/shared/api/desktop-endpoint'
 import {
   getLocalChatGateway,
   getLocalChatGatewayMode,
@@ -33,7 +33,9 @@ export const useLocalAuthStore = defineStore('localAuth', () => {
       return status.authenticated
     } catch (err: unknown) {
       authenticated.value = false
-      if (err instanceof HubApiError) {
+      if (err instanceof ShellConnectionError) {
+        authError.value = err.message
+      } else if (err instanceof HubApiError) {
         if (err.code === 'HUB_NOT_READY' || err.status === 503) {
           authError.value = 'Local Hub / Worker 尚未就绪或未启动，请检查后台服务'
         } else if (err.code === 'UNAUTHORIZED' || err.status === 401) {

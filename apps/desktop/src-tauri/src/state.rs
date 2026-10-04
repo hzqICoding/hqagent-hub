@@ -197,10 +197,11 @@ impl ShellState {
 
     pub fn shutdown(&self) {
         self.monitor_stop.store(true, Ordering::SeqCst);
+        // Do not wait up to a cold bootstrap timeout before signalling the child.
+        self.supervisor.shutdown();
         if let Some(handle) = self.monitor.lock().expect("monitor poisoned").take() {
             let _ = handle.join();
         }
-        self.supervisor.shutdown();
     }
 
     fn apply_maintenance<R: Runtime>(

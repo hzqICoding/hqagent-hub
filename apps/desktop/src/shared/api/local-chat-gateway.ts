@@ -125,6 +125,9 @@ export class RealLocalChatGateway implements LocalChatGateway {
     idempotencyKey?: string,
     timeoutMs = 15000
   ): Promise<T> {
+    // Shell readiness has its own cold-start deadline; the HTTP request clock
+    // must not expire while native discovery is still waiting for bootstrap.
+    const connection = isDesktopShell() ? await this.transportEndpoint() : { baseUrl: this.baseUrl }
     const controller = new AbortController()
     const cancel = () => controller.abort()
     options.signal?.addEventListener('abort', cancel, { once: true })
@@ -138,7 +141,7 @@ export class RealLocalChatGateway implements LocalChatGateway {
     })
     try {
       return await Promise.race([
-        this.fetchEnvelope<T>(endpoint, { ...options, signal: controller.signal }, idempotencyKey),
+        this.fetchEnvelope<T>(endpoint, connection, { ...options, signal: controller.signal }, idempotencyKey),
         deadline,
       ])
     } finally {
@@ -149,10 +152,10 @@ export class RealLocalChatGateway implements LocalChatGateway {
 
   private async fetchEnvelope<T>(
     endpoint: string,
+    connection: { baseUrl: string; token?: string },
     options: RequestInit = {},
     idempotencyKey?: string
   ): Promise<T> {
-    const connection = await this.transportEndpoint()
     const url = `${connection.baseUrl}${endpoint}`
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',

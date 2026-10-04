@@ -1,7 +1,7 @@
 use serde::Serialize;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum ShellError {
     #[error("本机数据目录不可用")]
     DataDirectoryUnavailable,
@@ -49,4 +49,3 @@ impl From<ShellError> for CommandError {
         }
     }
 }
-

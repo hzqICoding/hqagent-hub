@@ -1,0 +1,45 @@
+    Checking hqagent-desktop v0.1.0 (E:\OtherPro\HQAgent-Hub-worktrees\desktop-shell\apps\desktop\src-tauri)
+warning: unused import: `ptr`
+   --> src\platform.rs:186:46
+    |
+186 |     use std::{os::windows::ffi::OsStringExt, ptr};
+    |                                              ^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `schema_version`, `port`, `token`, `base_url`, and `agent_version` are never read
+  --> src\runtime_descriptor.rs:46:5
+   |
+45 | pub struct UpdateAgentRuntimeDescriptor {
+   |            ---------------------------- fields in this struct
+46 |     schema_version: u32,
+   |     ^^^^^^^^^^^^^^
+47 |     instance_id: String,
+48 |     port: u16,
+   |     ^^^^
+49 |     token: String,
+   |     ^^^^^
+50 |     pid: u32,
+51 |     base_url: String,
+   |     ^^^^^^^^
+52 |     agent_version: String,
+   |     ^^^^^^^^^^^^^
+   |
+   = note: `UpdateAgentRuntimeDescriptor` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `validate_update_agent_descriptor` is never used
+   --> src\runtime_descriptor.rs:310:8
+    |
+310 | pub fn validate_update_agent_descriptor(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `config_process_paths` is never used
+   --> src\state.rs:279:8
+    |
+279 | pub fn config_process_paths(statuses: &[ProcessStatus]) -> Vec<PathBuf> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: `hqagent-desktop` (lib) generated 4 warnings (run `cargo fix --lib -p hqagent-desktop` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.87s
+exit_code=0

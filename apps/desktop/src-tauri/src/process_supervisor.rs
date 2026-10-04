@@ -15,11 +15,37 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::runtime_descriptor::{descriptor_identity, existing_instance_id};
+use crate::{
+    error::ShellError,
+    runtime_descriptor::{check_hub_liveness, descriptor_identity, existing_instance_id, health_client, COLD_START_WINDOW},
+};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 const STABLE_PROCESS_WINDOW: Duration = Duration::from_secs(30);
+const HEALTH_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const HEALTH_FAILURE_THRESHOLD: u32 = 3;
+
+struct HealthWatchdog {
+    consecutive_failures: u32,
+    cold_window: Duration,
+}
+
+impl HealthWatchdog {
+    // This API accepts ONLY healthz/descriptor results. Readiness is never an input.
+    fn observe(&mut self, age: Duration, result: Result<(), ShellError>) -> Option<String> {
+        match result {
+            Ok(()) => { self.consecutive_failures = 0; None }
+            Err(_) if age < self.cold_window => { self.consecutive_failures = 0; None }
+            Err(error @ ShellError::InvalidDescriptor(_)) => Some(error.to_string()),
+            Err(error) => {
+                self.consecutive_failures += 1;
+                (self.consecutive_failures >= HEALTH_FAILURE_THRESHOLD)
+                    .then(|| format!("连续 {HEALTH_FAILURE_THRESHOLD} 次存活探测失败: {error}"))
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -112,6 +138,10 @@ pub struct ProcessSupervisor {
 
 impl ProcessSupervisor {
     pub fn start(specs: Vec<ProcessSpec>) -> Arc<Self> {
+        Self::start_with_cold_window(specs, COLD_START_WINDOW)
+    }
+
+    fn start_with_cold_window(specs: Vec<ProcessSpec>, cold_window: Duration) -> Arc<Self> {
         let records = Arc::new(RwLock::new(HashMap::new()));
         let mut workers = Vec::with_capacity(specs.len());
         for spec in specs {
@@ -130,7 +160,7 @@ impl ProcessSupervisor {
             let component = spec.component;
             let join = thread::Builder::new()
                 .name(format!("{}-supervisor", component.display_name()))
-                .spawn(move || supervise(spec, worker_records, worker_stop))
+                .spawn(move || supervise(spec, worker_records, worker_stop, cold_window))
                 .expect("failed to start process supervisor thread");
             workers.push(ManagedWorker {
                 component,
@@ -187,9 +217,12 @@ fn supervise(
     spec: ProcessSpec,
     records: Arc<RwLock<HashMap<Component, ProcessRecord>>>,
     stop: Arc<AtomicBool>,
+    cold_window: Duration,
 ) {
     let path = spec.executable.display().to_string();
     let mut failures = 0_u32;
+    // A dedicated client/thread keeps long bootstrap requests out of the watchdog.
+    let health = health_client();
 
     loop {
         if stop.load(Ordering::SeqCst) {
@@ -313,6 +346,8 @@ fn supervise(
         );
 
         let process_started = Instant::now();
+        let mut watchdog = HealthWatchdog { consecutive_failures: 0, cold_window };
+        let mut next_health = Instant::now();
         let exit = loop {
             if stop.load(Ordering::SeqCst) {
                 let forced = stop_child(&mut child);
@@ -332,7 +367,9 @@ fn supervise(
             match child.try_wait() {
                 Ok(Some(status)) => break format!("进程退出: {status}"),
                 Ok(None) => {}
-                Err(error) => break format!("读取进程状态失败: {error}"),
+                // A query error is not proof of exit. Keep the owned child handle;
+                // only a confirmed exit or the independent health watchdog can restart it.
+                Err(_) => {}
             }
 
             if identity.instance_id.is_none() {
@@ -359,6 +396,19 @@ fn supervise(
                         );
                     }
                 }
+            }
+
+            if spec.component == Component::Core && identity.instance_id.is_some()
+                && Instant::now() >= next_health {
+                if let (Ok(client), Some(descriptor)) = (&health, spec.descriptor_path.as_deref()) {
+                    let result = check_hub_liveness(client, descriptor, &identity);
+                    if let Some(reason) = watchdog.observe(process_started.elapsed(), result) {
+                        // Stop the old process via its owned handle, never a descriptor PID.
+                        let forced = stop_child(&mut child);
+                        break format!("存活监控请求重启（forced={forced}）: {reason}");
+                    }
+                }
+                next_health = Instant::now() + HEALTH_POLL_INTERVAL;
             }
 
             thread::sleep(POLL_INTERVAL);
@@ -500,6 +550,7 @@ mod tests {
         assert_eq!(std::env::current_dir().unwrap(), runtime);
         assert!(!std::env::var("HQAGENT_INSTANCE_ID").unwrap().is_empty());
         if runtime.join("crash").exists() { std::process::exit(17); }
+        if runtime.join("http-fixture").exists() { start_http_fixture(&runtime); }
         let crash_signal = runtime.join("terminate");
         thread::spawn(move || loop {
             if crash_signal.exists() {
@@ -524,6 +575,135 @@ mod tests {
             runtime_dir: runtime.to_path_buf(),
             descriptor_path: None,
         }
+    }
+
+    fn start_http_fixture(runtime: &std::path::Path) {
+        use std::{io::Write, net::TcpListener};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let instance = std::env::var("HQAGENT_INSTANCE_ID").unwrap();
+        let started = chrono::Utc::now().to_rfc3339();
+        let health = serde_json::json!({"status":"ok", "appVersion":"0.1.0",
+            "protocolVersion":"0.1.0", "pid":std::process::id(), "startedAt":started});
+        let descriptor = serde_json::json!({"schemaVersion":1, "instanceId":instance,
+            "pid":std::process::id(), "startedAt":started, "port":port,
+            "baseUrl":format!("http://127.0.0.1:{port}"), "appVersion":"0.1.0",
+            "protocolVersion":"0.1.0", "token":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"});
+        let path = runtime.join("hub.json");
+        std::fs::write(&path, serde_json::to_vec(&descriptor).unwrap()).unwrap();
+        #[cfg(windows)]
+        {
+            let who = Command::new("whoami.exe").output().unwrap();
+            let principal = String::from_utf8(who.stdout).unwrap();
+            let grant = format!("{}:(F)", principal.trim());
+            let result = Command::new("icacls.exe").arg(&path)
+                .args(["/inheritance:r", "/grant:r", &grant]).output().unwrap();
+            assert!(result.status.success());
+        }
+        let runtime = runtime.to_path_buf();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let runtime = runtime.clone();
+                let health = health.clone();
+                let instance = instance.clone();
+                thread::spawn(move || {
+                    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                    let mut request = Vec::new();
+                    let mut byte = [0];
+                    while !request.ends_with(b"\r\n\r\n") && request.len() < 16384 {
+                        if stream.read(&mut byte).unwrap_or(0) == 0 { return; }
+                        request.push(byte[0]);
+                    }
+                    let body = if request.starts_with(b"GET /healthz ") {
+                        if runtime.join("health-down").exists() { return; }
+                        health
+                    } else {
+                        let mut count = std::fs::OpenOptions::new().create(true).append(true)
+                            .open(runtime.join("bootstrap-requests")).unwrap();
+                        writeln!(count, "request").unwrap();
+                        if runtime.join("slow-bootstrap").exists() { thread::sleep(Duration::from_secs(5)); }
+                        if runtime.join("not-ready").exists() { serde_json::json!({"success":false}) }
+                        else { serde_json::json!({"success":true,"data":{"maintenance":false,"instanceId":instance}}) }
+                    };
+                    let body = body.to_string();
+                    let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+                });
+            }
+        });
+    }
+
+    #[cfg(windows)]
+    fn http_supervisor(runtime: &std::path::Path) -> std::sync::Arc<ProcessSupervisor> {
+        std::fs::write(runtime.join("http-fixture"), "").unwrap();
+        let mut spec = fixture_spec(runtime);
+        spec.descriptor_path = Some(runtime.join("hub.json"));
+        let supervisor = ProcessSupervisor::start_with_cold_window(vec![spec], Duration::ZERO);
+        wait_until(|| runtime.join("ready").exists()
+            && supervisor.identity(Component::Core).is_some_and(|i| i.instance_id.is_some()));
+        supervisor
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn five_second_bootstrap_is_ready_without_restarting_core_and_is_single_flight() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("slow-bootstrap"), "").unwrap();
+        let supervisor = http_supervisor(dir.path());
+        let first = supervisor.identity(Component::Core).unwrap();
+        let provider = std::sync::Arc::new(crate::runtime_descriptor::HubEndpointProvider::new(
+            dir.path().join("hub.json"), supervisor.clone()).unwrap());
+        let other = provider.clone();
+        let start = Instant::now();
+        let probe = thread::spawn(move || other.get_endpoint().map(|(_, p)| p).unwrap());
+        let (_, result) = provider.get_endpoint().unwrap();
+        assert!(start.elapsed() >= Duration::from_secs(5));
+        assert!(start.elapsed() < Duration::from_secs(10));
+        assert_eq!(probe.join().unwrap().instance_id, result.instance_id);
+        assert_eq!(std::fs::read_to_string(dir.path().join("bootstrap-requests")).unwrap().lines().count(), 1);
+        assert_eq!(supervisor.identity(Component::Core).unwrap().pid, first.pid);
+        assert!(!dir.path().join("stdin.txt").exists());
+        supervisor.shutdown();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn readiness_failure_keeps_core_alive_but_repeated_health_failure_restarts_it() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("not-ready"), "").unwrap();
+        let supervisor = http_supervisor(dir.path());
+        let first = supervisor.identity(Component::Core).unwrap();
+        let provider = crate::runtime_descriptor::HubEndpointProvider::new(
+            dir.path().join("hub.json"), supervisor.clone()).unwrap();
+        // Span more than three watchdog intervals with failing readiness + healthy healthz.
+        for _ in 0..4 {
+            assert!(provider.get_endpoint().is_err());
+            thread::sleep(Duration::from_secs(2));
+            assert_eq!(supervisor.identity(Component::Core).unwrap().pid, first.pid);
+        }
+        std::fs::write(dir.path().join("health-down"), "").unwrap();
+        let second = wait_for_pid(&supervisor, Some(first.pid));
+        assert_ne!(second, first.pid);
+        assert_eq!(std::fs::read_to_string(dir.path().join("stdin.txt")).unwrap(), "shutdown\n");
+        supervisor.shutdown();
+    }
+
+    #[test]
+    fn health_failure_threshold_resets_on_success_and_each_cold_start() {
+        use super::{HealthWatchdog, COLD_START_WINDOW};
+        let mut watchdog = HealthWatchdog { consecutive_failures: 0, cold_window: COLD_START_WINDOW };
+        let fail = || Err(crate::error::ShellError::HubUnavailable("healthz 连接失败".into()));
+        for _ in 0..5 { assert!(watchdog.observe(Duration::from_secs(89), fail()).is_none()); }
+        let warm = Duration::from_secs(90);
+        assert!(watchdog.observe(warm, fail()).is_none());
+        assert!(watchdog.observe(warm, fail()).is_none());
+        assert!(watchdog.observe(warm, Ok(())).is_none());
+        assert!(watchdog.observe(warm, fail()).is_none());
+        assert!(watchdog.observe(warm, fail()).is_none());
+        assert!(watchdog.observe(warm, fail()).is_some());
+        let mut restarted = HealthWatchdog { consecutive_failures: 0, cold_window: COLD_START_WINDOW };
+        assert!(restarted.observe(Duration::ZERO, fail()).is_none());
+        assert!(restarted.observe(warm, Err(crate::error::ShellError::InvalidDescriptor("身份不符".into()))).is_some());
     }
 
     fn wait_until(mut condition: impl FnMut() -> bool) {

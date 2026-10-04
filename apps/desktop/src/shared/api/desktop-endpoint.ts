@@ -6,6 +6,8 @@ export function isDesktopShell(): boolean {
 
 export interface DesktopEndpoint { baseUrl: string; token: string }
 
+export class ShellConnectionError extends Error {}
+
 // Only coalesce concurrent IPC calls. Never persist credentials or reuse an endpoint
 // across requests: the supervisor rotates both port and token on every Hub restart.
 let pending: Promise<DesktopEndpoint> | null = null
@@ -18,6 +20,11 @@ export function getDesktopEndpoint(): Promise<DesktopEndpoint> {
         throw new Error('桌面服务地址无效')
       }
       return endpoint
+    }).catch((error: unknown) => {
+      // Tauri rejects with serialized CommandError rather than a JS Error.
+      if (error && typeof error === 'object' && 'code' in error && 'message' in error
+        && typeof error.message === 'string') throw new ShellConnectionError(error.message)
+      throw error
     }).finally(() => { pending = null })
   }
   return pending
