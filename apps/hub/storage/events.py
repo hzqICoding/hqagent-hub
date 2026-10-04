@@ -118,22 +118,31 @@ class EventStore:
             row = connection.execute("SELECT MIN(seq) FROM events").fetchone()
             return int(row[0]) if row[0] is not None else None
 
+    @staticmethod
+    def _cursor_expired_detail(bounds, snapshot_url):
+        return {
+            "snapshotUrl": snapshot_url,
+            "oldestAvailableSeq": int(bounds[0]) if bounds[0] is not None else None,
+            "latestSeq": int(bounds[1]) if bounds[1] is not None else 0,
+        }
+
+    def cursor_expired_detail(self, snapshot_url="/api/v1/bootstrap") -> dict[str, Any]:
+        """One consistent watermark observation for HTTP and WS recovery errors."""
+        with self.database.locked_connection() as connection:
+            bounds = connection.execute("SELECT MIN(seq), MAX(seq) FROM events").fetchone()
+            return self._cursor_expired_detail(bounds, snapshot_url)
+
     def page(self, after: int, limit: int) -> EventPage:
         if after < 0:
             raise HubError("VALIDATION_FAILED", "after 必须大于等于 0")
         with self.database.locked_connection() as connection:
             oldest_row = connection.execute("SELECT MIN(seq), MAX(seq) FROM events").fetchone()
             oldest = int(oldest_row[0]) if oldest_row[0] is not None else None
-            latest = int(oldest_row[1]) if oldest_row[1] is not None else 0
             if oldest is not None and after < oldest - 1:
                 raise HubError(
                     "EVENT_CURSOR_EXPIRED",
                     "事件游标已过期，请重新获取 bootstrap Snapshot",
-                    detail={
-                        "snapshotUrl": "/api/v1/bootstrap",
-                        "oldestAvailableSeq": oldest,
-                        "latestSeq": latest,
-                    },
+                    detail=self._cursor_expired_detail(oldest_row, "/api/v1/bootstrap"),
                 )
             rows = connection.execute(
                 "SELECT envelope_json FROM events WHERE seq>? ORDER BY seq LIMIT ?",
@@ -150,4 +159,3 @@ class EventStore:
         with self.database.transaction() as transaction:
             cursor = transaction.connection.execute("DELETE FROM events WHERE seq<?", (seq,))
             return int(cursor.rowcount)
-

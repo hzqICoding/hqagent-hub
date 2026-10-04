@@ -1,5 +1,6 @@
 """PI resource classification shared by HTTP projection and older wire gates."""
 from contextvars import ContextVar
+from collections import OrderedDict
 import json
 import hashlib
 
@@ -23,7 +24,7 @@ class PiVisibility:
         self.conversations = set()
         self.resources = set()
         self.changed = None
-        self.cursor_scopes = {}
+        self.cursor_scopes = OrderedDict()
         self.tombstones = set()
 
     async def refresh(self, *, cached=False):
