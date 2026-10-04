@@ -25,6 +25,7 @@ def _now() -> str:
 class TeamProfileRepository:
     def __init__(self, database: Database) -> None:
         self.database = database
+        self.pi_instances = lambda: set()
 
     def list(self) -> list[TeamProfileView]:
         with self.database.locked_connection() as connection:
@@ -43,6 +44,8 @@ class TeamProfileRepository:
         return TeamProfileView.model_validate_json(row[0])
 
     def save(self, value: TeamProfileView) -> TeamProfileView:
+        from runtime.execution_selection import reject_pi_fallbacks
+        reject_pi_fallbacks(value.model_dump(mode='json', by_alias=True), self.pi_instances())
         payload = value.model_dump_json(by_alias=True, exclude_none=True)
         with self.database.transaction() as transaction:
             transaction.connection.execute(

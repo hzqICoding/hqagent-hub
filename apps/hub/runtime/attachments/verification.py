@@ -162,6 +162,8 @@ async def verify_images(root, agent, model=None, *, adapter=None):
     from runtime.attachments.verification_target import target_for
     identifier = 'local.' + agent + '.default'
     async def resolve(agent_id, selected):
+        if agent == 'pi':
+            await adapter.list_models(agent_id)
         descriptor = await adapter.detect()
         return target_for(agent_id, agent, getattr(descriptor, 'detected_version', None), selected, adapter), adapter, not isinstance(descriptor, AdapterFailure)
     coordinator = VerificationCoordinator(root, resolve)

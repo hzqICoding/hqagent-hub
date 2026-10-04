@@ -64,6 +64,10 @@ async def bind_ports(application: Any, ports: HubPorts) -> None:
     port = ports.team_profiles
     if not isinstance(port, _DeferredTeamProfilePort):
         return
+    pi = getattr(ports.agents, '_adapters', {}).get('pi')
+    if pi is not None:
+        pi.root = application.paths.root / 'pi'
+        pi.protected_paths = (application.paths.runtime, application.paths.data, application.paths.config)
     _bind_workspaces(application, ports)
     service = _build_team_profile_service(application.database, ports.agents)
     if service is None:
@@ -170,6 +174,17 @@ def _bind_orchestration(application: Any, ports: HubPorts, profiles: Any) -> Non
         events,
     )
     coordinator = ApprovalCoordinator(approval_repository, events, directory)
+    pi = getattr(ports.agents, '_adapters', {}).get('pi')
+    if pi is not None:
+        async def expired_pi_approval(task_id):
+            await coordinator.invalidate_task_pending(task_id, reason='PI工具判定时限已结束', invalidated_by='agent_timeout')
+        pi.expire_approval = expired_pi_approval
+        pi.secrets_provider = application.app.state.remote_worker.native.secrets
+        from dataclasses import asdict
+        pi.policy_state = lambda spec: [asdict(workflow.permissions.role_policy(str(spec.role_id))),
+            application.app.state.remote_worker.repo.get('policy')]
+        from runtime.pi_visibility import task_revision_allowed
+        pi.admission = lambda spec: task_revision_allowed(database, spec.task_id)
 
     ports_tasks = TaskService(
         TaskRepository(database),

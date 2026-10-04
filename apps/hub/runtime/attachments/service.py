@@ -32,6 +32,8 @@ class AttachmentService:
         if not any((v.get('attachment', {}).get('kind') == 'image' for v in inputs)):
             return
         adapter = self.chat.ports.tasks.directory.adapter_for(agent.instance_id)
+        if str(agent.adapter_id) == 'pi':
+            await adapter.list_models(agent.instance_id)
         descriptor = await adapter.detect()
         from runtime.attachments.verification_target import target_for
         version = getattr(descriptor, 'detected_version', '')
@@ -39,6 +41,9 @@ class AttachmentService:
         cap = self.capabilities.store.capability(str(agent.adapter_id), version, model, target=target)
         if cap.support != 'supported' or any((v['attachment']['mimeType'] not in cap.mime_types for v in inputs if v['attachment']['kind'] == 'image')):
             raise HubError('AGENT_IMAGE_UNSUPPORTED', '实际派发Agent图片输入未经当前版本验证')
+        if str(agent.adapter_id) == 'pi':
+            from runtime.pi_visibility import PI_IMAGE_TARGET
+            PI_IMAGE_TARGET.set(target)
 
     def lock(self, run):
         return self.locks.setdefault(run, asyncio.Lock())

@@ -91,6 +91,14 @@ class SyncService:
         ).fetchone():
             return
         store, generation = self.context()
+        pi = getattr(self.chat, 'pi', None)
+        if pi is not None and self.repo.get('identity', tx).get('wireRevision', 1) < 5:
+            reference = {'id': row['native_id']} if kind == 'native' else {'conversationId': row['conversation_id']}
+            if kind == 'native':
+                reference.update(json.loads(row['index_json']))
+            if pi.is_pi(reference):
+                self.repo.put('pi-deferred', {'pending': True}, tx)
+                return
         text = None
         revision3 = self.repo.get("identity", tx).get("wireRevision", 1) >= 3
         if kind == "native":
@@ -171,6 +179,8 @@ class SyncService:
 
     def capture(self, tx):
         store, generation = self.context()
+        if self.repo.get('identity', tx).get('wireRevision', 1) >= 5:
+            self.repo.put('pi-deferred', {'pending': False}, tx)
         # Staging has no allocated reliable identity. A new full snapshot
         # supersedes it atomically; keep the immutable Outbox itself untouched.
         tx.connection.execute("DELETE FROM remote_sync_items")
@@ -343,6 +353,10 @@ class SyncService:
             return
         row = tx.connection.execute("SELECT * FROM local_conversations WHERE conversation_id=?", (conversation,)).fetchone()
         payload = self.metadata(row)
+        pi = getattr(self.chat, 'pi', None)
+        if pi is not None and self.repo.get('identity', tx).get('wireRevision', 1) < 5 and pi.is_pi(payload):
+            self.repo.put('pi-deferred', {'pending': True}, tx)
+            return
         if payload.get("conversationKind") == "native" and self.repo.get("identity", tx).get("wireRevision", 1) < 3:
             return
         tx.connection.execute("DELETE FROM remote_sync_items WHERE kind='conversation' AND conversation_id=?", (conversation,))

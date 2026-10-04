@@ -119,7 +119,7 @@ def test_rev1_only_server_falls_back_reports_no_sync_and_executes_original_proto
         try:
             async with FakeRemoteServer(revision=1) as server:
                 await system.pair(server, start=True)
-                assert server.requested_revisions[:2] == [4, 1]
+                assert server.requested_revisions[:2] == [5, 1]
                 assert server.hellos[-1]["wireRevision"] == 1
                 assert system.repo.get("link")["view"]["lastErrorCode"] == "REMOTE_REVISION_REQUIRED"
                 assert system.repo.get("identity").get("wireRevision", 1) == 1
@@ -208,7 +208,7 @@ def test_server_upgrade_fence_can_clear_without_restarting_worker(tmp_path):
             async with FakeRemoteServer(revision=2) as server:
                 server.upgrade_pending = True
                 await system.pair(server, start=True)
-                assert server.requested_revisions[:3] == [4, 2, 1]
+                assert server.requested_revisions[:3] == [5, 2, 1]
                 assert system.repo.get("identity").get("wireRevision", 1) == 1
                 assert system.repo.get("link")["view"]["lastErrorCode"] == "REMOTE_STATE_NOT_READY"
                 epoch = system.repo.get("identity")["epoch"]
