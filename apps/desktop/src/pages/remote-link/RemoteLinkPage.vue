@@ -2,7 +2,7 @@
 import AuthorizedRootsSettings from '@/pages/native/AuthorizedRootsSettings.vue'
 import { ref, onMounted, onUnmounted, computed, inject, watch } from 'vue'
 import { routeLocationKey, type RouteLocationNormalizedLoaded } from 'vue-router'
-import QRCode from 'qrcode'
+import { pairingQrDataUrl } from '@/shared/qr/pairing-qr-code'
 import { useRemoteLinkStore } from '@/stores/remote-link.store'
 import {
   HqButton,
@@ -54,17 +54,10 @@ const qrCodeContent = computed(() => {
 
 watch(
   qrCodeContent,
-  async (content) => {
+  (content) => {
     if (content) {
       try {
-        qrDataUrl.value = await QRCode.toDataURL(content, {
-          margin: 1,
-          width: 200,
-          color: {
-            dark: '#000000',
-            light: '#ffffff',
-          },
-        })
+        qrDataUrl.value = pairingQrDataUrl(content)
       } catch {
         qrDataUrl.value = ''
       }
@@ -388,6 +381,8 @@ async function copyPairCode() {
               <img
                 :src="qrDataUrl"
                 alt="配对二维码"
+                width="200"
+                height="200"
                 data-testid="pair-qrcode"
                 class="w-40 h-40 sm:w-48 sm:h-48 block rounded-lg"
               />
