@@ -25,6 +25,8 @@ class SubprocessGitRunner:
             ["git", *args],
             cwd=cwd,
             check=True,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
             capture_output=True,
             text=True,
             encoding="utf-8",
