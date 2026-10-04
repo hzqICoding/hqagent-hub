@@ -640,7 +640,7 @@ class PiAdapter(AgentAdapter):
         model_refusal = bool(result.blockers) and all(b.kind == 'permission_denied' for b in result.blockers)
         refusal = bool(state.tool_blocks) or model_refusal
         if refusal:
-            from protocol.generated.python import Blocker, AgentFailedPayload
+            from protocol.generated.python import Blocker
             evidence = 'guard_decision' if state.tool_blocks else 'model_report'
             message = '本轮有操作被安全策略拦截，PI 已完成回复' if state.tool_blocks else 'PI 报告权限限制并拒绝操作，已完成回复'
             detail = {'errorCode': 'PI_TOOL_CALL_BLOCKED', 'evidence': evidence,
@@ -649,10 +649,8 @@ class PiAdapter(AgentAdapter):
                 detail['guardReasons'] = sorted({str(d.reason) for d in state.tool_blocks})
             else:
                 detail['reportedReason'] = 'permission_denied'
-                # Self-refusal is not proof that a Host tool call occurred.
-                await state.emit(AdapterEvent.create('pi.completed_refusal', 'agent.failed',
-                    AgentFailedPayload(errorCode='PI_TOOL_CALL_BLOCKED', message=message,
-                        blockers=[{'kind': 'permission_denied', 'message': message, 'detail': detail}])))
+                # A completed self-refusal is audited in the result only;
+                # it is neither a failed node nor a witnessed Host tool call.
             audit = Blocker(kind='permission_denied', message=message, detail=detail)
             blockers = list(result.blockers or [])
             # Only the safety refusal becomes a completed conversational reply.
@@ -719,12 +717,9 @@ class PiAdapter(AgentAdapter):
                     # A denied tool is a recoverable action failure, not evidence
                     # that the native session is damaged. PI receives block and
                     # may continue with safe tools; retain structured auditing.
-                    from protocol.generated.python import AgentFailedPayload
-                    await state.emit(AdapterEvent.create('hqagent.guard.check.v1', 'agent.failed',
-                        AgentFailedPayload(errorCode=blocked.code, message=blocked.message,
-                            blockers=[{'kind': 'permission_denied', 'message': blocked.message,
-                                'detail': {'scope': 'tool_call', 'adapterFailureKind': str(blocked.kind),
-                                           'guardReason': decision.get('reason')}}])))
+                    await state.emit(AdapterEvent.create('hqagent.guard.check.v1', 'agent.tool_call',
+                        AgentToolCallPayload(toolName=value.tool_name, failed=True,
+                                             resultSummary=blocked.message)))
                 response = {'type': 'extension_ui_response', 'id': identifier,
                             'value': PiGuardDecision.model_validate(decision).model_dump_json(by_alias=True, exclude_none=True)}
             else:
