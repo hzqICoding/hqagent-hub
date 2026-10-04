@@ -1,3 +1,4 @@
+import { clientFetch, applyClientFeatures } from '@/shared/api/client-features'
 import type { ApiEnvelope, ErrorCode } from '@hqagent/protocol'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 
@@ -16,7 +17,7 @@ export function encodedFileName(name: string): string {
   while (encodeURIComponent(chars.join('')).length > 512) chars.pop()
   return encodeURIComponent(chars.join('') || 'attachment')
 }
-export function uploadAttachment<T>(url: string, file: Blob, options: UploadOptions, csrf: string | null, error: AttachmentErrorFactory): Promise<T> {
+export function uploadAttachment<T>(url: string, file: Blob, options: UploadOptions, csrf: string | null, error: AttachmentErrorFactory, bearer?: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     const abort = () => xhr.abort()
@@ -25,13 +26,15 @@ export function uploadAttachment<T>(url: string, file: Blob, options: UploadOpti
     const cleanup = () => { clearTimeout(idle); options.signal?.removeEventListener('abort', abort) }
     const resetIdle = () => { clearTimeout(idle); idle = setTimeout(() => { idleExpired = true; xhr.abort() }, 30000) }
     xhr.open('POST', url)
-    xhr.withCredentials = true
+    applyClientFeatures(xhr)
+    xhr.withCredentials = !bearer
     xhr.timeout = 120000
     xhr.setRequestHeader('Content-Type','application/octet-stream')
     xhr.setRequestHeader('X-File-Name',encodedFileName(options.fileName))
     xhr.setRequestHeader('X-Content-Sha256',options.sha256)
     xhr.setRequestHeader('Idempotency-Key',options.idempotencyKey)
     if (csrf) xhr.setRequestHeader('X-CSRF-Token',csrf)
+    if (bearer) xhr.setRequestHeader('Authorization', `Bearer ${bearer}`)
     // Content-Length and Origin belong to the browser. Never set them here.
     xhr.upload.onprogress = (event) => { resetIdle(); if (event.lengthComputable) options.onProgress?.(event.loaded / event.total) }
     xhr.onload = () => {
@@ -50,8 +53,8 @@ export function uploadAttachment<T>(url: string, file: Blob, options: UploadOpti
     xhr.send(file)
   })
 }
-export async function attachmentBlob(url: string, thumbnail: boolean, signal: AbortSignal | undefined, error: AttachmentErrorFactory): Promise<Blob> {
-  const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal })
+export async function attachmentBlob(url: string, thumbnail: boolean, signal: AbortSignal | undefined, error: AttachmentErrorFactory, bearer?: string): Promise<Blob> {
+  const response = await clientFetch(url, { credentials: bearer ? 'omit' : 'same-origin', cache: 'no-store', redirect: 'error', signal, ...(bearer ? { headers: { Authorization: `Bearer ${bearer}` } } : {}) })
   if (!response.ok) {
     let envelope: ApiEnvelope<never> | undefined
     try { envelope = await response.json() } catch { /* Do not retain binary/error body. */ }

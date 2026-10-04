@@ -1,0 +1,6 @@
+{
+  "agentId": "local.pi.synthetic",
+  "modelId": "1aicode/deepseek/deepseek-v4-flash-vision-exp",
+  "expectedTargetRevision": "opaque-target-revision-001",
+  "acknowledgeModelUsage": true
+}

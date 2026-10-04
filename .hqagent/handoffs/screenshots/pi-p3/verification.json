@@ -1,0 +1,29 @@
+{
+  "checks": [
+    {
+      "mode": "light",
+      "guardStates": [
+        "ready",
+        "uncontrolled_extensions",
+        "guard_not_loaded"
+      ],
+      "providerModel": "1aicode · deepseek/deepseek-v4-pro",
+      "recommendationAutoSelected": false,
+      "horizontalOverflow": false
+    },
+    {
+      "mode": "dark",
+      "guardStates": [
+        "ready",
+        "uncontrolled_extensions",
+        "guard_not_loaded"
+      ],
+      "providerModel": "1aicode · deepseek/deepseek-v4-pro",
+      "recommendationAutoSelected": false,
+      "horizontalOverflow": false
+    }
+  ],
+  "screenshots": 4,
+  "browserErrors": 0,
+  "source": "Chromium + synthetic protocol mocks; no model calls"
+}

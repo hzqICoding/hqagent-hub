@@ -5,6 +5,7 @@ import json
 
 from .common import MAX_SEQ, Fault, canonical, digest, require, seconds, stamp, uid, validated
 from . import wire
+from .client_features import cursor_scope
 
 KINDS = {"devices": ("device", "RemoteDeviceView", "RemoteDevicePage"),
          "conversations": ("conversation", "RemoteConversationView", "RemoteConversationPage"),
@@ -39,6 +40,13 @@ class Service:
         tx.after_commit((owner, worker), wake)
 
     def save(self, tx, owner, kind, identifier, value, *, management=False):
+        if hasattr(self, 'projection') and kind in {'conversation', 'create-reservation', 'command', 'native-index'}:
+            if self.projection.is_pi(tx, owner, value):
+                value = dict(value, _pi=True)
+                frame = value.get('_frame', value)
+                tx.put(owner,'pi-resource',kind+':'+identifier,dict(pi=True),
+                       worker=frame.get('targetWorkerId',frame.get('workerId',value.get('_worker',''))),
+                       store=frame.get('expectedWorkerStoreId',frame.get('workerStoreId',value.get('_store',''))))
         if kind=='command' and hasattr(self,'attachments'):
             self.attachments.release_failed(tx,owner,value)
         if kind == 'device':
@@ -82,7 +90,10 @@ class Service:
         return public
 
     def event(self, tx, owner, event_type, payload):
-        tx.browser_add(owner, dict(type=event_type, recordedAt=self.now(), payload=payload))
+        event = dict(type=event_type, recordedAt=self.now(), payload=payload)
+        if hasattr(self, 'projection') and self.projection.is_pi(tx, owner, payload):
+            event['_pi'] = True
+        tx.browser_add(owner, event)
 
     def command_event(self, tx, owner, command):
         self.event(tx, owner, "command.updated", self.view(owner, "command", command))
@@ -90,7 +101,7 @@ class Service:
     def cursor(self, tx, owner, scope, position):
         # owner participates in the signature without exposing its identifier.
         generation = tx.browser_retention(owner)["generation"] if tx is not None and scope == "events" else 0
-        claims = dict(scope=scope, position=position, expiresAt=int((self.settings.clock() + self.settings.cursor_ttl) * 1000), generation=generation)
+        claims = dict(scope=cursor_scope(scope), position=position, expiresAt=int((self.settings.clock() + self.settings.cursor_ttl) * 1000), generation=generation)
         payload = base64.urlsafe_b64encode(canonical(claims).encode()).decode().rstrip("=")
         signature = self.security.mac("cursor-v1", canonical(dict(claims, owner=owner)))
         return "c1." + payload + "." + signature
@@ -103,7 +114,7 @@ class Service:
             raw = base64.b64decode(payload + "=" * (-len(payload) % 4), altchars=b"-_", validate=True)
             claims = json.loads(raw)
             require(isinstance(claims, dict) and set(claims) == {"scope", "position", "expiresAt", "generation"}, "REMOTE_CURSOR_INVALID")
-            require(claims["scope"] == scope and type(claims["position"]) is int and claims["position"] >= 0
+            require(claims["scope"] == cursor_scope(scope) and type(claims["position"]) is int and claims["position"] >= 0
                     and type(claims["expiresAt"]) is int and type(claims["generation"]) is int and claims["generation"] >= 0, "REMOTE_CURSOR_INVALID")
             expected = self.security.mac("cursor-v1", canonical(dict(claims, owner=owner)))
             require(hmac.compare_digest(signature, expected), "REMOTE_CURSOR_INVALID")

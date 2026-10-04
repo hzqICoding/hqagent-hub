@@ -3200,7 +3200,7 @@
           ]
         },
         "agentType": {
-          "$ref": "remote-native.json#/$defs/NativeAgentType"
+          "$ref": "remote-pi.json#/$defs/RuntimeNativeAgentType"
         },
         "nativeSessionId": {
           "type": "string",
@@ -3840,6 +3840,9 @@
         },
         {
           "$ref": "remote-sync.json#/$defs/RemoteBrowserStoreReset"
+        },
+        {
+          "$ref": "browser-pi.json#/$defs/RemoteBrowserPiApprovalEvent"
         }
       ]
     },

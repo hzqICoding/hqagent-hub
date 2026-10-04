@@ -12,22 +12,24 @@ mod state;
 mod tray;
 mod window_state;
 
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use config::AppPaths;
 use state::ShellState;
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 pub fn run() {
-    let paths = AppPaths::discover().expect("HQAgent-Hub data directory is unavailable");
-    let state = ShellState::new(paths).expect("failed to initialize HQAgent-Hub shell state");
-
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tray::show_main_window(app);
         }))
-        .manage(state)
         .setup(|app| {
+            // Plugin single-instance detection must run before launching managed children.
+            let paths = AppPaths::discover()?;
+            app.manage(ShellState::new(paths, app.path().resource_dir()?)?);
             let state = app.state::<ShellState>();
             let window = create_main_window(app.handle())?;
             if let Err(error) = window_state::restore(&window, &state.paths.window_state) {
@@ -57,13 +59,31 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build HQAgent-Hub desktop shell");
 
-    app.run(|app_handle, event| {
-        if matches!(event, RunEvent::Exit) {
-            if let Some(window) = app_handle.get_webview_window("main") {
-                let state = app_handle.state::<ShellState>();
-                let _ = window_state::save(&window, &state.paths.window_state);
-                state.shutdown();
+    let exit_started = AtomicBool::new(false);
+    let exit_ready = Arc::new(AtomicBool::new(false));
+    app.run(move |app_handle, event| {
+        if let RunEvent::ExitRequested { api, .. } = &event {
+            if !exit_ready.load(Ordering::SeqCst) {
+                api.prevent_exit();
+                if !exit_started.swap(true, Ordering::SeqCst) {
+                    let app = app_handle.clone();
+                    let ready = Arc::clone(&exit_ready);
+                    // Keep the UI event loop alive while joining the monitor: it may be
+                    // waiting for a tray/window update on the main thread.
+                    std::thread::spawn(move || {
+                        app.state::<ShellState>().shutdown();
+                        ready.store(true, Ordering::SeqCst);
+                        app.exit(0);
+                    });
+                }
             }
+        }
+        if matches!(event, RunEvent::Exit) {
+            let state = app_handle.state::<ShellState>();
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window_state::save(&window, &state.paths.window_state);
+            }
+            state.shutdown();
         }
     });
 }
@@ -81,6 +101,7 @@ fn create_main_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
     };
     WebviewWindowBuilder::new(app, "main", url)
         .title("HQAgent-Hub")
+        .data_directory(app.state::<ShellState>().paths.root.join("webview"))
         .inner_size(1280.0, 800.0)
         .min_inner_size(960.0, 640.0)
         .resizable(true)

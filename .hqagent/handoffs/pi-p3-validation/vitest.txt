@@ -1,0 +1,182 @@
+
+ RUN  v2.1.9 E:/OtherPro/HQAgent-Hub-worktrees/r15-web/apps/desktop
+
+ ✓ src/pages/remote/RemoteR15Features.test.ts (14 tests) 313ms
+ ✓ src/pages/remote/RemoteEvents.test.ts (15 tests) 493ms
+stderr | src/shared/attachments/Attachments.test.ts > attachment sending > preserves remote draft and staged attachments after server image rejection
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemoteChatPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/native/NativeR3.test.ts > R3 roots and workspace registration > disables the new-task add-project entry when catalog has no authorized roots
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemoteChatPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/native/NativeR3.test.ts > R3 roots and workspace registration > selects the registered project in the parent task form after catalog synchronization
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemoteChatPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+ ✓ src/pages/native/NativeR3.test.ts (26 tests) 803ms
+ ✓ src/shared/attachments/Attachments.test.ts (23 tests) 601ms
+ ✓ src/shared/api/mock-local-chat-gateway.test.ts (16 tests) 15ms
+ ✓ src/shared/maintenance/Maintenance.test.ts (20 tests) 274ms
+ ✓ src/shared/runtime/PiRuntime.test.ts (17 tests) 207ms
+ ✓ src/pages/remote/RemoteDeviceManagement.test.ts (11 tests) 256ms
+ ✓ src/pages/remote/RemotePhoneRepair.test.ts (10 tests) 515ms
+ ✓ src/pages/remote-link/RemoteLink.test.ts (9 tests) 387ms
+stderr | src/shared/api/local-hub-gateway.test.ts > LocalHubGateway > R3 & R7: handles WS ticket acquisition failure with reconnect backoff
+[LocalHubGateway] Failed to establish WS connection HubApiError: Hub is still starting up
+    at LocalHubGateway.fetchApi (E:\OtherPro\HQAgent-Hub-worktrees\r15-web\apps\desktop\src\shared\api\local-hub-gateway.ts:133:13)
+    at LocalHubGateway.acquireWsTicket (E:\OtherPro\HQAgent-Hub-worktrees\r15-web\apps\desktop\src\shared\api\local-hub-gateway.ts:169:17)
+    at E:\OtherPro\HQAgent-Hub-worktrees\r15-web\apps\desktop\src\shared\api\local-hub-gateway.ts:316:24 {
+  code: 'HUB_NOT_READY',
+  status: 503,
+  detail: undefined,
+  retryable: true,
+  requestId: 'req_init'
+}
+
+stderr | src/shared/api/local-hub-gateway.test.ts > LocalHubGateway > R3 & R7: handles WS ticket acquisition failure with reconnect backoff
+[LocalHubGateway] Failed to establish WS connection HubApiError: Hub is still starting up
+    at LocalHubGateway.fetchApi (E:\OtherPro\HQAgent-Hub-worktrees\r15-web\apps\desktop\src\shared\api\local-hub-gateway.ts:133:13)
+    at LocalHubGateway.acquireWsTicket (E:\OtherPro\HQAgent-Hub-worktrees\r15-web\apps\desktop\src\shared\api\local-hub-gateway.ts:169:17)
+    at E:\OtherPro\HQAgent-Hub-worktrees\r15-web\apps\desktop\src\shared\api\local-hub-gateway.ts:316:24 {
+  code: 'HUB_NOT_READY',
+  status: 503,
+  detail: undefined,
+  retryable: true,
+  requestId: 'req_init'
+}
+
+ ✓ src/shared/api/local-hub-gateway.test.ts (8 tests) 140ms
+ ✓ src/pages/scenes/ScenesPage.test.ts (9 tests) 834ms
+ ✓ src/pages/remote/PairingScanner.test.ts (16 tests) 324ms
+ ✓ src/pages/native/NativeAvailability.test.ts (16 tests) 305ms
+ ✓ src/pages/chat/RemoteConversationReadOnly.test.ts (7 tests) 195ms
+ ✓ src/pages/chat/ChatMobile.test.ts (6 tests) 558ms
+ ✓ src/pages/remote/RemoteTokens.test.ts (7 tests) 337ms
+ ✓ src/shared/ui/SharedOverlays.test.ts (9 tests) 158ms
+stderr | src/pages/remote/RemoteChat.test.ts > RemoteChat Workbench and Three-Layer Status > displays "电脑离线" and NEVER "执行中" when computer is offline, and rejects message immediately
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemoteChatPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+ ✓ src/pages/chat/components/ChatComposer.test.ts (7 tests) 85ms
+stderr | src/pages/remote/RemoteChat.test.ts > RemoteChat Workbench and Three-Layer Status > renders all three distinct layers: Transport State, Control Result, and Execution State
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemoteChatPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/remote/RemoteChat.test.ts > RemoteChat Workbench and Three-Layer Status > displays rejected and unconfirmed control outcomes accurately
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemoteChatPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/remote/RemoteChat.test.ts > RemoteChat Workbench and Three-Layer Status > enforces high-risk approval restrictions: hides approve button and displays warning banner
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemoteChatPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/remote/RemoteChat.test.ts > RemoteChat Workbench and Three-Layer Status > supports opening and closing mobile sidebar drawer
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemoteChatPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+ ✓ src/pages/remote/RemoteChat.test.ts (7 tests) 245ms
+ ✓ src/stores/chat.store.test.ts (9 tests) 29ms
+ ✓ src/shared/api/local-chat-gateway.test.ts (8 tests) 8ms
+ ✓ src/shared/attachments/transport.test.ts (8 tests) 14ms
+ ✓ src/shared/api/desktop-gateway.test.ts (6 tests) 17ms
+ ✓ src/pages/remote-link/RemoteLinkSyncSwitch.test.ts (3 tests) 184ms
+ ✓ src/pages/remote/RemoteMobileLayout.test.ts (8 tests) 392ms
+stderr | src/pages/remote/RemotePairing.test.ts > RemotePairingPage > formats input to 8 uppercase alphanumeric characters and fetches preview
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemotePairingPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/remote/RemotePairing.test.ts > RemotePairingPage > handles REMOTE_PAIRING_EXPIRED error correctly
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemotePairingPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/remote/RemotePairing.test.ts > RemotePairingPage > handles REMOTE_PAIRING_CONFLICT error correctly
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemotePairingPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/remote/RemotePairing.test.ts > RemotePairingPage > handles REMOTE_PAIRING_INVALID error correctly
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemotePairingPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/remote/RemotePairing.test.ts > RemotePairingPage > B7: reads shortcode from location.hash, immediately clears hash, auto-fills code and triggers preview without auto-binding
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemotePairingPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/remote/RemotePairing.test.ts > RemotePairingPage > B7: ignores invalid code in location.hash and does not trigger preview
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemotePairingPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/pages/remote/RemotePairing.test.ts > RemotePairingPage > B7: unauthenticated user preserves code in memory via authStore across login with zero storage leaks
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <RemotePairingPage ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+ ✓ src/pages/remote/RemotePairing.test.ts (7 tests) 76ms
+ ✓ src/pages/chat/ChatPage.test.ts (7 tests) 678ms
+ ✓ src/stores/chat.context.test.ts (7 tests) 24ms
+ ✓ src/stores/task.store.test.ts (7 tests) 540ms
+ ✓ src/stores/chat.polling.test.ts (6 tests) 18ms
+ ✓ src/stores/chat.reliability.test.ts (7 tests) 24ms
+ ✓ src/pages/chat/components/ProcessActivityGroup.test.ts (5 tests) 46ms
+ ✓ src/pages/remote/RemoteGateway.test.ts (4 tests) 6ms
+ ✓ src/stores/scenes.store.test.ts (6 tests) 13ms
+ ✓ src/pages/remote/RemoteManagementGateway.test.ts (9 tests) 32ms
+ ✓ src/pages/native/NativeGateway.test.ts (12 tests) 13ms
+ ✓ src/stores/session-resumption.test.ts (13 tests) 43ms
+ ✓ src/shared/api/mock-gateway.test.ts (10 tests) 46ms
+ ✓ src/pages/remote/RemoteModeIsolation.test.ts (4 tests) 65ms
+ ✓ src/pages/chat/components/ChatSidebar.test.ts (3 tests) 145ms
+ ✓ src/stores/app.store.test.ts (8 tests) 281ms
+ ✓ src/pages/remote/RemoteAuth.test.ts (4 tests) 6ms
+ ✓ src/pages/chat/components/RunSnapshotDrawer.test.ts (1 test) 35ms
+ ✓ src/pages/tasks/TaskDetailPage.test.ts (5 tests) 155ms
+ ✓ src/shared/ui/HqMarkdown.test.ts (6 tests) 44ms
+ ✓ src/stores/approval.store.test.ts (4 tests) 226ms
+ ✓ src/shared/theme/theme.engine.test.ts (5 tests) 5ms
+ ✓ src/pages/chat/components/ChatMessageItem.test.ts (3 tests) 59ms
+ ✓ src/app/layouts/AppLayout.test.ts (3 tests) 103ms
+ ✓ src/stores/team.store.test.ts (5 tests) 1031ms
+ ✓ src/pages/approvals/ApprovalsPage.test.ts (3 tests) 114ms
+ ✓ src/stores/chat.action-scope.test.ts (2 tests) 9ms
+ ✓ src/pages/tasks/TasksPage.test.ts (3 tests) 69ms
+ ✓ src/pages/templates/TemplatesPage.test.ts (3 tests) 90ms
+ ✓ src/app/DesktopConnection.test.ts (1 test) 37ms
+ ✓ src/shared/api/local-chat-timeout.test.ts (3 tests) 6ms
+ ✓ src/stores/workspace.store.test.ts (3 tests) 204ms
+ ✓ src/pages/agents/AgentsPage.test.ts (3 tests) 154ms
+ ✓ src/pages/sessions/SessionsPage.test.ts (3 tests) 90ms
+ ✓ src/stores/agent.store.test.ts (3 tests) 348ms
+ ✓ src/pages/remote/pairing-qr.test.ts (29 tests) 8ms
+ ✓ src/pages/auth/ConnectPage.test.ts (2 tests) 44ms
+ ✓ src/pages/onboarding/OnboardingPage.test.ts (2 tests) 195ms
+ ✓ src/pages/workspaces/WorkspacesPage.test.ts (3 tests) 70ms
+ ✓ src/shared/attachments/sha256.test.ts (10 tests) 4403ms
+   ✓ bounded incremental SHA-256 > processes a virtual 20MB file using only bounded slices, without a whole-file read 4395ms
+ ✓ src/pages/teams/TeamsPage.test.ts (3 tests) 112ms
+ ✓ src/pages/overview/OverviewPage.test.ts (2 tests) 80ms
+ ✓ src/stores/local-auth.store.test.ts (2 tests) 6ms
+ ✓ src/shared/ui/HqButton.test.ts (4 tests) 27ms
+ ✓ src/stores/session.store.test.ts (2 tests) 274ms
+ ✓ src/shared/theme/forms.test.ts (1 test) 4ms
+ ✓ src/shared/ui/NoNativeDialogs.test.ts (2 tests) 2ms
+
+ Test Files  73 passed (73)
+      Tests  535 passed (535)
+   Start at  01:55:09
+   Duration  48.59s (transform 3.34s, setup 0ms, collect 23.69s, tests 17.75s, environment 33.66s, prepare 5.37s)
+

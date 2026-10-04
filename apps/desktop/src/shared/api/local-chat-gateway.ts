@@ -1,10 +1,11 @@
+import { clientFetch } from '@/shared/api/client-features'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 import { uploadAttachment as uploadBinary, attachmentBlob } from '@/shared/attachments/transport'
 import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
   LocalImageVerificationPage, LocalImageVerificationJobView, StartLocalImageVerificationInput, LocalConversationDeletionView,
   AttachmentLimits, AttachmentDeletedView, LocalAttachmentView, AttachmentTargetCapabilities,
-  LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
+  LocalNativeSessionPage, RuntimeNativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
   LocalAuthInput,
   AgentView,
@@ -42,19 +43,24 @@ import type {
 
 import type { LocalChatGateway } from './local-chat-gateway.interface'
 import { HubApiError } from './local-hub-gateway'
+import { getDesktopEndpoint, isDesktopShell } from './desktop-endpoint'
 
 export class RealLocalChatGateway implements LocalChatGateway {
+  // The frozen maintenance API exposes v1 Bearer and v2 Cookie surfaces.
+  // Desktop must use the existing Bearer surface rather than relax Cookie-only routes.
+  private get maintenancePrefix(): string { return isDesktopShell() ? '/api/v1' : '/api/v2' }
+
   listImageVerifications(options: { includeInactiveModels?: boolean; cursor?: string } = {}): Promise<LocalImageVerificationPage> {
     const query = new URLSearchParams({ limit: '50', includeInactiveModels: String(options.includeInactiveModels ?? false), ...(options.cursor ? { cursor: options.cursor } : {}) })
-    return this.fetchApi(`/api/v2/agents/image-verifications?${query}`)
+    return this.fetchApi(`${this.maintenancePrefix}/agents/image-verifications?${query}`)
   }
   startImageVerification(input: StartLocalImageVerificationInput, key: string): Promise<LocalImageVerificationJobView> {
-    return this.fetchApi('/api/v2/agents/image-verification-jobs', { method: 'POST', body: JSON.stringify(input) }, key)
+    return this.fetchApi(`${this.maintenancePrefix}/agents/image-verification-jobs`, { method: 'POST', body: JSON.stringify(input) }, key)
   }
-  getImageVerificationJob(id: string): Promise<LocalImageVerificationJobView> { return this.fetchApi(`/api/v2/agents/image-verification-jobs/${encodeURIComponent(id)}`) }
-  cancelImageVerification(id: string, key: string): Promise<LocalImageVerificationJobView> { return this.fetchApi(`/api/v2/agents/image-verification-jobs/${encodeURIComponent(id)}/cancellations`, { method: 'POST', body: '{}' }, key) }
+  getImageVerificationJob(id: string): Promise<LocalImageVerificationJobView> { return this.fetchApi(`${this.maintenancePrefix}/agents/image-verification-jobs/${encodeURIComponent(id)}`) }
+  cancelImageVerification(id: string, key: string): Promise<LocalImageVerificationJobView> { return this.fetchApi(`${this.maintenancePrefix}/agents/image-verification-jobs/${encodeURIComponent(id)}/cancellations`, { method: 'POST', body: '{}' }, key) }
   deleteLocalConversation(id: string, expectedVersion: number, key: string): Promise<LocalConversationDeletionView> {
-    return this.fetchApi(`/api/v2/conversations/${encodeURIComponent(id)}?expectedVersion=${expectedVersion}`, { method: 'DELETE' }, key)
+    return this.fetchApi(`${this.maintenancePrefix}/conversations/${encodeURIComponent(id)}?expectedVersion=${expectedVersion}`, { method: 'DELETE' }, key)
   }
 
   private attachmentError = (code: ErrorCode, status: number, requestId?: string): Error => {
@@ -62,14 +68,22 @@ export class RealLocalChatGateway implements LocalChatGateway {
   }
   getAttachmentLimits(): Promise<AttachmentLimits> { return this.fetchApi('/api/v2/attachments/limits') }
   uploadAttachment(conversationId: string, file: Blob, options: UploadOptions): Promise<LocalAttachmentView> {
-    return uploadBinary(`${this.baseUrl}/api/v2/conversations/${encodeURIComponent(conversationId)}/attachments`, file, options, null, this.attachmentError)
+    const upload = (endpoint: { baseUrl: string; token?: string }): Promise<LocalAttachmentView> =>
+      uploadBinary(`${endpoint.baseUrl}/api/v2/conversations/${encodeURIComponent(conversationId)}/attachments`, file, options, null, this.attachmentError, endpoint.token)
+    return isDesktopShell() ? getDesktopEndpoint().then(upload) : upload({ baseUrl: this.baseUrl })
   }
   getAttachment(id: string): Promise<LocalAttachmentView> { return this.fetchApi(`/api/v2/attachments/${encodeURIComponent(id)}`) }
   deleteAttachment(id: string): Promise<AttachmentDeletedView> {
     return this.fetchApi(`/api/v2/attachments/${encodeURIComponent(id)}`, { method: 'DELETE' }, crypto.randomUUID())
   }
-  getAttachmentContent(id: string, signal?: AbortSignal): Promise<Blob> { return attachmentBlob(`${this.baseUrl}/api/v2/attachments/${encodeURIComponent(id)}/content`, false, signal, this.attachmentError) }
-  getAttachmentThumbnail(id: string, signal?: AbortSignal): Promise<Blob> { return attachmentBlob(`${this.baseUrl}/api/v2/attachments/${encodeURIComponent(id)}/thumbnail`, true, signal, this.attachmentError) }
+  async getAttachmentContent(id: string, signal?: AbortSignal): Promise<Blob> {
+    const endpoint = await this.transportEndpoint()
+    return attachmentBlob(`${endpoint.baseUrl}/api/v2/attachments/${encodeURIComponent(id)}/content`, false, signal, this.attachmentError, endpoint.token)
+  }
+  async getAttachmentThumbnail(id: string, signal?: AbortSignal): Promise<Blob> {
+    const endpoint = await this.transportEndpoint()
+    return attachmentBlob(`${endpoint.baseUrl}/api/v2/attachments/${encodeURIComponent(id)}/thumbnail`, true, signal, this.attachmentError, endpoint.token)
+  }
   getAttachmentCapabilities(conversationId: string): Promise<AttachmentTargetCapabilities> { return this.fetchApi(`/api/v2/conversations/${encodeURIComponent(conversationId)}/attachment-capabilities`) }
 
   private baseUrl: string
@@ -80,11 +94,15 @@ export class RealLocalChatGateway implements LocalChatGateway {
     this.baseUrl = baseUrl.replace(/\/$/, '')
   }
 
+  private async transportEndpoint(): Promise<{ baseUrl: string; token?: string }> {
+    return isDesktopShell() ? getDesktopEndpoint() : { baseUrl: this.baseUrl }
+  }
+
   listNativeSessions(cursor?: string): Promise<LocalNativeSessionPage> {
     const query = new URLSearchParams({ limit: '50', ...(cursor ? { cursor } : {}) })
     return this.fetchApi(`/api/v2/native-sessions?${query}`)
   }
-  getNativeSession(id: string): Promise<NativeSessionIndex> {
+  getNativeSession(id: string): Promise<RuntimeNativeSessionIndex> {
     return this.fetchApi(`/api/v2/native-sessions/${encodeURIComponent(id)}`)
   }
   readNativeMessages(id: string, before?: string): Promise<NativeMessagePage> {
@@ -134,7 +152,8 @@ export class RealLocalChatGateway implements LocalChatGateway {
     options: RequestInit = {},
     idempotencyKey?: string
   ): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`
+    const connection = await this.transportEndpoint()
+    const url = `${connection.baseUrl}${endpoint}`
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...((options.headers as Record<string, string>) || {}),
@@ -143,14 +162,16 @@ export class RealLocalChatGateway implements LocalChatGateway {
     if (idempotencyKey) {
       headers['Idempotency-Key'] = idempotencyKey
     }
+    if (connection.token) headers.Authorization = `Bearer ${connection.token}`
 
     let response: Response
     try {
-      response = await fetch(url, {
+      response = await clientFetch(url, {
         ...options,
         headers,
         cache: 'no-store',
-        credentials: 'include', // HttpOnly cookie session
+        credentials: connection.token ? 'omit' : 'include',
+        redirect: 'error',
       })
     } catch (networkErr) {
       throw new HubApiError(
@@ -196,7 +217,7 @@ export class RealLocalChatGateway implements LocalChatGateway {
       const err = envelope.error
       const code = (err?.code || 'INTERNAL') as ErrorCode
       throw new HubApiError(
-        err?.message || (code === 'SESSION_NOT_RESUMABLE' ? '' : `Request failed with code ${code}`),
+        code.startsWith('PI_') ? getRemoteErrorMessage(code) : err?.message || (code === 'SESSION_NOT_RESUMABLE' ? '' : `Request failed with code ${code}`),
         code,
         response.status,
         err?.detail as Record<string, unknown> | undefined,

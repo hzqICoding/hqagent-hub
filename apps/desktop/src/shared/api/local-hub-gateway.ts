@@ -1,3 +1,5 @@
+import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
+import { clientFetch } from '@/shared/api/client-features'
 import type {
   BootstrapView,
   WorkspaceView,
@@ -32,6 +34,7 @@ import type {
 } from '@hqagent/protocol'
 
 import type { UiGateway, EventSubscription } from './ui-gateway'
+import { getDesktopEndpoint, isDesktopShell } from './desktop-endpoint'
 
 export interface HubEndpoint {
   baseUrl: string
@@ -66,9 +69,8 @@ export class HubApiError extends Error {
 
 // Wrapper for Tauri invoke with strict validation (R1: no hardcoded fallback token)
 async function getHubEndpointFromTauri(): Promise<HubEndpoint> {
-  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    const { invoke } = await import('@tauri-apps/api/core')
-    return await invoke<HubEndpoint>('get_hub_endpoint')
+  if (isDesktopShell()) {
+    return getDesktopEndpoint()
   }
 
   // In browser dev mode, only read from explicit environment variables (R1)
@@ -99,7 +101,7 @@ export class LocalHubGateway implements UiGateway {
   }
 
   private async ensureEndpoint(): Promise<HubEndpoint> {
-    if (!this.endpoint) {
+    if (isDesktopShell() || !this.endpoint) {
       this.endpoint = await getHubEndpointFromTauri()
     }
     return this.endpoint
@@ -112,9 +114,11 @@ export class LocalHubGateway implements UiGateway {
     headers.set('Content-Type', 'application/json')
     headers.set('X-Client-Id', 'hqagent-desktop')
 
-    const res = await fetch(`${baseUrl}${path}`, {
+    const res = await clientFetch(`${baseUrl}${path}`, {
       ...options,
       headers,
+      redirect: 'error',
+      credentials: 'omit',
     })
 
     // R4: Parse envelope first regardless of status code to preserve error codes
@@ -127,7 +131,7 @@ export class LocalHubGateway implements UiGateway {
 
     if (envelope && !envelope.success && envelope.error) {
       throw new HubApiError(
-        envelope.error.message,
+        envelope.error.code.startsWith('PI_') ? getRemoteErrorMessage(envelope.error.code) : envelope.error.message,
         envelope.error.code,
         res.status,
         envelope.error.detail,
@@ -309,7 +313,8 @@ export class LocalHubGateway implements UiGateway {
 
     this.connectPromise = (async () => {
       try {
-        const [{ baseUrl }, ticket] = await Promise.all([this.ensureEndpoint(), this.acquireWsTicket()])
+        const ticket = await this.acquireWsTicket()
+        const { baseUrl } = this.endpoint!
         if (this.subscribers.size === 0) {
           return
         }

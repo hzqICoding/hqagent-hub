@@ -79,11 +79,13 @@ class LocalBoundaryMiddleware:
         token: str,
         allowed_origins: set[str] | frozenset[str],
         allowed_hosts: set[str] | frozenset[str],
+        shutting_down: Any = lambda: False,
     ) -> None:
         self.app = app
         self.token = token
         self.allowed_origins = allowed_origins
         self.allowed_hosts = allowed_hosts
+        self.shutting_down = shutting_down
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
@@ -144,6 +146,10 @@ class LocalBoundaryMiddleware:
                 await self._reject(send, HubError("UNAUTHORIZED", "未授权"), cors_headers)
                 return
 
+        if self.shutting_down() and scope["method"] not in {"GET", "HEAD", "OPTIONS"}:
+            await self._reject(send, HubError("HUB_MAINTENANCE", "Hub 正在停止，暂不接受写请求"), cors_headers)
+            return
+
         async def send_with_cors(message: dict[str, Any]) -> None:
             if message["type"] == "http.response.start" and cors_headers:
                 message["headers"] = list(message.get("headers", [])) + cors_headers
@@ -202,11 +208,15 @@ def create_application(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "recover_pending"):
-            await resolved_ports.tasks.recover_pending()
-        await local_chat.start()
-        await remote_worker.start()
         try:
+            if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "recover_pending"):
+                await resolved_ports.tasks.recover_pending()
+            # EOF may arrive while startup recovery is awaiting I/O. Do not
+            # reopen command admission or schedule queued work after that point.
+            if not getattr(_app.state, "shutting_down", False):
+                await local_chat.start()
+            if not getattr(_app.state, "shutting_down", False):
+                await remote_worker.start()
             yield
         finally:
             await remote_worker.attachments.verifications.close()
@@ -217,6 +227,7 @@ def create_application(
                 await resolved_ports.tasks.shutdown()
             if close_database_on_shutdown:
                 database.close()
+            _app.state.lifecycle_closed = True
 
     app = FastAPI(title="HQAgent-Hub Local Hub", version=APP_VERSION, lifespan=lifespan)
     app.state.local_auth = local_auth
@@ -225,6 +236,7 @@ def create_application(
     app.add_middleware(
         LocalBoundaryMiddleware,
         token=token,
+        shutting_down=lambda: getattr(app.state, "shutting_down", False),
         allowed_origins=allowed_origins or set(DEFAULT_ALLOWED_ORIGINS),
         allowed_hosts=allowed_hosts or {"127.0.0.1", "localhost"},
     )

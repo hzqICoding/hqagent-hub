@@ -6,7 +6,7 @@ package protocol
 
 import "encoding/json"
 
-const Version = "0.10.1"
+const Version = "0.11.1"
 
 type AdapterId = string
 
@@ -107,9 +107,39 @@ const (
 	ErrorCodeAttachmentInUse ErrorCode = "ATTACHMENT_IN_USE"
 	ErrorCodeAttachmentThumbnailUnavailable ErrorCode = "ATTACHMENT_THUMBNAIL_UNAVAILABLE"
 	ErrorCodeAttachmentPreparationInterrupted ErrorCode = "ATTACHMENT_PREPARATION_INTERRUPTED"
+	ErrorCodePiGuardUnavailable ErrorCode = "PI_GUARD_UNAVAILABLE"
+	ErrorCodePiUncontrolledExtensions ErrorCode = "PI_UNCONTROLLED_EXTENSIONS"
+	ErrorCodePiToolCallBlocked ErrorCode = "PI_TOOL_CALL_BLOCKED"
 )
 
 type RoleId = string
+
+type PiGuardReason string
+
+const (
+	PiGuardReasonGuardNotLoaded PiGuardReason = "guard_not_loaded"
+	PiGuardReasonUncontrolledExtensions PiGuardReason = "uncontrolled_extensions"
+	PiGuardReasonPolicyUnavailable PiGuardReason = "policy_unavailable"
+	PiGuardReasonToolInventoryChanged PiGuardReason = "tool_inventory_changed"
+	PiGuardReasonGuardTimeout PiGuardReason = "guard_timeout"
+	PiGuardReasonInvalidRequest PiGuardReason = "invalid_request"
+	PiGuardReasonArgumentMismatch PiGuardReason = "argument_mismatch"
+	PiGuardReasonPathOutsideScope PiGuardReason = "path_outside_scope"
+	PiGuardReasonUnsupportedShell PiGuardReason = "unsupported_shell"
+	PiGuardReasonApprovalRequired PiGuardReason = "approval_required"
+	PiGuardReasonApprovalRejected PiGuardReason = "approval_rejected"
+	PiGuardReasonApprovalExpired PiGuardReason = "approval_expired"
+	PiGuardReasonReadOnlyTool PiGuardReason = "read_only_tool"
+	PiGuardReasonToolNotAllowed PiGuardReason = "tool_not_allowed"
+)
+
+type RuntimeGuardView struct {
+	Status string `json:"status"`
+	Isolation string `json:"isolation"`
+	CheckedAt string `json:"checkedAt"`
+	PolicyRevision *string `json:"policyRevision,omitempty"`
+	Reasons []PiGuardReason `json:"reasons"`
+}
 
 type AttachmentManifestItem struct {
 	AttachmentId string `json:"attachmentId"`
@@ -142,6 +172,14 @@ type AttachmentLimits struct {
 	ImageMimeTypes []string `json:"imageMimeTypes"`
 	FileExtensions []string `json:"fileExtensions"`
 }
+
+type RuntimeNativeAgentType string
+
+const (
+	RuntimeNativeAgentTypeClaude RuntimeNativeAgentType = "claude"
+	RuntimeNativeAgentTypeCodex RuntimeNativeAgentType = "codex"
+	RuntimeNativeAgentTypePi RuntimeNativeAgentType = "pi"
+)
 
 type UpdatePhase string
 
@@ -267,6 +305,72 @@ type LocalImageProbeResults struct {
 	MixedFive bool `json:"mixedFive"`
 	Cancel bool `json:"cancel"`
 	Error bool `json:"error"`
+}
+
+type PiNativeReaderId string
+
+const (
+	PiNativeReaderIdPi.jsonl.v3.tree PiNativeReaderId = "pi.jsonl.v3.tree"
+)
+
+type PiNativeFormatProfile struct {
+	ReaderId PiNativeReaderId `json:"readerId"`
+	SessionVersion int64 `json:"sessionVersion"`
+	Structure string `json:"structure"`
+	BranchSelection string `json:"branchSelection"`
+}
+
+type RuntimeNativeUnsupportedReason string
+
+const (
+	RuntimeNativeUnsupportedReasonReaderNotImplemented RuntimeNativeUnsupportedReason = "reader_not_implemented"
+	RuntimeNativeUnsupportedReasonUnsupportedVersion RuntimeNativeUnsupportedReason = "unsupported_version"
+	RuntimeNativeUnsupportedReasonUnsupportedStructure RuntimeNativeUnsupportedReason = "unsupported_structure"
+	RuntimeNativeUnsupportedReasonInvalidRecord RuntimeNativeUnsupportedReason = "invalid_record"
+	RuntimeNativeUnsupportedReasonInvalidTree RuntimeNativeUnsupportedReason = "invalid_tree"
+	RuntimeNativeUnsupportedReasonCurrentBranchUnavailable RuntimeNativeUnsupportedReason = "current_branch_unavailable"
+)
+
+type PiGuardCheckInput struct {
+	Version int64 `json:"version"`
+	RequestId string `json:"requestId"`
+	SessionId string `json:"sessionId"`
+	NodeId string `json:"nodeId"`
+	ToolCallId string `json:"toolCallId"`
+	ToolName string `json:"toolName"`
+	PolicyRevision string `json:"policyRevision"`
+	ToolInventorySha256 string `json:"toolInventorySha256"`
+	ArgumentsJson string `json:"argumentsJson"`
+	ArgumentsSha256 string `json:"argumentsSha256"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
+type PiGuardDecision struct {
+	RequestId string `json:"requestId"`
+	SessionId string `json:"sessionId"`
+	ToolCallId string `json:"toolCallId"`
+	ArgumentsSha256 string `json:"argumentsSha256"`
+	PolicyRevision string `json:"policyRevision"`
+	Decision string `json:"decision"`
+	Reason *PiGuardReason `json:"reason,omitempty"`
+	ApprovalId *string `json:"approvalId,omitempty"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
+type PiGuardHandshake struct {
+	Version int64 `json:"version"`
+	SessionId string `json:"sessionId"`
+	GuardRevision string `json:"guardRevision"`
+	PolicyRevision string `json:"policyRevision"`
+	ToolInventorySha256 string `json:"toolInventorySha256"`
+	Isolation string `json:"isolation"`
+	ActiveTools []string `json:"activeTools"`
+}
+
+type PiImageTransport = string
+
+type PiModelSelection struct {
+	ModelId string `json:"modelId"`
 }
 
 type UpdateChannel string

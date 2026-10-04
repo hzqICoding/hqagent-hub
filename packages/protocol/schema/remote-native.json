@@ -3662,7 +3662,7 @@
           "maxLength": 160
         },
         "agentType": {
-          "$ref": "remote-native.json#/$defs/NativeAgentType"
+          "$ref": "remote-pi.json#/$defs/RuntimeNativeAgentType"
         },
         "title": {
           "type": "string",
@@ -3692,7 +3692,7 @@
           "maxLength": 64
         },
         "format": {
-          "$ref": "remote-native.json#/$defs/NativeFormatView"
+          "$ref": "remote-pi.json#/$defs/RuntimeNativeFormatView"
         },
         "activity": {
           "$ref": "remote-native.json#/$defs/NativeActivityEvidence"

@@ -53,7 +53,7 @@ def test_upgrade_blocks_unapplied_old_event_and_wire_errors_stay_frozen(env):
         assert w.ack['error']['code']=='REMOTE_REVISION_REQUIRED'
     for rev in (1,2):
         frame=wire.encode(dict(type='worker.hello_rejected',error=Fault('REMOTE_QUERY_TIMEOUT').view()),rev)
-        assert frame['error']['code']=='INTERNAL' and frame['supportedWireRevisions']==[1,2,3,4]
+        assert frame['error']['code']=='INTERNAL' and frame['supportedWireRevisions']==[1,2,3,4,5]
     assert wire.encode(dict(type='worker.hello_rejected',error=Fault('REMOTE_QUERY_TIMEOUT').view()),3)['error']['code']=='REMOTE_QUERY_TIMEOUT'
 
 

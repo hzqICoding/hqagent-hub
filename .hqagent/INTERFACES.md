@@ -239,3 +239,23 @@ FZ-2 冻结的是**接口形状**，不是各家 Agent 的具体行为。
 冻结SHA：`7f9c8d23dd69a93af5b0f617544465e5dff79345`。D52补充；v1/v2各增加验证矩阵、显式费用确认异步作业、进度、取消，以及CAS删除对话。模型默认选择器省略modelId；实例/型号绑定不跨用，安全诊断不含输出/提示/路径，清理未确认不假取消。删除本机数据及附件，CLI原生日志不动，远端确认状态另列。手机删除为后续needs-decision F1，本轮无云端操作。
 
 线路4不变、无新错误码；16新类型/20合成Fixture；523类型/393Fixture校验通过，协议全量643 passed，api-contract47现有操作通过。P2/P3按[回执0.10.1节](handoffs/R16-P0-protocol.md)实施，未合回integration。
+
+
+## PI-P0 / 0.11.0 冻结（D53，2026-10-04）
+
+- 冻结SHA：`36c472eb72a4e7c101db26ec62c355b1007b672a`（feat/remote-protocol，未合并integration）。
+- PI Runtime协议0.11.0已冻结，Hub适配器/hub-guard、前端、服务端可开工；原生读取实现属于第二期，类型本次一并冻结。
+- wireRevision新增5、支持1–5；修订1–4及其递归类型/Fixture不变，4→5须完成双向升级栅栏。
+- 当前HTTP/本机DTO使用RuntimeNativeAgentType含pi；旧客户端缺省0.10.1投影，显式X-HQ-Client-Features:pi-v1启用，游标/WS票据绑定能力集。
+- provider/modelId按首斜线拆分，pi-rpc-images-v1沿本机五probe；无新HTTP路由、模型凭据或云端模型调用。
+- 606类型 / 485 Fixture；validate -CheckGenerated及api-contract通过，全量协议测试768 passed。
+- 契约：packages/protocol/remote/PI-contract.md；回执：.hqagent/handoffs/PI-P0-protocol.md；真实输出：.hqagent/reviews/pi-p0/。
+
+
+## PI-P0 补冻1 / 0.11.1
+
+- 冻结SHA：`3603166e5f8ded531d0cbb29a8c1772e21869d95`（协议投影提交139fa6c，合成页一致性补充3603166）。
+- RemoteBrowserLegacyApprovalEvent明确非PI旧形状；RemoteBrowserPiApprovalEvent作为HTTP联合新分支，仅pi-v1可见；线路1–5闭包不变。
+- Q1本机票据归Hub；P1按PI-contract §8投影，不使用conversation.updated冒充审批刷新。P1/P3可按此对接；P2无线路改动。
+- validate通过608类型/492 Fixture；API为47操作/95错误；全量协议测试788 passed in 55.61s。
+- 回执：.hqagent/handoffs/PI-P0-protocol.md「补冻1」；证据：.hqagent/reviews/pi-p0-supplement1/。未合回integration。

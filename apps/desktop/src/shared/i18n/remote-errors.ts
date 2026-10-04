@@ -1,6 +1,9 @@
 import type { LocalConversationView } from '@hqagent/protocol'
 
 export const REMOTE_ERROR_MESSAGES: Record<string, string> = {
+  PI_TOOL_CALL_BLOCKED: 'PI 工具调用已被安全保护阻止，请核对授权范围和审批状态',
+  PI_GUARD_UNAVAILABLE: 'PI 安全保护未就绪，不能运行任务',
+  PI_UNCONTROLLED_EXTENSIONS: 'PI 存在未受控扩展，安全保护未就绪，不能运行任务',
   ATTACHMENT_TOO_LARGE: "附件超过大小限制",
   ATTACHMENT_TYPE_UNSUPPORTED: "不支持此附件类型",
   ATTACHMENT_COUNT_EXCEEDED: "每条消息最多五个附件",

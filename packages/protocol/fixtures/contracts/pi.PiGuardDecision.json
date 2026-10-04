@@ -1,0 +1,10 @@
+{
+  "requestId": "guard-check-synthetic",
+  "sessionId": "hub-session-synthetic",
+  "toolCallId": "tool-synthetic",
+  "argumentsSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "policyRevision": "policy-1",
+  "decision": "block",
+  "reason": "path_outside_scope",
+  "expiresAt": "2026-10-04T00:05:00Z"
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "requestId": "guard-check-synthetic",
+  "sessionId": "hub-session-synthetic",
+  "nodeId": "node-synthetic",
+  "toolCallId": "tool-synthetic",
+  "toolName": "read",
+  "policyRevision": "policy-1",
+  "toolInventorySha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "argumentsJson": "{}",
+  "argumentsSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "expiresAt": "2026-10-04T00:05:00Z"
+}

@@ -14,7 +14,7 @@
         "items": {
           "type": "array",
           "items": {
-            "$ref": "remote-native.json#/$defs/NativeSessionIndex"
+            "$ref": "remote-pi.json#/$defs/RuntimeNativeSessionIndex"
           },
           "maxItems": 100
         },

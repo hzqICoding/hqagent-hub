@@ -1,0 +1,6 @@
+{
+  "readerId": "pi.jsonl.v3.tree",
+  "sessionVersion": 3,
+  "structure": "tree",
+  "branchSelection": "last_persisted_entry"
+}

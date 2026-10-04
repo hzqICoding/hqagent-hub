@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
 import { agentLabel } from '@/pages/native/native-utils'
 import { ref, computed } from 'vue'
 import { useChatStore } from '@/stores/chat.store'
@@ -292,7 +293,7 @@ function getReviewVerdictMeta(verdict: string) {
         </div>
       </div>
 
-      <p v-if="activeRun.conversationKind === 'native'" class="text-xs text-text-muted">{{ agentLabel(activeRun.agentType) }} · 原生会话，无场景角色</p>
+      <p v-if="activeRun.conversationKind === 'native'" class="text-xs text-text-muted"><RuntimeIcon :agent="activeRun.agentType" class="inline-block w-4 h-4" />{{ agentLabel(activeRun.agentType) }} · 原生会话，无场景角色</p>
       <!-- Steps & Task Nodes -->
       <div v-if="task?.nodes && task.nodes.length > 0" class="space-y-2">
         <span class="font-medium text-text text-[11px] block">执行步骤 (Nodes)</span>
