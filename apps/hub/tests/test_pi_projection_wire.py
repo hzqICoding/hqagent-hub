@@ -198,7 +198,9 @@ def test_real_server_revision4_inflight_fence_then_pi_catalog(tmp_path, monkeypa
                 finally:
                     db.execute('ROLLBACK TO before_handle')
                     db.execute('RELEASE before_handle')
-            monkeypatch.setattr(wire, 'CODECS', codecs)
+            # Restore through the fixture that lowered the revision. An outer
+            # monkeypatch would later roll back to v4 and poison the next test.
+            pair.wire_patch.setattr(wire, 'CODECS', codecs)
             pair.system.worker.next_revision2_probe = 0
             assert not pair.system.worker.can_upgrade()
             await asyncio.sleep(.5)
@@ -227,4 +229,5 @@ def test_real_server_revision4_inflight_fence_then_pi_catalog(tmp_path, monkeypa
                 scene = next(s for s in catalog['scenes'] if s['sceneId'] == 'analyze')
                 from server.client_features import ClientProjection
                 assert ClientProjection.pi_scene(catalog, scene)
+        assert wire.CODECS == codecs
     asyncio.run(scenario())
