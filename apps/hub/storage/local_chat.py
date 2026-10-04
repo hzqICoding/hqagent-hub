@@ -224,6 +224,21 @@ class LocalChatRepository:
             })
             tx.connection.execute("UPDATE local_scenes SET version=?,payload_json=? WHERE scene_id=?",
                                   (updated.version, updated.model_dump_json(by_alias=True, exclude_none=True), scene_id))
+            # Sync metadata includes the current sceneVersion. Advancing that
+            # field without the conversation CAS version conflicts with the
+            # server's immutable same-version metadata check during backfill.
+            rows = tx.connection.execute(
+                "SELECT conversation_id,payload_json FROM local_conversations "
+                "WHERE json_extract(payload_json,'$.sceneId')=?", (scene_id,)).fetchall()
+            for conversation_id, payload in rows:
+                conversation = self._conversation_view(payload)
+                if str(conversation.conversation_kind) == "native":
+                    continue
+                conversation = conversation.model_copy(update={
+                    "version": conversation.version + 1, "updated_at": stamp})
+                tx.connection.execute(
+                    "UPDATE local_conversations SET payload_json=?,updated_at=? WHERE conversation_id=?",
+                    (conversation.model_dump_json(by_alias=True, exclude_none=True), stamp, conversation_id))
         return updated
 
     def command(self, route: str, key: str, request: Any, operation: Callable[[Transaction], dict]) -> tuple[dict, bool]:
