@@ -2,8 +2,8 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use chrono::{DateTime, Utc};
@@ -19,6 +19,11 @@ use crate::{
 
 const MAX_DESCRIPTOR_BYTES: u64 = 64 * 1024;
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
+pub(crate) const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+const READINESS_TIMEOUT: Duration = Duration::from_secs(15);
+const COLD_READINESS_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const COLD_START_WINDOW: Duration = Duration::from_secs(90);
+const PROBE_CACHE_TTL: Duration = Duration::from_secs(2);
 pub const TAURI_PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
 
 #[derive(Clone, Deserialize)]
@@ -93,7 +98,61 @@ struct ApiEnvelope<T> {
 pub struct HubEndpointProvider {
     descriptor_path: PathBuf,
     supervisor: Arc<ProcessSupervisor>,
-    client: Client,
+    health_client: Client,
+    readiness_client: Client,
+    // Single flight across the UI and monitor. Cache results, never endpoint/token.
+    readiness: Mutex<Option<ReadinessCache>>,
+}
+
+struct ReadinessCache {
+    instance_id: String,
+    pid: u32,
+    checked_at: Instant,
+    result: Result<HubProbeResult, ShellError>,
+}
+
+pub(crate) fn health_client() -> Result<Client, ShellError> {
+    probe_client(HEALTH_TIMEOUT)
+}
+
+fn probe_client(timeout: Duration) -> Result<Client, ShellError> {
+    Client::builder()
+        .no_proxy()
+        .connect_timeout(HEALTH_TIMEOUT)
+        .timeout(timeout)
+        .redirect(Policy::none())
+        .build()
+        .map_err(|error| ShellError::Internal(format!("无法创建本机 HTTP 客户端: {error}")))
+}
+
+fn readiness_timeout(age: Duration) -> Duration {
+    if age < COLD_START_WINDOW { COLD_READINESS_TIMEOUT } else { READINESS_TIMEOUT }
+}
+
+fn trusted_descriptor(path: &Path, identity: &ProcessIdentity) -> Result<HubRuntimeDescriptor, ShellError> {
+    let descriptor = read_descriptor(path)?;
+    verify_private_file_acl(path)?;
+    validate_hub_descriptor(&descriptor, identity)?;
+    if !process_matches_executable(descriptor.pid, &identity.executable) {
+        return Err(ShellError::InvalidDescriptor("Descriptor PID 不属于当前受管的核心进程".into()));
+    }
+    Ok(descriptor)
+}
+
+pub(crate) fn check_hub_liveness(client: &Client, path: &Path, identity: &ProcessIdentity) -> Result<(), ShellError> {
+    let descriptor = trusted_descriptor(path, identity)?;
+    probe_health(client, &descriptor)
+}
+
+fn probe_health(client: &Client, descriptor: &HubRuntimeDescriptor) -> Result<(), ShellError> {
+    let response = client.get(format!("{}/healthz", descriptor.base_url)).send()
+        .map_err(|error| ShellError::HubUnavailable(if error.is_timeout() {
+            "存活探测 healthz 超时（2 秒）".into()
+        } else { "存活探测 healthz 连接失败".into() }))?;
+    if !response.status().is_success() {
+        return Err(ShellError::HubUnavailable(format!("存活探测 healthz 返回 {}", response.status())));
+    }
+    validate_health(descriptor, &read_json_response(response)?)
 }
 
 impl HubEndpointProvider {
@@ -101,71 +160,71 @@ impl HubEndpointProvider {
         descriptor_path: PathBuf,
         supervisor: Arc<ProcessSupervisor>,
     ) -> Result<Self, ShellError> {
-        let client = Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_secs(2))
-            .redirect(Policy::none())
-            .build()
-            .map_err(|error| ShellError::Internal(format!("无法创建本机 HTTP 客户端: {error}")))?;
         Ok(Self {
             descriptor_path,
             supervisor,
-            client,
+            health_client: health_client()?,
+            readiness_client: probe_client(READINESS_TIMEOUT)?,
+            readiness: Mutex::new(None),
         })
     }
 
     pub fn get_endpoint(&self) -> Result<(HubEndpoint, HubProbeResult), ShellError> {
-        let descriptor: HubRuntimeDescriptor = read_descriptor(&self.descriptor_path)?;
-        verify_private_file_acl(&self.descriptor_path)?;
         let identity = self
             .supervisor
             .identity(Component::Core)
             .ok_or_else(|| ShellError::HubUnavailable("核心进程尚未启动".into()))?;
-        validate_hub_descriptor(&descriptor, &identity)?;
-        if !process_matches_executable(descriptor.pid, &identity.executable) {
-            return Err(ShellError::HubUnavailable(
-                "Descriptor PID 不属于当前受管的核心进程".into(),
-            ));
+        let descriptor = trusted_descriptor(&self.descriptor_path, &identity)?;
+        probe_health(&self.health_client, &descriptor)?;
+        let age = (Utc::now() - identity.launched_at).to_std().unwrap_or_default();
+        let mut cache = self.readiness.lock().expect("readiness cache poisoned");
+        let probe = if let Some(entry) = cache.as_ref().filter(|entry| {
+            entry.pid == descriptor.pid && entry.instance_id == descriptor.instance_id
+                && entry.checked_at.elapsed() < PROBE_CACHE_TTL
+        }) {
+            entry.result.clone()
+        } else {
+            let result = self.probe_readiness(&descriptor, readiness_timeout(age));
+            *cache = Some(ReadinessCache {
+                pid: descriptor.pid, instance_id: descriptor.instance_id.clone(),
+                checked_at: Instant::now(), result: result.clone(),
+            });
+            result
+        }?;
+        // A health watchdog can restart the process while bootstrap is in flight.
+        let current = self.supervisor.identity(Component::Core)
+            .ok_or_else(|| ShellError::HubUnavailable("核心进程正在重新启动".into()))?;
+        if current.pid != identity.pid || current.launched_at != identity.launched_at
+            || current.instance_id != identity.instance_id {
+            return Err(ShellError::HubUnavailable("核心进程已重新启动，正在重新获取连接".into()));
         }
-        let probe = self.probe(&descriptor)?;
         Ok((
             HubEndpoint::new(descriptor.base_url, descriptor.token),
             probe,
         ))
     }
 
-    fn probe(&self, descriptor: &HubRuntimeDescriptor) -> Result<HubProbeResult, ShellError> {
-        let health_url = format!("{}/healthz", descriptor.base_url);
-        let health_response = self
-            .client
-            .get(health_url)
-            .send()
-            .map_err(|error| ShellError::HubUnavailable(format!("healthz 请求失败: {error}")))?;
-        if !health_response.status().is_success() {
-            return Err(ShellError::HubUnavailable(format!(
-                "healthz 返回 {}",
-                health_response.status()
-            )));
-        }
-        let health: HealthResponse = read_json_response(health_response)?;
-        validate_health(descriptor, &health)?;
-
+    fn probe_readiness(&self, descriptor: &HubRuntimeDescriptor, timeout: Duration) -> Result<HubProbeResult, ShellError> {
         let bootstrap_url = format!("{}/api/v1/bootstrap", descriptor.base_url);
         let bootstrap_response = self
-            .client
+            .readiness_client
             .get(bootstrap_url)
+            .timeout(timeout)
             .bearer_auth(&descriptor.token)
             .header("Origin", TAURI_PRODUCTION_ORIGIN)
             .header("X-Client-Id", "hqagent-desktop-shell")
             .send()
-            .map_err(|error| ShellError::HubUnavailable(format!("bootstrap 探测失败: {error}")))?;
+            .map_err(|error| ShellError::HubUnavailable(if error.is_timeout() {
+                format!("就绪探测 bootstrap 超时（{} 秒），Agent 检测可能仍在进行，将自动重试", timeout.as_secs())
+            } else { "就绪探测 bootstrap 连接中断，将自动重试".into() }))?;
         if !bootstrap_response.status().is_success() {
             return Err(ShellError::HubUnavailable(format!(
                 "bootstrap 探测返回 {}",
                 bootstrap_response.status()
             )));
         }
-        let envelope: ApiEnvelope<BootstrapProbe> = read_json_response(bootstrap_response)?;
+        let envelope: ApiEnvelope<BootstrapProbe> = read_json_response(bootstrap_response)
+            .map_err(|error| ShellError::HubUnavailable(format!("就绪探测 bootstrap 响应未完成或无效: {error}")))?;
         if !envelope.success {
             return Err(ShellError::HubUnavailable("bootstrap 探测返回失败包络".into()));
         }
@@ -439,6 +498,17 @@ mod tests {
 
     use super::{validate_hub_descriptor, HubRuntimeDescriptor};
     use crate::process_supervisor::ProcessIdentity;
+
+    #[test]
+    fn health_and_readiness_have_independent_cold_start_deadlines() {
+        use super::*;
+        assert_eq!(HEALTH_TIMEOUT, Duration::from_secs(2));
+        assert_eq!(READINESS_TIMEOUT, Duration::from_secs(15));
+        assert_eq!(COLD_START_WINDOW, Duration::from_secs(90));
+        assert_eq!(readiness_timeout(Duration::ZERO), Duration::from_secs(30));
+        assert_eq!(readiness_timeout(Duration::from_secs(89)), Duration::from_secs(30));
+        assert_eq!(readiness_timeout(Duration::from_secs(90)), Duration::from_secs(15));
+    }
 
     fn identity(instance_id: &str) -> ProcessIdentity {
         ProcessIdentity {
