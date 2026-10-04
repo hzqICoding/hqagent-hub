@@ -233,6 +233,8 @@ def create_application(
     app.state.local_auth = local_auth
     app.state.local_chat = local_chat
     app.state.remote_worker = remote_worker
+    from api.pi_projection import PiProjectionMiddleware
+    app.add_middleware(PiProjectionMiddleware, worker=remote_worker, auth=local_auth, token=token)
     app.add_middleware(
         LocalBoundaryMiddleware,
         token=token,
@@ -315,7 +317,10 @@ def create_application(
     @app.post("/api/v1/auth/ws-ticket")
     async def ws_ticket(value: WsTicketRequest | None = None) -> JSONResponse:
         purpose = value.purpose if value and value.purpose else "events"
-        return success_response(ticket_store.issue(purpose))
+        from runtime.pi_visibility import HTTP_PROJECTION
+        context = HTTP_PROJECTION.get()
+        return success_response(ticket_store.issue(purpose, features=bool(context and context[1]),
+                                                   cursor_owner=context[2] if context else None))
 
     @app.get("/api/v1/agents")
     async def list_agents() -> JSONResponse:
@@ -536,20 +541,33 @@ def create_application(
         if not valid_boundary:
             await websocket.close(code=4403, reason="ORIGIN_NOT_ALLOWED")
             return
-        if not ticket_store.consume(ticket):
+        record = ticket_store.consume_record(ticket)
+        if record is None:
             await websocket.close(code=4401, reason="UNAUTHORIZED")
             return
         try:
+            from api.pi_projection import cursor_scope
+            from runtime.pi_visibility import DROP
+            await remote_worker.pi.refresh()
+            cursor_scope(remote_worker.pi, record.cursor_owner, record.features, after)
             async with event_store.broker.subscribe() as queue:
                 replay = event_store.page(after if after is not None else event_store.latest_seq(), MAX_EVENT_PAGE_SIZE)
                 last_sent = after or 0
                 for event in replay.events:
-                    await websocket.send_json(dump_model(event))
+                    value = dump_model(event)
+                    remote_worker.pi.rebuild()
+                    projected = value if record.features else remote_worker.pi.old_projection(value)
+                    if projected is not DROP:
+                        await websocket.send_json(projected)
                     last_sent = event.seq
                 while True:
                     event = await queue.get()
                     if event.seq > last_sent:
-                        await websocket.send_json(dump_model(event))
+                        value = dump_model(event)
+                        remote_worker.pi.rebuild()
+                        projected = value if record.features else remote_worker.pi.old_projection(value)
+                        if projected is not DROP:
+                            await websocket.send_json(projected)
                         last_sent = event.seq
         except WebSocketDisconnect:
             return

@@ -126,6 +126,10 @@ class VerificationCoordinator:
                 adapter = service.chat.ports.tasks.directory.adapter_for(identifier)
             except (LookupError, AttributeError):
                 conflict('agent_unavailable')
+            if str(view.adapter_id) == 'pi':
+                models = await adapter.list_models(identifier)
+                if model is not None and model not in {m.id for m in models.models}:
+                    raise HubError('VALIDATION_FAILED', '模型选择器不在本机可用列表')
             descriptor = await adapter.detect()
             version = getattr(descriptor, 'detected_version', None)
             target = target_for(identifier, str(view.adapter_id), version, model, adapter)
@@ -261,6 +265,11 @@ class VerificationCoordinator:
         stopped = all(r.get('stopped') for r in job['resources']) and not job.get('launchPending')
         if stopped:
             try:
+                release = getattr(adapter, 'release_temporary_session', None)
+                if release is not None:
+                    for resource in job['resources']:
+                        if not await release(resource['sessionId']):
+                            raise OSError('temporary session cleanup not confirmed')
                 directory = Path(job['directory'])
                 if directory.parent.resolve() != self.root.resolve() or directory.is_symlink():
                     raise OSError('invalid internal directory')
@@ -457,7 +466,8 @@ class VerificationCoordinator:
                     if job['view']['slotHeld'] or job['view']['status'] not in TERMINAL:
                         row['activeJobId'] = job['view']['jobId']
             rows.append(row)
-        fingerprint = request_hash([agent_id, model, inactive, limit, rows])
+        from runtime.pi_visibility import CLIENT_PI
+        fingerprint = request_hash([bool(CLIENT_PI.get()), agent_id, model, inactive, limit, rows])
         offset = 0
         if cursor:
             try:

@@ -86,6 +86,10 @@ class BusyState:
         if not self.enabled() or self.connection_id is None or not self.repo.get("link", tx)["view"].get("workerId"):
             return
         ids = self.ids(tx)
+        pi = getattr(self.chat, 'pi', None)
+        if pi is not None and self.repo.get('identity', tx).get('wireRevision', 1) < 5 and any(pi.is_pi({'conversationId': i}) for i in ids):
+            self.repo.put('pi-deferred', {'pending': True}, tx)
+            return  # Never label a truncated busy set as complete.
         if self.repo.get("identity", tx).get("wireRevision", 1) < 3:
             ids = [identifier for identifier in ids if str(self.chat.repository.conversation(identifier).conversation_kind) != "native"]
         identity = (self.connection_id, tuple(ids))

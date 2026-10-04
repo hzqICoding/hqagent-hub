@@ -48,9 +48,12 @@ class RemoteWorker:
         from runtime.attachments.service import AttachmentService
         self.attachments = AttachmentService(self)
         self.resources = ResourceCommands(self)
+        from runtime.pi_visibility import PiVisibility
+        self.pi = PiVisibility(self)
+        bridge.chat.pi = self.pi
         self.projector.roots = self.roots
-        self.preferred_revision = 4
-        self.server_supported = {1, 2, 3, 4}
+        self.preferred_revision = 5
+        self.server_supported = {1, 2, 3, 4, 5}
         bridge.chat.native = self.native
         bridge.chat.repository.native = self.native
         bridge.chat.repository.busy_state = self.busy
@@ -78,8 +81,8 @@ class RemoteWorker:
         self.repo.boot()
         self.attachments.sync.closed = False
         await self.attachments.recover()
-        self.preferred_revision = 4
-        self.server_supported = {1, 2, 3, 4}
+        self.preferred_revision = 5
+        self.server_supported = {1, 2, 3, 4, 5}
         self.delivery.clock.invalidate()
         self.busy.connection_id = None
         if self.sync.active():
@@ -160,9 +163,9 @@ class RemoteWorker:
 
     def can_upgrade(self):
         identity = self.repo.get("identity")
-        if identity.get("wireRevision", 1) >= 4:
+        if identity.get("wireRevision", 1) >= 5:
             return False
-        if identity.get("wireRevision", 1) in {2, 3}:
+        if identity.get("wireRevision", 1) in {2, 3, 4}:
             with self.repo.database.locked_connection() as db:
                 pending = db.execute("SELECT 1 FROM remote2_delivery WHERE store_id=? AND state NOT IN (?,?,?,?) LIMIT 1", (identity["store"], *FINAL_STATES)).fetchone()
                 outbox = db.execute("SELECT 1 FROM remote_outbox WHERE store_id=? LIMIT 1", (identity["store"],)).fetchone()
@@ -297,7 +300,7 @@ class RemoteWorker:
                 self.sync.prepare()
             self.state("online", connected=True, frozen=hello["commandDelivery"] == "frozen",
                 code=hello.get("reason", {}).get("code") or (
-                    ("REMOTE_REVISION_REQUIRED" if self.peer_revision2 is False else "REMOTE_STATE_NOT_READY") if revision == 1 else ("REMOTE_REVISION_REQUIRED" if revision == 2 and 3 not in self.server_supported else None)))
+                    ("REMOTE_REVISION_REQUIRED" if self.peer_revision2 is False else "REMOTE_STATE_NOT_READY") if revision == 1 else ("REMOTE_REVISION_REQUIRED" if (revision == 2 and 3 not in self.server_supported) or (revision == 4 and 5 not in self.server_supported) else None)))
             window = SendWindow(self.repo, self.sync) if revision >= 2 else None
             heartbeat_sends = []
             last_server_time = hello["serverTime"]
@@ -346,8 +349,8 @@ class RemoteWorker:
                             self.repo.seal(tx)
                     if revision >= 2:
                         await window.flush(send)
-                        if revision in {2, 3} and time.monotonic() >= self.next_revision2_probe and self.can_upgrade():
-                            self.preferred_revision = 4
+                        if revision in {2, 3, 4} and time.monotonic() >= self.next_revision2_probe and self.can_upgrade():
+                            self.preferred_revision = 5
                             raise Renegotiate()
                         await asyncio.sleep(0.2)
                         continue
@@ -363,7 +366,7 @@ class RemoteWorker:
                             sent.add(event["eventId"])
                     if (self.probe_revision2 or (self.peer_revision2 is True and time.monotonic() >= self.next_revision2_probe)) and self.can_upgrade():
                         self.probe_revision2 = True
-                        self.preferred_revision = max(self.server_supported & {1,2,3,4})
+                        self.preferred_revision = max(self.server_supported & {1,2,3,4,5})
                         raise Renegotiate()
                     await asyncio.sleep(0.2)
             queue = asyncio.Queue(maxsize=200)

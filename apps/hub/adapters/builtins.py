@@ -28,7 +28,9 @@ class BuiltinRuntimeRegistry:
 def builtin_runtimes() -> BuiltinRuntimeRegistry:
     from adapters.claude_adapter import ClaudeAdapter
     from adapters.codex_adapter import CodexAdapter
+    from adapters.pi_adapter import PiAdapter
     registry = BuiltinRuntimeRegistry()
     registry.register("claude", ClaudeAdapter)
     registry.register("codex", CodexAdapter)
+    registry.register("pi", PiAdapter)
     return registry

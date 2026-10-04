@@ -103,6 +103,7 @@ class ImageCapabilities:
                 if not role.enabled:
                     continue
                 identifier = 'unresolved'
+                binding = {}
                 try:
                     candidates = self.candidates
                     override = overrides.get(role.role_id)
@@ -115,17 +116,30 @@ class ImageCapabilities:
                         role_id=str(role.role_id), agents=candidates, task_override_agent_id=override,
                         global_profile=snapshot, requires_approval=None))
                     if isinstance(decision, ResolutionGap):
+                        # A PI primary stays the exact target while unavailable.
+                        # It must not be advertised as an unrelated fallback.
+                        from runtime.execution_selection import pi_instances
+                        if override in pi_instances(ports.agents, self.agents.values()):
+                            identifier = override
+                            binding = {'agentType': 'pi', 'transport': TRANSPORTS['pi']}
+                            if options[role.role_id]['modelId'] is not None:
+                                binding['modelId'] = options[role.role_id]['modelId']
                         cap = self.unknown(decision.reason)
                     else:
                         identifier = decision.agent.instance_id
                         model = options[role.role_id]['modelId']
+                        kind = str(decision.agent.adapter_id)
+                        if kind in TRANSPORTS:
+                            binding = {'agentType': kind, 'transport': TRANSPORTS[kind]}
+                            if model is not None:
+                                binding['modelId'] = model
                         self.usages.setdefault((identifier, model), []).append(dict(sceneId=scene.id, roleId=str(role.role_id)))
                         cap = self.selected(decision.agent, model)
                         if str(role.role_id) == 'planner':
                             planner = identifier
                 except Exception:
                     cap = self.unknown('当前角色执行目标无法确定')
-                roles.append(dict(roleId=str(role.role_id), agentId=identifier,
+                roles.append(dict(roleId=str(role.role_id), agentId=identifier, **binding,
                     imageInput=cap.model_dump(mode='json', by_alias=True, exclude_none=True)))
             resolved[scene.id] = roles
         self.values = resolved
@@ -135,12 +149,15 @@ class ImageCapabilities:
         self.fingerprint = request_hash({
             'agents': sorted((a.id, a.version, str(a.status)) for a in self.agents.values()),
             'nativeBindings': sorted((p.agent_type, p.runtime_id) for p in self.worker.native.plugins),
+            'pi': [(a.id, self.worker.bridge.chat.ports.tasks.directory.adapter_for(a.id).verification_configuration()) for a in self.agents.values() if str(a.adapter_id) == 'pi'],
         })
         if self.worker.repo.get('identity').get('wireRevision', 1) >= 4 and self.worker.repo.get('link')['view']['state'] == 'paired':
             await self.worker.projector.catalog()
 
     def native(self, kind, runtime_id=None):
         bindings = {p.runtime_id for p in self.worker.native.plugins if p.agent_type == kind}
+        if kind == 'pi':
+            bindings = {a.id for a in self.agents.values() if str(a.adapter_id) == 'pi' and str(a.status) == 'ready'}
         cap = self.unknown('原生Runtime绑定缺失或存在多个候选', kind)
         if runtime_id is None and len(bindings) == 1:
             runtime_id = next(iter(bindings))
@@ -150,7 +167,10 @@ class ImageCapabilities:
                 cap = self.selected(candidate, None) if str(candidate.adapter_id) == kind else self.unknown('绑定的原生Runtime类型不一致', kind)
             except HubError as error:
                 cap = self.unknown(error.message, kind)
-        return dict(agentType=kind, imageInput=cap.model_dump(mode='json', by_alias=True, exclude_none=True))
+        value = dict(agentType=kind, imageInput=cap.model_dump(mode='json', by_alias=True, exclude_none=True))
+        if kind == 'pi' and runtime_id in bindings:
+            value.update(agentId=runtime_id, transport=TRANSPORTS[kind])
+        return value
 
     def target(self, conversation):
         view = self.worker.bridge.chat.repository.conversation(conversation)

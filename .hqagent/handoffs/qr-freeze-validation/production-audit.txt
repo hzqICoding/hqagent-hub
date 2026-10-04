@@ -1,0 +1,1 @@
+{"freezePrototypeEnabled":true,"jsChunks":42,"legacyModeAssignmentOrDiagnosticMatches":0,"legacyRuntimeSourceImports":0,"remoteLinkChunks":["RemoteLinkPage-DW07M6FU.js"]}

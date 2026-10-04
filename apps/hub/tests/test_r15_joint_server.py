@@ -161,7 +161,7 @@ class RealPair:
         await until(lambda: any(f["type"] == "worker.hello_ack" for f in self.received))
         assert next(f for f in self.received if f["type"] == "worker.hello_ack")["wireRevision"] == self.revision
         assert self.system.repo.get("identity")["wireRevision"] == self.revision
-        if self.revision < 4:
+        if self.revision < max(WORKER_CODECS):
             rejected = next(f for f in self.received if f["type"] == "worker.hello_rejected")
             assert rejected["error"]["code"] == "REMOTE_PROTOCOL_UNSUPPORTED"
             assert rejected["supportedWireRevisions"] == list(range(1,self.revision+1))

@@ -22,6 +22,7 @@ from protocol.generated.python import (
     RemoteV2WorkerOutboundFrame, RemoteV2ServerOutboundFrame,
     RemoteV3WorkerOutboundFrame, RemoteV3ServerOutboundFrame,
     RemoteV4WorkerOutboundFrame, RemoteV4ServerOutboundFrame,
+    RemoteV5WorkerOutboundFrame, RemoteV5ServerOutboundFrame,
 )
 from api.app import create_application
 from core.ports import HubPorts
@@ -42,8 +43,8 @@ from storage.tasks import TaskRepository
 
 TOKEN = "hub-test-" + "H" * 43
 TLS_FILES = Path(__file__).parent / "fixtures" / "remote"
-WORKER_CODECS = {1: RemoteWorkerOutboundFrame, 2: RemoteV2WorkerOutboundFrame, 3: RemoteV3WorkerOutboundFrame, 4: RemoteV4WorkerOutboundFrame}
-SERVER_CODECS = {1: RemoteServerOutboundFrame, 2: RemoteV2ServerOutboundFrame, 3: RemoteV3ServerOutboundFrame, 4: RemoteV4ServerOutboundFrame}
+WORKER_CODECS = {1: RemoteWorkerOutboundFrame, 2: RemoteV2WorkerOutboundFrame, 3: RemoteV3WorkerOutboundFrame, 4: RemoteV4WorkerOutboundFrame, 5: RemoteV5WorkerOutboundFrame}
+SERVER_CODECS = {1: RemoteServerOutboundFrame, 2: RemoteV2ServerOutboundFrame, 3: RemoteV3ServerOutboundFrame, 4: RemoteV4ServerOutboundFrame, 5: RemoteV5ServerOutboundFrame}
 
 
 def later(seconds=300):

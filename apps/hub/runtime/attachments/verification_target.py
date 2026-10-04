@@ -7,7 +7,7 @@ import tomllib
 from adapters.versions import cli_version
 from storage.idempotency import request_hash
 
-TRANSPORTS = {'claude': 'stream-json-image-v1', 'codex': 'app-server-localImage-v1'}
+TRANSPORTS = {'claude': 'stream-json-image-v1', 'codex': 'app-server-localImage-v1', 'pi': 'pi-rpc-images-v1'}
 # Authentication rotation and presentation settings intentionally do not invalidate
 # paid observations. Only observable routing/model/input settings contribute.
 CONFIG_KEYS = {'model', 'model_provider', 'model_providers', 'base_url', 'wire_api',
@@ -20,6 +20,10 @@ ENV_KEYS = {'ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL',
 
 
 def configuration(kind, adapter):
+    if kind == 'pi':
+        # Only a fingerprint of the PI-owned metadata RPC response. Never open
+        # ~/.pi/agent/models.json or its credential indirections in the Hub.
+        return request_hash(adapter.verification_configuration())
     runner = getattr(adapter, 'runner', None)
     executable = runner.find(kind) if runner is not None and hasattr(runner, 'find') else None
     root = Path(os.environ.get('CODEX_HOME' if kind == 'codex' else 'CLAUDE_CONFIG_DIR',

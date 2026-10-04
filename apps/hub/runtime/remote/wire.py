@@ -9,7 +9,8 @@ from protocol.generated.python import (PROTOCOL_VERSION, RemoteWorkerHello,
     RemoteServerOutboundFrame, RemoteWorkerOutboundFrame,
     RemoteV2ServerOutboundFrame, RemoteV2WorkerOutboundFrame,
     RemoteV3ServerOutboundFrame, RemoteV3WorkerOutboundFrame,
-    RemoteV4ServerOutboundFrame, RemoteV4WorkerOutboundFrame)
+    RemoteV4ServerOutboundFrame, RemoteV4WorkerOutboundFrame,
+    RemoteV5ServerOutboundFrame, RemoteV5WorkerOutboundFrame)
 from core.errors import HubError
 
 # The generated Literal is the frozen schema constant (no second version source).
@@ -18,7 +19,8 @@ MAX_FRAME_BYTES = 256 * 1024
 CODECS = {1: (RemoteWorkerOutboundFrame, RemoteServerOutboundFrame),
           2: (RemoteV2WorkerOutboundFrame, RemoteV2ServerOutboundFrame),
           3: (RemoteV3WorkerOutboundFrame, RemoteV3ServerOutboundFrame),
-          4: (RemoteV4WorkerOutboundFrame, RemoteV4ServerOutboundFrame)}
+          4: (RemoteV4WorkerOutboundFrame, RemoteV4ServerOutboundFrame),
+          5: (RemoteV5WorkerOutboundFrame, RemoteV5ServerOutboundFrame)}
 
 
 def canonical(value: dict) -> str:

@@ -18,6 +18,11 @@ class Projector:
         self.repo.source_mapper = self.source_event
 
     def source_event(self, tx, row):
+        pi = getattr(self.chat, 'pi', None)
+        if pi is not None and self.repo.get('identity', tx).get('wireRevision', 1) < 5:
+            if pi.is_pi(json.loads(row['envelope_json'])):
+                self.repo.put('pi-deferred', {'pending': True}, tx)
+                return None
         """Map remote-critical source slots; only genuinely private slots omit.
 
         Raw provider payloads/logs never cross the boundary. Missing LocalRun
@@ -106,6 +111,12 @@ class Projector:
             "workspaces": [{"workspaceId": w.id, "name": self.link.sanitized(w.name), "displayPath": self.link.sanitized(w.path),
                 "vcs": str(w.vcs), "canWrite": bool(w.capabilities and w.capabilities.can_run_write_tasks)} for w in workspaces],
             "scenes": [{"sceneId": s.id, "name": self.link.sanitized(s.name), "version": s.version, "readOnly": s.read_only} for s in scenes]}
+        pi = getattr(self.chat, 'pi', None)
+        revision = self.repo.get('identity').get('wireRevision', 1)
+        if pi is not None:
+            pi.rebuild()
+            if revision < 5:
+                value['scenes'] = [s for s in value['scenes'] if s['sceneId'] not in pi.scenes]
         try:
             if self.repo.get("identity").get("wireRevision", 1) >= 3:
                 value["authorizedRoots"] = [{**r,"displayName":self.link.sanitized(r["displayName"])} for r in self.roots.catalog()]
@@ -114,8 +125,36 @@ class Projector:
                     capabilities = self.chat.attachments.capabilities
                     for scene in value['scenes']:
                         scene['roleImageCapabilities'] = capabilities.values.get(scene['sceneId'], [])
+                        if revision < 5:
+                            scene['roleImageCapabilities'] = [{k:v for k,v in role.items() if k in {'roleId','agentId','imageInput'}} for role in scene['roleImageCapabilities']]
                     value['nativeImageCapabilities'] = [capabilities.native(kind) for kind in ('claude','codex')]
-                    RemoteV4CatalogView.model_validate(value)
+                    if revision >= 5:
+                        from protocol.generated.python import RemoteV5CatalogView
+                        value['runtimes'] = []
+                        for agent in capabilities.agents.values():
+                            kind = str(agent.adapter_id)
+                            if kind not in {'claude', 'codex', 'pi'}:
+                                continue
+                            entry = {'agentId': agent.id, 'agentType': kind, 'nativeSessionsSupported': kind != 'pi'}
+                            if kind == 'pi':
+                                adapter = self.chat.ports.tasks.directory.adapter_for(agent.id)
+                                entry['guard'] = adapter.guard.model_dump(mode='json', by_alias=True, exclude_none=True)
+                            value['runtimes'].append(entry)
+                        known = {r['agentId'] for r in value['runtimes']}
+                        for identifier in sorted(pi.agents - known):
+                            adapter = self.chat.ports.agents.get('pi')
+                            value['runtimes'].append({'agentId': identifier, 'agentType': 'pi',
+                                'guard': adapter.guard.model_dump(mode='json', by_alias=True, exclude_none=True),
+                                'nativeSessionsSupported': False})
+                        native_pi = capabilities.native('pi')
+                        # An unbound/ambiguous PI target is not an instance
+                        # capability. Keep it unknown locally; do not advertise
+                        # a binding the server cannot verify against runtimes.
+                        if native_pi.get('agentId') in {r['agentId'] for r in value['runtimes']}:
+                            value['nativeImageCapabilities'].append(native_pi)
+                        RemoteV5CatalogView.model_validate(value)
+                    else:
+                        RemoteV4CatalogView.model_validate(value)
                 else:
                     RemoteV3CatalogView.model_validate(value)
             else:

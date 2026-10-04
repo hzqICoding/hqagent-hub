@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header, Query, Request, Path
 from fastapi.responses import JSONResponse
 import json
-from protocol.generated.python import RemoteNativeImportInput, NativeAgentType
+from protocol.generated.python import RemoteNativeImportInput, RuntimeNativeAgentType
 from api.envelopes import success_response
 from core.errors import HubError
 from storage.local_chat import uid
@@ -12,8 +12,10 @@ def native_router(service):
 
     @router.get("")
     async def listing(workspace_id: str | None = Query(None, alias="workspaceId"),
-                      agent_type: NativeAgentType | None = Query(None, alias="agentType"), cursor: str | None = Query(None,min_length=16,max_length=4096),
+                      agent_type: RuntimeNativeAgentType | None = Query(None, alias="agentType"), cursor: str | None = Query(None,min_length=16,max_length=4096),
                       limit: int = Query(50, ge=1, le=100)):
+        if str(agent_type) == 'pi':
+            raise HubError('NATIVE_SESSION_UNSUPPORTED', 'PI原生读取属于第二期，当前读取器尚未实现', detail={'reason': 'reader_not_implemented'})
         return success_response(await service.listing(workspace_id, agent_type, cursor, limit))
 
     @router.get("/{identifier}")

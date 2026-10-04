@@ -276,7 +276,7 @@ def test_attachment_message_waits_for_wire4_fence_then_backfills(tmp_path):
 
     async def scenario():
         from server import wire
-        all_codecs = dict(wire.CODECS)
+        all_codecs = {revision: codec for revision, codec in wire.CODECS.items() if revision <= 4}
         async with RealPair(tmp_path, revision=3) as pair:
             await synced(pair)
             local = pair.legacy_ids[0]

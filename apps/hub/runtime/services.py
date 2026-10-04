@@ -47,6 +47,9 @@ class TeamProfileService:
         self.repository = repository
         self.resolver = resolver
         self.agents = agents
+        self._agent_views = ()
+        from runtime.execution_selection import pi_instances
+        self.repository.pi_instances = lambda: pi_instances(self.agents, self._agent_views)
 
     async def list_profiles(self) -> list[TeamProfileView]:
         return self.repository.list()
@@ -65,6 +68,7 @@ class TeamProfileService:
                 "请求体里的 profile id 与路由不一致",
                 detail={"routeId": profile_id, "bodyId": body_id},
             )
+        self._agent_views = tuple(await self.agents.list_agents())
         raw = value.model_dump(mode="json", by_alias=True, exclude_none=True)
         raw["id"] = profile_id
         raw.setdefault("isDefault", False)
@@ -105,7 +109,7 @@ def seed_default_profile(repository: TeamProfileRepository, agents: list[Any]) -
 
     catalog = BuiltinCatalog.load()
     primary = ready[0]
-    fallbacks = [a.id for a in ready[1:]]
+    fallbacks = [a.id for a in ready[1:] if str(getattr(a, 'adapter_id', '')) != 'pi']
     bindings = {
         role_id: {
             "roleId": role_id,
