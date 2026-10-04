@@ -112,18 +112,7 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
 
     @router.get("/agents/{agent_id}/models")
     async def models(agent_id: str):
-        # Runtime catalogs are optional: never present guesses as available models.
-        items = await ports.agents.list_agents()
-        view = next((a for a in items if a.id == agent_id), None)
-        if view is None:
-            raise HubError("NOT_FOUND", "Agent不存在")
-        from runtime.repositories import AdapterDirectory
-        adapter = AdapterDirectory(ports.agents).adapter_for(agent_id)
-        query = getattr(adapter, "list_models", None)
-        if query is not None:
-            return success_response(await query(agent_id))
-        return success_response(LocalAgentModelsView(agent_instance_id=agent_id, models=[], verified=False,
-            reason="该Runtime未提供可验证的模型目录；可明确填写模型，执行时由Runtime验证"))
+        return success_response(await service.agent_models(agent_id))
 
     @router.get("/workspaces")
     async def workspaces(search: str | None = None):
@@ -144,12 +133,14 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
     @router.post("/scenes")
     async def create_scene(value: CreateLocalSceneInput,
                            idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+        await service.validate_scene_models(value.roles)
         return success_response(
             service.repository.create_scene(value, require_key(idempotency_key)), 201
         )
 
     @router.put("/scenes/{scene_id}")
     async def save_scene(scene_id: str, value: SaveLocalSceneInput):
+        await service.validate_scene_models(value.roles)
         return success_response(service.repository.save_scene(scene_id, value))
 
     @router.get("/role-templates")

@@ -312,6 +312,50 @@ class LocalChatService:
             return bool(busy.observe(record)['recoveryRequired'])
         return False
 
+    async def agent_models(self, agent_id):
+        from runtime.repositories import AdapterDirectory
+        from protocol.generated.python import LocalAgentModelsView
+        values = await self.ports.agents.list_agents()
+        if not any(a.id == agent_id for a in values):
+            raise HubError('NOT_FOUND', 'Agent不存在')
+        adapter = AdapterDirectory(self.ports.agents).adapter_for(agent_id)
+        query = getattr(adapter, 'list_models', None)
+        if query is not None:
+            try:
+                return await query(agent_id)
+            except Exception:
+                if str(getattr(adapter, 'adapter_id', '')) == 'pi':
+                    raise HubError('CAPABILITY_MISSING', 'PI 模型目录读取失败，请检查安全扩展和本机 PI 配置后重试') from None
+                raise
+        return LocalAgentModelsView(agentInstanceId=agent_id, models=[], verified=False,
+            reason='该Runtime未提供可验证的模型目录；可明确填写模型，执行时由Runtime验证')
+
+    async def validate_scene_models(self, roles):
+        from runtime.execution_selection import pi_instances
+        if not any(role.agent_instance_id for role in roles):
+            return
+        try:
+            values = await self.ports.agents.list_agents()
+        except Exception:
+            values = ()
+        identifiers = pi_instances(self.ports.agents, values)
+        catalogs = {}
+        for role in roles:
+            if role.agent_instance_id not in identifiers:
+                continue
+            identifier = role.agent_instance_id
+            if identifier not in catalogs:
+                try:
+                    catalogs[identifier] = await self.agent_models(identifier)
+                except Exception:
+                    raise HubError('VALIDATION_FAILED', 'PI 模型目录不可用，请检查本机 PI 配置后重试') from None
+            catalog = catalogs[identifier]
+            if not catalog.verified or not catalog.models:
+                raise HubError('VALIDATION_FAILED', 'PI 模型目录未就绪，不能保存未经核对的模型选择')
+            selected = role.model_id_ or next((m.id for m in catalog.models if m.is_default), None)
+            if selected is None or selected not in {m.id for m in catalog.models}:
+                raise HubError('VALIDATION_FAILED', 'PI 模型选择必须精确匹配本机可用清单；请刷新后选择')
+
     async def _task_input(self, record: dict) -> CreateTaskInput:
         if json.loads(record["scene_json"]).get("conversationKind") == "native":
             spec = await self.native.task_input(record)
