@@ -1,0 +1,60 @@
+vite v5.4.21 building for production...
+transforming...
+
+warn - The `content` option in your Tailwind CSS configuration is missing or empty.
+warn - Configure your content sources or your generated CSS will be missing styles.
+warn - https://tailwindcss.com/docs/content-configuration
+✓ 1744 modules transformed.
+Generated an empty chunk: "echarts".
+rendering chunks...
+computing gzip size...
+../../.tmp/qr-freeze-browser/module-audit.json                                                                0.07 kB │ gzip:  0.08 kB
+../../.tmp/qr-freeze-browser/assets/ChatPage-DQ8nlvA7.css                                                     0.24 kB │ gzip:  0.17 kB
+../../.tmp/qr-freeze-browser/assets/index-B3NCTBVx.css                                                       16.24 kB │ gzip:  4.02 kB
+../../.tmp/qr-freeze-browser/assets/echarts-l0sNRNKZ.js                                                       0.00 kB │ gzip:  0.02 kB
+../../.tmp/qr-freeze-browser/frozen-smoke.js                                                                  0.11 kB │ gzip:  0.11 kB
+../../.tmp/qr-freeze-browser/assets/AttachmentItem-CdydePAn.js                                                0.28 kB │ gzip:  0.21 kB
+../../.tmp/qr-freeze-browser/assets/AttachmentDrafts-3yteQ2mO.js                                              0.28 kB │ gzip:  0.22 kB
+../../.tmp/qr-freeze-browser/assets/MessageAttachments-m3LRdbrj.js                                            0.36 kB │ gzip:  0.23 kB
+../../.tmp/qr-freeze-browser/assets/ImageVerificationPanel-D_wTGiAh.js                                        0.48 kB │ gzip:  0.26 kB
+../../.tmp/qr-freeze-browser/assets/RuntimeIcon.vue_vue_type_script_setup_true_lang-CBMAXR23.js               0.54 kB │ gzip:  0.35 kB
+../../.tmp/qr-freeze-browser/assets/NativeSessionsPanel-DdvFKzua.js                                           0.60 kB │ gzip:  0.32 kB
+../../.tmp/qr-freeze-browser/assets/useToast-CE7IW-GE.js                                                      0.70 kB │ gzip:  0.38 kB
+../../.tmp/qr-freeze-browser/assets/PiGuardStatus.vue_vue_type_script_setup_true_lang-qUKMUn2u.js             0.79 kB │ gzip:  0.52 kB
+../../.tmp/qr-freeze-browser/assets/MessageAttachments.vue_vue_type_script_setup_true_lang-18GEt0mT.js        0.82 kB │ gzip:  0.47 kB
+../../.tmp/qr-freeze-browser/assets/local-pending-operation-YQsMCqM8.js                                       0.98 kB │ gzip:  0.57 kB
+../../.tmp/qr-freeze-browser/assets/remote-link-errors-D1ajaV7p.js                                            1.05 kB │ gzip:  1.13 kB
+../../.tmp/qr-freeze-browser/assets/HqEmptyState.vue_vue_type_script_setup_true_lang-cz61wG7a.js              1.20 kB │ gzip:  0.66 kB
+../../.tmp/qr-freeze-browser/assets/HqBadge.vue_vue_type_script_setup_true_lang-DD0SgvCe.js                   1.53 kB │ gzip:  0.64 kB
+../../.tmp/qr-freeze-browser/assets/local-auth.store-DFzJTFpI.js                                              1.60 kB │ gzip:  1.03 kB
+../../.tmp/qr-freeze-browser/assets/confirm-DuPpwlwY.js                                                       1.77 kB │ gzip:  0.94 kB
+../../.tmp/qr-freeze-browser/assets/pi-DvwohAGj.js                                                            1.81 kB │ gzip:  1.20 kB
+../../.tmp/qr-freeze-browser/assets/HqButton.vue_vue_type_script_setup_true_lang-BbD20783.js                  2.04 kB │ gzip:  0.88 kB
+../../.tmp/qr-freeze-browser/assets/sha256-D8hIoz1w.js                                                        2.52 kB │ gzip:  1.34 kB
+../../.tmp/qr-freeze-browser/assets/native-utils-BVwLYvA2.js                                                  2.54 kB │ gzip:  1.70 kB
+../../.tmp/qr-freeze-browser/assets/scenes.store-CPNho4fM.js                                                  3.38 kB │ gzip:  1.46 kB
+../../.tmp/qr-freeze-browser/assets/remote-link.store-BkBK7hkX.js                                             4.11 kB │ gzip:  1.59 kB
+../../.tmp/qr-freeze-browser/assets/remote-errors-DQUbHrm2.js                                                 4.19 kB │ gzip:  3.51 kB
+../../.tmp/qr-freeze-browser/assets/AttachmentItem.vue_vue_type_script_setup_true_lang-CtXxiDhL.js            4.30 kB │ gzip:  2.12 kB
+../../.tmp/qr-freeze-browser/assets/HqDialog.vue_vue_type_script_setup_true_lang-iEJuCoOm.js                  4.40 kB │ gzip:  2.02 kB
+../../.tmp/qr-freeze-browser/assets/PairingScanner-DSv1MH9n.js                                                6.28 kB │ gzip:  3.42 kB
+../../.tmp/qr-freeze-browser/assets/App-hyyuPfhN.js                                                           6.85 kB │ gzip:  3.10 kB
+../../.tmp/qr-freeze-browser/assets/AttachmentDrafts.vue_vue_type_script_setup_true_lang-DklGA4Gd.js          6.92 kB │ gzip:  3.27 kB
+../../.tmp/qr-freeze-browser/assets/RemotePairingPage-BkGjQCuh.js                                             8.50 kB │ gzip:  3.69 kB
+../../.tmp/qr-freeze-browser/assets/HqSelect.vue_vue_type_script_setup_true_lang-DVgno_jL.js                 10.00 kB │ gzip:  3.93 kB
+../../.tmp/qr-freeze-browser/assets/frozen-prototypes.browser-DFbccyt-.js                                    10.80 kB │ gzip:  4.04 kB
+../../.tmp/qr-freeze-browser/assets/ImageVerificationPanel.vue_vue_type_script_setup_true_lang-0rScLrQ6.js   11.58 kB │ gzip:  5.20 kB
+../../.tmp/qr-freeze-browser/assets/chat.store-DIes2n_T.js                                                   20.12 kB │ gzip:  7.61 kB
+../../.tmp/qr-freeze-browser/assets/AgentsPage-UV8M0VuV.js                                                   21.81 kB │ gzip:  7.69 kB
+../../.tmp/qr-freeze-browser/assets/index-rRc-it-K.js                                                        25.51 kB │ gzip:  7.71 kB
+../../.tmp/qr-freeze-browser/assets/remote-provider-J6f1mrEk.js                                              26.25 kB │ gzip:  6.56 kB
+../../.tmp/qr-freeze-browser/assets/ScenesPage-CVB1gHpB.js                                                   29.21 kB │ gzip:  9.85 kB
+../../.tmp/qr-freeze-browser/assets/RemoteLinkPage-DihHHlJr.js                                               32.75 kB │ gzip: 12.37 kB
+../../.tmp/qr-freeze-browser/assets/NativeSessionsPanel.vue_vue_type_script_setup_true_lang-BVVuVcNx.js      35.19 kB │ gzip: 11.78 kB
+../../.tmp/qr-freeze-browser/assets/index-DIEZvrTW.js                                                        64.97 kB │ gzip: 21.50 kB
+../../.tmp/qr-freeze-browser/assets/local-chat-provider-B_Gd9Avb.js                                          81.16 kB │ gzip: 25.48 kB
+../../.tmp/qr-freeze-browser/assets/ChatPage-BcBCGKvz.js                                                     86.92 kB │ gzip: 27.05 kB
+../../.tmp/qr-freeze-browser/assets/jsQR-UMIdgYmG.js                                                        130.80 kB │ gzip: 47.46 kB
+../../.tmp/qr-freeze-browser/assets/vendor-CXNq7C7s.js                                                      137.33 kB │ gzip: 48.64 kB
+✓ built in 4.51s
+Frozen production fixture prepared in worktree .tmp
