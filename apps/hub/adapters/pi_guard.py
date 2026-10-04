@@ -14,7 +14,7 @@ TOOLS = ('bash', 'edit', 'find', 'grep', 'ls', 'powershell', 'read', 'write')
 READ_TOOLS = ('find', 'grep', 'ls', 'read')
 GUARD_REVISION = 'hub-guard-v1'
 GUARD_PATH = Path(__file__).parent / 'resources' / 'pi' / 'hub-guard.mjs'
-GUARD_SHA256 = 'cf4a76f6de900788027d7c6547a5e64b16ec705ca436486bbcb890f644d09809'
+GUARD_SHA256 = 'bb94edbba9d2c90341defdbfbd729915610a236b80a1617fe6fa23516fab73bf'
 
 
 def sha(value):
