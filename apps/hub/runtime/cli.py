@@ -47,6 +47,7 @@ class LocalClient:
                 headers={
                     'Authorization': 'Bearer ' + self.token,
                     'Content-Type': 'application/json',
+                    'X-HQ-Client-Features': 'pi-v1',
                     'Origin': f'http://127.0.0.1:{self.port}',
                     'Idempotency-Key': str(uuid.uuid4()),
                 },
@@ -141,7 +142,7 @@ def parser():
     agents = groups.add_parser('agents').add_subparsers(dest='action', required=True)
     agents.add_parser('discover')
     verify = agents.add_parser('verify-image', help='显式调用真实模型验证图片输入，会产生模型用量')
-    verify.add_argument('--agent', required=True, help='Agent实例ID，或唯一匹配的claude/codex类型')
+    verify.add_argument('--agent', required=True, help='Agent实例ID，或唯一匹配的claude/codex/pi类型')
     verify.add_argument('--model')
     verify.add_argument('--acknowledge-model-usage', action='store_true', help='确认本次多次模型调用及可能费用')
     roots = groups.add_parser('roots').add_subparsers(dest='action', required=True)

@@ -33,6 +33,10 @@ def response(data=None, *, model=None, fault=None, status=200):
         if fault.code == 'REMOTE_RATE_LIMITED':
             headers['Retry-After'] = '60'
     else:
+        if model not in {'RemotePairingChallenge', 'RemotePairingStatusView'}:
+            from .client_features import legacy_request, legacy_shape
+            if legacy_request():
+                data = legacy_shape(data)
         envelope['data'] = validated(model, data)
     ApiEnvelope.model_validate(envelope)
     return JSONResponse(envelope, status_code=status, headers=headers)
@@ -59,6 +63,7 @@ class RequestAudit:
                        'static' if self.static and not scope['path'].startswith(('/api/', '/ws/')) else 'unmatched',
                        status=500, errorCode=None)
         scope.setdefault('state', {})['contract_operation'] = operation
+        context['_worker'] = bool(operation and operation.get('x-auth-mode') == 'worker_device')
         reset = CONTEXT.set(context)
         start = time.monotonic(); started = False
         context['_started'] = start
@@ -83,6 +88,9 @@ class RequestAudit:
             if clients:
                 context['clientRequestId'] = clients[0]
             identity_headers(headers)
+            feature_headers = headers.getlist('x-hq-client-features')
+            require(len(feature_headers) <= 1 and (not feature_headers or feature_headers[0] == 'pi-v1'))
+            context['_features'] = ('pi-v1',) if feature_headers else ()
             if attempted_pat and (not operation or operation.get('x-auth-mode') != 'cookie_or_pat'):
                 raise Fault('REMOTE_API_TOKEN_SCOPE_INSUFFICIENT')
             await self.app(scope, receive, correlated)

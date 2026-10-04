@@ -59,7 +59,7 @@ ROUTES = [
     ("PATCH", "/devices/{workerId}", "patch_device", "RemoteDevicePatchInput", "RemoteDeviceView", 200),
     ("DELETE", "/devices/{workerId}", "delete_device", None, "RemoteDeviceDeletionView", 200),
     ("POST", "/devices/{workerId}/revocations", "revoke", "RemoteDeviceRevokeInput", "RemoteDeviceRevocationView", 200),
-    ("GET", "/devices/{workerId}/catalog", "catalog", None, "RemoteV4CatalogView", 200),
+    ("GET", "/devices/{workerId}/catalog", "catalog", None, "RemoteV5CatalogView", 200),
     ("GET", "/conversations", "conversations", None, "RemoteConversationPage", 200),
     ("POST", "/conversations", "create_conversation", "RemoteCreateConversationInput", "RemoteQueuedReceipt", 202),
     ("GET", "/conversations/{conversationId}", "conversation", None, "RemoteConversationView", 200),
@@ -276,6 +276,11 @@ def create_app(settings=None):
         if operation in {'create_conversation', 'update_conversation', 'send', 'control', 'withdraw', 'decide'}:
             if operation == 'create_conversation':
                 workers.add(body['targetWorkerId'])
+                if hasattr(service,'projection'):
+                    service.get(tx,owner,'device',body['targetWorkerId'])
+                    catalog = tx.get(owner,'catalog',body['targetWorkerId'])
+                    if catalog:
+                        service.projection.scene_gate(tx,owner,body['targetWorkerId'],body['sceneId'])
             exempt = (operation == 'control' and body['action'] == 'cancel') or (operation == 'decide' and body['decision'] == 'reject')
             for worker in workers:
                 if worker:
@@ -347,7 +352,7 @@ def create_app(settings=None):
         if operation == "catalog":
             catalog = tx.get(owner, 'catalog', path['workerId'])
             require(catalog is not None, 'FEATURE_UNAVAILABLE' if service.online(owner, path['workerId']) else 'REMOTE_DEVICE_OFFLINE')
-            return catalog
+            return service.projection.catalog(tx,owner,catalog) if hasattr(service,'projection') else catalog
         if operation == "snapshot":
             return service.snapshot(tx, owner, path["conversationId"])
         query = request.query_params

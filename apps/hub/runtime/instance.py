@@ -10,8 +10,9 @@ class SingleInstanceError(RuntimeError):
 
 
 class SingleInstanceLock:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, remove_on_release: bool = True) -> None:
         self.path = path
+        self.remove_on_release = remove_on_release
         self._file: BinaryIO | None = None
 
     def acquire(self) -> None:
@@ -51,7 +52,8 @@ class SingleInstanceLock:
         finally:
             self._file.close()
             self._file = None
-            self.path.unlink(missing_ok=True)
+            if self.remove_on_release:
+                self.path.unlink(missing_ok=True)
 
     def __enter__(self) -> "SingleInstanceLock":
         self.acquire()

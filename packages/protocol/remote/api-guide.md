@@ -1,4 +1,4 @@
-# Hub Server 对外接口规范（协议包 0.10.1）
+# Hub Server 对外接口规范（协议包 0.11.1）
 
 R3完整约束见[R3-contract.md](R3-contract.md)。原生接口仅Cookie；附件浏览器/Worker分别用Cookie/设备凭据，不扩展PAT白名单。电脑是原生会话内容与目录安全的唯一权威。
 
@@ -9,7 +9,7 @@ R3完整约束见[R3-contract.md](R3-contract.md)。原生接口仅Cookie；附�
 ## 1. 基础约定
 
 - HTTPS Base URL：`https://<部署域名>`，资源前缀`/api/v2`。示例域名`hub.example.invalid`及全部示例ID/令牌均是合成数据，不能用于真实认证。
-- `protocolVersion`是协议包版本，当前0.10.1；URI版本仍v2。Worker线路修订支持[1,2,3,4]，以wireRevision协商，不能拿包版本相等当接入条件。
+- `protocolVersion`是协议包版本，当前0.11.1；URI版本仍v2。Worker线路修订支持[1,2,3,4,5]，以wireRevision协商，不能拿包版本相等当接入条件。
 - 请求和响应JSON使用UTF-8、camelCase。写入通常`Content-Type: application/json`；无请求体的DELETE不要求伪造JSON。拒绝未声明的输入字段，不接受客户端传owner/账号归属字段。
 - 时间统一RFC3339 UTC `Z`，例如`2026-09-27T12:00:00.000Z`。ID是不可解析的有界字符串，按Schema长度限制，拼URL时编码路径段。安全整数上限2^53-1。
 - 成功信封：`{success:true,data,requestId,protocolVersion}`；失败：`{success:false,error,requestId,protocolVersion}`。两者互斥，不以HTTP200包装失败，不在失败时返回业务data。
@@ -19,7 +19,7 @@ R3完整约束见[R3-contract.md](R3-contract.md)。原生接口仅Cookie；附�
 示例错误（已授权资源的CAS冲突）：
 
 ```json
-{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.10.1"}
+{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.11.1"}
 ```
 
 ## 2. 鉴权矩阵与凭据边界
@@ -196,7 +196,7 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | `PATCH /api/v2/devices/{workerId}` | `updateRemoteDevice` | cookie_or_pat devices:manage | 200 RemoteDeviceView |
 | `DELETE /api/v2/devices/{workerId}` | `deleteRemoteDevice` | cookie_or_pat devices:delete | 200 RemoteDeviceDeletionView |
 | `POST /api/v2/devices/{workerId}/revocations` | `revokeRemoteDevice` | cookie_or_pat devices:delete | 200 RemoteDeviceRevocationView |
-| `GET /api/v2/devices/{workerId}/catalog` | `getRemoteWorkerCatalog` | cookie_or_pat devices:read | 200 RemoteV4CatalogView |
+| `GET /api/v2/devices/{workerId}/catalog` | `getRemoteWorkerCatalog` | cookie_or_pat devices:read | 200 RemoteV5CatalogView |
 | `GET /api/v2/conversations` | `listRemoteConversations` | cookie  | 200 RemoteConversationPage |
 | `POST /api/v2/conversations` | `createRemoteConversation` | cookie  | 202 RemoteQueuedReceipt |
 | `GET /api/v2/conversations/{conversationId}` | `getRemoteConversation` | cookie  | 200 RemoteConversationView |
@@ -332,6 +332,9 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | `ATTACHMENT_IN_USE` | 409 | false | 附件已被消息或在途命令引用 | 附件已被消息或在途命令引用 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
 | `ATTACHMENT_THUMBNAIL_UNAVAILABLE` | 409 | false | 附件缩略图不可用 | 附件缩略图不可用 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
 | `ATTACHMENT_PREPARATION_INTERRUPTED` | 409 | false | 附件准备被中断，请重新尝试 | 附件准备被中断，请重新尝试 | 核对附件或能力后重新选择/发送；下载失败按本轮有限重试处理，不自动重启模型 | R1.6 HTTP / revision 4; download/interrupted errors also command.failed |
+| `PI_GUARD_UNAVAILABLE` | 409 | false | PI 工具保护尚未就绪 | Hub 扩展隔离、工具策略或审批校验未通过 | 在电脑检查扩展隔离与审批；不得自动重试、降低保护或绕过审批 | PI local result / revision 5 command.failed; no model output or arguments |
+| `PI_UNCONTROLLED_EXTENSIONS` | 409 | false | PI 存在未受控扩展 | Hub 扩展隔离、工具策略或审批校验未通过 | 在电脑检查扩展隔离与审批；不得自动重试、降低保护或绕过审批 | PI local result / revision 5 command.failed; no model output or arguments |
+| `PI_TOOL_CALL_BLOCKED` | 403 | false | PI 工具调用已被阻止 | Hub 扩展隔离、工具策略或审批校验未通过 | 在电脑检查扩展隔离与审批；不得自动重试、降低保护或绕过审批 | PI local result / revision 5 command.failed; no model output or arguments |
 <!-- END ERROR_TABLE -->
 
 ## 11. Worker WebSocket（不是PAT接口）
@@ -505,6 +508,54 @@ journalctl -u hqremote --since '30 minutes ago' --no-pager | grep -F -- "$REQUES
 | 4 | `query.directory.list` | `RemoteV4DirectoryQuery` | `remote-attachments.json#/$defs/RemoteV4DirectoryQuery` |
 | 4 | `query.result.segment` | `RemoteV4QueryResultSegment` | `remote-attachments.json#/$defs/RemoteV4QueryResultSegment` |
 | 4 | `query.failed` | `RemoteV4QueryFailed` | `remote-attachments.json#/$defs/RemoteV4QueryFailed` |
+| 5 | `approval.decide` | `RemoteV5ApprovalDecisionCommand` | `remote-pi.json#/$defs/RemoteV5ApprovalDecisionCommand` |
+| 5 | `approval.state_changed` | `RemoteV5ApprovalEvent` | `remote-pi.json#/$defs/RemoteV5ApprovalEvent` |
+| 5 | `run.cancel` | `RemoteV5CancelCommand` | `remote-pi.json#/$defs/RemoteV5CancelCommand` |
+| 5 | `capability.changed` | `RemoteV5CatalogEvent` | `remote-pi.json#/$defs/RemoteV5CatalogEvent` |
+| 5 | `command.accepted` | `RemoteV5CommandAccepted` | `remote-pi.json#/$defs/RemoteV5CommandAccepted` |
+| 5 | `command.completed` | `RemoteV5CommandCompleted` | `remote-pi.json#/$defs/RemoteV5CommandCompleted` |
+| 5 | `command.failed` | `RemoteV5CommandFailed` | `remote-pi.json#/$defs/RemoteV5CommandFailed` |
+| 5 | `command.rejected` | `RemoteV5CommandRejected` | `remote-pi.json#/$defs/RemoteV5CommandRejected` |
+| 5 | `command.withdraw` | `RemoteV5CommandWithdrawalCommand` | `remote-pi.json#/$defs/RemoteV5CommandWithdrawalCommand` |
+| 5 | `command.control_result` | `RemoteV5ControlObserved` | `remote-pi.json#/$defs/RemoteV5ControlObserved` |
+| 5 | `conversation.gap` | `RemoteV5ConversationGap` | `remote-pi.json#/$defs/RemoteV5ConversationGap` |
+| 5 | `conversation.skip` | `RemoteV5ConversationSkip` | `remote-pi.json#/$defs/RemoteV5ConversationSkip` |
+| 5 | `worker.events_ack` | `RemoteV5EventAck` | `remote-pi.json#/$defs/RemoteV5EventAck` |
+| 5 | `message.appended` | `RemoteV5MessageEvent` | `remote-pi.json#/$defs/RemoteV5MessageEvent` |
+| 5 | `events.omitted` | `RemoteV5OmittedEvents` | `remote-pi.json#/$defs/RemoteV5OmittedEvents` |
+| 5 | `run.pause` | `RemoteV5PauseCommand` | `remote-pi.json#/$defs/RemoteV5PauseCommand` |
+| 5 | `run.progress` | `RemoteV5ProgressEvent` | `remote-pi.json#/$defs/RemoteV5ProgressEvent` |
+| 5 | `run.resume` | `RemoteV5ResumeCommand` | `remote-pi.json#/$defs/RemoteV5ResumeCommand` |
+| 5 | `run.retry` | `RemoteV5RetryCommand` | `remote-pi.json#/$defs/RemoteV5RetryCommand` |
+| 5 | `run.state_changed` | `RemoteV5RunStateEvent` | `remote-pi.json#/$defs/RemoteV5RunStateEvent` |
+| 5 | `run.submit` | `RemoteV5RunSubmitCommand` | `remote-pi.json#/$defs/RemoteV5RunSubmitCommand` |
+| 5 | `server.heartbeat` | `RemoteV5ServerHeartbeat` | `remote-pi.json#/$defs/RemoteV5ServerHeartbeat` |
+| 5 | `conversation.skip_recorded` | `RemoteV5SkipRecorded` | `remote-pi.json#/$defs/RemoteV5SkipRecorded` |
+| 5 | `worker.heartbeat` | `RemoteV5WorkerHeartbeat` | `remote-pi.json#/$defs/RemoteV5WorkerHeartbeat` |
+| 5 | `worker.hello` | `RemoteV5WorkerHello` | `remote-pi.json#/$defs/RemoteV5WorkerHello` |
+| 5 | `worker.hello_ack` | `RemoteV5WorkerHelloAck` | `remote-pi.json#/$defs/RemoteV5WorkerHelloAck` |
+| 5 | `worker.hello_rejected` | `RemoteV5WorkerHelloRejected` | `remote-pi.json#/$defs/RemoteV5WorkerHelloRejected` |
+| 5 | `sync.conversation.upserted` | `RemoteV5ConversationUpserted` | `remote-pi.json#/$defs/RemoteV5ConversationUpserted` |
+| 5 | `sync.message.segment` | `RemoteV5MessageSegment` | `remote-pi.json#/$defs/RemoteV5MessageSegment` |
+| 5 | `sync.run.state` | `RemoteV5SyncedRunState` | `remote-pi.json#/$defs/RemoteV5SyncedRunState` |
+| 5 | `sync.conversation.deleted` | `RemoteV5ConversationDeleted` | `remote-pi.json#/$defs/RemoteV5ConversationDeleted` |
+| 5 | `sync.reset` | `RemoteV5SyncReset` | `remote-pi.json#/$defs/RemoteV5SyncReset` |
+| 5 | `sync.busy.snapshot` | `RemoteV5BusySnapshot` | `remote-pi.json#/$defs/RemoteV5BusySnapshot` |
+| 5 | `sync.backfill.progress` | `RemoteV5BackfillProgress` | `remote-pi.json#/$defs/RemoteV5BackfillProgress` |
+| 5 | `command.received` | `RemoteV5CommandReceived` | `remote-pi.json#/$defs/RemoteV5CommandReceived` |
+| 5 | `command.delivery_granted` | `RemoteV5DeliveryGrant` | `remote-pi.json#/$defs/RemoteV5DeliveryGrant` |
+| 5 | `conversation.update` | `RemoteV5ConversationUpdateCommand` | `remote-pi.json#/$defs/RemoteV5ConversationUpdateCommand` |
+| 5 | `conversation.create` | `RemoteV5ConversationCreateCommand` | `remote-pi.json#/$defs/RemoteV5ConversationCreateCommand` |
+| 5 | `sync.content.redaction` | `RemoteV5ContentRedaction` | `remote-pi.json#/$defs/RemoteV5ContentRedaction` |
+| 5 | `native.index.upserted` | `RemoteV5NativeIndexUpserted` | `remote-pi.json#/$defs/RemoteV5NativeIndexUpserted` |
+| 5 | `native.index.deleted` | `RemoteV5NativeIndexDeleted` | `remote-pi.json#/$defs/RemoteV5NativeIndexDeleted` |
+| 5 | `native.closure.confirmed` | `RemoteV5NativeConfirmationRecorded` | `remote-pi.json#/$defs/RemoteV5NativeConfirmationRecorded` |
+| 5 | `native.import` | `RemoteV5NativeImportCommand` | `remote-pi.json#/$defs/RemoteV5NativeImportCommand` |
+| 5 | `workspace.register` | `RemoteV5WorkspaceRegisterCommand` | `remote-pi.json#/$defs/RemoteV5WorkspaceRegisterCommand` |
+| 5 | `query.native.messages` | `RemoteV5NativeReadQuery` | `remote-pi.json#/$defs/RemoteV5NativeReadQuery` |
+| 5 | `query.directory.list` | `RemoteV5DirectoryQuery` | `remote-pi.json#/$defs/RemoteV5DirectoryQuery` |
+| 5 | `query.result.segment` | `RemoteV5QueryResultSegment` | `remote-pi.json#/$defs/RemoteV5QueryResultSegment` |
+| 5 | `query.failed` | `RemoteV5QueryFailed` | `remote-pi.json#/$defs/RemoteV5QueryFailed` |
 <!-- END WIRE_INDEX -->
 
 ## 12. 版本、弃用、发布和后续扩展
@@ -513,7 +564,7 @@ HTTP `/api/v2`在包minor升级时不换路径；0.9保留N−1（0.8）的已�
 
 HTTP读取方须容忍新增响应字段、对未知错误码走通用message/requestId处理；服务器对请求仍严格验证。生成DTO是本包生产/验证边界，旧严格DTO不能假定会校验未来JSON，第三方应使用匹配版本的生成包或做兼容投影；本次不放宽Worker解析器。protocolVersion用于诊断/功能判断，不要求与客户端包字符串相等。
 
-D42线路升级至少保留4/3，本次还保留1用于历史对账，支持[1,2,3,4]；包0.9/0.8与线路号不相等。修订1/2错误值域和帧闭包固定；R3新增错误只走HTTP及3，D50的HTTP-only错误仍不进Worker线路。弃用先标记、保留至少N/N−1升级窗口，公告替代接口并完成调用方迁移后，另行批准破坏性移除，不随部署直接删旧路由。
+D42线路升级至少保留5/4，本次还保留1用于历史对账，支持[1,2,3,4,5]；包0.9/0.8与线路号不相等。修订1/2错误值域和帧闭包固定；R3新增错误只走HTTP及3，D50的HTTP-only错误仍不进Worker线路。弃用先标记、保留至少N/N−1升级窗口，公告替代接口并完成调用方迁移后，另行批准破坏性移除，不随部署直接删旧路由。
 
 P1须提供公开GET `/api/v2/openapi.json`，返回仓库bundle的等价JSON且由服务端测试比对；只有类型和合成示例，不注入实际设备、账号、密钥或部署数据。可选托管离线可视化文档页，建议使用随包固定版本的本地静态资源，禁止依赖外网CDN；不是本轮必做。页面也不能自动填入真实PAT或记录Try-it请求体。
 
@@ -589,7 +640,7 @@ curl -X POST "$BASE/api/v2/devices/worker_demo/workspaces" --cookie "__Host-hqre
 云端GET /devices/{workerId}/native-sessions、GET /native-sessions/{nativeSessionId}、GET /native-sessions/{nativeSessionId}/messages统一遵循：认证/归属→设备不存在或已删除404→同步关闭409。暂停不影响读取；同步关闭也先于正文在线查询。详情/读取未知或跨账号ID仍404，只有已核实的ID归属映射才能判断所属设备的开关。
 
 ```json
-{"success":false,"error":{"code":"REMOTE_SYNC_DISABLED","message":"这台电脑已关闭同步","retryable":false},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.10.1"}
+{"success":false,"error":{"code":"REMOTE_SYNC_DISABLED","message":"这台电脑已关闭同步","retryable":false},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.11.1"}
 ```
 
 三个接口均返回HTTP409及上述错误，X-Request-Id与信封一致，Cache-Control:no-store。前端显示“这台电脑已关闭同步”，不能显示“没有原生会话”；提示去电脑开启同步，等待补传后刷新，不自动重试。同步开启而确实没有会话时，列表才返回200空页（items=[]、hasMore=false），不存在的详情/读取仍404。sync.reset不保留内容，仅允许无内容的归属映射用于区分已关闭；设备删除优先404。本机原生会话接口不受此门禁影响。
@@ -674,3 +725,41 @@ Worker上传不创建任何用户消息；必须先同步pending_upload消息，
 图片能力验证与删除对话仅在电脑Local Hub：两个local OpenAPI各有v1 Bearer/v2 localSession Cookie等价路由。GET /agents/image-verifications查询实例×场景实际模型及默认模型（省略modelId）的验证事实；POST /agents/image-verification-jobs必须明确acknowledgeModelUsage=true，会发起真实模型调用并可能收费；GET /agents/image-verification-jobs/{jobId}读取进度，POST其/cancellations仅取消已有工作。任何GET不得触发验证，失败/重启不自动重新收费。云端和手机没有这些路由，catalog仅传已有能力结论。
 
 本机DELETE /conversations/{conversationId}?expectedVersion=N只允许无活动或待恢复任务的对话，200表示本机记录与文件已清理；remoteCleanup单独表示云端是否确认。CLI原始记录不删。手机删除是后续needs-decision，本轮不开放。完整费用、锁、失效、诊断白名单与删除幂等规则见R1.6-contract §9，不能把本机Cookie/Hub Token带到云端接口。
+
+
+## 16. PI Runtime（0.11.0，线路5；D53）
+
+完整规则见 [PI-contract.md](PI-contract.md)。无新增HTTP路由；现有本机Agent发现/模型清单/场景配置/图片验证/原生会话与云端catalog/对话接口继续使用。
+
+新客户端在本机v1、本机v2与云端v2请求上带 `X-HQ-Client-Features: pi-v1`，以明确支持新增Agent枚举。
+未声明时服务端使用0.10.1投影：过滤PI关联资源及其事件，省略新增安全诊断/模型绑定/格式字段；直接访问PI资源返回NOT_FOUND。
+列表游标、增量游标和本机WS ticket绑定能力集；启用pi-v1后重新获取快照，不能继续用旧投影的游标。
+这是解码能力，不扩张Cookie/PAT权限，不代替审批/费用确认。升级窗口仍保留N/N−1，旧线路1–4严格codec不变。
+
+```sh
+# 云端：现有Cookie原生列表；第二期读取器未实现时如实返回unsupported。
+curl -b "$REMOTE_COOKIE_JAR" -H 'X-HQ-Client-Features: pi-v1' \
+  "$BASE/api/v2/devices/$WORKER_ID/native-sessions?agentType=pi&limit=50"
+
+# 本机：使用本机Cookie，不能把云端Cookie用于此地址。
+curl -b "$LOCAL_COOKIE_JAR" -H 'X-HQ-Client-Features: pi-v1' \
+  "$LOCAL_BASE/api/v2/agents/$AGENT_ID/models"
+```
+
+返回的PI模型ID为 `1aicode/deepseek/deepseek-v4-pro` 等选择器：只按首个斜线分为provider与完整modelId，不能截掉model中的deepseek/命名空间。
+规划/审核、执行、看图的建议分别为pro、flash、flash-vision-exp；仅从本机实际可用模型中选，不带渠道URL或密钥。
+图片仍要当前实例/CLI版本/模型在 `pi-rpc-images-v1` 的五项验证全部通过；GET和catalog不触发收费验证。
+新错误PI_GUARD_UNAVAILABLE、PI_UNCONTROLLED_EXTENSIONS、PI_TOOL_CALL_BLOCKED见自动错误总表；它们只用于本机和线路5的结构化结果，旧1–4不会收到。
+服务器不运行PI，不读取模型配置；保护扩展原始tool参数只在电脑独占RPC中流动，公开风险视图无源码/路径/参数。
+
+
+### 16.1 补冻1：浏览器审批投影（0.11.1）
+
+线路仍为5；无新路由。GET /api/v2/events的RemoteBrowserEvent新增仅pi-v1可见的RemoteBrowserPiApprovalEvent。
+非PI的修订5审批必须投影成旧worker.event → approval.state_changed形状（浏览器兼容标签2）；
+pending实时upsert，approved/rejected/expired移除，旧前端无需修改。不能用conversation.updated替代。
+PI审批只给pi-v1，内层使用RemoteV5ApprovalEvent；没有声明时既不发它，也不发包含其ID、数量或存在提示的替代事件。
+所有命令/同步/进度事件的逐类投影、公共ID映射和无法表示时的410快照对账见PI-contract.md §8。
+兼容标签只存在于浏览器副本，Worker原事实的wireRevision/seq/hash/ACK/grant保持不变。
+云端不存在浏览器WS ticket接口；§15及PI契约所述票据只指本机 /api/v1/auth/ws-ticket，能力绑定由Hub负责。
+云端P1绑定HTTP事件/列表游标能力集，不新增票据接口。

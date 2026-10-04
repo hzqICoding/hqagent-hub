@@ -1,3 +1,4 @@
+import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 import type { LocalMaintenanceConflictDetail, LocalImageVerificationState, LocalImageVerificationJobView, LocalImageProbeProgressSet, LocalConversationDeletionView } from '@hqagent/protocol'
 import { HubApiError } from '@/shared/api/local-hub-gateway'
 export const probeLabels: Record<keyof LocalImageProbeProgressSet, string> = { new: '新建', resume: '续接', mixedFive: '五项混合输入', cancel: '取消探测', error: '错误处理' }
@@ -12,6 +13,7 @@ export function maintenanceConflict(error: unknown): LocalMaintenanceConflictDet
   return detail && Object.hasOwn(conflictLabels, detail.reason) ? detail : undefined
 }
 export function maintenanceError(error: unknown) {
+  if (error instanceof HubApiError && error.code.startsWith('PI_')) return getRemoteErrorMessage(error.code)
   const conflict = maintenanceConflict(error)
   if (conflict) return conflictLabels[conflict.reason]
   return error instanceof HubApiError && error.code === 'NOT_FOUND' ? '记录不存在，请刷新并核对原操作结果' : '本机请求未确认，请重试同次请求或刷新核对；不会自动重新发起付费验证'

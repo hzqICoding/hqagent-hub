@@ -1,0 +1,21 @@
+{
+  "nativeSessionId": "native_local_example",
+  "workspaceId": "workspace_example",
+  "agentType": "pi",
+  "title": "合成终端会话",
+  "createdAt": "2026-09-28T12:00:00Z",
+  "updatedAt": "2026-09-28T12:00:00Z",
+  "indexVersion": 1,
+  "sourceRevision": "270c0d536da1e328c882cda409fc95a131d86851b817f538836313cad3b9ed03",
+  "format": {
+    "status": "unsupported",
+    "unsupportedReason": "reader_not_implemented",
+    "reason": "PI native reader is reserved for phase 2"
+  },
+  "activity": {
+    "activity": "unknown",
+    "observedAt": "2026-09-28T12:00:00Z",
+    "processMatch": "unknown",
+    "recentlyModified": false
+  }
+}

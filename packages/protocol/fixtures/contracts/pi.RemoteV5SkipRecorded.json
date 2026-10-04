@@ -1,0 +1,13 @@
+{
+  "type": "conversation.skip_recorded",
+  "eventId": "event_demo",
+  "workerId": "worker_demo",
+  "workerStoreId": "store_demo",
+  "workerEpoch": "boot_demo",
+  "seq": 1,
+  "occurredAt": "2026-09-26T12:00:00Z",
+  "commandId": "command_demo",
+  "conversationId": "conversation_demo",
+  "conversationSeq": 1,
+  "wireRevision": 5
+}

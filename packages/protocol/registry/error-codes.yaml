@@ -419,3 +419,17 @@ errors:
     http: 409
     retryable: false
     description: 附件准备被中断，请重新尝试
+
+  # PI local HTTP / revision 5 only; revisions 1-4 remain frozen.
+  - code: PI_GUARD_UNAVAILABLE
+    http: 409
+    retryable: false
+    description: PI 工具保护尚未就绪
+  - code: PI_UNCONTROLLED_EXTENSIONS
+    http: 409
+    retryable: false
+    description: PI 存在未受控扩展
+  - code: PI_TOOL_CALL_BLOCKED
+    http: 403
+    retryable: false
+    description: PI 工具调用已被阻止

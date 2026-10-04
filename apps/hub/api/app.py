@@ -79,11 +79,13 @@ class LocalBoundaryMiddleware:
         token: str,
         allowed_origins: set[str] | frozenset[str],
         allowed_hosts: set[str] | frozenset[str],
+        shutting_down: Any = lambda: False,
     ) -> None:
         self.app = app
         self.token = token
         self.allowed_origins = allowed_origins
         self.allowed_hosts = allowed_hosts
+        self.shutting_down = shutting_down
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
@@ -144,6 +146,10 @@ class LocalBoundaryMiddleware:
                 await self._reject(send, HubError("UNAUTHORIZED", "未授权"), cors_headers)
                 return
 
+        if self.shutting_down() and scope["method"] not in {"GET", "HEAD", "OPTIONS"}:
+            await self._reject(send, HubError("HUB_MAINTENANCE", "Hub 正在停止，暂不接受写请求"), cors_headers)
+            return
+
         async def send_with_cors(message: dict[str, Any]) -> None:
             if message["type"] == "http.response.start" and cors_headers:
                 message["headers"] = list(message.get("headers", [])) + cors_headers
@@ -202,11 +208,15 @@ def create_application(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "recover_pending"):
-            await resolved_ports.tasks.recover_pending()
-        await local_chat.start()
-        await remote_worker.start()
         try:
+            if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "recover_pending"):
+                await resolved_ports.tasks.recover_pending()
+            # EOF may arrive while startup recovery is awaiting I/O. Do not
+            # reopen command admission or schedule queued work after that point.
+            if not getattr(_app.state, "shutting_down", False):
+                await local_chat.start()
+            if not getattr(_app.state, "shutting_down", False):
+                await remote_worker.start()
             yield
         finally:
             await remote_worker.attachments.verifications.close()
@@ -217,14 +227,18 @@ def create_application(
                 await resolved_ports.tasks.shutdown()
             if close_database_on_shutdown:
                 database.close()
+            _app.state.lifecycle_closed = True
 
     app = FastAPI(title="HQAgent-Hub Local Hub", version=APP_VERSION, lifespan=lifespan)
     app.state.local_auth = local_auth
     app.state.local_chat = local_chat
     app.state.remote_worker = remote_worker
+    from api.pi_projection import PiProjectionMiddleware
+    app.add_middleware(PiProjectionMiddleware, worker=remote_worker, auth=local_auth, token=token)
     app.add_middleware(
         LocalBoundaryMiddleware,
         token=token,
+        shutting_down=lambda: getattr(app.state, "shutting_down", False),
         allowed_origins=allowed_origins or set(DEFAULT_ALLOWED_ORIGINS),
         allowed_hosts=allowed_hosts or {"127.0.0.1", "localhost"},
     )
@@ -303,7 +317,10 @@ def create_application(
     @app.post("/api/v1/auth/ws-ticket")
     async def ws_ticket(value: WsTicketRequest | None = None) -> JSONResponse:
         purpose = value.purpose if value and value.purpose else "events"
-        return success_response(ticket_store.issue(purpose))
+        from runtime.pi_visibility import HTTP_PROJECTION
+        context = HTTP_PROJECTION.get()
+        return success_response(ticket_store.issue(purpose, features=bool(context and context[1]),
+                                                   cursor_owner=context[2] if context else None))
 
     @app.get("/api/v1/agents")
     async def list_agents() -> JSONResponse:
@@ -524,20 +541,33 @@ def create_application(
         if not valid_boundary:
             await websocket.close(code=4403, reason="ORIGIN_NOT_ALLOWED")
             return
-        if not ticket_store.consume(ticket):
+        record = ticket_store.consume_record(ticket)
+        if record is None:
             await websocket.close(code=4401, reason="UNAUTHORIZED")
             return
         try:
+            from api.pi_projection import cursor_scope
+            from runtime.pi_visibility import DROP
+            await remote_worker.pi.refresh()
+            cursor_scope(remote_worker.pi, record.cursor_owner, record.features, after)
             async with event_store.broker.subscribe() as queue:
                 replay = event_store.page(after if after is not None else event_store.latest_seq(), MAX_EVENT_PAGE_SIZE)
                 last_sent = after or 0
                 for event in replay.events:
-                    await websocket.send_json(dump_model(event))
+                    value = dump_model(event)
+                    remote_worker.pi.rebuild()
+                    projected = value if record.features else remote_worker.pi.old_projection(value)
+                    if projected is not DROP:
+                        await websocket.send_json(projected)
                     last_sent = event.seq
                 while True:
                     event = await queue.get()
                     if event.seq > last_sent:
-                        await websocket.send_json(dump_model(event))
+                        value = dump_model(event)
+                        remote_worker.pi.rebuild()
+                        projected = value if record.features else remote_worker.pi.old_projection(value)
+                        if projected is not DROP:
+                            await websocket.send_json(projected)
                         last_sent = event.seq
         except WebSocketDisconnect:
             return

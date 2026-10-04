@@ -32,6 +32,10 @@ class RoleResolver:
         self.catalog = catalog
 
     def resolve(self, request: ResolutionRequest) -> ResolutionDecision | ResolutionGap:
+        from runtime.execution_selection import primary_only_candidates
+        request = primary_only_candidates(request)
+        if isinstance(request, ResolutionGap):
+            return request
         role = self.catalog.role(request.role_id)
         agents = {agent.instance_id: agent for agent in request.agents}
         workspace_binding = self._binding(request.workspace_profile, request.role_id)

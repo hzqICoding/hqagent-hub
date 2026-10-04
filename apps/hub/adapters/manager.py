@@ -71,6 +71,11 @@ class AdapterManager:
         self._last_discovery = None
         self._discovery_lock = asyncio.Lock()
 
+    def runtime_instances(self, adapter_id: str) -> tuple[str, ...]:
+        # The same registry-owned identity used by discovery, even while a
+        # previously configured runtime is temporarily unavailable.
+        return (f"local.{adapter_id}.default",) if adapter_id in self._adapters else ()
+
     def get(self, adapter_id: str) -> AgentAdapter | None:
         return self._adapters.get(adapter_id)
 
@@ -98,7 +103,9 @@ class AdapterManager:
             async with self._discovery_lock:
                 if self._last_discovery is None or time.monotonic() - self._last_discovery >= self._detect_ttl:
                     await self._discover()
-        return list(self._last_agents)
+        return [item.model_copy(update={'guard': self._adapters['pi'].guard})
+                if str(item.adapter_id) == 'pi' and hasattr(self._adapters.get('pi'), 'guard') else item
+                for item in self._last_agents]
 
     async def discover(self) -> AgentDiscoveryResult:
         async with self._discovery_lock:
@@ -181,7 +188,7 @@ class AdapterManager:
             )
         agent = AgentView.model_validate(
             {
-                "id": f"local.{adapter.adapter_id}.default",
+                "id": self.runtime_instances(adapter.adapter_id)[0],
                 "adapterId": adapter.adapter_id,
                 "displayName": descriptor.display_name,
                 "version": descriptor.detected_version or "unknown",
@@ -196,6 +203,8 @@ class AdapterManager:
                 "minimumVersion": descriptor.minimum_version,
             }
         )
+        if adapter.adapter_id == 'pi':
+            agent = agent.model_copy(update={'guard': adapter.guard})
         return agent, None
 
     @staticmethod

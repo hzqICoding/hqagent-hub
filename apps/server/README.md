@@ -1,8 +1,16 @@
 # R1.6 Hub Server
 
+当前协议包为0.11.1，支持Worker线路[1,2,3,4,5]，HTTP仍为47个操作。PI客户端须一致携带 `X-HQ-Client-Features: pi-v1`，否则保持0.10.1资源投影：PI直接ID为404、列表和事件过滤PI及其关联资源。能力头只表示解码能力，不扩大Cookie/PAT权限；云端没有浏览器WS ticket，本机票据由Hub负责。下文R1.6为既有附件基线。
+
+0.11.1审批投影：已确认非PI的修订5审批发旧 `worker.event / approval.state_changed` 形状（浏览器兼容标签2），旧前端无需修改；PI审批仅向pi-v1发新变体（标签5）。原Worker的revision/seq/epoch/hash/ACK完全不改写。非PI禁批原因超出旧域时仅浏览器副本映射REMOTE_APPROVAL_FORBIDDEN，GET/snapshot仍保留原原因；不一致的批准/拒绝标志或引用会被拒绝，未知Runtime归属保守要求pi-v1。
+
+修订5进度和可表示的run.state_changed按白名单构造旧通知；catalog通知移除PI与新字段，客户端再GET完整目录。只改变PI的catalog/busy更新不通知旧订阅。可见状态没有安全通知时返回410 REMOTE_CURSOR_EXPIRED，须重取同能力集快照及新serverCursor后继续；例如当前冻结浏览器联合没有sync.run.state分支，使用显式快照对账，不伪造commandId，也不以conversation.updated代替审批事件。隐藏PI记录不触发410或替代通知。
+
+生产serverCursor用固定长度、随机nonce、用途隔离HMAC掩码及独立认证封装既有签名游标，不写每轮轮询记录，也不暴露内部位置/隐藏数量；能力、owner、期限及保留期验证不变。升级前已签名c1游标可继续验证，所有新事件游标均发封装格式。调用方仍只能不透明保存/回传，切换pi-v1必须重取快照。
+
 账号认证、设备配对、电脑对话的完整副本、在线命令转发和浏览器轮询。电脑是唯一写入和执行方；服务端不调用模型，不保存模型凭据，不管理 AI 订阅或安装。
 
-协议包：0.10.0；Worker 线路支持修订 1、2、3、4。实现 `remote-hub.v2.yaml` 的全部 47 个 HTTP 操作与 `/ws/v2/worker`。修订 1 保留历史对账，既有浏览器文字写入要求至少修订 2，原生会话要求至少修订 3，带附件发送要求修订 4。D50 设备管理/PAT 和 R3 查询规则保留。
+R1.6基线协议包：0.10.0；该阶段Worker线路支持修订 1、2、3、4。实现 `remote-hub.v2.yaml` 的全部 47 个 HTTP 操作与 `/ws/v2/worker`。修订 1 保留历史对账，既有浏览器文字写入要求至少修订 2，原生会话要求至少修订 3，带附件发送要求修订 4。D50 设备管理/PAT 和 R3 查询规则保留。
 
 ## 对话附件（R1.6）
 

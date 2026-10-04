@@ -403,6 +403,9 @@ class ConversationDeletion:
         identifiers.discard(None)
         attachment_ids = {r[0] for r in db.execute('SELECT attachment_id FROM local_attachments WHERE conversation_id=?', (conversation,))}
         identifiers |= attachment_ids
+        pi = getattr(self.chat, 'pi', None)
+        if pi is not None and pi.is_pi({'conversationId': conversation}):
+            pi.remember_deleted(tx, identifiers)
         for attachment in attachment_ids:
             db.execute('DELETE FROM local_attachment_messages WHERE attachment_id=?', (attachment,))
             db.execute('DELETE FROM attachment_sync_jobs WHERE attachment_id=?', (attachment,))

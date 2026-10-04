@@ -39,7 +39,7 @@ def test_new_fixtures_round_trip(filename,kind):
 
 def test_every_new_type_has_fixture_and_version_is_http_minor_only():
     assert set(NEW)<={k for f,k in MANIFEST.items() if f.startswith('devices.')}
-    assert models.PROTOCOL_VERSION==API['info']['version']=='0.10.1'
+    assert models.PROTOCOL_VERSION==API['info']['version']=='0.11.1'
     sync=json.loads((P/'schema/remote-sync.json').read_text(encoding='utf-8'))['$defs']
     assert {d['properties']['wireRevision']['const'] for d in sync.values() if 'wireRevision' in d.get('properties',{})}=={2}
 
@@ -60,7 +60,11 @@ def test_wire1_is_unchanged_wire2_only_pins_old_error_value_set():
     # transitive closures are independently pinned in test_native_protocol.py.
     r3_http={'RemoteConversationView','RemoteCommandView','RemoteSendMessageInput','RemoteMessageView'}
     for name,d in old.items():
-        if name not in {'RemoteDeviceView','RemoteDevicePage'} | r3_http:assert current[name]==d
+        if name == 'RemoteBrowserEvent':
+            expected=deepcopy(d)
+            expected['oneOf'].append({'$ref':'browser-pi.json#/$defs/RemoteBrowserPiApprovalEvent'})
+            assert current[name]==expected
+        elif name not in {'RemoteDeviceView','RemoteDevicePage'} | r3_http:assert current[name]==d
     sync_old=json.loads(before('schema/remote-sync.json'))
     expected=deepcopy(sync_old)
     for d in expected['$defs'].values():

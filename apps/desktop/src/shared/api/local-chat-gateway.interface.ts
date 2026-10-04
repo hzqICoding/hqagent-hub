@@ -2,7 +2,7 @@ import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
   LocalImageVerificationPage, LocalImageVerificationJobView, StartLocalImageVerificationInput, LocalConversationDeletionView,
   AttachmentLimits, AttachmentDeletedView, LocalAttachmentView, AttachmentTargetCapabilities,
-  LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
+  LocalNativeSessionPage, RuntimeNativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
   LocalAuthInput,
   AgentView,
@@ -51,7 +51,7 @@ export interface LocalChatGateway {
   getAttachmentCapabilities(conversationId: string): Promise<AttachmentTargetCapabilities>
 
   listNativeSessions(cursor?: string): Promise<LocalNativeSessionPage>
-  getNativeSession(id: string): Promise<NativeSessionIndex>
+  getNativeSession(id: string): Promise<RuntimeNativeSessionIndex>
   readNativeMessages(id: string, before?: string): Promise<NativeMessagePage>
   importNativeSession(id: string, input: RemoteNativeImportInput, key?: string): Promise<LocalConversationView>
   getAuthorizedRoots(): Promise<LocalAuthorizedRootsView>

@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import PiAgentDetails from './PiAgentDetails.vue'
+import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
 import ImageVerificationPanel from './ImageVerificationPanel.vue'
 import { ref, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app.store'
 import { useAgentStore } from '@/stores/agent.store'
 import type { AgentView, AgentStatus } from '@hqagent/protocol'
 import {
-  Bot,
   RefreshCw,
   Search,
   CheckCircle2,
@@ -94,7 +95,7 @@ function handleCloseDiagnosis() {
       </div>
     </div>
 
-    <ImageVerificationPanel :agents="agentStore.agents" />
+
 
     <!-- Status Filter Tabs & Search Bar -->
     <div class="p-3 bg-panel border border-border-subtle rounded-xl flex flex-col md:flex-row items-center justify-between gap-3 shadow-2xs">
@@ -212,7 +213,7 @@ function handleCloseDiagnosis() {
                 class="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0"
                 :class="agent.status === 'ready' ? 'bg-primary-50 text-primary-600 dark:bg-primary-950' : agent.status === 'disabled' ? 'bg-muted text-content-disabled' : 'bg-rose-50 text-rose-600 dark:bg-rose-950'"
               >
-                <Bot class="w-5 h-5" />
+                <RuntimeIcon :agent="agent.adapterId" class="w-5 h-5" />
               </div>
               <div>
                 <h3 class="text-sm font-bold text-content-primary leading-tight">{{ agent.displayName }}</h3>
@@ -228,9 +229,10 @@ function handleCloseDiagnosis() {
             </HqBadge>
           </div>
 
+          <PiAgentDetails v-if="agent.adapterId === 'pi'" :agent="agent" />
           <!-- Diagnostic Warning if any -->
           <div
-            v-if="agent.diagnosticMessage"
+            v-if="agent.adapterId !== 'pi' && agent.diagnosticMessage"
             class="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-2xs text-amber-800 dark:text-amber-200 space-y-1"
           >
             <div class="flex items-center gap-1 font-semibold">
@@ -310,6 +312,8 @@ function handleCloseDiagnosis() {
       </div>
     </div>
 
+    <ImageVerificationPanel :agents="agentStore.agents" />
+
     <!-- Diagnostic Modal Dialog -->
     <HqDialog
       :open="diagnosticModalAgent !== null"
@@ -320,7 +324,7 @@ function handleCloseDiagnosis() {
       <div v-if="diagnosticModalAgent" class="space-y-4 text-xs">
         <div class="flex items-center justify-between p-3 rounded-lg bg-muted/40 border border-border-subtle">
           <div class="flex items-center gap-2.5">
-            <Bot class="w-5 h-5 text-primary-600" />
+            <RuntimeIcon :agent="diagnosticModalAgent.adapterId" class="w-5 h-5 text-primary-600" />
             <div>
               <span class="font-bold text-content-primary">{{ diagnosticModalAgent.displayName }}</span>
               <span class="text-2xs text-content-muted font-mono block">{{ diagnosticModalAgent.id }}</span>
@@ -331,14 +335,15 @@ function handleCloseDiagnosis() {
           </HqBadge>
         </div>
 
-        <div class="space-y-2">
+        <PiAgentDetails v-if="diagnosticModalAgent.adapterId === 'pi'" :agent="diagnosticModalAgent" />
+        <div v-if="diagnosticModalAgent.adapterId !== 'pi'" class="space-y-2">
           <h4 class="font-semibold text-content-primary">系统健康检查项</h4>
           <div class="space-y-1.5">
             <div class="flex items-center justify-between p-2 rounded bg-panel border border-border-subtle">
               <span class="text-content-secondary">可执行文件探测</span>
               <span class="text-emerald-600 font-mono font-medium flex items-center gap-1">
                 <CheckCircle2 class="w-3.5 h-3.5" />
-                就绪 ({{ diagnosticModalAgent.executablePath || '已定位' }})
+                就绪 ({{ diagnosticModalAgent.adapterId === 'pi' ? '已定位，不展示路径' : diagnosticModalAgent.executablePath || '已定位' }})
               </span>
             </div>
             <div class="flex items-center justify-between p-2 rounded bg-panel border border-border-subtle">
@@ -366,7 +371,7 @@ function handleCloseDiagnosis() {
           </div>
         </div>
 
-        <div v-if="diagnosticModalAgent.diagnosticMessage" class="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-2xs space-y-1">
+        <div v-if="diagnosticModalAgent.adapterId !== 'pi' && diagnosticModalAgent.diagnosticMessage" class="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-2xs space-y-1">
           <span class="font-bold flex items-center gap-1">
             <AlertTriangle class="w-3.5 h-3.5 text-amber-600" />
             处理建议

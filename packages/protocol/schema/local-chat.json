@@ -257,7 +257,7 @@
           ]
         },
         "agentType": {
-          "$ref": "remote-native.json#/$defs/NativeAgentType"
+          "$ref": "remote-pi.json#/$defs/RuntimeNativeAgentType"
         },
         "nativeSessionId": {
           "type": "string",
@@ -439,7 +439,7 @@
           ]
         },
         "agentType": {
-          "$ref": "remote-native.json#/$defs/NativeAgentType"
+          "$ref": "remote-pi.json#/$defs/RuntimeNativeAgentType"
         }
       },
       "description": "Scenario retains sceneSnapshot. Native uses a single bound Runtime/Agent and omits sceneSnapshot; no invented scenario roles. Existing taskId remains execution Task identity."
@@ -544,7 +544,8 @@
       ],
       "properties": {
         "id": {
-          "type": "string"
+          "type": "string",
+          "description": " For PI use provider/modelId, split the first slash only; pi-rpc-images-v1 transport. Resolve default selection before verification and invalidate on effective provider/model/config change."
         },
         "name": {
           "type": "string"

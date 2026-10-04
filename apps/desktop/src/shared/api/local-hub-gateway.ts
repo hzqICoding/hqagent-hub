@@ -1,3 +1,5 @@
+import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
+import { clientFetch } from '@/shared/api/client-features'
 import type {
   BootstrapView,
   WorkspaceView,
@@ -112,7 +114,7 @@ export class LocalHubGateway implements UiGateway {
     headers.set('Content-Type', 'application/json')
     headers.set('X-Client-Id', 'hqagent-desktop')
 
-    const res = await fetch(`${baseUrl}${path}`, {
+    const res = await clientFetch(`${baseUrl}${path}`, {
       ...options,
       headers,
       redirect: 'error',
@@ -129,7 +131,7 @@ export class LocalHubGateway implements UiGateway {
 
     if (envelope && !envelope.success && envelope.error) {
       throw new HubApiError(
-        envelope.error.message,
+        envelope.error.code.startsWith('PI_') ? getRemoteErrorMessage(envelope.error.code) : envelope.error.message,
         envelope.error.code,
         res.status,
         envelope.error.detail,

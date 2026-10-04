@@ -1,8 +1,9 @@
+import { piNativeExample } from '@/shared/runtime/pi-examples'
 import { MockAttachmentLibrary } from '@/shared/attachments/mock-library'
 import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
   AttachmentDeletedView, RemoteAttachmentView, RemoteAttachmentLimitsView,
-  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV4CatalogView,
+  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV5CatalogView,
   RemoteDevicePatchInput,
   RemoteDeviceDeletionView,
   RemoteApiTokenView,
@@ -58,7 +59,7 @@ export class MockRemoteGateway implements IRemoteGateway {
 
   public importedNativeIds = new Set<string>()
   async listNativeSessions(workerId: string): Promise<RemoteNativeSessionPage> {
-    return { items: nativeExamples(this.catalog.workspaces[0]?.workspaceId || 'workspace_demo').filter((item) => !this.importedNativeIds.has(item.nativeSessionId)).map((item) => ({ ...item, workerId, workerOnline: this.workerOnline })), hasMore: false }
+    return { items: [...nativeExamples(this.catalog.workspaces[0]?.workspaceId || 'workspace_demo'),...(this.devices.find(device=>device.workerId===workerId)?.supportedWireRevisions?.includes(5) ? [piNativeExample(this.catalog.workspaces[0]?.workspaceId || 'workspace_demo')] : [])].filter((item) => !this.importedNativeIds.has(item.nativeSessionId)).map((item) => ({ ...item, workerId, workerOnline: this.workerOnline })), hasMore: false }
   }
   async getNativeSession(id: string): Promise<RemoteNativeSessionView> {
     const item = (await this.listNativeSessions('worker_demo')).items.find((item) => item.nativeSessionId === id)
@@ -151,7 +152,7 @@ export class MockRemoteGateway implements IRemoteGateway {
     },
   ]
 
-  public catalog: RemoteV4CatalogView = {
+  public catalog: RemoteV5CatalogView = {
     workerId: 'worker_demo',
     capabilityRevision: 2,
     observedAt: '2026-09-26T12:00:00Z',
@@ -552,7 +553,7 @@ export class MockRemoteGateway implements IRemoteGateway {
     }
   }
 
-  async getWorkerCatalog(workerId: string): Promise<RemoteV4CatalogView> {
+  async getWorkerCatalog(workerId: string): Promise<RemoteV5CatalogView> {
     const device = this.devices.find((d) => d.workerId === workerId)
     return { ...this.catalog, workerId, workerStoreId: device?.workerStoreId || this.catalog.workerStoreId }
   }
@@ -755,7 +756,7 @@ export class MockRemoteGateway implements IRemoteGateway {
       })
     }
 
-    if (targetWorker?.supportedWireRevisions && !targetWorker.supportedWireRevisions.includes(2)) {
+    if (targetWorker?.supportedWireRevisions && !targetWorker.supportedWireRevisions.some(revision=>[2,3,4,5].includes(revision))) {
       throw new RemoteApiError({
         message: getRemoteErrorMessage('REMOTE_REVISION_REQUIRED'),
         code: 'REMOTE_REVISION_REQUIRED',

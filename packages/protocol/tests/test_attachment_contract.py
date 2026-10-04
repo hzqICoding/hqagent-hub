@@ -64,8 +64,8 @@ def test_all_new_fixtures_roundtrip(file,kind):
 
 def test_type_coverage_version_and_limits():
     assert set(D)|{'AgentInputAttachment'}=={n for f,n in M.items() if f.startswith('r16.')}
-    assert models.PROTOCOL_VERSION==API['info']['version']=='0.10.1'
-    assert set(API['x-worker-websocket']['revisions'])=={1,2,3,4}
+    assert models.PROTOCOL_VERSION==API['info']['version']=='0.11.1'
+    assert set(API['x-worker-websocket']['revisions'])=={1,2,3,4,5}
     l=sample('AttachmentLimits')
     assert [l[k] for k in ['imageMaxBytes','fileMaxBytes','messageMaxCount','accountQuotaBytes','unattachedTtlSeconds']]==[10000000,20000000,5,5000000000,86400]
     assert set(l['imageMimeTypes'])=={'image/jpeg','image/png','image/webp','image/gif'}

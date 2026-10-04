@@ -1,10 +1,11 @@
+import { clientFetch } from '@/shared/api/client-features'
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 import { uploadAttachment as uploadBinary, attachmentBlob } from '@/shared/attachments/transport'
 import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
   LocalImageVerificationPage, LocalImageVerificationJobView, StartLocalImageVerificationInput, LocalConversationDeletionView,
   AttachmentLimits, AttachmentDeletedView, LocalAttachmentView, AttachmentTargetCapabilities,
-  LocalNativeSessionPage, NativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
+  LocalNativeSessionPage, RuntimeNativeSessionIndex, NativeMessagePage, RemoteNativeImportInput, LocalAuthorizedRootsView, LocalAuthorizedRootsInput,
   LocalAuthView,
   LocalAuthInput,
   AgentView,
@@ -101,7 +102,7 @@ export class RealLocalChatGateway implements LocalChatGateway {
     const query = new URLSearchParams({ limit: '50', ...(cursor ? { cursor } : {}) })
     return this.fetchApi(`/api/v2/native-sessions?${query}`)
   }
-  getNativeSession(id: string): Promise<NativeSessionIndex> {
+  getNativeSession(id: string): Promise<RuntimeNativeSessionIndex> {
     return this.fetchApi(`/api/v2/native-sessions/${encodeURIComponent(id)}`)
   }
   readNativeMessages(id: string, before?: string): Promise<NativeMessagePage> {
@@ -165,7 +166,7 @@ export class RealLocalChatGateway implements LocalChatGateway {
 
     let response: Response
     try {
-      response = await fetch(url, {
+      response = await clientFetch(url, {
         ...options,
         headers,
         cache: 'no-store',
@@ -216,7 +217,7 @@ export class RealLocalChatGateway implements LocalChatGateway {
       const err = envelope.error
       const code = (err?.code || 'INTERNAL') as ErrorCode
       throw new HubApiError(
-        err?.message || (code === 'SESSION_NOT_RESUMABLE' ? '' : `Request failed with code ${code}`),
+        code.startsWith('PI_') ? getRemoteErrorMessage(code) : err?.message || (code === 'SESSION_NOT_RESUMABLE' ? '' : `Request failed with code ${code}`),
         code,
         response.status,
         err?.detail as Record<string, unknown> | undefined,

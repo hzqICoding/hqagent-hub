@@ -16,6 +16,7 @@ _ALLOWED_NPM_BIN_SUFFIXES = {".exe", ".js", ".cjs", ".mjs"}
 _KNOWN_NPM_PACKAGES = {
     "claude": ("@anthropic-ai/claude-code", "claude"),
     "codex": ("@openai/codex", "codex"),
+    "pi": ("@earendil-works/pi-coding-agent", "pi"),
 }
 
 # Safe mode suppresses customizations; carry user transport configuration in the
@@ -67,6 +68,7 @@ class ProcessRunner:
             *args,
             cwd=str(cwd) if cwd else None,
             env=dict(env) if env else None,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             limit=self.stream_limit,
@@ -75,7 +77,7 @@ class ProcessRunner:
         )
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-        except TimeoutError:
+        except (TimeoutError, asyncio.CancelledError):
             await terminate_process_tree(process)
             raise
         return CommandResult(
@@ -202,16 +204,26 @@ async def terminate_process_tree(process: asyncio.subprocess.Process, timeout: f
     if not isinstance(process, asyncio.subprocess.Process):
         process.kill()
     elif os.name == "nt":
-        killer = await asyncio.create_subprocess_exec(
-            "taskkill.exe", "/PID", str(process.pid), "/T", "/F",
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
+        try:
+            killer = await asyncio.create_subprocess_exec(
+                "taskkill.exe", "/PID", str(process.pid), "/T", "/F",
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except OSError:
+            return False
         try:
             await asyncio.wait_for(killer.wait(), timeout)
         except TimeoutError:
-            killer.kill()
-            await killer.wait()
+            try:
+                killer.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                await asyncio.wait_for(killer.wait(), timeout)
+            except TimeoutError:
+                pass
             return False
     else:
         try:

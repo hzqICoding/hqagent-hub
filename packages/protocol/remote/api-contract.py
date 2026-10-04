@@ -161,7 +161,7 @@ def table_blocks(api, registry, guidance):
         g=guidance[error['code']]
         errors.append('| '+' | '.join([f'`{error["code"]}`',str(error['http']),str(error['retryable']).lower(),cell(g['message']),cell(g['cause']),cell(g['handling']),cell(g['surface'])])+' |')
     frames=['| 线路修订 | type | 类型 | 事实源 |','| --- | --- | --- | --- |']
-    for file in ['remote.json','remote-sync.json','remote-native.json','remote-attachments.json']:
+    for file in ['remote.json','remote-sync.json','remote-native.json','remote-attachments.json','remote-pi.json']:
         for name,d in load(P/'schema'/file)['$defs'].items():
             props=d.get('properties',{})
             if 'wireRevision' in props and 'const' in props.get('type',{}):

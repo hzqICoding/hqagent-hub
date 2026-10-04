@@ -2,7 +2,7 @@
 // 改协议请改 packages/protocol/schema/ 或 registry/，然后重新运行:
 //     pwsh scripts/protocol/generate.ps1
 
-export const PROTOCOL_VERSION = '0.10.1' as const
+export const PROTOCOL_VERSION = '0.11.1' as const
 
 export interface AcknowledgeUpdateResultInput {
   /** 要确认的结果版本，防止确认了一个已被覆盖的旧回执 */
@@ -200,6 +200,9 @@ export type ErrorCode =
   | 'ATTACHMENT_IN_USE'
   | 'ATTACHMENT_THUMBNAIL_UNAVAILABLE'
   | 'ATTACHMENT_PREPARATION_INTERRUPTED'
+  | 'PI_GUARD_UNAVAILABLE'
+  | 'PI_UNCONTROLLED_EXTENSIONS'
+  | 'PI_TOOL_CALL_BLOCKED'
 
 /** 任何 Port 方法失败时的统一结构。接入失败或缺少硬能力必须走这里，不得返回成功后在事件里静默降级。 */
 export interface AdapterFailure {
@@ -346,6 +349,31 @@ export const BUILTIN_ROLE_IDS = [
   'developer',
 ] as const
 
+export type PiGuardReason =
+  | 'guard_not_loaded'
+  | 'uncontrolled_extensions'
+  | 'policy_unavailable'
+  | 'tool_inventory_changed'
+  | 'guard_timeout'
+  | 'invalid_request'
+  | 'argument_mismatch'
+  | 'path_outside_scope'
+  | 'unsupported_shell'
+  | 'approval_required'
+  | 'approval_rejected'
+  | 'approval_expired'
+  | 'read_only_tool'
+  | 'tool_not_allowed'
+
+/** Safe diagnostic only. ready requires verified exclusive Hub extension loading and stable tools/policy. Not an OS sandbox guarantee. No extension source, path, arguments or credentials. */
+export interface RuntimeGuardView {
+  status: 'unverified' | 'ready' | 'blocked'
+  isolation: 'unknown' | 'hub_extension_only'
+  checkedAt: string
+  policyRevision?: string
+  reasons: PiGuardReason[]
+}
+
 export interface AgentView {
   /** Agent 实例 ID，例如 agent_codex_default */
   id: string
@@ -366,6 +394,7 @@ export interface AgentView {
   /** 适配器要求的最低版本，低于此值状态为 incompatible */
   minimumVersion?: string
   lastHealthyAt?: Timestamp
+  guard?: RuntimeGuardView
 }
 
 export interface AgentDiscoveryResult {
@@ -694,27 +723,39 @@ export interface ImageInputCapability {
   reason?: string
 }
 
-export type NativeAgentType =
+/** Current HTTP/local and revision 5 Agent types. NativeAgentType is the immutable revision 3/4 domain. */
+export type RuntimeNativeAgentType =
   | 'claude'
   | 'codex'
+  | 'pi'
 
-export interface NativeImageCapability {
-  agentType: NativeAgentType
+/** Exact resolved Agent instance and model target; modelId omitted only for default selector, whose effective provider/model is included in capability revision. PI uses first-slash provider/modelId and pi-rpc-images-v1. Missing identity/verification means unknown, not supported. */
+export interface RuntimeNativeImageCapability {
+  agentType: RuntimeNativeAgentType
   imageInput: ImageInputCapability
+  /** Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name. */
+  modelId?: string
+  transport?: string
+  agentId?: string
 }
 
-export interface RoleImageCapability {
+/** Exact resolved Agent instance and model target; modelId omitted only for default selector, whose effective provider/model is included in capability revision. PI uses first-slash provider/modelId and pi-rpc-images-v1. Missing identity/verification means unknown, not supported. */
+export interface RuntimeRoleImageCapability {
   roleId: string
   agentId: string
   imageInput: ImageInputCapability
+  /** Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name. */
+  modelId?: string
+  transport?: string
+  agentType?: RuntimeNativeAgentType
 }
 
 /** All selected scenario roles, not only executor; native uses exactly one native entry and no scenario roles. Missing role or stale information fails closed. */
 export interface AttachmentTargetCapabilities {
   conversationKind: 'scenario' | 'native'
   capabilityRevision: number
-  roles: RoleImageCapability[]
-  native?: NativeImageCapability
+  roles: RuntimeRoleImageCapability[]
+  native?: RuntimeNativeImageCapability
 }
 
 export interface BootstrapAgentsSummary {
@@ -1092,6 +1133,7 @@ export type InstallStrategy =
   | 'linux-deb'
 
 export interface LocalAgentModel {
+  /**  For PI use provider/modelId, split the first slash only; pi-rpc-images-v1 transport. Resolve default selection before verification and invalidate on effective provider/model/config change. */
   id: string
   name: string
   efforts: string[]
@@ -1211,7 +1253,7 @@ export interface LocalConversationView {
   busy?: boolean
   busyObservedAt?: string
   conversationKind?: 'scenario' | 'native'
-  agentType?: NativeAgentType
+  agentType?: RuntimeNativeAgentType
   nativeSessionId?: string
   nativeActivity?: NativeActivityEvidence
   nativeSourceRevision?: string
@@ -1283,7 +1325,7 @@ export interface LocalImageVerificationDiagnostics {
 export interface LocalImageVerificationTarget {
   agentId: string
   agentType: string
-  /** Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name. */
+  /** Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name. For PI use provider/modelId, split the first slash only; pi-rpc-images-v1 transport. Resolve default selection before verification and invalidate on effective provider/model/config change. */
   modelId?: string
   cliVersion?: string
   transport?: string
@@ -1391,31 +1433,51 @@ export type NativeFormatStatus =
   | 'readable'
   | 'unsupported'
 
-/** readable requires a tested version/profile readerId. unsupported requires sanitized reason; never guess a format. */
-export interface NativeFormatView {
+export type PiNativeReaderId =
+  | 'pi.jsonl.v3.tree'
+
+export interface PiNativeFormatProfile {
+  readerId: PiNativeReaderId
+  sessionVersion: 3
+  structure: 'tree'
+  branchSelection: 'last_persisted_entry'
+}
+
+export type RuntimeNativeUnsupportedReason =
+  | 'reader_not_implemented'
+  | 'unsupported_version'
+  | 'unsupported_structure'
+  | 'invalid_record'
+  | 'invalid_tree'
+  | 'current_branch_unavailable'
+
+/** readable requires a tested version/profile readerId. unsupported requires sanitized reason; never guess a format. PI readable requires readerId=pi.jsonl.v3.tree and pi profile; unsupported requires unsupportedReason and sanitized reason. Phase 1 reports reader_not_implemented, never a guessed readable profile. */
+export interface RuntimeNativeFormatView {
   status: NativeFormatStatus
   readerId?: string
   cliVersion?: string
   reason?: string
+  pi?: PiNativeFormatProfile
+  unsupportedReason?: RuntimeNativeUnsupportedReason
 }
 
 /** Worker-local opaque index ID, not a path or fuzzy CLI ID. Exact vendor ID is kept in the local binding. Redact before title truncation. No body, tool arguments or process IDs in index. */
-export interface NativeSessionIndex {
+export interface RuntimeNativeSessionIndex {
   nativeSessionId: string
   workspaceId: string
-  agentType: NativeAgentType
+  agentType: RuntimeNativeAgentType
   title: string
   createdAt: string
   updatedAt: string
   indexVersion: number
   sourceRevision: string
-  format: NativeFormatView
+  format: RuntimeNativeFormatView
   activity: NativeActivityEvidence
 }
 
 /** Local index page; default limit 50, max 100. hasMore requires nextCursor, otherwise omit. No pairing or cloud identity needed. */
 export interface LocalNativeSessionPage {
-  items: NativeSessionIndex[]
+  items: RuntimeNativeSessionIndex[]
   hasMore: boolean
   nextCursor?: string
 }
@@ -1552,7 +1614,7 @@ export interface LocalRunView {
   error?: string
   task?: TaskDetailView
   conversationKind?: 'scenario' | 'native'
-  agentType?: NativeAgentType
+  agentType?: RuntimeNativeAgentType
 }
 
 /** Public owner-scoped ID. Explicit pending/unavailable prevents dangling downloads. Thumbnail ready never implies original is safe to inline. */
@@ -1568,6 +1630,10 @@ export interface MessageAttachmentView {
   errorCode?: ErrorCode
 }
 
+export type NativeAgentType =
+  | 'claude'
+  | 'codex'
+
 /** Server-generated from authenticated explicit user action, persisted by Worker at admission and bound to source revision. No caller-supplied owner ID. */
 export interface NativeClosureConfirmation {
   confirmationId: string
@@ -1581,6 +1647,19 @@ export interface NativeClosureConfirmation {
 export interface NativeContinuationConfirmationInput {
   terminalClosedConfirmed: true
   sourceRevision: string
+}
+
+/** readable requires a tested version/profile readerId. unsupported requires sanitized reason; never guess a format. */
+export interface NativeFormatView {
+  status: NativeFormatStatus
+  readerId?: string
+  cliVersion?: string
+  reason?: string
+}
+
+export interface NativeImageCapability {
+  agentType: NativeAgentType
+  imageInput: ImageInputCapability
 }
 
 export interface NativeImportPayload {
@@ -1620,6 +1699,20 @@ export interface NativeReadInput {
   before?: string
 }
 
+/** Worker-local opaque index ID, not a path or fuzzy CLI ID. Exact vendor ID is kept in the local binding. Redact before title truncation. No body, tool arguments or process IDs in index. */
+export interface NativeSessionIndex {
+  nativeSessionId: string
+  workspaceId: string
+  agentType: NativeAgentType
+  title: string
+  createdAt: string
+  updatedAt: string
+  indexVersion: number
+  sourceRevision: string
+  format: NativeFormatView
+  activity: NativeActivityEvidence
+}
+
 export interface NodeResolvedPayload {
   roleId: RoleId
   resolvedAgentId: string
@@ -1643,6 +1736,53 @@ export interface PathViolationPayload {
   allowedPaths: string[]
   /** 保留现场供人工查看，不自动清理 */
   worktreePath?: string
+}
+
+/** INTERNAL ONLY: raw tool arguments stay in the owned stdio channel, never public events/logs. Hash exact UTF-8 argumentsJson before parsing; reject duplicate JSON keys/non-object/oversize. Bound to a single live process and exact call. */
+export interface PiGuardCheckInput {
+  version: 1
+  requestId: string
+  sessionId: string
+  nodeId: string
+  toolCallId: string
+  toolName: string
+  policyRevision: string
+  toolInventorySha256: string
+  argumentsJson: string
+  argumentsSha256: string
+  expiresAt: string
+}
+
+/** INTERNAL ONLY. Block requires reason. Allow expires at the minimum of the check and approval deadlines and consumes the exact request once. Hub policy/approval decision, not model-generated consent. */
+export interface PiGuardDecision {
+  requestId: string
+  sessionId: string
+  toolCallId: string
+  argumentsSha256: string
+  policyRevision: string
+  decision: 'allow' | 'block'
+  reason?: PiGuardReason
+  approvalId?: string
+  expiresAt: string
+}
+
+/** Internal owned stdio only. Must complete before model prompt. Hub verifies launch isolation independently; extension self-report is not sufficient. */
+export interface PiGuardHandshake {
+  version: 1
+  sessionId: string
+  guardRevision: string
+  policyRevision: string
+  toolInventorySha256: string
+  isolation: 'hub_extension_only'
+  activeTools: string[]
+}
+
+export type PiImageTransport = string
+
+/** The same scalar is used by role.modelId, LocalAgentModel.id, AgentTaskSpec.modelId, verification modelId and catalog bindings. No provider URL or authentication fields. */
+export interface PiModelSelection {
+  /** PI exact provider/modelId selector; split only the first slash. Model ID may contain additional slashes. Reject URLs, paths, empty/dot segments and inline credentials. Resolve only against local get_available_models. */
+  modelId: string
 }
 
 export interface PickLocalDirectoryInput {
@@ -2028,7 +2168,7 @@ export interface RemoteConversationView {
   archived?: boolean
   metadataVersion?: number
   conversationKind?: 'scenario' | 'native'
-  agentType?: NativeAgentType
+  agentType?: RuntimeNativeAgentType
   nativeSessionId?: string
   nativeActivity?: NativeActivityEvidence
   nativeSourceRevision?: string
@@ -2064,6 +2204,136 @@ export interface RemoteBrowserMessageEvent {
   serverCursor: string
   recordedAt: string
   payload: RemoteMessageView
+}
+
+/** Frozen revision 4 error domain. New registry codes never silently broaden older codecs. Missing/deleted/expired attachment uses existing NOT_FOUND after authorization. */
+export type RemoteWire5ErrorCode =
+  | 'BAD_REQUEST'
+  | 'VALIDATION_FAILED'
+  | 'UNAUTHORIZED'
+  | 'ORIGIN_NOT_ALLOWED'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'IDEMPOTENCY_MISMATCH'
+  | 'PROTOCOL_VERSION_MISMATCH'
+  | 'HUB_NOT_READY'
+  | 'HUB_MAINTENANCE'
+  | 'EVENT_CURSOR_EXPIRED'
+  | 'FEATURE_UNAVAILABLE'
+  | 'AGENT_NOT_FOUND'
+  | 'AGENT_OFFLINE'
+  | 'AGENT_NOT_LOGGED_IN'
+  | 'AGENT_INCOMPATIBLE'
+  | 'CAPABILITY_MISSING'
+  | 'ROLE_UNRESOLVED'
+  | 'SESSION_NOT_RESUMABLE'
+  | 'TASK_NOT_CANCELLABLE'
+  | 'TASK_ACTION_INVALID'
+  | 'WORKTREE_BUSY'
+  | 'PATH_NOT_ALLOWED'
+  | 'APPROVAL_REQUIRED'
+  | 'APPROVAL_EXPIRED'
+  | 'APPROVAL_ALREADY_DECIDED'
+  | 'UPDATE_NOT_AVAILABLE'
+  | 'UPDATE_BUSY'
+  | 'UPDATE_VERIFY_FAILED'
+  | 'UPDATE_DRAIN_TIMEOUT'
+  | 'INTERNAL'
+  | 'REMOTE_AUTH_REQUIRED'
+  | 'REMOTE_CSRF_REJECTED'
+  | 'REMOTE_DEVICE_OFFLINE'
+  | 'REMOTE_DEVICE_REVOKED'
+  | 'REMOTE_DEVICE_AUTH_FAILED'
+  | 'REMOTE_PAIRING_EXPIRED'
+  | 'REMOTE_PAIRING_CONFLICT'
+  | 'REMOTE_PAIRING_INVALID'
+  | 'REMOTE_COMMAND_EXPIRED'
+  | 'REMOTE_COMMAND_WITHDRAWN'
+  | 'REMOTE_WITHDRAWAL_UNCONFIRMED'
+  | 'REMOTE_STORE_CHANGED'
+  | 'REMOTE_EPOCH_STALE'
+  | 'REMOTE_PROTOCOL_UNSUPPORTED'
+  | 'REMOTE_EVENT_CONFLICT'
+  | 'REMOTE_ACK_CONFLICT'
+  | 'REMOTE_SEQUENCE_GAP'
+  | 'REMOTE_APPROVAL_FORBIDDEN'
+  | 'CONVERSATION_AUTHORITY_MISMATCH'
+  | 'REMOTE_TARGET_MISMATCH'
+  | 'REMOTE_SCENE_VERSION_MISMATCH'
+  | 'REMOTE_CURSOR_EXPIRED'
+  | 'REMOTE_CURSOR_INVALID'
+  | 'REMOTE_RATE_LIMITED'
+  | 'REMOTE_FRAME_TOO_LARGE'
+  | 'REMOTE_WITHDRAWAL_TOO_LATE'
+  | 'REMOTE_PAIRING_IN_PROGRESS'
+  | 'REMOTE_SERVER_UNREACHABLE'
+  | 'REMOTE_SERVER_ORIGIN_INVALID'
+  | 'REMOTE_CONVERSATION_BUSY'
+  | 'REMOTE_STATE_NOT_READY'
+  | 'REMOTE_SYNC_CONFLICT'
+  | 'REMOTE_SYNC_DISABLED'
+  | 'REMOTE_DELIVERY_EXPIRED'
+  | 'REMOTE_REVISION_REQUIRED'
+  | 'REMOTE_SYNC_RESOURCE_LIMIT'
+  | 'REMOTE_QUERY_TIMEOUT'
+  | 'REMOTE_QUERY_TOO_LARGE'
+  | 'NATIVE_SESSION_ACTIVE'
+  | 'NATIVE_SESSION_UNSUPPORTED'
+  | 'NATIVE_SESSION_CHANGED'
+  | 'NATIVE_SESSION_WRITER_CONFLICT'
+  | 'REMOTE_ROOT_NOT_AUTHORIZED'
+  | 'REMOTE_PATH_OUTSIDE_ROOT'
+  | 'REMOTE_DIRECTORY_CHANGED'
+  | 'ATTACHMENT_TOO_LARGE'
+  | 'ATTACHMENT_TYPE_UNSUPPORTED'
+  | 'ATTACHMENT_COUNT_EXCEEDED'
+  | 'ATTACHMENT_QUOTA_EXCEEDED'
+  | 'ATTACHMENT_HASH_MISMATCH'
+  | 'AGENT_IMAGE_UNSUPPORTED'
+  | 'ATTACHMENT_DOWNLOAD_FAILED'
+  | 'ATTACHMENT_NOT_READY'
+  | 'ATTACHMENT_IN_USE'
+  | 'ATTACHMENT_THUMBNAIL_UNAVAILABLE'
+  | 'ATTACHMENT_PREPARATION_INTERRUPTED'
+  | 'PI_GUARD_UNAVAILABLE'
+  | 'PI_UNCONTROLLED_EXTENSIONS'
+  | 'PI_TOOL_CALL_BLOCKED'
+
+/** Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely. */
+export interface RemoteWire5ApprovalView {
+  approvalId: string
+  resultRef: RemoteResultRef
+  action: DangerousAction
+  targetSummary: string
+  riskLevel: RiskLevel
+  status: ApprovalStatus
+  requestedAt: string
+  expiresAt: string
+  remoteApprovalAllowed: boolean
+  workerPolicyRevision: number
+  denialCode?: RemoteWire5ErrorCode
+}
+
+export interface RemoteV5ApprovalEvent {
+  type: 'approval.state_changed'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  payload: RemoteWire5ApprovalView
+}
+
+/** Browser-only PI approval projection. Emit only after owner/visibility and pi-v1 capability checks. Public IDs, sanitized summary; source wireRevision=5. Do not relay arbitrary revision 5 frames through this variant. */
+export interface RemoteBrowserPiApprovalEvent {
+  type: 'worker.event'
+  /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
+  serverCursor: string
+  recordedAt: string
+  payload: RemoteV5ApprovalEvent
 }
 
 export interface RemoteBrowserStoreReset {
@@ -2616,7 +2886,7 @@ export interface RemoteBrowserWorkerEvent {
   payload: RemoteVisibleWorkerEvent
 }
 
-export type RemoteBrowserEvent = RemoteBrowserWorkerEvent | RemoteBrowserCommandEvent | RemoteBrowserConversationEvent | RemoteBrowserMessageEvent | RemoteBrowserV2WorkerEvent | RemoteBrowserConversationDeleted | RemoteBrowserStoreReset
+export type RemoteBrowserEvent = RemoteBrowserWorkerEvent | RemoteBrowserCommandEvent | RemoteBrowserConversationEvent | RemoteBrowserMessageEvent | RemoteBrowserV2WorkerEvent | RemoteBrowserConversationDeleted | RemoteBrowserStoreReset | RemoteBrowserPiApprovalEvent
 
 /** GET after opaque serverCursor. Unknown/expired cursor requires snapshot; never silently reset to zero. */
 export interface RemoteBrowserEventPage {
@@ -2624,6 +2894,15 @@ export interface RemoteBrowserEventPage {
   /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
   nextServerCursor: string
   hasMore: boolean
+}
+
+/** Browser-only compatibility projection, not a Worker transport frame. Source revision 5 stays unchanged in Inbox. Nested wireRevision=2 labels the legacy browser shape only; never feed it to Worker/ACK/grant or infer source revision from it. Authorized non-PI approval IDs are mapped to public IDs before projection. */
+export interface RemoteBrowserLegacyApprovalEvent {
+  type: 'worker.event'
+  /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
+  serverCursor: string
+  recordedAt: string
+  payload: RemoteV2ApprovalEvent
 }
 
 export type RemoteBrowserSessionView = RemoteAuthenticatedSession | RemoteAnonymousSession
@@ -3008,13 +3287,13 @@ export interface RemoteNativeSessionView {
   nativeSessionId: string
   workerId: string
   workspaceId: string
-  agentType: NativeAgentType
+  agentType: RuntimeNativeAgentType
   title: string
   createdAt: string
   updatedAt: string
   indexVersion: number
   sourceRevision: string
-  format: NativeFormatView
+  format: RuntimeNativeFormatView
   activity: NativeActivityEvidence
   workerOnline: boolean
 }
@@ -4733,6 +5012,12 @@ export interface RemoteV4CancelCommand {
   localConversationId: string
 }
 
+export interface RoleImageCapability {
+  roleId: string
+  agentId: string
+  imageInput: ImageInputCapability
+}
+
 /** Worker scene index only; model/provider credential or installation/subscription data is not relayed. */
 export interface RemoteV4SceneSummary {
   sceneId: string
@@ -5462,6 +5747,806 @@ export interface RemoteV4WorkerHello {
 
 export type RemoteV4WorkerOutboundFrame = RemoteV4WorkerHello | RemoteV4WorkerHeartbeat | RemoteV4ConversationGap | RemoteV4WorkerEvent | RemoteV4ContentRedaction | RemoteV4QueryResultSegment | RemoteV4QueryFailed
 
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV5ApprovalDecisionCommand {
+  type: 'approval.decide'
+  wireRevision: 5
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteApprovalDecisionPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+export interface RemoteV5BackfillProgress {
+  type: 'sync.backfill.progress'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  backfillId: string
+  batchIndex: number
+  batchEventCount: number
+  snapshotHighWater: number
+  complete: boolean
+}
+
+export interface RemoteV5BusySnapshot {
+  type: 'sync.busy.snapshot'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  snapshotId: string
+  connectionId: string
+  capturedAt: string
+  partIndex: number
+  partCount: number
+  conversationIds: string[]
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV5CancelCommand {
+  type: 'run.cancel'
+  wireRevision: 5
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Worker scene index only; model/provider credential or installation/subscription data is not relayed. */
+export interface RemoteV5SceneSummary {
+  sceneId: string
+  name: string
+  version: number
+  readOnly: boolean
+  roleImageCapabilities?: RuntimeRoleImageCapability[]
+}
+
+export interface RuntimeCatalogEntry {
+  agentId: string
+  agentType: RuntimeNativeAgentType
+  guard?: RuntimeGuardView
+  nativeSessionsSupported: boolean
+}
+
+/** Atomic bounded complete catalog for R1. Reject oversized catalogs instead of truncating; offline entries are last observed, not proof that paths still exist. Revision 3 producers include authorizedRoots, [] when none; omitted legacy HTTP field means no remote project browsing. Revision 4 includes each scene role image capability and native Agent capability; missing entries mean unknown. */
+export interface RemoteV5CatalogView {
+  workerId: string
+  capabilityRevision: number
+  observedAt: string
+  workspaces: RemoteWorkspaceSummary[]
+  scenes: RemoteV5SceneSummary[]
+  remotelyBlockedActions: DangerousAction[]
+  workerStoreId: string
+  authorizedRoots?: RemoteAuthorizedRoot[]
+  nativeImageCapabilities?: RuntimeNativeImageCapability[]
+  runtimes?: RuntimeCatalogEntry[]
+}
+
+export interface RemoteV5CatalogEvent {
+  type: 'capability.changed'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  payload: RemoteV5CatalogView
+}
+
+/** Durable inbox admission, not model/execution success. Duplicate immutable commands return the original receipt/event. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV5CommandAccepted {
+  type: 'command.accepted'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  receivedAt: string
+  status: 'accepted'
+  resultRef?: RemoteResultRef
+}
+
+/** D41: Worker-only structured evidence, never parsed error text. Empty orphanProcessIds is not proof of no remaining process. A paused process may still exist. input_preparation_cancelled requires durable no-Agent-start fence and confirmed stopped preparation I/O, never inferred from a missing process handle. */
+export interface RemoteV5ControlConfirmed {
+  outcome: 'confirmed'
+  executionMayStillBeRunning: boolean
+  orphanProcessIds: number[]
+  reason: string
+  evidence: 'adapter_confirmed' | 'node_boundary_paused' | 'already_terminal' | 'retry_enqueued' | 'supervisor_resumed' | 'inbox_tombstone' | 'metadata_committed' | 'input_preparation_cancelled'
+  observedAt: string
+}
+
+/** Not universally task success. Retry completes on durable new execution reference; execute completes on actual terminal Run success/cancellation. Cancel/pause/resume require confirmed structured control result. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV5CommandCompleted {
+  type: 'command.completed'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  resultStatus: 'succeeded' | 'cancelled' | 'confirmed' | 'retry_enqueued' | 'approval_consumed' | 'withdrawn'
+  resultRef?: RemoteResultRef
+  controlResult?: RemoteV5ControlConfirmed
+  resourceRef?: RemoteResourceResultRef
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV5CommandWithdrawalCommand {
+  type: 'command.withdraw'
+  wireRevision: 5
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteCommandWithdrawalPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV5ConversationCreateCommand {
+  type: 'conversation.create'
+  wireRevision: 5
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteCreateConversationInput
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV5ConversationUpdateCommand {
+  type: 'conversation.update'
+  wireRevision: 5
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteSyncConversationUpdate
+  deliverBy: string
+  localConversationId: string
+}
+
+export interface RemoteV5NativeImportCommand {
+  type: 'native.import'
+  wireRevision: 5
+  commandId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  deliverBy: string
+  requestId: string
+  payload: NativeImportPayload
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV5PauseCommand {
+  type: 'run.pause'
+  wireRevision: 5
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV5ResumeCommand {
+  type: 'run.resume'
+  wireRevision: 5
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV5RetryCommand {
+  type: 'run.retry'
+  wireRevision: 5
+  commandId: string
+  conversationId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteRunControlPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+/** Scenario retains sceneId/sceneVersion. Native requires conversationKind=native, agentType/nativeSessionId matching persisted binding and sessionMode=continue; omits scene fields. Confirmation optional only when an existing audited confirmation remains valid. No fuzzy IDs or new-session fallback. With images, capabilityRevision is mandatory and all selected roles must support the detected image type/size. Download only after accepted grant and before any Agent start. */
+export interface RemoteV5RunSubmitPayload {
+  clientMessageId: string
+  workspaceId: string
+  sceneId?: string
+  sceneVersion?: number
+  sessionMode: 'new' | 'continue'
+  text: string
+  conversationKind?: 'scenario' | 'native'
+  agentType?: RuntimeNativeAgentType
+  nativeSessionId?: string
+  nativeConfirmation?: NativeClosureConfirmation
+  attachments?: AttachmentManifestItem[]
+  attachmentCapabilityRevision?: number
+}
+
+/** Immutable, owner-derived command identity. Only run.submit has conversationSeq. Deduplicate commandId plus exact normalized content; never execute twice. */
+export interface RemoteV5RunSubmitCommand {
+  type: 'run.submit'
+  wireRevision: 5
+  commandId: string
+  conversationId: string
+  conversationSeq: number
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  payload: RemoteV5RunSubmitPayload
+  deliverBy: string
+  localConversationId: string
+}
+
+export interface RemoteV5WorkspaceRegisterCommand {
+  type: 'workspace.register'
+  wireRevision: 5
+  commandId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  createdAt: string
+  expiresAt: string
+  deliverBy: string
+  requestId: string
+  payload: RemoteWorkspaceRegisterInput
+}
+
+export type RemoteV5CommandEnvelope = RemoteV5RunSubmitCommand | RemoteV5PauseCommand | RemoteV5ResumeCommand | RemoteV5CancelCommand | RemoteV5RetryCommand | RemoteV5ApprovalDecisionCommand | RemoteV5CommandWithdrawalCommand | RemoteV5ConversationUpdateCommand | RemoteV5ConversationCreateCommand | RemoteV5NativeImportCommand | RemoteV5WorkspaceRegisterCommand
+
+/** Sanitized error. No credential, raw environment, owner locator or arbitrary detail object. */
+export interface RemoteWire5Error {
+  code: RemoteWire5ErrorCode
+  message: string
+  retryable: boolean
+}
+
+/** Failure after admission. A refused control is distinct from unconfirmed cancellation; do not infer that an Agent process has stopped. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV5CommandFailed {
+  type: 'command.failed'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  resultStatus: 'failed' | 'rejected'
+  error: RemoteWire5Error
+  resultRef?: RemoteResultRef
+  controlResult?: RemoteControlRejected
+}
+
+/** Pre-admission rejection only. An expired sequenced submit consumes its ordered slot without execution. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV5CommandRejected {
+  type: 'command.rejected'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  receivedAt: string
+  status: 'rejected'
+  error: RemoteWire5Error
+}
+
+export type RemoteV5CommandReceipt = RemoteV5CommandAccepted | RemoteV5CommandRejected
+
+/**  For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV5CommandReceived {
+  type: 'command.received'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  commandDigest: string
+  deliverBy: string
+  receivedAt: string
+}
+
+/** Only retired content slots, never admission/grant/control facts. Original identity and digest are retained, not rewritten. */
+export interface RemoteV5RedactedSlot {
+  seq: number
+  eventId: string
+  originalType: 'sync.conversation.upserted' | 'sync.message.segment' | 'sync.run.state' | 'sync.backfill.progress' | 'message.appended' | 'native.index.upserted'
+  eventSha256: string
+}
+
+/** Authenticated privacy coverage control, not a replacement immutable event. Bound to a durable reset/deletion fence. No new seq allocation; normal contiguous ACK only after all covered identities/digests and deletion are committed. native.index.deleted fences only that nativeSessionId; imported deletes the index, never the newly imported Hub conversation. sync.reset covers both kinds. No redaction of closure confirmation audit. */
+export interface RemoteV5ContentRedaction {
+  type: 'sync.content.redaction'
+  wireRevision: 5
+  redactionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  /** Deletion-fence generation. Reset retires content generations up to this value; conversation deletion additionally restricts the local conversation ID. Never cover later generations or seq >= deletionSeq. */
+  syncGeneration: number
+  deletionEventId: string
+  deletionSeq: number
+  conversationId?: string
+  slots: RemoteV5RedactedSlot[]
+  nativeSessionId?: string
+}
+
+export type RemoteV5ControlResult = RemoteV5ControlConfirmed | RemoteControlRejected | RemoteControlUnconfirmed
+
+/** D41: unconfirmed leaves command accepted and pending reconciliation. Run-scoped controls include resultRef/executionStatus. Before a Run exists (withdrawal reconciliation), omit both rather than invent an identity or execution state. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV5ControlObserved {
+  type: 'command.control_result'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId?: string
+  resultRef?: RemoteResultRef
+  controlResult: RemoteV5ControlResult
+  executionStatus?: TaskStatus
+}
+
+export interface RemoteV5ConversationDeleted {
+  type: 'sync.conversation.deleted'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  conversationId: string
+  deletedAt: string
+}
+
+/** Worker requests missing commands or skip records. Never run a later user message across a sequence gap. */
+export interface RemoteV5ConversationGap {
+  type: 'conversation.gap'
+  wireRevision: 5
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  conversationId: string
+  expectedSeq: number
+  receivedSeq: number
+}
+
+/** Durable ordered tombstone for a never-dispatched submit. Not an execution/control command; cannot be used to erase accepted work. Retain until gap replay/snapshot acknowledgement is safe. */
+export interface RemoteV5ConversationSkip {
+  type: 'conversation.skip'
+  wireRevision: 5
+  commandId: string
+  conversationId: string
+  conversationSeq: number
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  reason: 'withdrawn_before_dispatch' | 'expired_before_dispatch'
+  recordedAt: string
+}
+
+/** Worker local identifiers. Server namespaces by worker/store and maps browser IDs; visibility is display-only. Missing conversationKind means scenario (requires existing scene fields). Native requires agentType/nativeSessionId and omits scene fields; exact vendor session binding remains local. */
+export interface RemoteV5SyncConversation {
+  conversationId: string
+  workspaceId: string
+  sceneId?: string
+  sceneVersion?: number
+  title: string
+  createdAt: string
+  updatedAt: string
+  archived: boolean
+  visibility: 'both' | 'pc_only' | 'mobile_only'
+  metadataVersion: number
+  authority: 'local' | 'remote'
+  conversationKind?: 'scenario' | 'native'
+  agentType?: RuntimeNativeAgentType
+  nativeSessionId?: string
+  nativeActivity?: NativeActivityEvidence
+  nativeSourceRevision?: string
+}
+
+export interface RemoteV5ConversationUpserted {
+  type: 'sync.conversation.upserted'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: RemoteV5SyncConversation
+}
+
+/** Explicit durable execution permission. Continuous event ACK is never permission. Late unconsumed grants expire; persisted grants are not reverted by server timers. For native.import/workspace.register omit conversationId and correlate immutable commandId/digest. Existing conversation commands still require it; Worker validates against persisted command. */
+export interface RemoteV5DeliveryGrant {
+  type: 'command.delivery_granted'
+  wireRevision: 5
+  commandId: string
+  conversationId?: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  receivedEventId: string
+  commandDigest: string
+  deliverBy: string
+  grantedAt: string
+}
+
+export interface RemoteV5DirectoryQuery {
+  type: 'query.directory.list'
+  wireRevision: 5
+  queryId: string
+  requestId: string
+  connectionId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  workerEpoch: string
+  expiresAt: string
+  payload: DirectoryListingInput
+}
+
+/** Only advances after event persistence AND projection/browser-outbox commit; old store ack never trims new store outbox. */
+export interface RemoteV5EventAck {
+  type: 'worker.events_ack'
+  wireRevision: 5
+  connectionId: string
+  workerId: string
+  position: RemoteEventPosition
+}
+
+export interface RemoteV5MessageEvent {
+  type: 'message.appended'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  payload: RemoteWorkerMessagePayload
+}
+
+/** Sanitized observable progress only. Never private model reasoning, raw provider auth, full environment, or credential files. */
+export interface RemoteV5ProgressEvent {
+  type: 'run.progress'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  conversationId: string
+  resultRef: RemoteResultRef
+  message: string
+}
+
+/** Worker creates/binds LocalRun and execution Task using existing semantics; it does not invent long-lived Task or retryOfRunId. */
+export interface RemoteV5RunStateEvent {
+  type: 'run.state_changed'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  payload: RemoteRunStatePayload
+}
+
+/** Worker records ordered skip in the same durable inbox ordering ledger as submits. */
+export interface RemoteV5SkipRecorded {
+  type: 'conversation.skip_recorded'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  conversationId: string
+  conversationSeq: number
+}
+
+export type RemoteV5ExecutionEvent = RemoteV5CommandAccepted | RemoteV5CommandRejected | RemoteV5CommandCompleted | RemoteV5CommandFailed | RemoteV5ControlObserved | RemoteV5RunStateEvent | RemoteV5MessageEvent | RemoteV5ApprovalEvent | RemoteV5ProgressEvent | RemoteV5CatalogEvent | RemoteV5SkipRecorded
+
+/** Whole UTF-8 text, never truncated; 0-based contiguous segments. Immutable metadata per messageRevision, atomic publish only after digest/byte-count verification. */
+export interface RemoteV5SyncMessageSegment {
+  messageId: string
+  conversationId: string
+  messageSequence: number
+  messageRevision: number
+  role: 'user' | 'assistant' | 'system'
+  createdAt: string
+  runId?: string
+  text: string
+  segmentIndex: number
+  segmentCount: number
+  totalUtf8Bytes: number
+  contentSha256: string
+  attachments?: SyncAttachmentItem[]
+  sourceCommandId?: string
+}
+
+export interface RemoteV5MessageSegment {
+  type: 'sync.message.segment'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: RemoteV5SyncMessageSegment
+}
+
+export interface RemoteV5NativeConfirmationRecorded {
+  type: 'native.closure.confirmed'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  commandId: string
+  nativeSessionId: string
+  confirmation: NativeClosureConfirmation
+}
+
+export interface RemoteV5NativeIndexDeleted {
+  type: 'native.index.deleted'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  nativeSessionId: string
+  workspaceId: string
+  deletedAt: string
+  reason: 'source_removed' | 'workspace_removed' | 'imported'
+}
+
+export interface RemoteV5NativeIndexUpserted {
+  type: 'native.index.upserted'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: RuntimeNativeSessionIndex
+}
+
+export interface RemoteV5NativeReadQuery {
+  type: 'query.native.messages'
+  wireRevision: 5
+  queryId: string
+  requestId: string
+  connectionId: string
+  targetWorkerId: string
+  expectedWorkerStoreId: string
+  workerEpoch: string
+  expiresAt: string
+  payload: NativeReadInput
+}
+
+/** Worker local event seq continuity without publishing local-only history. Covers inclusive [firstSeq,seq], firstSeq<=seq. Opaque tombstone only, no local conversation/path/model data. Cannot cover any already published event or remote-critical event; immutable bounded ranges are replayed whole. Persist range coverage before advancing contiguous ack. */
+export interface RemoteV5OmittedEvents {
+  type: 'events.omitted'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  firstSeq: number
+  reason: 'not_remote_visible'
+}
+
+export interface RemoteV5QueryFailed {
+  type: 'query.failed'
+  wireRevision: 5
+  queryId: string
+  requestId: string
+  connectionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  error: RemoteWire5Error
+}
+
+export type RemoteV5QueryPayload = NativeMessagePage | DirectoryListingPage
+
+export interface RemoteV5QueryResultSegment {
+  type: 'query.result.segment'
+  wireRevision: 5
+  queryId: string
+  requestId: string
+  connectionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  resultType: 'native.messages' | 'directory.list'
+  segmentIndex: number
+  segmentCount: number
+  totalUtf8Bytes: number
+  contentSha256: string
+  text: string
+}
+
+/** Heartbeat acknowledgement is not event ack. After 45 seconds without authenticated Worker traffic mark offline without modifying execution state. */
+export interface RemoteV5ServerHeartbeat {
+  type: 'server.heartbeat'
+  wireRevision: 5
+  connectionId: string
+  receivedAt: string
+}
+
+/** Frozen delivery requires a reason. Store changes or ack regression require reconciliation; R1 exposes no automatic force-unfreeze API. */
+export interface RemoteV5WorkerHelloAck {
+  type: 'worker.hello_ack'
+  wireRevision: 5
+  connectionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  commandDelivery: 'ready' | 'frozen'
+  lastServerAck: RemoteEventPosition | null
+  /** Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector. */
+  pendingCommandCursor: string
+  heartbeatIntervalSeconds: 15
+  offlineAfterSeconds: 45
+  reason?: RemoteWire5Error
+  serverTime: string
+}
+
+export interface RemoteV5WorkerHelloRejected {
+  type: 'worker.hello_rejected'
+  wireRevision: 5
+  error: RemoteWire5Error
+  /** Server supported wire revisions, mandatory on rejection (including REMOTE_PROTOCOL_UNSUPPORTED). Initially [1]; during upgrades advertise N and N-1. */
+  supportedWireRevisions: number[]
+}
+
+export type RemoteV5ServerOutboundFrame = RemoteV5WorkerHelloAck | RemoteV5WorkerHelloRejected | RemoteV5ServerHeartbeat | RemoteV5EventAck | RemoteV5CommandEnvelope | RemoteV5ConversationSkip | RemoteV5DeliveryGrant | RemoteV5NativeReadQuery | RemoteV5DirectoryQuery
+
+export interface RemoteV5SyncReset {
+  type: 'sync.reset'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+}
+
+export interface RemoteV5SyncedRunState {
+  type: 'sync.run.state'
+  wireRevision: 5
+  eventId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  seq: number
+  occurredAt: string
+  syncGeneration: number
+  payload: RemoteSyncRunState
+}
+
+export type RemoteV5VisibleWorkerEvent = RemoteV5CommandAccepted | RemoteV5CommandRejected | RemoteV5CommandCompleted | RemoteV5CommandFailed | RemoteV5ControlObserved | RemoteV5RunStateEvent | RemoteV5MessageEvent | RemoteV5ApprovalEvent | RemoteV5ProgressEvent | RemoteV5CatalogEvent | RemoteV5SkipRecorded | RemoteV5ConversationUpserted | RemoteV5MessageSegment | RemoteV5SyncedRunState | RemoteV5ConversationDeleted | RemoteV5SyncReset | RemoteV5BusySnapshot | RemoteV5BackfillProgress | RemoteV5CommandReceived | RemoteV5NativeIndexUpserted | RemoteV5NativeIndexDeleted | RemoteV5NativeConfirmationRecorded
+
+export type RemoteV5WorkerEvent = RemoteV5VisibleWorkerEvent | RemoteV5OmittedEvents
+
+/** Sent every 15 seconds. It reports liveness only, not durable business-event progress. */
+export interface RemoteV5WorkerHeartbeat {
+  type: 'worker.heartbeat'
+  wireRevision: 5
+  connectionId: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  sentAt: string
+  lastServerAck: RemoteEventPosition | null
+}
+
+/** First frame after device-authenticated WSS. Same store preserves seq across boots; new store requires null ack. Credentials never appear in frames. */
+export interface RemoteV5WorkerHello {
+  type: 'worker.hello'
+  wireRevision: 5
+  /** Protocol package semantic version for diagnostics only. Never negotiate or reject based on this value. */
+  protocolVersion: string
+  workerId: string
+  workerStoreId: string
+  workerEpoch: string
+  platform: 'windows' | 'linux' | 'darwin'
+  architecture: 'x86_64' | 'aarch64'
+  capabilityRevision: number
+  lastServerAck: RemoteEventPosition | null
+}
+
+export type RemoteV5WorkerOutboundFrame = RemoteV5WorkerHello | RemoteV5WorkerHeartbeat | RemoteV5ConversationGap | RemoteV5WorkerEvent | RemoteV5ContentRedaction | RemoteV5QueryResultSegment | RemoteV5QueryFailed
+
 export type RemoteWorkerEvent = RemoteVisibleWorkerEvent | RemoteOmittedEvents
 
 /** Sent every 15 seconds. It reports liveness only, not durable business-event progress. */
@@ -5678,7 +6763,7 @@ export interface SessionView {
 /** Explicit consent to multiple real model calls and potential charges for this exact target. No automatic model fallback/retry/restart. GET does not run probes. */
 export interface StartLocalImageVerificationInput {
   agentId: string
-  /** Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name. */
+  /** Exact model selector; reject URLs, filesystem paths, dot/dot-dot segments or credentials. Omitted modelId selects CLI default, not an invented model name. For PI use provider/modelId, split the first slash only; pi-rpc-images-v1 transport. Resolve default selection before verification and invalidate on effective provider/model/config change. */
   modelId?: string
   expectedTargetRevision: string
   acknowledgeModelUsage: true
@@ -6033,4 +7118,7 @@ export const ERROR_CATALOG: Record<ErrorCode, { http: number; retryable: boolean
   ATTACHMENT_IN_USE: { http: 409, retryable: false },
   ATTACHMENT_THUMBNAIL_UNAVAILABLE: { http: 409, retryable: false },
   ATTACHMENT_PREPARATION_INTERRUPTED: { http: 409, retryable: false },
+  PI_GUARD_UNAVAILABLE: { http: 409, retryable: false },
+  PI_UNCONTROLLED_EXTENSIONS: { http: 409, retryable: false },
+  PI_TOOL_CALL_BLOCKED: { http: 403, retryable: false },
 }
