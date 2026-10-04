@@ -9,6 +9,7 @@ const everConnected = ref(false)
 const autostart = ref(false)
 const saving = ref(false)
 const message = ref('正在启动本机 Hub，连接就绪后将自动进入。')
+const reason = ref('')
 const settingsError = ref('')
 const updateAgentMissing = ref(false)
 let stopped = false
@@ -19,17 +20,15 @@ async function refresh() {
     connected.value = await auth.checkAuthStatus()
     if (stopped) return
     if (connected.value) everConnected.value = true
+    reason.value = connected.value ? '' : auth.authError || ''
     const status = await invoke<{ childProcesses: { component: string; state: string }[] }>('get_shell_status')
     updateAgentMissing.value = status.childProcesses.some(p => p.component === 'update-agent' && p.state === 'missing')
     const core = status.childProcesses.find(p => p.component === 'core')
-    message.value = core?.state === 'missing'
-      ? '未找到 Hub 程序，请检查安装或 desktop-shell.json 的 coreExecutable 配置。'
-      : core?.state === 'running'
-        ? '正在连接本机 Hub；若持续失败，请检查桌面 Bearer 接口是否已随 Hub 更新。'
-        : 'Hub 正在启动或恢复，将自动重新连接。'
+    message.value = '正在启动本机 Hub，连接就绪后将自动进入。'
+    if (core?.state === 'missing') reason.value = '未找到 Hub 程序，请检查安装或 desktop-shell.json 的 coreExecutable 配置。'
   } catch {
     connected.value = false
-    message.value = '暂时无法连接本机 Hub，正在自动重试。'
+    reason.value = auth.authError || '暂时无法读取本机 Hub 状态，正在自动重试。'
   } finally {
     if (!stopped) timer = setTimeout(() => { void refresh() }, 2000)
   }
@@ -67,7 +66,10 @@ onUnmounted(() => { stopped = true; clearTimeout(timer) })
       </label>
       <span v-if="settingsError" role="alert">{{ settingsError }}</span>
     </div>
-    <div v-if="!connected" role="status" class="p-6 text-sm">{{ message }}</div>
+    <div v-if="!connected" role="status" class="p-6 text-sm">
+      <p>{{ message }}</p>
+      <p v-if="reason" class="mt-2 text-text-muted">{{ reason }}</p>
+    </div>
     <!-- Preserve mounted pages/drafts during a crash; block interaction until reconnected. -->
     <div v-if="everConnected" v-show="connected" class="flex-1 min-h-0"><slot /></div>
   </div>
