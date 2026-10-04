@@ -61,7 +61,10 @@ class LocalDirectoryPicker:
                     process.kill()
                 except ProcessLookupError:
                     pass
-                await process.wait()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=3)
+                except TimeoutError:
+                    pass
 
 
 def show_dialog(initial: str) -> None:

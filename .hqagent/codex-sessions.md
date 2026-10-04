@@ -206,3 +206,14 @@ codex 有自己的默认署名行为。
 | --- | --- | --- | --- | --- |
 | 图片作业、双鉴权API、CLI、集成与串行全量 | /root | 01a0ffac-4c25-7923-b0d1-c09095bf126c | 01a0ffac-4c25-7923-b0d1-c09095bf126c | 实现已交付；Hub696通过、末次维护35通过；server303通过/基线bundle导致1失败；回执handoffs/hub-0101.md含1项协议待裁决 |
 | 删除协调与真服务端擦除测试 | /root/local_deletion | 01a0ffae-8678-78c3-8fa1-594ba77da3de | 01a0ffac-4c25-7923-b0d1-c09095bf126c（继承，不是独立session） | 已完成可复用；6个子分支提交已整合；停止证据、取消竞态和缓存闭包复核均已处理；本线程可followup，跨客户端恢复未验证 |
+
+## 2026-10-03 desktop-stdin-fix
+
+基线8211b85；主工作区hub-0101/feat/hub-0101，子工作区desktop-input-policy/fix/desktop-input-policy。list_agents仅返回/root，旧子会话不可直接复用，因此按已有协作技能新建一个独立子任务；没有再扩容。子代理继承主会话配置，实际模型/等级工具未提供元数据；用户工作包标记high。
+
+| 职责 | canonical task | thread ID | session ID | 状态/接续 |
+| --- | --- | --- | --- | --- |
+| 父管道接管、工作区预算、合并及串行全量 | /root | 01a0ffac-4c25-7923-b0d1-c09095bf126c | 01a0ffac-4c25-7923-b0d1-c09095bf126c | 完成；回执handoffs/desktop-stdin-fix.md；745 Hub通过、343 server通过 |
+| 其它进程入口stdin/超时与独立复核 | /root/subprocess_inputs | 01a104a5-d47a-7e63-adc8-11e6cfccb733 | 01a0ffac-4c25-7923-b0d1-c09095bf126c（继承，不是独立session） | 已完成可复用；9e3e36c→49b1580；专项75通过，私有reader生命周期只读复核已完成 |
+
+本线程可followup，跨客户端恢复未验证。子代理指出Git fsmonitor子进程清理风险，主代理已改为有界进程树清理；查询预算准确记为3秒+最多1秒清理。未改vnext-integration或remote-worker工作区、未调用真实模型、未合回integration。

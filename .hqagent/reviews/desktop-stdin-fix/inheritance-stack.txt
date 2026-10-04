@@ -1,0 +1,29 @@
+Before EOF, child still blocked: True
+Timeout (0:00:01)!
+Thread 0x0000ecf0 (most recent call first):
+  File "E:\SoftWare\Python313\Lib\subprocess.py", line 1615 in _readerthread
+  File "E:\SoftWare\Python313\Lib\threading.py", line 994 in run
+  File "E:\SoftWare\Python313\Lib\threading.py", line 1043 in _bootstrap_inner
+  File "E:\SoftWare\Python313\Lib\threading.py", line 1014 in _bootstrap
+
+Thread 0x00007e90 (most recent call first):
+  File "E:\SoftWare\Python313\Lib\subprocess.py", line 1615 in _readerthread
+  File "E:\SoftWare\Python313\Lib\threading.py", line 994 in run
+  File "E:\SoftWare\Python313\Lib\threading.py", line 1043 in _bootstrap_inner
+  File "E:\SoftWare\Python313\Lib\threading.py", line 1014 in _bootstrap
+
+Thread 0x000087d0 (most recent call first):
+  File "E:\OtherPro\HQAgent-Hub-worktrees\hub-0101\apps\hub\runtime\parent_process.py", line 82 in read
+  File "E:\SoftWare\Python313\Lib\threading.py", line 994 in run
+  File "E:\SoftWare\Python313\Lib\threading.py", line 1043 in _bootstrap_inner
+  File "E:\SoftWare\Python313\Lib\threading.py", line 1014 in _bootstrap
+
+Thread 0x000076bc (most recent call first):
+  File "E:\SoftWare\Python313\Lib\threading.py", line 1094 in join
+  File "E:\SoftWare\Python313\Lib\subprocess.py", line 1644 in _communicate
+  File "E:\SoftWare\Python313\Lib\subprocess.py", line 1222 in communicate
+  File "E:\SoftWare\Python313\Lib\subprocess.py", line 556 in run
+  File "<string>", line 7 in <module>
+
+released after parent EOF
+Exit code: 0

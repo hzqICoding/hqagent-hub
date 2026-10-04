@@ -1,0 +1,11 @@
+apps/hub/adapters/process.py:66: asyncio.create_subprocess_exec stdin=asyncio.subprocess.DEVNULL
+apps/hub/adapters/process.py:95: asyncio.create_subprocess_exec stdin=asyncio.subprocess.PIPE
+apps/hub/adapters/process.py:207: asyncio.create_subprocess_exec stdin=asyncio.subprocess.DEVNULL
+apps/hub/packaging/windows/smoke-core.py:78: subprocess.Popen stdin=subprocess.PIPE
+apps/hub/runtime/descriptor.py:14: subprocess.run stdin=subprocess.DEVNULL
+apps/hub/runtime/descriptor.py:35: subprocess.run stdin=subprocess.DEVNULL
+apps/hub/runtime/directory_picker.py:42: asyncio.create_subprocess_exec stdin=asyncio.subprocess.DEVNULL
+apps/hub/runtime/review_evidence.py:18: subprocess.run stdin=subprocess.DEVNULL
+apps/hub/runtime/workspaces.py:54: asyncio.create_subprocess_exec stdin=asyncio.subprocess.DEVNULL
+apps/hub/security/worktrees.py:24: subprocess.run stdin=subprocess.DEVNULL
+Production subprocess entry points verified: 10; no implicit stdin

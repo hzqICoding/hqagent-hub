@@ -29,6 +29,7 @@ from protocol.generated.python import (
     TeamProfileView,
 )
 
+from adapters.process import ProcessRunner
 from core.errors import HubError
 from orchestrator.domain import ProfileSnapshot, ResolutionGap, RuntimeEventDraft
 from orchestrator.errors import AdapterStartFailedError, ApprovalError, OrchestrationError
@@ -1447,17 +1448,12 @@ class TaskService:
 
     @staticmethod
     async def _head_commit(repository: Path) -> str:
-        process = await asyncio.create_subprocess_exec(
-            "git",
-            "rev-parse",
-            "HEAD",
-            cwd=str(repository),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        stdout, _ = await process.communicate()
-        sha = stdout.decode("utf-8", "replace").strip()
-        if process.returncode != 0 or not sha:
+        try:
+            result = await ProcessRunner().run(["git", "rev-parse", "HEAD"], cwd=repository, timeout=5)
+        except (OSError, TimeoutError) as error:
+            raise HubError("PATH_NOT_ALLOWED", "无法及时读取 Git 提交基线，请检查工作区后重试") from error
+        sha = result.stdout.strip()
+        if result.returncode != 0 or not sha:
             raise HubError("PATH_NOT_ALLOWED", "写任务要求工作区已有明确 Git 提交基线")
         return sha
 
