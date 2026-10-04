@@ -59,12 +59,21 @@ def test_local_continue_uses_same_session_after_policy_block(tmp_path, monkeypat
             current = await system.tasks.runtime.sessions.repository.get(original.id)
             assert current.status == 'idle' and current.is_valid and current.turn_count == 2
             events = system.events.page(0, 1000).events
-            failures = [e.payload for e in events if e.type == 'agent.failed' and e.payload.get('errorCode') == 'PI_TOOL_CALL_BLOCKED']
-            assert failures
+            round_events = [e for e in events if e.task_id == blocked['task_id']]
+            assert not any(e.type == 'agent.failed' for e in round_events)
+            completed = [e for e in round_events if e.type == 'agent.completed']
+            assert len(completed) == 2  # Existing adapter + runtime node events.
+            assert all(e.payload['result']['status'] == 'done' for e in completed)
+            audit = next(b for b in completed[-1].payload['result']['blockers']
+                         if b.get('detail', {}).get('errorCode') == 'PI_TOOL_CALL_BLOCKED')
+            assert audit['kind'] == 'permission_denied'
             if blocked_report == 'self-refusal':
-                assert failures[0]['blockers'][0]['detail']['evidence'] == 'model_report'
+                assert audit['detail']['evidence'] == 'model_report'
+                assert not any(e.type == 'agent.tool_call' for e in round_events)
             else:
-                assert failures[0]['blockers'][0]['detail']['guardReason'] == 'path_outside_scope'
+                assert audit['detail']['evidence'] == 'guard_decision'
+                assert 'path_outside_scope' in audit['detail']['guardReasons']
+                assert any(e.type == 'agent.tool_call' and e.payload.get('failed') for e in round_events)
             monkeypatch.delenv('PI_FAKE_TOOL', raising=False)
             monkeypatch.delenv('PI_FAKE_FINAL_REPORT', raising=False)
             third = await send('third', 'recall context')

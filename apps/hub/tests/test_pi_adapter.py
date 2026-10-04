@@ -41,9 +41,12 @@ async def denial_evidence(adapter, identifier):
     assert state.tool_blocks and all(d.decision == 'block' for d in state.tool_blocks)
     assert state.failure is None and state.settled.is_set() and state.process.returncode is not None
     events = [event async for event in adapter.stream_events(identifier)]
-    denied = [event.payload for event in events if getattr(event, 'unified_type', None) == 'agent.failed'
-              and event.payload.error_code == 'PI_TOOL_CALL_BLOCKED']
-    assert denied and all(v.blockers[0].detail['scope'] == 'tool_call' for v in denied)
+    assert not any(getattr(event, 'unified_type', None) == 'agent.failed' for event in events)
+    assert any(getattr(event, 'unified_type', None) == 'agent.tool_call' and event.payload.failed
+               for event in events)
+    denied = [b for b in state.result.blockers or [] if b.kind == 'permission_denied'
+              and (b.detail or {}).get('errorCode') == 'PI_TOOL_CALL_BLOCKED']
+    assert denied and all(b.detail['evidence'] == 'guard_decision' for b in denied)
     assert adapter.can_resume_completed_turn(identifier)
     return denied
 
@@ -151,8 +154,8 @@ def test_guard_source_and_inventory_cannot_be_bypassed(tmp_path, monkeypatch):
             result = await adapter.collect_result(spec.session_id)
             assert result.summary == 'blocked'
             evidence = await denial_evidence(adapter, spec.session_id)
-            assert evidence[0].blockers[0].detail['adapterFailureKind'] == 'path_violation'
-            assert '已被拦截' in evidence[0].message
+            assert 'path_outside_scope' in evidence[0].detail['guardReasons']
+            assert '拦截' in evidence[0].message
         finally:
             await cleanup(adapter)
     asyncio.run(scenario())
