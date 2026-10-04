@@ -1,0 +1,16 @@
+.blocked Runtime/Git/update/drain: 12 reads, max=30.6ms
+..................{"mode": "stdio-v1", "control": "shutdown", "endpoint": "/api/v1/workspaces", "elapsedMs": 108.2}
+{"mode": "stdio-v1", "control": "shutdown", "endpoint": "/api/v1/bootstrap", "elapsedMs": 15.3}
+{"control": "shutdown", "exitCode": 0, "exitMs": 373.7}
+.{"mode": "stdio-v1", "control": "eof", "endpoint": "/api/v1/workspaces", "elapsedMs": 130.4}
+{"mode": "stdio-v1", "control": "eof", "endpoint": "/api/v1/bootstrap", "elapsedMs": 2.9}
+{"control": "eof", "exitCode": 0, "exitMs": 364.3}
+.Local Hub: http://127.0.0.1:64597
+...............
+============================== warnings summary ===============================
+..\..\..\vnext-integration\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\vnext-integration\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+36 passed, 1 warning in 18.41s
