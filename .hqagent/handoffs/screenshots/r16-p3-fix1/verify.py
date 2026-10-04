@@ -114,8 +114,11 @@ with sync_playwright() as p:
     # Real jsqr fallback reading a synthetic canvas MediaStream, no actual camera/secret.
     page.goto('http://127.0.0.1:5198/remote/pair'); page.locator('#pair-code').wait_for()
     page.evaluate('''async()=>{
-      const QRCode=(await import('/node_modules/.vite/deps/qrcode.js')).default;
-      const canvas=document.createElement('canvas');await QRCode.toCanvas(canvas,location.origin+'/remote/pair#code=ABCD2345',{width:480,margin:4});
+      const {encode}=await import('/node_modules/.vite/deps/uqr.js');
+      const qr=encode(location.origin+'/remote/pair#code=ABCD2345',{ecc:'M',boostEcc:false,border:4});
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=480;const ctx=canvas.getContext('2d');
+      ctx.fillStyle='#ffffff';ctx.fillRect(0,0,480,480);ctx.fillStyle='#000000';
+      qr.data.forEach((row,y)=>row.forEach((black,x)=>{if(black)ctx.fillRect(Math.floor(x*480/qr.size),Math.floor(y*480/qr.size),Math.floor((x+1)*480/qr.size)-Math.floor(x*480/qr.size),Math.floor((y+1)*480/qr.size)-Math.floor(y*480/qr.size))}));
       const stream=canvas.captureStream(8);window.__qrStops=0;
       for(const track of stream.getTracks()){const stop=track.stop.bind(track);track.stop=()=>{window.__qrStops++;stop()}}
       Object.defineProperty(window,'BarcodeDetector',{value:undefined,configurable:true});

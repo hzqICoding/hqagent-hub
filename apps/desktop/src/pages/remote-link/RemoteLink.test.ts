@@ -302,12 +302,12 @@ describe('RemoteLinkPage & RemoteLinkStore', () => {
     })
 
     await flushPromises()
-    // Wait for async QRCode.toDataURL
-    await new Promise((r) => setTimeout(r, 50))
 
     const qrImg = wrapper.find('img[data-testid="pair-qrcode"]')
     expect(qrImg.exists()).toBe(true)
-    expect(qrImg.attributes('src')).toMatch(/^data:image\/png;base64,/)
+    expect(qrImg.attributes('src')).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+    expect(qrImg.attributes('width')).toBe('200')
+    expect(qrImg.attributes('height')).toBe('200')
 
     // Shortcode text and countdown preserved as fallback
     expect(wrapper.text()).toContain('ABCD2345')
