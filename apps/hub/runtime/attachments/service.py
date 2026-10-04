@@ -204,6 +204,7 @@ class AttachmentService:
     async def recover(self):
         if self.recovered:
             return
+        await self.verifications.recover_failed_starts()
         await self.library.maintain(restart=True)
         with self.library.db.transaction() as tx:
             rows = tx.connection.execute("SELECT run_id FROM attachment_preparations WHERE state IN ('pending','preparing','ready')").fetchall()
