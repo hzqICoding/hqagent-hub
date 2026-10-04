@@ -619,6 +619,12 @@ mod tests {
                         if runtime.join("health-down").exists() { return; }
                         health
                     } else {
+                        assert!(request.starts_with(b"GET /api/v1/bootstrap "));
+                        let request_text = String::from_utf8_lossy(&request);
+                        let features = request_text.lines().filter_map(|line| line.split_once(':'))
+                            .find(|(name, _)| name.eq_ignore_ascii_case("X-HQ-Client-Features"))
+                            .map(|(_, value)| value.trim());
+                        assert_eq!(features, Some("pi-v1"), "bootstrap must preserve the frontend projection capability");
                         let mut count = std::fs::OpenOptions::new().create(true).append(true)
                             .open(runtime.join("bootstrap-requests")).unwrap();
                         writeln!(count, "request").unwrap();
