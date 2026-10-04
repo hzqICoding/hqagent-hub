@@ -558,7 +558,8 @@ def create_application(
             from api.pi_projection import cursor_scope
             from runtime.pi_visibility import DROP
             await remote_worker.pi.refresh()
-            cursor_scope(remote_worker.pi, record.cursor_owner, record.features, after)
+            cursor_scope(remote_worker.pi, record.cursor_owner, record.features, after,
+                         snapshot=after is None, snapshot_url='/api/v1/bootstrap')
             async with event_store.broker.subscribe() as queue:
                 replay = event_store.page(after if after is not None else event_store.latest_seq(), MAX_EVENT_PAGE_SIZE)
                 last_sent = after or 0

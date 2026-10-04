@@ -159,7 +159,9 @@ def test_ws_feature_change_expires_previous_event_cursor(client, hub, auth_heade
         'X-HQ-Client-Features': 'pi-v1'}).json()['data']['ticket']
     with client.websocket_connect(f'/api/v1/events/stream?after={event.seq}&ticket={ticket}',
                                   headers={'Origin': auth_headers['Origin']}) as ws:
-        assert ws.receive_json()['error']['code'] == 'EVENT_CURSOR_EXPIRED'
+        error = ws.receive_json()['error']
+        assert error['code'] == 'EVENT_CURSOR_EXPIRED'
+        assert error['detail'] == hub.events.cursor_expired_detail('/api/v1/bootstrap')
 
 
 def test_real_server_revision4_inflight_fence_then_pi_catalog(tmp_path, monkeypatch, server_source):
