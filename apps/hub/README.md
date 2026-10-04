@@ -29,7 +29,7 @@ CLI从Worker的PATH探测；可用 `HQAGENT_CODEX_PATH` / `HQAGENT_CLAUDE_PATH` 
 .venv/Scripts/python.exe -B scripts/e2e/local-chat-smoke.py --runtime codex --model <可用模型ID> --effort <可用等级>
 ```
 
-前端独立开发要求见 `docs/vnext/前端独立开工说明.md`，后端交付状态见 `.hqagent/handoffs/N0-backend.md`。
+当前前端开发与接口对接见[前后端交接手册](../../docs/前后端交接手册.md)，项目范围与交付说明见[项目文档](../../docs/项目文档.md)；`.hqagent/handoffs/N0-backend.md` 保留为历史交付记录。
 
 W2、W3 两轮交付都卡在同一件事上：**测试环境无法从仓库配置重建**。
 W3 是把 W1 的 `.venv` 整个拷过去再剔掉 editable `.pth`，W2 是直接借用

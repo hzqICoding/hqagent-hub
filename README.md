@@ -7,7 +7,7 @@
 ## 仓库结构
 
 ```
-docs/                    设计与施工文档（先读 docs/分工与并行开工方案.md）
+docs/                    项目文档与交接手册（先读 docs/项目文档.md）
 AGENTS.md                所有执行方的开发边界与交付规则
 .hqagent/                项目共享记忆：上下文、架构约束、决策、接口冻结记录
 packages/protocol/       协议事实源，三端 DTO 由此生成
@@ -49,7 +49,6 @@ git worktree list
 
 ## 当前进度
 
-一期（Phase 1）：Windows 本地闭环，Claude + Codex 双 Agent 协作 + 整包 OTA。
-云端 Control Plane 与手机 PWA 属于 Phase 2，不在当前范围。
+当前已进入功能冻结期，Windows 桌面、本地对话、手机远程、附件与 PI 一期的实际范围及限制见[项目文档](docs/项目文档.md)，UI 优化与前后端对接见[前后端交接手册](docs/前后端交接手册.md)。
 
-协议 `0.1.0` 已于 FZ-1 冻结，记录见 `.hqagent/INTERFACES.md`。
+运行协议版本以 `packages/protocol/VERSION` 为准（当前 `0.11.1`），历史冻结记录见 `.hqagent/INTERFACES.md`。
