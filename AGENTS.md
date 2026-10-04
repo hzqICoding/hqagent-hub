@@ -6,16 +6,16 @@
 
 | 你负责 | 必读 |
 | --- | --- |
-| 任何包 | 本文件、`docs/分工与并行开工方案.md`（§5 你的包、§6 路径所有权、§7 冻结点、§8 裁决） |
+| 任何包 | 本文件、[项目文档](docs/项目文档.md)（§6 所有权/冻结与交付、§7 当前有效决策） |
 | W0 协议 | `packages/protocol/README.md` |
 | W1/W2/W3 Local Hub | `docs/施工方案.md` §5.3/§6/§7/§8、`packages/protocol/openapi/local-hub.v1.yaml` |
-| W4 前端 | `docs/前端开发与验收方案.md` |
+| W4 前端 | [前后端交接手册](docs/前后端交接手册.md) |
 | W5 桌面壳 | `packages/protocol/schema/runtime-descriptor.json`、`docs/OTA升级架构设计.md` §4.2 |
 | W6 OTA | `docs/OTA升级架构设计.md`、`packages/protocol/openapi/update-agent.internal.v1.yaml` |
 
 ## 2. 路径所有权（硬规则）
 
-只改分工方案 §6 为你这个包列出的独占可写路径。看到别的包的目录不要动，哪怕只是"顺手修个明显的 bug"。
+只改[项目文档 §6](docs/项目文档.md#6-工作方式所有权与交付)为你这个包列出的独占可写路径。看到别的包的目录不要动，哪怕只是"顺手修个明显的 bug"。
 
 **`packages/protocol/` 只有 W0 可写。** 任何包发现协议有问题，写 `.hqagent/handoffs/` 变更请求，不要自己加同名兼容字段——那会制造第二个事实源，是本项目最贵的错误。
 

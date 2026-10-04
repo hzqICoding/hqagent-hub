@@ -1,0 +1,763 @@
+{
+  "sourceBaseline": "9b0bb75",
+  "documentationBaseline": "982f130",
+  "capturedWith": "vite --mode mock; synthetic fixtures; no real API",
+  "count": 58,
+  "bytes": 2934291,
+  "captures": [
+    {
+      "code": "D01",
+      "name": "local-chat-running",
+      "profile": "desktop-light",
+      "route": "/chat",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D01-local-chat-running.png",
+      "bytes": 139928
+    },
+    {
+      "code": "D04",
+      "name": "native-panel",
+      "profile": "desktop-light",
+      "route": "/chat",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D04-native-panel.png",
+      "bytes": 139048
+    },
+    {
+      "code": "D05",
+      "name": "agents",
+      "profile": "desktop-light",
+      "route": "/agents",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D05-agents.png",
+      "bytes": 114955
+    },
+    {
+      "code": "D06",
+      "name": "image-verifications",
+      "profile": "desktop-light",
+      "route": "/agents",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D06-image-verifications.png",
+      "bytes": 90646
+    },
+    {
+      "code": "D08",
+      "name": "scenes",
+      "profile": "desktop-light",
+      "route": "/scenes",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D08-scenes.png",
+      "bytes": 56500
+    },
+    {
+      "code": "D09",
+      "name": "pi-role",
+      "profile": "desktop-light",
+      "route": "/scenes",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D09-pi-role.png",
+      "bytes": 65711
+    },
+    {
+      "code": "D10",
+      "name": "remote-link",
+      "profile": "desktop-light",
+      "route": "/remote-link",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D10-remote-link.png",
+      "bytes": 60207
+    },
+    {
+      "code": "D11",
+      "name": "authorized-roots",
+      "profile": "desktop-light",
+      "route": "/remote-link",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D11-authorized-roots.png",
+      "bytes": 56274
+    },
+    {
+      "code": "D12",
+      "name": "pair-qr",
+      "profile": "desktop-light",
+      "route": "/remote-link?mockState=pairing",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D12-pair-qr.png",
+      "bytes": 51399
+    },
+    {
+      "code": "D13",
+      "name": "workspaces",
+      "profile": "desktop-light",
+      "route": "/workspaces",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D13-workspaces.png",
+      "bytes": 68003
+    },
+    {
+      "code": "D15",
+      "name": "settings-placeholder",
+      "profile": "desktop-light",
+      "route": "/settings",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D15-settings-placeholder.png",
+      "bytes": 49045
+    },
+    {
+      "code": "D16",
+      "name": "overview",
+      "profile": "desktop-light",
+      "route": "/overview",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D16-overview.png",
+      "bytes": 101507
+    },
+    {
+      "code": "D17",
+      "name": "teams",
+      "profile": "desktop-light",
+      "route": "/teams",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D17-teams.png",
+      "bytes": 136462
+    },
+    {
+      "code": "D18",
+      "name": "tasks",
+      "profile": "desktop-light",
+      "route": "/tasks",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D18-tasks.png",
+      "bytes": 89380
+    },
+    {
+      "code": "D19",
+      "name": "sessions",
+      "profile": "desktop-light",
+      "route": "/sessions",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D19-sessions.png",
+      "bytes": 81268
+    },
+    {
+      "code": "D20",
+      "name": "approvals",
+      "profile": "desktop-light",
+      "route": "/approvals",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D20-approvals.png",
+      "bytes": 74535
+    },
+    {
+      "code": "D21",
+      "name": "templates",
+      "profile": "desktop-light",
+      "route": "/templates",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D21-templates.png",
+      "bytes": 113529
+    },
+    {
+      "code": "D22",
+      "name": "updates",
+      "profile": "desktop-light",
+      "route": "/updates",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D22-updates.png",
+      "bytes": 47810
+    },
+    {
+      "code": "D23",
+      "name": "connect",
+      "profile": "desktop-light",
+      "route": "/connect?redirect=/chat",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D23-connect.png",
+      "bytes": 38812
+    },
+    {
+      "code": "D24",
+      "name": "onboarding",
+      "profile": "desktop-light",
+      "route": "/onboarding",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D24-onboarding.png",
+      "bytes": 43348
+    },
+    {
+      "code": "D25",
+      "name": "task-detail",
+      "profile": "desktop-light",
+      "route": "/tasks/task_20260905_001",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D25-task-detail.png",
+      "bytes": 94250
+    },
+    {
+      "code": "D31",
+      "name": "ui-kit-dev-only",
+      "profile": "desktop-light",
+      "route": "/dev/ui-kit",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "light",
+      "file": "desktop-light/D31-ui-kit-dev-only.png",
+      "bytes": 86046
+    },
+    {
+      "code": "M01",
+      "name": "login",
+      "profile": "mobile-375-dark",
+      "route": "/remote/login",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "file": "mobile-375-dark/M01-login.png",
+      "bytes": 18539
+    },
+    {
+      "code": "M06",
+      "name": "device-delete-confirm",
+      "profile": "mobile-375-dark",
+      "route": "/remote/devices",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "file": "mobile-375-dark/M06-device-delete-confirm.png",
+      "bytes": 30398
+    },
+    {
+      "code": "M19",
+      "name": "conversation-list",
+      "profile": "mobile-375-dark",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "file": "mobile-375-dark/M19-conversation-list.png",
+      "bytes": 35873
+    },
+    {
+      "code": "M28",
+      "name": "approval",
+      "profile": "mobile-375-dark",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "file": "mobile-375-dark/M28-approval.png",
+      "bytes": 39980
+    },
+    {
+      "code": "M32",
+      "name": "message-attachments",
+      "profile": "mobile-375-dark",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "file": "mobile-375-dark/M32-message-attachments.png",
+      "bytes": 33862
+    },
+    {
+      "code": "M37",
+      "name": "native-unsupported",
+      "profile": "mobile-375-dark",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "file": "mobile-375-dark/M37-native-unsupported.png",
+      "bytes": 37300
+    },
+    {
+      "code": "M40",
+      "name": "tokens",
+      "profile": "mobile-375-dark",
+      "route": "/remote/tokens",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "file": "mobile-375-dark/M40-tokens.png",
+      "bytes": 28447
+    },
+    {
+      "code": "M01",
+      "name": "login",
+      "profile": "mobile-375-light",
+      "route": "/remote/login",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M01-login.png",
+      "bytes": 19415
+    },
+    {
+      "code": "M04",
+      "name": "devices",
+      "profile": "mobile-375-light",
+      "route": "/remote/devices",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M04-devices.png",
+      "bytes": 27154
+    },
+    {
+      "code": "M05",
+      "name": "device-menu",
+      "profile": "mobile-375-light",
+      "route": "/remote/devices",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M05-device-menu.png",
+      "bytes": 37358
+    },
+    {
+      "code": "M06",
+      "name": "device-delete-confirm",
+      "profile": "mobile-375-light",
+      "route": "/remote/devices",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M06-device-delete-confirm.png",
+      "bytes": 40240
+    },
+    {
+      "code": "M07",
+      "name": "selection-sheet",
+      "profile": "mobile-375-light",
+      "route": "/remote/devices",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M07-selection-sheet.png",
+      "bytes": 31182
+    },
+    {
+      "code": "M11",
+      "name": "pairing",
+      "profile": "mobile-375-light",
+      "route": "/remote/pair",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M11-pairing.png",
+      "bytes": 17907
+    },
+    {
+      "code": "M12",
+      "name": "pairing-preview",
+      "profile": "mobile-375-light",
+      "route": "/remote/pair",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M12-pairing-preview.png",
+      "bytes": 26135
+    },
+    {
+      "code": "M14",
+      "name": "scanner-preview",
+      "profile": "mobile-375-light",
+      "route": "/remote/pair",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M14-scanner-preview.png",
+      "bytes": 18714
+    },
+    {
+      "code": "M15",
+      "name": "scanner-permission",
+      "profile": "mobile-375-light",
+      "route": "/remote/pair",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M15-scanner-permission.png",
+      "bytes": 14752
+    },
+    {
+      "code": "M16",
+      "name": "chat-idle",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M16-chat-idle.png",
+      "bytes": 23183
+    },
+    {
+      "code": "M19",
+      "name": "conversation-list",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M19-conversation-list.png",
+      "bytes": 35810
+    },
+    {
+      "code": "M20",
+      "name": "new-conversation",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M20-new-conversation.png",
+      "bytes": 56346
+    },
+    {
+      "code": "M22",
+      "name": "chat-empty",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M22-chat-empty.png",
+      "bytes": 16394
+    },
+    {
+      "code": "M24",
+      "name": "chat-running",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M24-chat-running.png",
+      "bytes": 24819
+    },
+    {
+      "code": "M26",
+      "name": "busy",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M26-busy.png",
+      "bytes": 24333
+    },
+    {
+      "code": "M27",
+      "name": "failed",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M27-failed.png",
+      "bytes": 38626
+    },
+    {
+      "code": "M28",
+      "name": "approval",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M28-approval.png",
+      "bytes": 40120
+    },
+    {
+      "code": "M29",
+      "name": "offline",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M29-offline.png",
+      "bytes": 22891
+    },
+    {
+      "code": "M30",
+      "name": "suspended",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M30-suspended.png",
+      "bytes": 31239
+    },
+    {
+      "code": "M32",
+      "name": "message-attachments",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M32-message-attachments.png",
+      "bytes": 34263
+    },
+    {
+      "code": "M33",
+      "name": "uploading",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M33-uploading.png",
+      "bytes": 27373
+    },
+    {
+      "code": "M34",
+      "name": "upload-failure",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M34-upload-failure.png",
+      "bytes": 29780
+    },
+    {
+      "code": "M35",
+      "name": "native-conversation",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M35-native-conversation.png",
+      "bytes": 30230
+    },
+    {
+      "code": "M37",
+      "name": "native-unsupported",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M37-native-unsupported.png",
+      "bytes": 37033
+    },
+    {
+      "code": "M38",
+      "name": "native-explanation",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M38-native-explanation.png",
+      "bytes": 63738
+    },
+    {
+      "code": "M40",
+      "name": "tokens",
+      "profile": "mobile-375-light",
+      "route": "/remote/tokens",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M40-tokens.png",
+      "bytes": 27899
+    },
+    {
+      "code": "M41",
+      "name": "token-create",
+      "profile": "mobile-375-light",
+      "route": "/remote/tokens",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M41-token-create.png",
+      "bytes": 38588
+    },
+    {
+      "code": "M44",
+      "name": "conversation-settings",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M44-conversation-settings.png",
+      "bytes": 59135
+    },
+    {
+      "code": "M46",
+      "name": "no-conversation-send",
+      "profile": "mobile-375-light",
+      "route": "/remote/chat?workerId=worker_demo",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "file": "mobile-375-light/M46-no-conversation-send.png",
+      "bytes": 16572
+    }
+  ]
+}
