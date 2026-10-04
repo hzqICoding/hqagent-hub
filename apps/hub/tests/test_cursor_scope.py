@@ -120,6 +120,10 @@ def test_pagination_and_other_after_parameters_do_not_use_scope_capacity(client,
 def test_scope_check_matches_event_endpoint_query_parsing(client, hub, auth_headers):
     events = seed_events(hub)
     assert client.get('/api/v2/events?after=0', headers=features(auth_headers, True)).status_code == 200
+    for params in ({'after': ''}, [('after', '0'), ('after', '')], {'after': '-1'}, {'after': 'bad'}):
+        response = client.get('/api/v2/events', params=params, headers=auth_headers)
+        assert response.status_code == 422
+        assert hub.app.state.remote_worker.pi.cursor_scopes[owner(auth_headers)] is True
     for after in (f'+{events[0].seq}', f' {events[0].seq} ', f'{events[0].seq}.0'):
         response = client.get('/api/v2/events', params={'after': after}, headers=auth_headers)
         assert response.status_code == 410

@@ -52,7 +52,7 @@ class PiProjectionMiddleware:
             return
         enabled = features(headers)
         owner = hashlib.sha256((bearer if bearer else cookie or '').encode()).hexdigest()
-        queries = parse_qs(scope.get('query_string', b'').decode('utf-8'))
+        queries = parse_qs(scope.get('query_string', b'').decode('utf-8'), keep_blank_values=True)
         visibility = self.worker.pi
         messages = []
         try:
