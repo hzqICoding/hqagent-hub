@@ -70,6 +70,8 @@ class PiProjectionMiddleware:
                     body = json.loads(b''.join(m.get('body', b'') for m in messages))
                 except (ValueError, UnicodeError):
                     body = None
+                from runtime.execution_selection import reject_pi_fallbacks
+                reject_pi_fallbacks(body, visibility.agents)
                 if not enabled and visibility.mentions(body):
                     raise HubError('NOT_FOUND', '资源不存在')
         except HubError as error:

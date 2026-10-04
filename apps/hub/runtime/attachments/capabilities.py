@@ -116,6 +116,14 @@ class ImageCapabilities:
                         role_id=str(role.role_id), agents=candidates, task_override_agent_id=override,
                         global_profile=snapshot, requires_approval=None))
                     if isinstance(decision, ResolutionGap):
+                        # A PI primary stays the exact target while unavailable.
+                        # It must not be advertised as an unrelated fallback.
+                        from runtime.execution_selection import pi_instances
+                        if override in pi_instances(ports.agents, self.agents.values()):
+                            identifier = override
+                            binding = {'agentType': 'pi', 'transport': TRANSPORTS['pi']}
+                            if options[role.role_id]['modelId'] is not None:
+                                binding['modelId'] = options[role.role_id]['modelId']
                         cap = self.unknown(decision.reason)
                     else:
                         identifier = decision.agent.instance_id
