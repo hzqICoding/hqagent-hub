@@ -104,6 +104,7 @@ class PiState(AdapterSessionState):
     turn_ended: bool = False
     final_stop_reason: str | None = None
     tool_blocks: list = field(default_factory=list)
+    result_failure: AdapterFailure | None = None
 
 
 class PiAdapter(AgentAdapter):
@@ -504,7 +505,8 @@ class PiAdapter(AgentAdapter):
 
     def can_resume_completed_turn(self, session_id):
         state = self.registry.get(session_id)
-        return bool(state and state.result is not None and state.failure is None
+        return bool(state and state.failure is None and state.ready.is_set()
+                    and state.final_stop_reason not in {'error', 'aborted'}
                     and state.turn_ended and state.settled.is_set() and state.finished.is_set()
                     and state.process.returncode is not None and state.external_session_id)
 
@@ -516,7 +518,7 @@ class PiAdapter(AgentAdapter):
             await asyncio.wait_for(state.finished.wait(), state.spec.timeout_seconds or 600)
         except TimeoutError:
             return denied('INTERNAL', 'timeout')
-        return state.failure or state.result or denied('INTERNAL', 'agent_error')
+        return state.failure or state.result_failure or state.result or denied('INTERNAL', 'agent_error')
 
     @staticmethod
     def _release(state):
@@ -589,7 +591,13 @@ class PiAdapter(AgentAdapter):
                         message='PI 未正常完成本轮输出，缺少结束信号或模型返回运行错误')
                     return
                 reply = await state.connection.request('get_last_assistant_text')
-                result = await self._completed_reply(state, reply.get('text'))
+                try:
+                    result = await self._completed_reply(state, reply.get('text'))
+                except ValueError:
+                    # The reply format is invalid, not the native session.
+                    state.result_failure = denied('INTERNAL', 'agent_error',
+                        message='PI 已结束本轮，但输出不符合结果格式要求；可继续原会话')
+                    return
                 if (state.spec.read_only and result.changed_files) or state.guard.validate_changes(result.changed_files):
                     state.failure = denied('PI_TOOL_CALL_BLOCKED', 'path_violation')
                 else:
@@ -609,7 +617,12 @@ class PiAdapter(AgentAdapter):
             # A settled turn may still own an idle RPC process and cwd handle.
             # Close it before releasing the exact native writer lease. Resume
             # starts a fresh owned process and switches the same bound file.
+            abnormal_exit = (state.process.returncode not in (None, 0)
+                             and not state.connection.expected_close)
             stopped = await state.connection.force_close()
+            if abnormal_exit or (state.process.returncode not in (None, 0)
+                                 and not state.connection.terminated_by_owner):
+                state.failure = denied('AGENT_OFFLINE', 'transport_error')
             if stopped:
                 self._save_binding(state)
                 self._release(state)
@@ -628,13 +641,13 @@ class PiAdapter(AgentAdapter):
         try:
             result = parse_agent_result(text)
         except ValueError:
-            # Only a read-only, observed guard refusal may finish with prose.
-            # Never invent file-change evidence for a writable task, and never
-            # reinterpret a malformed structured response as successful prose.
+            # Read-only chat may finish in prose without calling any tool.
+            # Writable/review work still requires structured change evidence.
             if (not state.spec.read_only or str(state.spec.session_purpose) == 'review'
-                    or not state.tool_blocks or text.lstrip().startswith(('{', '[', '```'))):
+                    or state.final_stop_reason != 'stop'
+                    or text.lstrip().startswith(('{', '[', '```'))):
                 raise
-            result = AgentResult(status='blocked', summary=text, changedFiles=[])
+            result = AgentResult(status='done', summary=text, changedFiles=[])
         if not result.summary.strip():
             raise ValueError('missing final summary')
         model_refusal = bool(result.blockers) and all(b.kind == 'permission_denied' for b in result.blockers)

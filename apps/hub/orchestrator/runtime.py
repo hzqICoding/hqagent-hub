@@ -322,6 +322,12 @@ class WorkflowRuntime:
         # 和 start() 同款：契约表把 AdapterFailure 列在失败列，W2 是返回不是抛出。
         # 不检查就会在下面取 result.changed_files 时炸成 AttributeError。
         if isinstance(result, AdapterFailure):
+            # PI can have a failed result format after a healthy completed turn.
+            # Preserve the session without turning that failed result into success.
+            continuation = getattr(adapter, "can_resume_completed_turn", None)
+            if (str(outcome.resolution.agent.adapter_id) == 'pi'
+                    and callable(continuation) and continuation(outcome.session.id)):
+                await self.sessions.finish(outcome.session.id)
             raise AdapterStartFailedError(result)
         changed_files = tuple(
             item.path for item in (result.changed_files or []) if isinstance(item, FileChange)
