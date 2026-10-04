@@ -164,6 +164,9 @@ class CommandBridge:
             "worker": self.repo.get("link")["view"]["workerId"], "value": value})
 
     def _admit(self, tx, frame, registered):
+        pi = getattr(self.chat, 'pi', None)
+        if pi is not None:
+            pi.require_wire(frame)
         self.chat.repository.assert_not_deleted(frame['conversationId'], tx.connection)
         cached = self.repo.get(self._scope_key("command-rejection:", frame), tx)
         if cached is not None:

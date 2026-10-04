@@ -10,7 +10,7 @@ import time
 import threading
 from pathlib import Path
 
-from protocol.generated.python import (NativeSessionIndex, LocalNativeSessionPage, NativeMessagePage,
+from protocol.generated.python import (RuntimeNativeSessionIndex, LocalNativeSessionPage, NativeMessagePage,
     NativeClosureConfirmation, LocalConversationView, AgentTaskSpec, SessionView, CreateTaskInput,
     SaveTeamProfileInput)
 from adapters.history import FileHistory, HistorySource, digest, public_text
@@ -328,7 +328,7 @@ class NativeService:
                         index["indexVersion"] += 1
                     else:
                         index = old_index
-                NativeSessionIndex.model_validate(index)
+                RuntimeNativeSessionIndex.model_validate(index)
                 data = {"root": str(plugin.root), "path": str(source.path), "vendor_id": source.vendor_id,
                     "cwd": str(source.cwd), "identity": source.identity, "cut": source.cut, "prefix_hash": source.prefix_hash,
                     "metadata": self.index_for(plugin).load(source.path)["source"],
@@ -372,6 +372,8 @@ class NativeService:
                     )
 
     def _cursor(self, value):
+        from runtime.pi_visibility import CLIENT_PI
+        value = {**value, 'piClient': bool(CLIENT_PI.get())}
         self.pages = {k: v for k, v in self.pages.items() if v["expires"] > time.monotonic()}
         if len(self.pages) >= 128:
             raise HubError("REMOTE_RATE_LIMITED", "原生读取快照过多")
@@ -380,8 +382,10 @@ class NativeService:
         return token
 
     def _page(self, token, kind):
+        from runtime.pi_visibility import CLIENT_PI
         value = self.pages.get(token)
-        if value is None or value["expires"] <= time.monotonic() or value["kind"] != kind:
+        if (value is None or value["expires"] <= time.monotonic() or value["kind"] != kind
+                or value.get('piClient', False) != bool(CLIENT_PI.get())):
             raise HubError("REMOTE_CURSOR_INVALID", "原生游标无效或过期")
         return value
 
@@ -429,7 +433,7 @@ class NativeService:
         await self.registered(row)
         if row["conversation_id"]:
             raise HubError("NOT_FOUND", "会话已导入")
-        return NativeSessionIndex.model_validate_json(row["index_json"])
+        return RuntimeNativeSessionIndex.model_validate_json(row["index_json"])
 
     async def read(self, identifier, *, revision=None, before=None, limit=50, scope=None):
         row = self.row(identifier)

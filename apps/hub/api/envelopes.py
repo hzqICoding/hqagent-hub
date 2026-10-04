@@ -21,6 +21,8 @@ def dump_model(value: Any) -> Any:
 
 
 def success_response(data: Any, status_code: int = 200) -> JSONResponse:
+    from runtime.pi_visibility import project_http
+    data = project_http(dump_model(data))
     envelope = ApiEnvelope.model_validate(
         {
             "success": True,

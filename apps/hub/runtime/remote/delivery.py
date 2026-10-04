@@ -75,6 +75,8 @@ class DeliveryBridge(CommandBridge):
         tx.connection.execute("INSERT OR IGNORE INTO remote2_routes VALUES(?,?,?,?)", (worker, store, public, local))
 
     def _validate(self, tx, frame, workspaces):
+        if getattr(self.chat, 'pi', None) is not None:
+            self.chat.pi.require_wire(frame)
         if not self.sync.settings().mirror_enabled:
             raise HubError("REMOTE_SYNC_DISABLED", "电脑已关闭同步")
         self.clock.check(frame)
@@ -249,6 +251,8 @@ class DeliveryBridge(CommandBridge):
     async def receive(self, raw):
         frame = CODECS[raw["wireRevision"]][1].model_validate(raw).model_dump(mode="json", by_alias=True, exclude_none=True)
         self._check_connection(frame)
+        if getattr(self.chat, 'pi', None) is not None:
+            await self.chat.pi.refresh()
         workspaces = {w.id for w in await self.chat.ports.workspaces.list_workspaces(None, None)}
         original = frame
         if frame['type'] == 'command.delivery_granted':
