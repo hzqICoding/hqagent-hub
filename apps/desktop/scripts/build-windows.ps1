@@ -12,7 +12,9 @@ if (-not (Test-Path -LiteralPath $coreScript -PathType Leaf)) {
     throw 'R17-P1 is not integrated: apps/hub/packaging/windows/build-core.ps1 is missing.'
 }
 if ($env:TAURI_CONFIG) { throw 'Clear TAURI_CONFIG before packaging; validation resource overrides must not enter an installer.' }
-$env:CARGO_BUILD_JOBS = '1'
+# Release builds of the shell are CPU-bound; 4 jobs keeps peak memory a few GB above the old serial build.
+# Set HQAGENT_CARGO_JOBS to override (e.g. '1' on a memory-constrained machine).
+$env:CARGO_BUILD_JOBS = if ($env:HQAGENT_CARGO_JOBS) { $env:HQAGENT_CARGO_JOBS } else { '4' }
 $env:CARGO_NET_OFFLINE = 'true'
 $env:CARGO_TARGET_DIR = Join-Path $desktopRoot 'src-tauri/target'
 $env:TEMP = Join-Path $repoRoot '.tmp'
