@@ -25,6 +25,10 @@ const COLD_READINESS_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const COLD_START_WINDOW: Duration = Duration::from_secs(90);
 const PROBE_CACHE_TTL: Duration = Duration::from_secs(2);
 pub const TAURI_PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
+// Must match src/shared/api/client-features.ts: shell and frontend share a Bearer
+// token. Bootstrap re-registers that token's projection capabilities; omitting
+// pi-v1 here invalidates the frontend's subsequent event cursors.
+const HUB_CLIENT_FEATURES: &str = "pi-v1";
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -211,6 +215,7 @@ impl HubEndpointProvider {
             .get(bootstrap_url)
             .timeout(timeout)
             .bearer_auth(&descriptor.token)
+            .header("X-HQ-Client-Features", HUB_CLIENT_FEATURES)
             .header("Origin", TAURI_PRODUCTION_ORIGIN)
             .header("X-Client-Id", "hqagent-desktop-shell")
             .send()
