@@ -85,11 +85,14 @@ async function handleLine(line) {
   if (report === 'business-failure') {
     result.status = 'failed'; result.blockers = [{ kind: 'external_failure', message: 'synthetic build failed' }];
   }
-  last = report === 'plain' ? 'synthetic policy refusal, turn finished' : JSON.stringify(result);
+  const prose = { plain: 'synthetic policy refusal, turn finished',
+    'plain-answer': 'ordinary synthetic answer', 'plain-refusal': '请求的文件位于授权根目录之外，我无法读取。', 'length': 'truncated synthetic reply',
+    'bad-json': '{unfinished', 'bad-array': '[unfinished', 'bad-fence': '```unfinished' };
+  last = prose[report] || JSON.stringify(result);
   if (decision?.block) emit({ type: 'tool_execution_end', toolName: process.env.PI_FAKE_TOOL,
     toolCallId: 'synthetic-call', isError: true, result: {content: [{type: 'text', text: 'PI_TOOL_CALL_BLOCKED'}]} });
   emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: last } });
-  const message = { role: 'assistant', stopReason: report === 'runtime-error' ? 'error' : 'stop', content: [{type: 'text', text: last}] };
+  const message = { role: 'assistant', stopReason: report === 'runtime-error' ? 'error' : report === 'aborted' ? 'aborted' : report === 'length' ? 'length' : 'stop', content: [{type: 'text', text: last}] };
   emit({ type: 'message_end', message });
   if (report !== 'missing-end') emit({ type: 'agent_end', messages: [message] });
   setTimeout(() => emit({ type: 'agent_settled' }), 40);
@@ -104,4 +107,4 @@ process.stdin.on('data', chunk => {
     void handleLine(line);
   }
 });
-process.stdin.on('end', () => process.exit(0));
+process.stdin.on('end', () => process.exit(process.env.PI_FAKE_FINAL_REPORT === 'exit-error' ? 1 : 0));

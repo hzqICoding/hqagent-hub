@@ -14,6 +14,7 @@ class PiRPC:
         self.close_lock = asyncio.Lock()
         self.jobs = set()
         self.expected_close = False
+        self.terminated_by_owner = False
         self.idle = True
         self.reader = asyncio.create_task(self._read())
         self.stderr = asyncio.create_task(self._stderr())
@@ -97,6 +98,7 @@ class PiRPC:
                 pass
         if not stopped:
             stopped = await terminate_process_tree(self.process)
+            self.terminated_by_owner = stopped
         if not stopped or self.process.returncode is None:
             return False
         tasks = [self.reader, self.stderr, *self.jobs]
