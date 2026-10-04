@@ -16,6 +16,7 @@ _ALLOWED_NPM_BIN_SUFFIXES = {".exe", ".js", ".cjs", ".mjs"}
 _KNOWN_NPM_PACKAGES = {
     "claude": ("@anthropic-ai/claude-code", "claude"),
     "codex": ("@openai/codex", "codex"),
+    "pi": ("@earendil-works/pi-coding-agent", "pi"),
 }
 
 # Safe mode suppresses customizations; carry user transport configuration in the

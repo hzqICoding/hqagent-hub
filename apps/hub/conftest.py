@@ -11,3 +11,10 @@ def isolated_system_keyring(monkeypatch):
     # Selector tests may exercise this function only with mocked backend modules;
     # behavior tests explicitly inject MemoryKeyring instead of OS discovery.
     return original
+
+
+@pytest.fixture(autouse=True)
+def isolated_pi_runtime(monkeypatch, tmp_path):
+    # PI tests explicitly override this with a synthetic RPC package. Discovery
+    # in unrelated tests must never launch the user's configured PI runtime.
+    monkeypatch.setenv('HQAGENT_PI_PATH', str(tmp_path / 'not-installed-pi'))

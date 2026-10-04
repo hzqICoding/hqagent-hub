@@ -10,6 +10,7 @@ if Path(sys.prefix).resolve() != (root / '.venv').resolve():
 
 datas = collect_data_files('protocol', includes=['registry/*.yaml', 'events/event-dictionary.md'])
 datas += copy_metadata('keyring')
+datas += [(str(hub / 'adapters/resources/pi/hub-guard.mjs'), 'adapters/resources/pi')]
 hiddenimports = collect_submodules('uvicorn') + collect_submodules('keyring.backends')
 hiddenimports += ['PIL.Image', 'PIL.PngImagePlugin', 'PIL.JpegImagePlugin',
                   'PIL.GifImagePlugin', 'PIL.WebPImagePlugin', 'segno',
