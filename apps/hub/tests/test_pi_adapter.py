@@ -44,7 +44,7 @@ async def denial_evidence(adapter, identifier):
     denied = [event.payload for event in events if getattr(event, 'unified_type', None) == 'agent.failed'
               and event.payload.error_code == 'PI_TOOL_CALL_BLOCKED']
     assert denied and all(v.blockers[0].detail['scope'] == 'tool_call' for v in denied)
-    assert adapter.can_resume_after_tool_block(identifier)
+    assert adapter.can_resume_completed_turn(identifier)
     return denied
 
 

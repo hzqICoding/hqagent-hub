@@ -101,6 +101,8 @@ class PiState(AdapterSessionState):
     result_job: asyncio.Task | None = None
     policy_snapshot: str = ''
     turn_started: bool = False
+    turn_ended: bool = False
+    final_stop_reason: str | None = None
     tool_blocks: list = field(default_factory=list)
 
 
@@ -442,7 +444,7 @@ class PiAdapter(AgentAdapter):
             state.active_turn_id = secrets.token_hex(16)
             failure_code = 'INTERNAL'
             state.connection.idle = False
-            result = await state.connection.request('prompt', **prompt_input(build_task_prompt(spec) + '\nAgentResult JSON Schema:\n' + json.dumps(AgentResult.model_json_schema(by_alias=True), ensure_ascii=False), spec.input_attachments))
+            result = await state.connection.request('prompt', **prompt_input(build_task_prompt(spec) + '\n安全限制导致的拒绝也是已完成的回复：说明拒绝原因，不得声称执行被禁止的操作；正常完成说明时返回 status=done，并用 blockers.kind=permission_denied 记录。其它真实业务失败仍如实报告；验收缺少证据不能因为回复已结束就报告通过。\nAgentResult JSON Schema:\n' + json.dumps(AgentResult.model_json_schema(by_alias=True), ensure_ascii=False), spec.input_attachments))
             if result.get('disposition') == 'handled':
                 raise ValueError('prompt did not start a turn')
             return AgentSessionHandle(adapterId='pi', sessionId=state.session_id, externalSessionId=state.external_session_id,
@@ -500,10 +502,10 @@ class PiAdapter(AgentAdapter):
                 return
             yield item
 
-    def can_resume_after_tool_block(self, session_id):
+    def can_resume_completed_turn(self, session_id):
         state = self.registry.get(session_id)
-        return bool(state and state.tool_blocks and state.result is not None and state.failure is None
-                    and state.settled.is_set() and state.finished.is_set()
+        return bool(state and state.result is not None and state.failure is None
+                    and state.turn_ended and state.settled.is_set() and state.finished.is_set()
                     and state.process.returncode is not None and state.external_session_id)
 
     async def collect_result(self, session_id):
@@ -538,6 +540,8 @@ class PiAdapter(AgentAdapter):
         elif kind == 'agent_start':
             if state.active_turn_id:
                 state.turn_started = True
+                state.turn_ended = False
+                state.final_stop_reason = None
                 if not state.started_emitted:
                     state.started_emitted = True
                     await state.emit(AdapterEvent.create(kind, 'agent.started', AgentStartedPayload(
@@ -547,6 +551,17 @@ class PiAdapter(AgentAdapter):
             else:
                 state.failure = denied()
             state.connection.idle = False
+        elif kind == 'message_end':
+            message = frame.get('message') or {}
+            if message.get('role') == 'assistant':
+                state.final_stop_reason = message.get('stopReason')
+        elif kind == 'agent_end':
+            if state.active_turn_id and state.turn_started:
+                state.turn_ended = True
+                final = next((m for m in reversed(frame.get('messages') or [])
+                              if isinstance(m, dict) and m.get('role') == 'assistant'), None)
+                if final is not None:
+                    state.final_stop_reason = final.get('stopReason')
         elif kind == 'agent_settled':
             if not state.active_turn_id or not state.turn_started or state.settled.is_set():
                 return
@@ -569,8 +584,12 @@ class PiAdapter(AgentAdapter):
             if state.stopping:
                 state.failure = denied('TASK_NOT_CANCELLABLE', 'cancelled')
             elif state.failure is None:
+                if not state.turn_ended or state.final_stop_reason in {'error', 'aborted'}:
+                    state.failure = denied('AGENT_OFFLINE', 'transport_error',
+                        message='PI 未正常完成本轮输出，缺少结束信号或模型返回运行错误')
+                    return
                 reply = await state.connection.request('get_last_assistant_text')
-                result = parse_agent_result(reply.get('text'))
+                result = await self._completed_reply(state, reply.get('text'))
                 if (state.spec.read_only and result.changed_files) or state.guard.validate_changes(result.changed_files):
                     state.failure = denied('PI_TOOL_CALL_BLOCKED', 'path_violation')
                 else:
@@ -599,7 +618,51 @@ class PiAdapter(AgentAdapter):
                 state.failure = denied('AGENT_OFFLINE', 'transport_error')
             if state.result is not None and state.failure is None:
                 await state.emit(AdapterEvent.create('agent_settled', 'agent.completed', AgentCompletedPayload(result=state.result)))
-            await state.finish(AdapterStreamEnd(status='ended', endedAt=utc_timestamp(), resumable=stopped))
+            healthy = stopped and (state.failure is None or state.stopping)
+            await state.finish(AdapterStreamEnd(status='ended' if healthy else 'agent_exited',
+                endedAt=utc_timestamp(), resumable=healthy))
+
+    async def _completed_reply(self, state, text):
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError('missing final output')
+        try:
+            result = parse_agent_result(text)
+        except ValueError:
+            # Only a read-only, observed guard refusal may finish with prose.
+            # Never invent file-change evidence for a writable task, and never
+            # reinterpret a malformed structured response as successful prose.
+            if (not state.spec.read_only or str(state.spec.session_purpose) == 'review'
+                    or not state.tool_blocks or text.lstrip().startswith(('{', '[', '```'))):
+                raise
+            result = AgentResult(status='blocked', summary=text, changedFiles=[])
+        if not result.summary.strip():
+            raise ValueError('missing final summary')
+        model_refusal = bool(result.blockers) and all(b.kind == 'permission_denied' for b in result.blockers)
+        refusal = bool(state.tool_blocks) or model_refusal
+        if refusal:
+            from protocol.generated.python import Blocker, AgentFailedPayload
+            evidence = 'guard_decision' if state.tool_blocks else 'model_report'
+            message = '本轮有操作被安全策略拦截，PI 已完成回复' if state.tool_blocks else 'PI 报告权限限制并拒绝操作，已完成回复'
+            detail = {'errorCode': 'PI_TOOL_CALL_BLOCKED', 'evidence': evidence,
+                      'reportedStatus': result.status}
+            if state.tool_blocks:
+                detail['guardReasons'] = sorted({str(d.reason) for d in state.tool_blocks})
+            else:
+                detail['reportedReason'] = 'permission_denied'
+                # Self-refusal is not proof that a Host tool call occurred.
+                await state.emit(AdapterEvent.create('pi.completed_refusal', 'agent.failed',
+                    AgentFailedPayload(errorCode='PI_TOOL_CALL_BLOCKED', message=message,
+                        blockers=[{'kind': 'permission_denied', 'message': message, 'detail': detail}])))
+            audit = Blocker(kind='permission_denied', message=message, detail=detail)
+            blockers = list(result.blockers or [])
+            # Only the safety refusal becomes a completed conversational reply.
+            # Keep unrelated build/test/dependency failures and changes honest.
+            completed_refusal = (str(state.spec.session_purpose) != 'review' and not result.changed_files
+                and all(b.kind == 'permission_denied' for b in blockers)
+                and all(t.passed for t in result.tests or []))
+            result = result.model_copy(update={'status': 'done' if completed_refusal else result.status,
+                                              'blockers': [*blockers, audit]})
+        return result
 
     async def _guard_request(self, state, frame):
         identifier = frame.get('id')

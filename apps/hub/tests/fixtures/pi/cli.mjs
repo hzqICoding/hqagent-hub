@@ -75,9 +75,23 @@ async function handleLine(line) {
   }
   const answers = JSON.parse(process.env.PI_FAKE_ANSWERS || '[]');
   const summary = decision?.block ? 'blocked' : answers[turn - 1] || (mode === 'recall' ? memory : 'synthetic final');
-  last = JSON.stringify({ status: decision?.block && process.env.PI_FAKE_BLOCKED_REPORT === '1' ? 'blocked' : 'done', summary, changedFiles: [] });
-  emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'synthetic progress' } });
-  emit({ type: 'agent_end' });
+  const report = process.env.PI_FAKE_FINAL_REPORT || '';
+  const refusal = report === 'self-refusal';
+  const result = { status: decision?.block && process.env.PI_FAKE_BLOCKED_REPORT === '1' ? 'blocked' : 'done', summary, changedFiles: [] };
+  if (report === 'failed' || refusal) {
+    result.status = 'failed';
+    result.blockers = [{ kind: 'permission_denied', message: 'synthetic policy refusal' }];
+  }
+  if (report === 'business-failure') {
+    result.status = 'failed'; result.blockers = [{ kind: 'external_failure', message: 'synthetic build failed' }];
+  }
+  last = report === 'plain' ? 'synthetic policy refusal, turn finished' : JSON.stringify(result);
+  if (decision?.block) emit({ type: 'tool_execution_end', toolName: process.env.PI_FAKE_TOOL,
+    toolCallId: 'synthetic-call', isError: true, result: {content: [{type: 'text', text: 'PI_TOOL_CALL_BLOCKED'}]} });
+  emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: last } });
+  const message = { role: 'assistant', stopReason: report === 'runtime-error' ? 'error' : 'stop', content: [{type: 'text', text: last}] };
+  emit({ type: 'message_end', message });
+  if (report !== 'missing-end') emit({ type: 'agent_end', messages: [message] });
   setTimeout(() => emit({ type: 'agent_settled' }), 40);
 }
 let buffer = '';

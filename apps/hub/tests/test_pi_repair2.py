@@ -27,7 +27,7 @@ def integrated(tmp_path, monkeypatch, mode):
     return system, adapter
 
 
-@pytest.mark.parametrize('blocked_report', [False, True])
+@pytest.mark.parametrize('blocked_report', [False, True, 'failed', 'plain', 'self-refusal'])
 def test_local_continue_uses_same_session_after_policy_block(tmp_path, monkeypatch, blocked_report):
     async def scenario():
         system, adapter = integrated(tmp_path, monkeypatch, 'recall')
@@ -48,16 +48,25 @@ def test_local_continue_uses_same_session_after_policy_block(tmp_path, monkeypat
             assert original.turn_count == 1 and original.status == 'idle'
             monkeypatch.setenv('PI_FAKE_TOOL', 'read')
             monkeypatch.setenv('PI_FAKE_ARGS', '{"path":"../outside"}')
-            if blocked_report:
+            if blocked_report is True:
                 monkeypatch.setenv('PI_FAKE_BLOCKED_REPORT', '1')
+            elif isinstance(blocked_report, str):
+                monkeypatch.setenv('PI_FAKE_FINAL_REPORT', blocked_report)
+                if blocked_report == 'self-refusal':
+                    monkeypatch.delenv('PI_FAKE_TOOL')
             blocked = await send('blocked', 'try reading outside')
-            assert blocked['status'] == ('failed' if blocked_report else 'succeeded'), blocked['error']
+            assert blocked['status'] == 'succeeded', blocked['error']
             current = await system.tasks.runtime.sessions.repository.get(original.id)
             assert current.status == 'idle' and current.is_valid and current.turn_count == 2
             events = system.events.page(0, 1000).events
             failures = [e.payload for e in events if e.type == 'agent.failed' and e.payload.get('errorCode') == 'PI_TOOL_CALL_BLOCKED']
-            assert failures and failures[0]['blockers'][0]['detail']['guardReason'] == 'path_outside_scope'
-            monkeypatch.delenv('PI_FAKE_TOOL')
+            assert failures
+            if blocked_report == 'self-refusal':
+                assert failures[0]['blockers'][0]['detail']['evidence'] == 'model_report'
+            else:
+                assert failures[0]['blockers'][0]['detail']['guardReason'] == 'path_outside_scope'
+            monkeypatch.delenv('PI_FAKE_TOOL', raising=False)
+            monkeypatch.delenv('PI_FAKE_FINAL_REPORT', raising=False)
             third = await send('third', 'recall context')
             assert third['status'] == 'succeeded', third['error']
             current = await system.tasks.runtime.sessions.repository.get(original.id)
