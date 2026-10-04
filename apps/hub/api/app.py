@@ -41,6 +41,7 @@ from storage.database import Database
 from storage.events import EventStore
 from storage.idempotency import IdempotencyRepository
 from storage.settings import SettingsRepository
+from core.agent_snapshot import agent_snapshot
 from orchestrator.errors import OrchestrationError
 
 
@@ -209,6 +210,10 @@ def create_application(
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         try:
+            start_agents = getattr(type(resolved_ports.agents), 'start', None)
+            if start_agents is not None and not getattr(_app.state, 'shutting_down', False):
+                start_agents(resolved_ports.agents)
+            bootstrap.start()
             if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "recover_pending"):
                 await resolved_ports.tasks.recover_pending()
             # EOF may arrive while startup recovery is awaiting I/O. Do not
@@ -219,12 +224,16 @@ def create_application(
                 await remote_worker.start()
             yield
         finally:
+            await bootstrap.close()
             await remote_worker.attachments.verifications.close()
             local_auth.close()
             await remote_worker.stop()
             await local_chat.stop()
             if resolved_ports.tasks.available and hasattr(type(resolved_ports.tasks), "shutdown"):
                 await resolved_ports.tasks.shutdown()
+            close_agents = getattr(type(resolved_ports.agents), 'close', None)
+            if close_agents is not None:
+                await close_agents(resolved_ports.agents)
             if close_database_on_shutdown:
                 database.close()
             _app.state.lifecycle_closed = True
@@ -324,7 +333,7 @@ def create_application(
 
     @app.get("/api/v1/agents")
     async def list_agents() -> JSONResponse:
-        return success_response(await resolved_ports.agents.list_agents())
+        return success_response(await agent_snapshot(resolved_ports.agents))
 
     @app.post("/api/v1/agents/discovery")
     async def discover_agents() -> JSONResponse:

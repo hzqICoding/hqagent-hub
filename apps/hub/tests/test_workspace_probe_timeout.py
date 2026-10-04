@@ -79,6 +79,8 @@ def test_workspace_and_bootstrap_bound_all_slow_repositories_and_degrade(monkeyp
                     assert row['capabilities']['canRunWriteTasks'] is False
                     assert row['capabilities']['canInitGit'] is False
                     assert row['capabilities']['reason'] == workspaces.GIT_STATE_UNKNOWN_REASON
+            # Bootstrap now returns before its background Git refresh completes.
+            await system.application.app.state.local_bootstrap._background
             assert spawned and all(p.killed for p in spawned)
             assert len(spawned) < 10  # Budget does not multiply by the 30 workspaces.
             assert all(r.vcs == 'git' for r in repo.list())

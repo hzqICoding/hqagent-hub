@@ -44,7 +44,7 @@ class PiProjectionMiddleware:
         visibility = self.worker.pi
         messages = []
         try:
-            await visibility.refresh()
+            await visibility.refresh(cached=True)
             after = int(queries['after'][0]) if 'after' in queries and queries['after'][0].isdigit() else None
             cursor_scope(visibility, owner, enabled, after, snapshot=scope['path'].endswith('/bootstrap'))
             if queries.get('page', [''])[0].isdigit():

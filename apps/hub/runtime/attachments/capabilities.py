@@ -67,9 +67,11 @@ class ImageCapabilities:
         self.fingerprint = ''
         self.lock = asyncio.Lock()
 
-    async def refresh(self):
+    async def refresh(self, *, cached=False):
+        if cached and self.lock.locked():
+            return  # A real refresh must not hold the HTTP presentation hostage.
         async with self.lock:
-            await self._refresh()
+            await self._refresh(cached=cached)
 
     def unknown(self, reason, kind=''):
         return ImageInputCapability(support='unknown', cliEntry='unknown',
@@ -83,12 +85,17 @@ class ImageCapabilities:
         target = target_for(candidate.instance_id, str(candidate.adapter_id), view.version, model, adapter)
         return self.store.capability(str(candidate.adapter_id), view.version, model, target=target)
 
-    async def _refresh(self):
+    async def _refresh(self, *, cached=False):
         ports = self.worker.bridge.chat.ports
         try:
-            values = await ports.agents.list_agents()
+            if cached and hasattr(type(ports.agents), 'cached_agents'):
+                values = await ports.agents.cached_agents()
+                from orchestrator.domain import AgentCandidate
+                self.candidates = tuple(AgentCandidate.from_view(item) for item in values)
+            else:
+                values = await ports.agents.list_agents()
+                self.candidates = tuple(await ports.tasks.directory.list_candidates())
             self.agents = {a.id: a for a in values}
-            self.candidates = tuple(await ports.tasks.directory.list_candidates())
         except Exception:
             self.agents = {}
             self.candidates = ()
@@ -151,7 +158,7 @@ class ImageCapabilities:
             'nativeBindings': sorted((p.agent_type, p.runtime_id) for p in self.worker.native.plugins),
             'pi': [(a.id, self.worker.bridge.chat.ports.tasks.directory.adapter_for(a.id).verification_configuration()) for a in self.agents.values() if str(a.adapter_id) == 'pi'],
         })
-        if self.worker.repo.get('identity').get('wireRevision', 1) >= 4 and self.worker.repo.get('link')['view']['state'] == 'paired':
+        if not cached and self.worker.repo.get('identity').get('wireRevision', 1) >= 4 and self.worker.repo.get('link')['view']['state'] == 'paired':
             await self.worker.projector.catalog()
 
     def native(self, kind, runtime_id=None):

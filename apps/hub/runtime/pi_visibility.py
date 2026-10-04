@@ -26,8 +26,8 @@ class PiVisibility:
         self.cursor_scopes = {}
         self.tombstones = set()
 
-    async def refresh(self):
-        await self.worker.attachments.capabilities.refresh()
+    async def refresh(self, *, cached=False):
+        await self.worker.attachments.capabilities.refresh(cached=cached)
         self.rebuild()
 
     def was_pi(self, identifier):
