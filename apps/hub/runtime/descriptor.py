@@ -14,6 +14,8 @@ def _current_windows_sid() -> str:
     completed = subprocess.run(
         ["whoami", "/user", "/fo", "csv", "/nh"],
         check=True,
+        stdin=subprocess.DEVNULL,
+        timeout=5,
         capture_output=True,
         text=True,
         encoding="oem",
@@ -33,6 +35,8 @@ def secure_current_user_only(path: Path, directory: bool = False) -> None:
     subprocess.run(
         ["icacls", str(path), "/inheritance:r", "/grant:r", grant],
         check=True,
+        stdin=subprocess.DEVNULL,
+        timeout=5,
         capture_output=True,
         text=True,
         encoding="oem",
