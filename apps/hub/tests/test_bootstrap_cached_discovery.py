@@ -232,6 +232,24 @@ def test_update_proxy_pid_query_is_read_only():
     assert not UpdateAgentProxy._pid_exists(child.pid)
 
 
+def test_cold_legacy_bootstrap_hides_pi_counts_while_capability_refresh_is_busy(tmp_path):
+    async def scenario():
+        system = System(tmp_path)
+        runtime = SlowRuntime()
+        manager = AdapterManager([runtime])
+        system.ports.agents = manager
+        system.tasks.directory = AdapterDirectory(manager)
+        try:
+            async with system.worker.attachments.capabilities.lock:
+                response = await asyncio.wait_for(system.local.get('/api/v1/bootstrap'), .5)
+            assert response.status_code == 200
+            assert response.json()['data']['agents'] == {'total': 0, 'ready': 0, 'issues': 0}
+        finally:
+            await manager.close()
+            await system.close()
+    asyncio.run(scenario())
+
+
 def test_shutdown_cancels_background_detection_without_restarting_it():
     async def scenario():
         runtime = SlowRuntime()
