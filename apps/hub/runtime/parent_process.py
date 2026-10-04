@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import asyncio
 import os
+import sys
 import threading
 
 
@@ -27,7 +28,52 @@ class ParentProcess:
         return cls(Path(runtime).resolve() if runtime else None, instance, control == 'stdio-v1')
 
 
-def watch_parent(stream, loop, stopped):
+def take_parent_stdin():
+    """Detach the control pipe before any reader or child process is started.
+
+    Windows subprocess startup duplicates STD_INPUT_HANDLE when stdin is not
+    supplied. That duplication can block behind a synchronous pipe read. Keep
+    only a private, non-inheritable copy for the control thread and replace both
+    the CRT fd and the Win32 standard handle with NUL. POSIX children see /dev/null
+    too, and the private descriptor is close-on-exec.
+    """
+    if sys.stdin is None:
+        raise ValueError('stdio-v1 需要桌面壳提供 stdin 管道')
+    kernel = None
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+        import msvcrt
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.GetStdHandle.argtypes = (wintypes.DWORD,)
+        kernel.GetStdHandle.restype = wintypes.HANDLE
+        kernel.SetStdHandle.argtypes = (wintypes.DWORD, wintypes.HANDLE)
+        kernel.SetStdHandle.restype = wintypes.BOOL
+        original = kernel.GetStdHandle(wintypes.DWORD(-10))
+        if original not in (None, ctypes.c_void_p(-1).value):
+            # Embedders may supply a Win32 handle distinct from the CRT fd 0.
+            # Detaching fd 0 alone must not leave that original pipe inheritable.
+            os.set_handle_inheritable(original, False)
+    control_fd = os.dup(sys.stdin.fileno())
+    try:
+        os.set_inheritable(control_fd, False)
+        null_fd = os.open(os.devnull, os.O_RDONLY | getattr(os, 'O_BINARY', 0))
+        try:
+            # Only NUL is inheritable. On POSIX fd 0 must survive exec so a
+            # default-stdin child receives EOF rather than an invalid descriptor.
+            os.dup2(null_fd, 0, inheritable=True)
+        finally:
+            os.close(null_fd)
+        if kernel is not None:
+            if not kernel.SetStdHandle(wintypes.DWORD(-10), wintypes.HANDLE(msvcrt.get_osfhandle(0))):
+                raise ctypes.WinError(ctypes.get_last_error())
+        return os.fdopen(control_fd, 'r', encoding='utf-8', errors='replace', newline=None)
+    except BaseException:
+        os.close(control_fd)
+        raise
+
+
+def watch_parent(stream, loop, stopped, *, close_stream=False):
     """A daemon, not the default executor: blocked stdin must not hang exit."""
     def read():
         oversized = False
@@ -44,18 +90,29 @@ def watch_parent(stream, loop, stopped):
                 oversized = False
         except (OSError, ValueError):
             pass  # Lost pipe has the same lifetime semantics as EOF.
+        finally:
+            if close_stream:
+                try:
+                    stream.close()  # Only its reader closes a potentially blocked stream.
+                except (OSError, ValueError):
+                    pass
         try:
             loop.call_soon_threadsafe(stopped.set)
         except RuntimeError:
             pass  # Event loop has already stopped for another reason.
     thread = threading.Thread(target=read, name='hub-parent-control', daemon=True)
-    thread.start()
+    try:
+        thread.start()
+    except BaseException:
+        if close_stream:
+            stream.close()
+        raise
     return thread
 
 
-async def serve_with_parent(server, listener, application, stream):
+async def serve_with_parent(server, listener, application, stream, *, owned_stream=False):
     stopped = asyncio.Event()
-    watch_parent(stream, asyncio.get_running_loop(), stopped)
+    watch_parent(stream, asyncio.get_running_loop(), stopped, close_stream=owned_stream)
 
     async def shutdown():
         await stopped.wait()

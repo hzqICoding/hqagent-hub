@@ -20,7 +20,7 @@ from runtime.composition import bind_ports, build_ports
 from runtime.descriptor import RuntimeDescriptorFile
 from runtime.instance import SingleInstanceLock, SingleInstanceError
 from runtime.paths import HubPaths
-from runtime.parent_process import ParentProcess, serve_with_parent
+from runtime.parent_process import ParentProcess, serve_with_parent, take_parent_stdin
 
 
 def _parse_args() -> argparse.Namespace:
@@ -50,7 +50,10 @@ async def run(data_dir: Path | None = None, environment: str = "production", *, 
     listener = None
     application = None
     server = None
+    parent_stream = None
     try:
+        if parent.stdio:
+            parent_stream = take_parent_stdin()
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind(("127.0.0.1", port))
@@ -118,12 +121,13 @@ async def run(data_dir: Path | None = None, environment: str = "production", *, 
         )
         server = uvicorn.Server(config)
         if parent.stdio:
-            if sys.stdin is None:
-                raise ValueError("stdio-v1 需要桌面壳提供 stdin 管道")
-            await serve_with_parent(server, listener, application, sys.stdin)
+            control, parent_stream = parent_stream, None  # Ownership moves to the daemon reader.
+            await serve_with_parent(server, listener, application, control, owned_stream=True)
         else:
             await server.serve(sockets=[listener])
     finally:
+        if parent_stream is not None:
+            parent_stream.close()  # Startup failed before a reader acquired the pipe.
         descriptor_file.remove(instance_id)
         if (application is not None and not getattr(application.app.state, "lifecycle_closed", False)
                 and (server is None or not server.started)):
