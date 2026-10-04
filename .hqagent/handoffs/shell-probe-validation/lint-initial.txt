@@ -1,0 +1,18 @@
+Scope: all 3 workspace projects
+[ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY] Aborted removal of modules directory due to no TTY
+
+If you are running pnpm in CI, set the CI environment variable to "true", or set "confirmModulesPurge" to "false".
+[ERROR] Command failed with exit code 1: "E:\SoftWare\nodejs\node.exe" "C:\Users\ua-hzq\AppData\Roaming\npm\node_modules\pnpm\bin\pnpm.mjs" install
+
+pnpm: Command failed with exit code 1: "E:\SoftWare\nodejs\node.exe" "C:\Users\ua-hzq\AppData\Roaming\npm\node_modules\pnpm\bin\pnpm.mjs" install
+    at getFinalError (file:///C:/Users/ua-hzq/AppData/Roaming/npm/node_modules/pnpm/dist/pnpm.mjs:89986:14)
+    at makeError (file:///C:/Users/ua-hzq/AppData/Roaming/npm/node_modules/pnpm/dist/pnpm.mjs:92293:21)
+    at getSyncResult (file:///C:/Users/ua-hzq/AppData/Roaming/npm/node_modules/pnpm/dist/pnpm.mjs:94137:10)
+    at spawnSubprocessSync (file:///C:/Users/ua-hzq/AppData/Roaming/npm/node_modules/pnpm/dist/pnpm.mjs:94097:14)
+    at execaCoreSync (file:///C:/Users/ua-hzq/AppData/Roaming/npm/node_modules/pnpm/dist/pnpm.mjs:94027:23)
+    at callBoundExeca (file:///C:/Users/ua-hzq/AppData/Roaming/npm/node_modules/pnpm/dist/pnpm.mjs:96555:23)
+    at boundExeca (file:///C:/Users/ua-hzq/AppData/Roaming/npm/node_modules/pnpm/dist/pnpm.mjs:96532:49)
+    at sync2 (file:///C:/Users/ua-hzq/AppData/Roaming/npm/node_modules/pnpm/dist/pnpm.mjs:96691:10)
+    at runPnpmCli (file:///C:/Users/ua-hzq/AppData/Roaming/npm/node_modules/pnpm/dist/pnpm.mjs:276904:5)
+    at runDepsStatusCheck (file:///C:/Users/ua-hzq/AppData/Roaming/npm/node_modules/pnpm/dist/pnpm.mjs:278122:7)
+exit_code=1
