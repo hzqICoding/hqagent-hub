@@ -1,8 +1,9 @@
+import { clientFetch } from '@/shared/api/client-features'
 import { uploadAttachment as uploadBinary, attachmentBlob } from '@/shared/attachments/transport'
 import type { UploadOptions } from '@/shared/attachments/transport'
 import type {
   AttachmentDeletedView, RemoteAttachmentView, RemoteAttachmentLimitsView,
-  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV4CatalogView,
+  RemoteNativeSessionPage, RemoteNativeSessionView, NativeMessagePage, RemoteNativeImportInput, RemoteResourceQueuedReceipt, DirectoryListingInput, DirectoryListingPage, RemoteWorkspaceRegisterInput, RemoteV5CatalogView,
   ErrorCode,
   ApiEnvelope,
   RemoteDevicePatchInput,
@@ -149,7 +150,7 @@ export class RemoteGateway implements IRemoteGateway {
 
     let response: Response
     try {
-      response = await fetch(url, {
+      response = await clientFetch(url, {
         method,
         headers,
         body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -314,8 +315,8 @@ export class RemoteGateway implements IRemoteGateway {
     )
   }
 
-  async getWorkerCatalog(workerId: string): Promise<RemoteV4CatalogView> {
-    return this.fetchApi<RemoteV4CatalogView>(`/api/v2/devices/${encodeURIComponent(workerId)}/catalog`, {
+  async getWorkerCatalog(workerId: string): Promise<RemoteV5CatalogView> {
+    return this.fetchApi<RemoteV5CatalogView>(`/api/v2/devices/${encodeURIComponent(workerId)}/catalog`, {
       method: 'GET',
     })
   }

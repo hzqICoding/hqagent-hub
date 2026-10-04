@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "browser-pi.json",
+  "title": "PI browser approval projections",
+  "description": "HTTP-only supplement. Does not alter any Worker codec or legacy browser branch.",
+  "$defs": {
+    "RemoteBrowserLegacyApprovalEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "serverCursor",
+        "recordedAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.event"
+        },
+        "serverCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote-sync.json#/$defs/RemoteV2ApprovalEvent"
+        }
+      },
+      "description": "Browser-only compatibility projection, not a Worker transport frame. Source revision 5 stays unchanged in Inbox. Nested wireRevision=2 labels the legacy browser shape only; never feed it to Worker/ACK/grant or infer source revision from it. Authorized non-PI approval IDs are mapped to public IDs before projection."
+    },
+    "RemoteBrowserPiApprovalEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-wire-strict": true,
+      "required": [
+        "type",
+        "serverCursor",
+        "recordedAt",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "worker.event"
+        },
+        "serverCursor": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "description": "Opaque owner/resource-scoped server cursor; never a Worker seq or cross-owner resource selector."
+        },
+        "recordedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+        },
+        "payload": {
+          "$ref": "remote-pi.json#/$defs/RemoteV5ApprovalEvent"
+        }
+      },
+      "description": "Browser-only PI approval projection. Emit only after owner/visibility and pi-v1 capability checks. Public IDs, sanitized summary; source wireRevision=5. Do not relay arbitrary revision 5 frames through this variant."
+    }
+  }
+}

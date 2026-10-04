@@ -31,6 +31,7 @@ describe('attachment binary gateways', () => {
     const onProgress = vi.fn()
     const promise = gateway.uploadAttachment('conv/a',file,{fileName:file.name,sha256:'a'.repeat(64),idempotencyKey:'intent_1',onProgress})
     const xhr = FakeXhr.last
+    expect(xhr.headers['X-HQ-Client-Features']).toBe('pi-v1')
     expect(xhr.method).toBe('POST'); expect(xhr.url).toBe('/api/v2/conversations/conv%2Fa/attachments')
     expect(xhr.body).toBe(file); expect(xhr.withCredentials).toBe(true)
     expect(xhr.headers['Content-Type']).toBe('application/octet-stream')

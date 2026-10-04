@@ -489,3 +489,6 @@ unknown按活跃只读；明确确认终端关闭并留审计后才可接续，�
 原生reader冻结pi.jsonl.v3.tree；按磁盘最后完整entry为叶沿parentId线性化已保存分支，不猜活跃终端内存选择，不拼旁支；context_edit不得泄露被隐藏的旧文本。第一期reader未实现则unsupported/reader_not_implemented。沿D51活跃保守、关闭确认留痕、精确sessionId/sessionFile绑定和唯一写锁；取消以agent_settled或进程终止证据为准，不能只看agent_end/abort应答。具体约束与安全边界见PI-contract.md。
 
 **影响**：Hub适配器/guard及前端/服务端分线实施。协议测试不调用模型，也未读取用户会话正文或凭据配置；本次不宣称业务或实际传输验收通过。
+
+
+**D53补充1（0.11.1，审批浏览器投影）**：云端没有浏览器WS ticket，只有本机 /api/v1/auth/ws-ticket 由Hub绑定能力集。非PI的修订5审批必须生成旧worker.event/approval.state_changed浏览器兼容投影（标签2），不能以conversation.updated代替；PI审批仅向pi-v1发新增RemoteBrowserPiApprovalEvent。浏览器投影与不可变Worker事实分层，源revision/seq/hash/ACK/grant绝不改写。隐藏PI无替代通知，推进不透明游标；无法安全表达的可见状态用现有410触发快照对账，不静默丢审批。旧禁批原因域外的非PI拒绝只作保守REMOTE_APPROVAL_FORBIDDEN映射，不扩大权限，原原因保留。HTTP包补丁0.11.1、线路5不变，无新增路由/错误；详细映射与下游验收见PI-contract.md §8。

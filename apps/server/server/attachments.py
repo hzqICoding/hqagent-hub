@@ -86,7 +86,7 @@ class Attachments:
         require(len(ids) == len(set(ids)))
         if not ids:
             return {}
-        require(self.s.connections[owner, conv['targetWorkerId']].revision == 4, 'REMOTE_REVISION_REQUIRED')
+        require(self.s.connections[owner, conv['targetWorkerId']].revision >= 4, 'REMOTE_REVISION_REQUIRED')
         values = [self.get(tx, owner, i) for i in ids]
         for value in values:
             require(value['conversationId'] == conv['conversationId'], 'NOT_FOUND')
@@ -100,13 +100,18 @@ class Attachments:
         if images:
             catalog = self.s.get(tx, owner, 'catalog', conv['targetWorkerId'])
             if conv.get('conversationKind') == 'native':
-                caps = [c['imageInput'] for c in catalog.get('nativeImageCapabilities', []) if c['agentType'] == conv['agentType']]
+                bindings = [c for c in catalog.get('nativeImageCapabilities', []) if c['agentType'] == conv['agentType']]
             else:
                 scene = next(
                     (c for c in catalog['scenes'] if c['sceneId'] == conv['sceneId'] and c['version'] == conv['sceneVersion']),
                     {}
                 )
-                caps = [r['imageInput'] for r in scene.get('roleImageCapabilities', [])]
+                bindings = scene.get('roleImageCapabilities', [])
+            runtime_types = {r['agentId']:r['agentType'] for r in catalog.get('runtimes',[])}
+            for binding in bindings:
+                if binding.get('agentType') == 'pi' or runtime_types.get(binding.get('agentId')) == 'pi':
+                    require(runtime_types.get(binding.get('agentId'))=='pi' and binding.get('transport')=='pi-rpc-images-v1', 'AGENT_IMAGE_UNSUPPORTED')
+            caps = [binding['imageInput'] for binding in bindings]
             require(bool(caps), 'AGENT_IMAGE_UNSUPPORTED')
             for cap in caps:
                 require(
@@ -145,7 +150,7 @@ class Attachments:
     def sync_message(self, tx, owner, event, value):
         p = event['payload']
         items = p.get('attachments', [])
-        require(not items or (event['wireRevision'] == 4 and p['role'] == 'user'), 'REMOTE_SYNC_CONFLICT')
+        require(not items or (event['wireRevision'] >= 4 and p['role'] == 'user'), 'REMOTE_SYNC_CONFLICT')
         require(
             len(items) <= 5 and len({a['localAttachmentId'] for a in items}) == len(items),
             'REMOTE_SYNC_CONFLICT'

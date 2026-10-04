@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
 import { agentLabel } from '@/pages/native/native-utils'
 import NativeSessionsPanel from '@/pages/native/NativeSessionsPanel.vue'
 import { ref, inject } from 'vue'
@@ -387,7 +388,7 @@ function handleConversationSelect(conversationId: string) {
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
-                  <p class="text-xs font-medium text-text truncate leading-tight flex-1">{{ conversation.title }}</p><span v-if="conversation.conversationKind === 'native'" class="text-[10px] text-text-muted">{{ agentLabel(conversation.agentType) }}</span>
+                  <p class="text-xs font-medium text-text truncate leading-tight flex-1">{{ conversation.title }}</p><span v-if="conversation.conversationKind === 'native'" class="text-[10px] text-text-muted"><RuntimeIcon :agent="conversation.agentType" class="inline-block w-4 h-4" />{{ agentLabel(conversation.agentType) }}</span>
                   <span
                     v-if="conversation.authority === 'remote'"
                     class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-primary/15 text-primary border border-primary/25"

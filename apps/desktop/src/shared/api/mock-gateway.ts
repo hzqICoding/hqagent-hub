@@ -1,3 +1,4 @@
+import { piAgents } from '@/shared/runtime/pi-examples'
 import type {
   BootstrapView,
   WorkspaceView,
@@ -94,12 +95,14 @@ export class MockGateway implements UiGateway {
 
   async listAgents(): Promise<AgentView[]> {
     await this.wait()
-    return this.getScenarioDef().getAgents()
+    const agents=this.getScenarioDef().getAgents()
+    return agents.length ? [...agents,...piAgents()] : agents
   }
 
   async refreshAgents(): Promise<AgentDiscoveryResult> {
     await this.wait()
-    return this.getScenarioDef().getDiscovery()
+    const result=this.getScenarioDef().getDiscovery()
+    return result.discovered.length ? {...result,discovered:[...result.discovered,...piAgents()],total:result.total+piAgents().length} : result
   }
 
   async listTeamProfiles(): Promise<TeamProfileView[]> {

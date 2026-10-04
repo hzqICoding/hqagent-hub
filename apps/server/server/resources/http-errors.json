@@ -458,5 +458,20 @@
     "status": 409,
     "retryable": false,
     "message": "附件准备被中断，请重新尝试"
+  },
+  "PI_GUARD_UNAVAILABLE": {
+    "status": 409,
+    "retryable": false,
+    "message": "PI 工具保护尚未就绪"
+  },
+  "PI_UNCONTROLLED_EXTENSIONS": {
+    "status": 409,
+    "retryable": false,
+    "message": "PI 存在未受控扩展"
+  },
+  "PI_TOOL_CALL_BLOCKED": {
+    "status": 403,
+    "retryable": false,
+    "message": "PI 工具调用已被阻止"
   }
 }

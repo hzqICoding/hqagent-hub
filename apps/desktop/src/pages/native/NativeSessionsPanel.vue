@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
 import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
-import type { NativeSessionIndex, RemoteNativeSessionView, NativeMessagePart, RemoteResourceQueuedReceipt } from '@hqagent/protocol'
+import type { RuntimeNativeSessionIndex, RemoteNativeSessionView, NativeMessagePart, RemoteResourceQueuedReceipt } from '@hqagent/protocol'
 import { getLocalChatGateway, getRemoteGateway } from '@/shared/api'
 import { useChatStore } from '@/stores/chat.store'
 import { useRemoteChatStore } from '@/stores/remote-chat.store'
@@ -11,8 +12,8 @@ import { activityLabel, agentLabel, closureText, NativeMessageAssembler, nativeF
 
 const props = withDefaults(defineProps<{ remote?: boolean; workerId?: string; online?: boolean; suspended?: boolean; revisions?: number[]; projects: { id: string; name: string }[] }>(), { remote: false, online: true, suspended: false })
 const emit = defineEmits<{ opened: [] }>()
-const items = ref<(NativeSessionIndex | RemoteNativeSessionView)[]>([])
-const selected = ref<NativeSessionIndex | RemoteNativeSessionView | null>(null)
+const items = ref<(RuntimeNativeSessionIndex | RemoteNativeSessionView)[]>([])
+const selected = ref<RuntimeNativeSessionIndex | RemoteNativeSessionView | null>(null)
 const messages = ref<NativeMessagePart[]>([])
 const before = ref<string>()
 const cursor = ref<string>()
@@ -29,7 +30,7 @@ let readGeneration = 0
 let poll: ReturnType<typeof setTimeout> | undefined
 let alive = true
 let refreshTimer: ReturnType<typeof setInterval> | undefined
-const supported = computed(() => !props.remote || !props.revisions || props.revisions.some((revision) => revision === 3 || revision === 4))
+const supported = computed(() => !props.remote || !props.revisions || props.revisions.some((revision) => revision === 3 || revision === 4 || revision === 5))
 // UI state is ephemeral: no session metadata or disclosure preferences enter storage.
 const expandedWorkspaces = ref(new Set<string>())
 const disclosureId = overlayId()
@@ -47,7 +48,7 @@ function toggleUnavailable(workspaceId: string) {
   if (expandedWorkspaces.value.has(workspaceId)) expandedWorkspaces.value.delete(workspaceId)
   else expandedWorkspaces.value.add(workspaceId)
 }
-function formatLabel(session: NativeSessionIndex | RemoteNativeSessionView) {
+function formatLabel(session: RuntimeNativeSessionIndex | RemoteNativeSessionView) {
   return `${agentLabel(session.agentType)} · CLI ${session.format.cliVersion || '版本未知'}`
 }
 async function list(more = false) {
@@ -92,7 +93,7 @@ async function read(more = false) {
   } catch (err) { if (current === readGeneration) { error.value = nativeFailure(err); assembler.reset(); messages.value = []; before.value = undefined } }
   finally { if (current === readGeneration) reading.value = false }
 }
-function open(session: NativeSessionIndex | RemoteNativeSessionView) { close(); error.value = null; selected.value = session; confirmed.value = false; if (session.format.status === 'readable') void read() }
+function open(session: RuntimeNativeSessionIndex | RemoteNativeSessionView) { close(); error.value = null; selected.value = session; confirmed.value = false; if (session.format.status === 'readable') void read() }
 function close() { readGeneration++; reading.value = false; selected.value = null; messages.value = []; assembler.reset(); before.value = undefined; confirmation.value = false; confirmed.value = false }
 async function prepareImport() {
   if (!selected.value || !selectedReadable.value) return
@@ -180,7 +181,7 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
       <p v-if="!group.readable.length" class="py-2 text-content-secondary" data-testid="native-empty-readable">暂无可读取的原生会话</p>
       <button v-for="item in group.readable" :key="item.nativeSessionId" type="button" data-testid="native-readable"
         class="block w-full min-h-[44px] text-left p-2 rounded hover:bg-muted border border-border text-content-primary" @click="open(item)">
-        <span class="block truncate">{{ item.title }}</span><span class="block text-[10px] text-content-secondary">{{ agentLabel(item.agentType) }} · {{ activityLabel(item.activity.activity) }}</span>
+        <span class="block truncate"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span><span class="block text-[10px] text-content-secondary">{{ agentLabel(item.agentType) }}{{ item.agentType === 'pi' && item.format.pi ? ' · 已保存分支' : '' }} · {{ activityLabel(item.activity.activity) }}</span>
       </button>
       <template v-if="group.unavailable.length">
         <button type="button" data-testid="native-unavailable-toggle" class="w-full min-h-[44px] flex items-center gap-1 text-left text-content-secondary rounded hover:bg-muted"
@@ -190,7 +191,7 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
         <div v-if="expandedWorkspaces.has(group.id)" :id="`${disclosureId}-${groupIndex}`" class="space-y-1">
           <button v-for="item in group.unavailable" :key="item.nativeSessionId" type="button" data-testid="native-unavailable"
             class="block w-full min-h-[44px] text-left p-2 rounded border border-border text-content-secondary hover:bg-muted" @click="open(item)">
-            <span class="block truncate">{{ item.title }}</span>
+            <span class="block truncate"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span>
             <span class="block break-words">{{ formatLabel(item) }}</span>
             <span class="block break-words">{{ item.format.reason || '当前记录格式尚未支持' }}</span>
           </button>
@@ -207,7 +208,7 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
         <p class="text-content-secondary break-words">原因：{{ selected.format.reason || '当前记录格式尚未支持' }}</p>
       </div>
       <div v-else class="space-y-3 text-xs">
-        <p v-if="selected">{{ agentLabel(selected.agentType) }} · {{ activityLabel(selected.activity.activity) }} · 只读历史</p>
+        <p v-if="selected"><RuntimeIcon :agent="selected.agentType" class="inline-block w-4 h-4 mr-1" />{{ agentLabel(selected.agentType) }}{{ selected.agentType === 'pi' && selected.format.pi ? ' · 已保存分支' : '' }} · {{ activityLabel(selected.activity.activity) }} · 只读历史</p>
         <p v-if="error" role="alert" class="text-danger">{{ error.message }} <span class="select-text">{{ error.requestId ? `requestId: ${error.requestId}` : '' }}</span></p>
         <HqButton size="sm" :loading="reading" @click="read()">重新读取</HqButton>
         <HqButton v-if="before" size="sm" :loading="reading" @click="read(true)">读取更早内容</HqButton>

@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from server.common import digest, stamp, uid
 from smoke_native import native_smoke
+from smoke_pi import pi_smoke
 from smoke_attachments import attachment_smoke
 
 
@@ -136,6 +137,7 @@ def main():
             print("fake Worker revision 2, create/grant/sync, offline refusal and reconnect: PASS")
             attachment_smoke(client,conv,int((data/'pid').read_text()))
             native_sensitive = native_smoke(client, port, request)
+            pi_sensitive = pi_smoke(client, port, request)
             import sqlite3
             with sqlite3.connect(data / 'hub.sqlite3') as database:
                 tables = [r[0] for r in database.execute("SELECT name FROM sqlite_master WHERE type='table'")]
@@ -173,6 +175,8 @@ def main():
         if "challenge" in locals():
             assert challenge["pairCode"] not in logs
         for private in locals().get('native_sensitive', []):
+            assert private not in logs
+        for private in locals().get('pi_sensitive', []):
             assert private not in logs
     print("server output credential redaction: PASS")
     print("SMOKE PASS")

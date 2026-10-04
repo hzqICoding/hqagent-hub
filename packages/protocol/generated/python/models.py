@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer, model_validator
 
-PROTOCOL_VERSION = "0.11.0"
+PROTOCOL_VERSION = "0.11.1"
 
 
 class _Base(BaseModel):
@@ -2235,6 +2235,145 @@ class RemoteBrowserMessageEvent(_RemoteBase):
     payload: RemoteMessageView = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
+class RemoteWire5ErrorCode(StrEnum):
+    BAD_REQUEST = "BAD_REQUEST"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    ORIGIN_NOT_ALLOWED = "ORIGIN_NOT_ALLOWED"
+    NOT_FOUND = "NOT_FOUND"
+    CONFLICT = "CONFLICT"
+    IDEMPOTENCY_MISMATCH = "IDEMPOTENCY_MISMATCH"
+    PROTOCOL_VERSION_MISMATCH = "PROTOCOL_VERSION_MISMATCH"
+    HUB_NOT_READY = "HUB_NOT_READY"
+    HUB_MAINTENANCE = "HUB_MAINTENANCE"
+    EVENT_CURSOR_EXPIRED = "EVENT_CURSOR_EXPIRED"
+    FEATURE_UNAVAILABLE = "FEATURE_UNAVAILABLE"
+    AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
+    AGENT_OFFLINE = "AGENT_OFFLINE"
+    AGENT_NOT_LOGGED_IN = "AGENT_NOT_LOGGED_IN"
+    AGENT_INCOMPATIBLE = "AGENT_INCOMPATIBLE"
+    CAPABILITY_MISSING = "CAPABILITY_MISSING"
+    ROLE_UNRESOLVED = "ROLE_UNRESOLVED"
+    SESSION_NOT_RESUMABLE = "SESSION_NOT_RESUMABLE"
+    TASK_NOT_CANCELLABLE = "TASK_NOT_CANCELLABLE"
+    TASK_ACTION_INVALID = "TASK_ACTION_INVALID"
+    WORKTREE_BUSY = "WORKTREE_BUSY"
+    PATH_NOT_ALLOWED = "PATH_NOT_ALLOWED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    APPROVAL_EXPIRED = "APPROVAL_EXPIRED"
+    APPROVAL_ALREADY_DECIDED = "APPROVAL_ALREADY_DECIDED"
+    UPDATE_NOT_AVAILABLE = "UPDATE_NOT_AVAILABLE"
+    UPDATE_BUSY = "UPDATE_BUSY"
+    UPDATE_VERIFY_FAILED = "UPDATE_VERIFY_FAILED"
+    UPDATE_DRAIN_TIMEOUT = "UPDATE_DRAIN_TIMEOUT"
+    INTERNAL = "INTERNAL"
+    REMOTE_AUTH_REQUIRED = "REMOTE_AUTH_REQUIRED"
+    REMOTE_CSRF_REJECTED = "REMOTE_CSRF_REJECTED"
+    REMOTE_DEVICE_OFFLINE = "REMOTE_DEVICE_OFFLINE"
+    REMOTE_DEVICE_REVOKED = "REMOTE_DEVICE_REVOKED"
+    REMOTE_DEVICE_AUTH_FAILED = "REMOTE_DEVICE_AUTH_FAILED"
+    REMOTE_PAIRING_EXPIRED = "REMOTE_PAIRING_EXPIRED"
+    REMOTE_PAIRING_CONFLICT = "REMOTE_PAIRING_CONFLICT"
+    REMOTE_PAIRING_INVALID = "REMOTE_PAIRING_INVALID"
+    REMOTE_COMMAND_EXPIRED = "REMOTE_COMMAND_EXPIRED"
+    REMOTE_COMMAND_WITHDRAWN = "REMOTE_COMMAND_WITHDRAWN"
+    REMOTE_WITHDRAWAL_UNCONFIRMED = "REMOTE_WITHDRAWAL_UNCONFIRMED"
+    REMOTE_STORE_CHANGED = "REMOTE_STORE_CHANGED"
+    REMOTE_EPOCH_STALE = "REMOTE_EPOCH_STALE"
+    REMOTE_PROTOCOL_UNSUPPORTED = "REMOTE_PROTOCOL_UNSUPPORTED"
+    REMOTE_EVENT_CONFLICT = "REMOTE_EVENT_CONFLICT"
+    REMOTE_ACK_CONFLICT = "REMOTE_ACK_CONFLICT"
+    REMOTE_SEQUENCE_GAP = "REMOTE_SEQUENCE_GAP"
+    REMOTE_APPROVAL_FORBIDDEN = "REMOTE_APPROVAL_FORBIDDEN"
+    CONVERSATION_AUTHORITY_MISMATCH = "CONVERSATION_AUTHORITY_MISMATCH"
+    REMOTE_TARGET_MISMATCH = "REMOTE_TARGET_MISMATCH"
+    REMOTE_SCENE_VERSION_MISMATCH = "REMOTE_SCENE_VERSION_MISMATCH"
+    REMOTE_CURSOR_EXPIRED = "REMOTE_CURSOR_EXPIRED"
+    REMOTE_CURSOR_INVALID = "REMOTE_CURSOR_INVALID"
+    REMOTE_RATE_LIMITED = "REMOTE_RATE_LIMITED"
+    REMOTE_FRAME_TOO_LARGE = "REMOTE_FRAME_TOO_LARGE"
+    REMOTE_WITHDRAWAL_TOO_LATE = "REMOTE_WITHDRAWAL_TOO_LATE"
+    REMOTE_PAIRING_IN_PROGRESS = "REMOTE_PAIRING_IN_PROGRESS"
+    REMOTE_SERVER_UNREACHABLE = "REMOTE_SERVER_UNREACHABLE"
+    REMOTE_SERVER_ORIGIN_INVALID = "REMOTE_SERVER_ORIGIN_INVALID"
+    REMOTE_CONVERSATION_BUSY = "REMOTE_CONVERSATION_BUSY"
+    REMOTE_STATE_NOT_READY = "REMOTE_STATE_NOT_READY"
+    REMOTE_SYNC_CONFLICT = "REMOTE_SYNC_CONFLICT"
+    REMOTE_SYNC_DISABLED = "REMOTE_SYNC_DISABLED"
+    REMOTE_DELIVERY_EXPIRED = "REMOTE_DELIVERY_EXPIRED"
+    REMOTE_REVISION_REQUIRED = "REMOTE_REVISION_REQUIRED"
+    REMOTE_SYNC_RESOURCE_LIMIT = "REMOTE_SYNC_RESOURCE_LIMIT"
+    REMOTE_QUERY_TIMEOUT = "REMOTE_QUERY_TIMEOUT"
+    REMOTE_QUERY_TOO_LARGE = "REMOTE_QUERY_TOO_LARGE"
+    NATIVE_SESSION_ACTIVE = "NATIVE_SESSION_ACTIVE"
+    NATIVE_SESSION_UNSUPPORTED = "NATIVE_SESSION_UNSUPPORTED"
+    NATIVE_SESSION_CHANGED = "NATIVE_SESSION_CHANGED"
+    NATIVE_SESSION_WRITER_CONFLICT = "NATIVE_SESSION_WRITER_CONFLICT"
+    REMOTE_ROOT_NOT_AUTHORIZED = "REMOTE_ROOT_NOT_AUTHORIZED"
+    REMOTE_PATH_OUTSIDE_ROOT = "REMOTE_PATH_OUTSIDE_ROOT"
+    REMOTE_DIRECTORY_CHANGED = "REMOTE_DIRECTORY_CHANGED"
+    ATTACHMENT_TOO_LARGE = "ATTACHMENT_TOO_LARGE"
+    ATTACHMENT_TYPE_UNSUPPORTED = "ATTACHMENT_TYPE_UNSUPPORTED"
+    ATTACHMENT_COUNT_EXCEEDED = "ATTACHMENT_COUNT_EXCEEDED"
+    ATTACHMENT_QUOTA_EXCEEDED = "ATTACHMENT_QUOTA_EXCEEDED"
+    ATTACHMENT_HASH_MISMATCH = "ATTACHMENT_HASH_MISMATCH"
+    AGENT_IMAGE_UNSUPPORTED = "AGENT_IMAGE_UNSUPPORTED"
+    ATTACHMENT_DOWNLOAD_FAILED = "ATTACHMENT_DOWNLOAD_FAILED"
+    ATTACHMENT_NOT_READY = "ATTACHMENT_NOT_READY"
+    ATTACHMENT_IN_USE = "ATTACHMENT_IN_USE"
+    ATTACHMENT_THUMBNAIL_UNAVAILABLE = "ATTACHMENT_THUMBNAIL_UNAVAILABLE"
+    ATTACHMENT_PREPARATION_INTERRUPTED = "ATTACHMENT_PREPARATION_INTERRUPTED"
+    PI_GUARD_UNAVAILABLE = "PI_GUARD_UNAVAILABLE"
+    PI_UNCONTROLLED_EXTENSIONS = "PI_UNCONTROLLED_EXTENSIONS"
+    PI_TOOL_CALL_BLOCKED = "PI_TOOL_CALL_BLOCKED"
+
+    @classmethod
+    def model_validate(cls, value):
+        from pydantic import TypeAdapter
+        return TypeAdapter(cls).validate_python(value)
+
+    def model_dump(self, **kwargs):
+        return self.value
+
+
+class RemoteWire5ApprovalView(_RemoteBase):
+    """Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely."""
+
+    approval_id: str = Field(alias="approvalId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    result_ref: RemoteResultRef = Field(alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
+    action: DangerousAction = Field(alias="action", json_schema_extra={'wireNullable': False, 'wireType': None})
+    target_summary: str = Field(alias="targetSummary", max_length=2000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    risk_level: RiskLevel = Field(alias="riskLevel", json_schema_extra={'wireNullable': False, 'wireType': None})
+    status: ApprovalStatus = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': None})
+    requested_at: str = Field(alias="requestedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    remote_approval_allowed: bool = Field(alias="remoteApprovalAllowed", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+    worker_policy_revision: int = Field(alias="workerPolicyRevision", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    denial_code: RemoteWire5ErrorCode | None = Field(default=None, alias="denialCode", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteV5ApprovalEvent(_RemoteBase):
+    type: Literal["approval.state_changed"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    wire_revision: Literal[5] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
+    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteWire5ApprovalView = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
+class RemoteBrowserPiApprovalEvent(_RemoteBase):
+    """Browser-only PI approval projection. Emit only after owner/visibility and pi-v1 capability checks. Public IDs, sanitized summary; source wireRevision=5. Do not relay arbitrary revision 5 frames through this variant."""
+
+    type: Literal["worker.event"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    server_cursor: str = Field(alias="serverCursor", min_length=16, max_length=2048, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    recorded_at: str = Field(alias="recordedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteV5ApprovalEvent = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
+
+
 class RemoteBrowserStoreReset(_RemoteBase):
     type: Literal["store.reset"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     server_cursor: str = Field(alias="serverCursor", min_length=16, max_length=2048, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
@@ -2805,7 +2944,7 @@ class RemoteBrowserWorkerEvent(_RemoteBase):
     payload: RemoteVisibleWorkerEvent = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
-class RemoteBrowserEvent(RootModel[RemoteBrowserWorkerEvent | RemoteBrowserCommandEvent | RemoteBrowserConversationEvent | RemoteBrowserMessageEvent | RemoteBrowserV2WorkerEvent | RemoteBrowserConversationDeleted | RemoteBrowserStoreReset]):
+class RemoteBrowserEvent(RootModel[RemoteBrowserWorkerEvent | RemoteBrowserCommandEvent | RemoteBrowserConversationEvent | RemoteBrowserMessageEvent | RemoteBrowserV2WorkerEvent | RemoteBrowserConversationDeleted | RemoteBrowserStoreReset | RemoteBrowserPiApprovalEvent]):
     pass
 
 
@@ -2815,6 +2954,15 @@ class RemoteBrowserEventPage(_RemoteBase):
     items: list[RemoteBrowserEvent] = Field(alias="items", max_length=200, json_schema_extra={'wireNullable': False, 'wireType': 'array'})
     next_server_cursor: str = Field(alias="nextServerCursor", min_length=16, max_length=2048, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     has_more: bool = Field(alias="hasMore", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
+
+
+class RemoteBrowserLegacyApprovalEvent(_RemoteBase):
+    """Browser-only compatibility projection, not a Worker transport frame. Source revision 5 stays unchanged in Inbox. Nested wireRevision=2 labels the legacy browser shape only; never feed it to Worker/ACK/grant or infer source revision from it. Authorized non-PI approval IDs are mapped to public IDs before projection."""
+
+    type: Literal["worker.event"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    server_cursor: str = Field(alias="serverCursor", min_length=16, max_length=2048, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    recorded_at: str = Field(alias="recordedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
+    payload: RemoteV2ApprovalEvent = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
 class RemoteBrowserSessionView(RootModel[RemoteAuthenticatedSession | RemoteAnonymousSession]):
@@ -5820,136 +5968,6 @@ class RemoteV5ApprovalDecisionCommand(_RemoteBase):
     payload: RemoteApprovalDecisionPayload = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
     deliver_by: str = Field(alias="deliverBy", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
     local_conversation_id: str = Field(alias="localConversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-
-
-class RemoteWire5ErrorCode(StrEnum):
-    BAD_REQUEST = "BAD_REQUEST"
-    VALIDATION_FAILED = "VALIDATION_FAILED"
-    UNAUTHORIZED = "UNAUTHORIZED"
-    ORIGIN_NOT_ALLOWED = "ORIGIN_NOT_ALLOWED"
-    NOT_FOUND = "NOT_FOUND"
-    CONFLICT = "CONFLICT"
-    IDEMPOTENCY_MISMATCH = "IDEMPOTENCY_MISMATCH"
-    PROTOCOL_VERSION_MISMATCH = "PROTOCOL_VERSION_MISMATCH"
-    HUB_NOT_READY = "HUB_NOT_READY"
-    HUB_MAINTENANCE = "HUB_MAINTENANCE"
-    EVENT_CURSOR_EXPIRED = "EVENT_CURSOR_EXPIRED"
-    FEATURE_UNAVAILABLE = "FEATURE_UNAVAILABLE"
-    AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
-    AGENT_OFFLINE = "AGENT_OFFLINE"
-    AGENT_NOT_LOGGED_IN = "AGENT_NOT_LOGGED_IN"
-    AGENT_INCOMPATIBLE = "AGENT_INCOMPATIBLE"
-    CAPABILITY_MISSING = "CAPABILITY_MISSING"
-    ROLE_UNRESOLVED = "ROLE_UNRESOLVED"
-    SESSION_NOT_RESUMABLE = "SESSION_NOT_RESUMABLE"
-    TASK_NOT_CANCELLABLE = "TASK_NOT_CANCELLABLE"
-    TASK_ACTION_INVALID = "TASK_ACTION_INVALID"
-    WORKTREE_BUSY = "WORKTREE_BUSY"
-    PATH_NOT_ALLOWED = "PATH_NOT_ALLOWED"
-    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
-    APPROVAL_EXPIRED = "APPROVAL_EXPIRED"
-    APPROVAL_ALREADY_DECIDED = "APPROVAL_ALREADY_DECIDED"
-    UPDATE_NOT_AVAILABLE = "UPDATE_NOT_AVAILABLE"
-    UPDATE_BUSY = "UPDATE_BUSY"
-    UPDATE_VERIFY_FAILED = "UPDATE_VERIFY_FAILED"
-    UPDATE_DRAIN_TIMEOUT = "UPDATE_DRAIN_TIMEOUT"
-    INTERNAL = "INTERNAL"
-    REMOTE_AUTH_REQUIRED = "REMOTE_AUTH_REQUIRED"
-    REMOTE_CSRF_REJECTED = "REMOTE_CSRF_REJECTED"
-    REMOTE_DEVICE_OFFLINE = "REMOTE_DEVICE_OFFLINE"
-    REMOTE_DEVICE_REVOKED = "REMOTE_DEVICE_REVOKED"
-    REMOTE_DEVICE_AUTH_FAILED = "REMOTE_DEVICE_AUTH_FAILED"
-    REMOTE_PAIRING_EXPIRED = "REMOTE_PAIRING_EXPIRED"
-    REMOTE_PAIRING_CONFLICT = "REMOTE_PAIRING_CONFLICT"
-    REMOTE_PAIRING_INVALID = "REMOTE_PAIRING_INVALID"
-    REMOTE_COMMAND_EXPIRED = "REMOTE_COMMAND_EXPIRED"
-    REMOTE_COMMAND_WITHDRAWN = "REMOTE_COMMAND_WITHDRAWN"
-    REMOTE_WITHDRAWAL_UNCONFIRMED = "REMOTE_WITHDRAWAL_UNCONFIRMED"
-    REMOTE_STORE_CHANGED = "REMOTE_STORE_CHANGED"
-    REMOTE_EPOCH_STALE = "REMOTE_EPOCH_STALE"
-    REMOTE_PROTOCOL_UNSUPPORTED = "REMOTE_PROTOCOL_UNSUPPORTED"
-    REMOTE_EVENT_CONFLICT = "REMOTE_EVENT_CONFLICT"
-    REMOTE_ACK_CONFLICT = "REMOTE_ACK_CONFLICT"
-    REMOTE_SEQUENCE_GAP = "REMOTE_SEQUENCE_GAP"
-    REMOTE_APPROVAL_FORBIDDEN = "REMOTE_APPROVAL_FORBIDDEN"
-    CONVERSATION_AUTHORITY_MISMATCH = "CONVERSATION_AUTHORITY_MISMATCH"
-    REMOTE_TARGET_MISMATCH = "REMOTE_TARGET_MISMATCH"
-    REMOTE_SCENE_VERSION_MISMATCH = "REMOTE_SCENE_VERSION_MISMATCH"
-    REMOTE_CURSOR_EXPIRED = "REMOTE_CURSOR_EXPIRED"
-    REMOTE_CURSOR_INVALID = "REMOTE_CURSOR_INVALID"
-    REMOTE_RATE_LIMITED = "REMOTE_RATE_LIMITED"
-    REMOTE_FRAME_TOO_LARGE = "REMOTE_FRAME_TOO_LARGE"
-    REMOTE_WITHDRAWAL_TOO_LATE = "REMOTE_WITHDRAWAL_TOO_LATE"
-    REMOTE_PAIRING_IN_PROGRESS = "REMOTE_PAIRING_IN_PROGRESS"
-    REMOTE_SERVER_UNREACHABLE = "REMOTE_SERVER_UNREACHABLE"
-    REMOTE_SERVER_ORIGIN_INVALID = "REMOTE_SERVER_ORIGIN_INVALID"
-    REMOTE_CONVERSATION_BUSY = "REMOTE_CONVERSATION_BUSY"
-    REMOTE_STATE_NOT_READY = "REMOTE_STATE_NOT_READY"
-    REMOTE_SYNC_CONFLICT = "REMOTE_SYNC_CONFLICT"
-    REMOTE_SYNC_DISABLED = "REMOTE_SYNC_DISABLED"
-    REMOTE_DELIVERY_EXPIRED = "REMOTE_DELIVERY_EXPIRED"
-    REMOTE_REVISION_REQUIRED = "REMOTE_REVISION_REQUIRED"
-    REMOTE_SYNC_RESOURCE_LIMIT = "REMOTE_SYNC_RESOURCE_LIMIT"
-    REMOTE_QUERY_TIMEOUT = "REMOTE_QUERY_TIMEOUT"
-    REMOTE_QUERY_TOO_LARGE = "REMOTE_QUERY_TOO_LARGE"
-    NATIVE_SESSION_ACTIVE = "NATIVE_SESSION_ACTIVE"
-    NATIVE_SESSION_UNSUPPORTED = "NATIVE_SESSION_UNSUPPORTED"
-    NATIVE_SESSION_CHANGED = "NATIVE_SESSION_CHANGED"
-    NATIVE_SESSION_WRITER_CONFLICT = "NATIVE_SESSION_WRITER_CONFLICT"
-    REMOTE_ROOT_NOT_AUTHORIZED = "REMOTE_ROOT_NOT_AUTHORIZED"
-    REMOTE_PATH_OUTSIDE_ROOT = "REMOTE_PATH_OUTSIDE_ROOT"
-    REMOTE_DIRECTORY_CHANGED = "REMOTE_DIRECTORY_CHANGED"
-    ATTACHMENT_TOO_LARGE = "ATTACHMENT_TOO_LARGE"
-    ATTACHMENT_TYPE_UNSUPPORTED = "ATTACHMENT_TYPE_UNSUPPORTED"
-    ATTACHMENT_COUNT_EXCEEDED = "ATTACHMENT_COUNT_EXCEEDED"
-    ATTACHMENT_QUOTA_EXCEEDED = "ATTACHMENT_QUOTA_EXCEEDED"
-    ATTACHMENT_HASH_MISMATCH = "ATTACHMENT_HASH_MISMATCH"
-    AGENT_IMAGE_UNSUPPORTED = "AGENT_IMAGE_UNSUPPORTED"
-    ATTACHMENT_DOWNLOAD_FAILED = "ATTACHMENT_DOWNLOAD_FAILED"
-    ATTACHMENT_NOT_READY = "ATTACHMENT_NOT_READY"
-    ATTACHMENT_IN_USE = "ATTACHMENT_IN_USE"
-    ATTACHMENT_THUMBNAIL_UNAVAILABLE = "ATTACHMENT_THUMBNAIL_UNAVAILABLE"
-    ATTACHMENT_PREPARATION_INTERRUPTED = "ATTACHMENT_PREPARATION_INTERRUPTED"
-    PI_GUARD_UNAVAILABLE = "PI_GUARD_UNAVAILABLE"
-    PI_UNCONTROLLED_EXTENSIONS = "PI_UNCONTROLLED_EXTENSIONS"
-    PI_TOOL_CALL_BLOCKED = "PI_TOOL_CALL_BLOCKED"
-
-    @classmethod
-    def model_validate(cls, value):
-        from pydantic import TypeAdapter
-        return TypeAdapter(cls).validate_python(value)
-
-    def model_dump(self, **kwargs):
-        return self.value
-
-
-class RemoteWire5ApprovalView(_RemoteBase):
-    """Local Worker policy is authoritative. Mandatory blocked actions are git_push/deploy/delete/db_migrate plus locally declared actions; refusal reason code REMOTE_APPROVAL_FORBIDDEN. Rejection of a dangerous action may still be submitted remotely."""
-
-    approval_id: str = Field(alias="approvalId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    result_ref: RemoteResultRef = Field(alias="resultRef", json_schema_extra={'wireNullable': False, 'wireType': None})
-    action: DangerousAction = Field(alias="action", json_schema_extra={'wireNullable': False, 'wireType': None})
-    target_summary: str = Field(alias="targetSummary", max_length=2000, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    risk_level: RiskLevel = Field(alias="riskLevel", json_schema_extra={'wireNullable': False, 'wireType': None})
-    status: ApprovalStatus = Field(alias="status", json_schema_extra={'wireNullable': False, 'wireType': None})
-    requested_at: str = Field(alias="requestedAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    expires_at: str = Field(alias="expiresAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    remote_approval_allowed: bool = Field(alias="remoteApprovalAllowed", strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'boolean'})
-    worker_policy_revision: int = Field(alias="workerPolicyRevision", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
-    denial_code: RemoteWire5ErrorCode | None = Field(default=None, alias="denialCode", json_schema_extra={'wireNullable': False, 'wireType': None})
-
-
-class RemoteV5ApprovalEvent(_RemoteBase):
-    type: Literal["approval.state_changed"] = Field(alias="type", json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    wire_revision: Literal[5] = Field(alias="wireRevision", json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
-    event_id: str = Field(alias="eventId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    worker_id: str = Field(alias="workerId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    worker_store_id: str = Field(alias="workerStoreId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    worker_epoch: str = Field(alias="workerEpoch", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    seq: int = Field(alias="seq", ge=1, le=9007199254740991, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'integer'})
-    occurred_at: str = Field(alias="occurredAt", min_length=20, max_length=40, pattern='^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$', strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    conversation_id: str = Field(alias="conversationId", min_length=1, max_length=160, strict=True, json_schema_extra={'wireNullable': False, 'wireType': 'string'})
-    payload: RemoteWire5ApprovalView = Field(alias="payload", json_schema_extra={'wireNullable': False, 'wireType': None})
 
 
 class RemoteV5BackfillProgress(_RemoteBase):
