@@ -5,7 +5,7 @@ scope_declared: [apps/hub/**, .hqagent/handoffs/PI-P2-hub.md]
 scope_touched: [".hqagent/handoffs/PI-P2-hub.md", "apps/hub/adapters/builtins.py", "apps/hub/adapters/manager.py", "apps/hub/adapters/pi_adapter.py", "apps/hub/adapters/pi_guard.py", "apps/hub/adapters/pi_rpc.py", "apps/hub/adapters/process.py", "apps/hub/adapters/resources/pi/hub-guard.mjs", "apps/hub/api/app.py", "apps/hub/api/envelopes.py", "apps/hub/api/local_chat.py", "apps/hub/api/pi_projection.py", "apps/hub/conftest.py", "apps/hub/core/security.py", "apps/hub/orchestrator/role_resolver.py", "apps/hub/orchestrator/runtime.py", "apps/hub/packaging/windows/hqagent-core.spec", "apps/hub/runtime/attachments/capabilities.py", "apps/hub/runtime/attachments/service.py", "apps/hub/runtime/attachments/verification.py", "apps/hub/runtime/attachments/verification_jobs.py", "apps/hub/runtime/attachments/verification_target.py", "apps/hub/runtime/cli.py", "apps/hub/runtime/composition.py", "apps/hub/runtime/conversation_deletion.py", "apps/hub/runtime/execution_selection.py", "apps/hub/runtime/instance.py", "apps/hub/runtime/local_chat.py", "apps/hub/runtime/native/api.py", "apps/hub/runtime/native/service.py", "apps/hub/runtime/pi_visibility.py", "apps/hub/runtime/remote/busy.py", "apps/hub/runtime/remote/commands.py", "apps/hub/runtime/remote/delivery.py", "apps/hub/runtime/remote/projection.py", "apps/hub/runtime/remote/sync.py", "apps/hub/runtime/remote/wire.py", "apps/hub/runtime/remote/worker.py", "apps/hub/runtime/services.py", "apps/hub/storage/local_chat.py", "apps/hub/storage/team_profiles.py", "apps/hub/tests/fixtures/pi/cli.mjs", "apps/hub/tests/remote_support.py", "apps/hub/tests/test_pi_adapter.py", "apps/hub/tests/test_pi_primary_only.py", "apps/hub/tests/test_pi_projection_wire.py", "apps/hub/tests/test_pi_repair2.py", "apps/hub/tests/test_pi_repair3.py", "apps/hub/tests/test_r15_joint_server.py", "apps/hub/tests/test_r15_recovery.py", "apps/hub/tests/test_r16_attachments.py", "apps/hub/tests/test_r3_wire.py", "apps/hub/tests/test_remote_worker.py"]
 build: pass
 tests: pass
-commit: a1241d8110521ace124caf7bba73abe3956bb8f9
+commit: b7ce5847fbd5bc0f1e9f13d58fbc5a8aca6aff27
 open_questions: 0
 ---
 
@@ -604,3 +604,109 @@ Server（Hub 完成后启动）：
 - 本回执另作 docs 提交。每次提交后运行 `git log -1 --format=%B` 自查，无署名。
 
 未调用模型，未修改协议/server/desktop/manager，也未合并回 integration、推送或部署。头部 scope_touched 是整个 PI-P2 的累计范围，本轮实际 diff 仅涉及 PiAdapter、orchestrator 的会话完成条件、假进程及回归测试和本回执。
+
+
+## 返修 4：正常拒绝只作结果审计，不发送失败事件
+
+开工按要求 `git merge integration/phase1`，快进至 `0648ee5`。带入的桌面修复来自 integration，本轮未修改桌面文件；实际代码只改 PiAdapter 与对应测试。
+
+### 修改
+
+- `_completed_reply` 的 model_refusal 分支不再 emit `agent.failed`；permission_denied、PI_TOOL_CALL_BLOCKED、reportedStatus、model_report 证据仍在已有 AgentResult.blockers 审计项。
+- 实际 guard 拒绝也不再通过 `agent.failed` 表达，保留已有 `agent.tool_call`（工具级 failed=true、安全说明）活动，以及最终结果中的 guard_decision / guardReasons 审计。工具执行受阻不再短暂把整个节点置为 failed。
+- 真正的守卫完整性/传输/异常消息等 fatal failure 分支未放宽；原有失败事件继续保留。
+- 未新增事件类型或协议字段，不改 completed、Session 续接或已验证的路径防护逻辑。
+
+### 两条 agent.completed 的核对
+
+不是返修 3 引入：初始 PI 实施提交 `6adc84c` 的 PiAdapter._complete 已发 `agent.completed`，同时 WorkflowRuntime.collect_result 会再发节点完成事件；TaskService._forward 把 Adapter 事件入本机事件表。其它既有适配器也有相同的 Adapter 完成事件。
+
+当前前端 `apps/desktop/src/stores/task.store.ts` 依赖 agent.completed 更新节点 status、completedAt、summary；恢复器 `orchestrator/recovery.py` 同样消费该事件。这里只确认历史双生产者及消费者，不声称前端必须收到恰好两次。按本包要求不删除或重构这个既有行为，回归保留两条 completed 的精确断言。`agent.tool_call` 在前端只记活动，不直接改变节点状态，恢复器也不据此标 failed。
+
+### 测试
+
+调整了本机端到端三轮测试：模型自拒绝及真实 guard 拒绝的五种报告形状，同一 Task 事件序列均不得包含任何 agent.failed；两条 completed 的 result.status 均为 done，permission_denied 审计保留；模型自拒绝不捏造工具活动，guard 拒绝有工具级受阻活动。继续要求 run succeeded、Session idle/isValid、相同原生 ID、turnCount 递增及下一轮正确回忆合成上下文。
+
+Adapter 级断言也从旧 agent.failed 审计位置改为结果 blockers 与已有工具活动，仍检查实际拒绝决定、path_outside_scope、确认停止和可续接，未放宽安全边界。专项真实输出：`42 passed, 1 warning in 29.08s`。
+
+### 串行真实输出
+
+分别在 apps/hub、apps/server 下执行：
+
+```powershell
+$env:TEMP=(Resolve-Path ../../.tmp).Path
+$env:TMP=$env:TEMP
+$env:PYTHONIOENCODING='utf-8'
+../../.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider --basetemp ../../.tmp/pi-r4-hub --tb=short
+# Hub 完成后，server 使用 --basetemp ../../.tmp/pi-r4-server
+```
+
+Hub：
+
+```text
+........................................................................ [  8%]
+........................................................................ [ 17%]
+........................................................................ [ 26%]
+........................................................................ [ 35%]
+.......................................s................ssssssss........ [ 44%]
+........................................................................ [ 53%]
+........................................................................ [ 61%]
+........................................................................ [ 70%]
+........................................................................ [ 79%]
+........................................................................ [ 88%]
+........................................................................ [ 97%]
+远程送达预留清理暂未完成，将重试
+远程送达预留清理暂未完成，将重试
+.....................                                                    [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_ws_close_codes_real_handshake.py::test_bad_ticket_closes_with_4401_not_a_handshake_rejection
+tests/test_ws_close_codes_real_handshake.py::test_bad_origin_closes_with_4403_and_is_distinguishable_from_bad_ticket
+tests/test_ws_close_codes_real_handshake.py::test_expired_cursor_closes_with_4410_and_sends_snapshot_url_first
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\websockets\exceptions.py:137: DeprecationWarning: ConnectionClosed.code is deprecated; use Protocol.close_code or ConnectionClosed.rcvd.code
+    warnings.warn(  # deprecated in 13.1 - 2024-09-21
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_posix_credentials.py:166: POSIX mode bits
+SKIPPED [1] tests\test_posix_path_guard.py:50: POSIX absolute redirect path
+SKIPPED [1] tests\test_posix_path_guard.py:68: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:76: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:84: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:101: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:108: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:115: POSIX shell approval wrappers
+SKIPPED [1] tests\test_posix_path_guard.py:122: POSIX executable symlink and directory-fd semantics
+804 passed, 9 skipped, 4 warnings in 379.51s (0:06:19)
+```
+
+Server：
+
+```text
+........................................................................ [ 20%]
+........................................................................ [ 41%]
+........................................................................ [ 62%]
+........................................................................ [ 83%]
+.......................................................                  [100%]
+============================== warnings summary ===============================
+..\..\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\remote-worker\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+343 passed, 1 warning in 126.81s (0:02:06)
+```
+
+原始输出在忽略目录 `.tmp/pi-r4-hub.txt` / `.tmp/pi-r4-server.txt`。测试总数与原有 POSIX skip 数量不变，未删除测试或放宽安全断言。没有并行 pytest、没有 vitest；未遇 429/403、0xC0000142 或额度错误；`git diff --check` 通过。
+
+
+### 主代理复测
+
+继续使用已验证的真实 PI 场景：模型主动拒绝与实际 guard 拦截各一轮，确认事件表同一 taskId 无 agent.failed、有结果审计、run succeeded，后续 continue 接上。guard 情形允许 agent.tool_call 的工具级受阻记录。两条既有 agent.completed 本轮不变；手机不得再因正常拒绝出现失败气泡。
+
+提交：`b7ce584`（正常拒绝事件修复与回归断言）；本回执另作 docs 提交。每次提交后执行 `git log -1 --format=%B` 自查，无署名。
+
+未调用模型、未改协议/server/desktop/manager，也未合并回 integration、推送或部署。
