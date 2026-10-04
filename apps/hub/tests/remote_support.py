@@ -357,6 +357,7 @@ class System:
         return dump(RemoteServerOutboundFrame.model_validate(value))
 
     async def close(self):
+        await self.application.app.state.local_bootstrap.close()
         await self.worker.stop()
         await self.chat.stop()
         await self.tasks.shutdown()

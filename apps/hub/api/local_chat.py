@@ -16,6 +16,7 @@ from protocol.generated.python import (
 )
 from api.envelopes import success_response
 from core.constants import PROTOCOL_VERSION
+from core.agent_snapshot import agent_snapshot
 from core.errors import HubError
 from core.local_auth import COOKIE_NAME, LocalBrowserAuth
 from core.security import token_matches
@@ -104,7 +105,7 @@ def install_local_routes(app: Any, service: LocalChatService, auth: LocalBrowser
 
     @router.get("/agents")
     async def agents():
-        return success_response(await ports.agents.list_agents())
+        return success_response(await agent_snapshot(ports.agents))
 
     @router.post("/agents/discover")
     async def discover():

@@ -124,6 +124,11 @@ async def _seed_defaults(database: Any, ports: HubPorts) -> None:
     from runtime.services import seed_default_profile
     from storage.team_profiles import TeamProfileRepository
 
+    if hasattr(type(ports.agents), 'on_discovery'):
+        # Register before HTTP startup; seeding waits for real observations in
+        # the background, never invents bindings from discovering placeholders.
+        ports.agents.on_discovery(lambda agents: seed_default_profile(TeamProfileRepository(database), agents))
+        return
     try:
         agents = await ports.agents.list_agents()
     except Exception:  # noqa: BLE001 - 探测失败不该阻断启动

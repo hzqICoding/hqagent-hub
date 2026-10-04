@@ -1,0 +1,71 @@
+.blocked Runtime/Git/update/drain: 12 reads, max=36.5ms
+....................FFF......
+================================== FAILURES ===================================
+__ test_real_device_mixed_approval_projection_and_primary_catalog[approved] ___
+tests\test_pi_primary_only.py:241: in test_real_device_mixed_approval_projection_and_primary_catalog
+    asyncio.run(scenario())
+E:\SoftWare\Python313\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_pi_primary_only.py:153: in scenario
+    async with RealPair(tmp_path, revision=5) as pair:
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_r15_joint_server.py:162: in __aenter__
+    assert next(f for f in self.received if f["type"] == "worker.hello_ack")["wireRevision"] == self.revision
+E   assert 4 == 5
+E    +  where 5 = <test_r15_joint_server.RealPair object at 0x000001ED874C9090>.revision
+__ test_real_device_mixed_approval_projection_and_primary_catalog[rejected] ___
+tests\test_pi_primary_only.py:241: in test_real_device_mixed_approval_projection_and_primary_catalog
+    asyncio.run(scenario())
+E:\SoftWare\Python313\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_pi_primary_only.py:153: in scenario
+    async with RealPair(tmp_path, revision=5) as pair:
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_r15_joint_server.py:162: in __aenter__
+    assert next(f for f in self.received if f["type"] == "worker.hello_ack")["wireRevision"] == self.revision
+E   assert 4 == 5
+E    +  where 5 = <test_r15_joint_server.RealPair object at 0x000001ED87632490>.revision
+___ test_real_device_mixed_approval_projection_and_primary_catalog[expired] ___
+tests\test_pi_primary_only.py:241: in test_real_device_mixed_approval_projection_and_primary_catalog
+    asyncio.run(scenario())
+E:\SoftWare\Python313\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\SoftWare\Python313\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_pi_primary_only.py:153: in scenario
+    async with RealPair(tmp_path, revision=5) as pair:
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_r15_joint_server.py:162: in __aenter__
+    assert next(f for f in self.received if f["type"] == "worker.hello_ack")["wireRevision"] == self.revision
+E   assert 4 == 5
+E    +  where 5 = <test_r15_joint_server.RealPair object at 0x000001ED887248A0>.revision
+============================== warnings summary ===============================
+..\..\..\vnext-integration\.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\OtherPro\HQAgent-Hub-worktrees\vnext-integration\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_pi_primary_only.py::test_real_device_mixed_approval_projection_and_primary_catalog[approved]
+FAILED tests/test_pi_primary_only.py::test_real_device_mixed_approval_projection_and_primary_catalog[rejected]
+FAILED tests/test_pi_primary_only.py::test_real_device_mixed_approval_projection_and_primary_catalog[expired]
+3 failed, 27 passed, 1 warning in 11.75s

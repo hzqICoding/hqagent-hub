@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import time
+from contextvars import Context
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -67,9 +68,59 @@ class AdapterManager:
             raise ValueError("adapterId 必须唯一")
         self._detect_ttl = detect_ttl_seconds
         self._detect_cache: dict[str, tuple[float, AdapterDescriptor | AdapterFailure]] = {}
-        self._last_agents: list[AgentView] = []
         self._last_discovery = None
-        self._discovery_lock = asyncio.Lock()
+        self._discovery_job = None
+        self._detect_jobs = {}
+        self._discovery_callbacks = []
+        self._closed = False
+        self._last_agents: list[AgentView] = [self._pending(adapter) for adapter in adapters]
+
+    def _pending(self, adapter, *, failed=False):
+        return AgentView(id=self.runtime_instances(adapter.adapter_id)[0], adapterId=adapter.adapter_id,
+            displayName=getattr(adapter, 'display_name', adapter.adapter_id), version='unknown',
+            status='error' if failed else 'discovering', detectedAt=utc_timestamp(),
+            capabilities=[], assignedRoles=[], isPrimaryFor=[],
+            diagnosticMessage='Runtime 检测失败，请重新检测' if failed else '正在后台检测 Runtime')
+
+    def _expired(self):
+        return self._last_discovery is None or time.monotonic() - self._last_discovery >= self._detect_ttl
+
+    def request_discovery(self, *, force=False):
+        if self._closed:
+            return None
+        if self._discovery_job is not None and not self._discovery_job.done():
+            return self._discovery_job
+        if force or self._expired():
+            self._discovery_job = asyncio.create_task(self._discover(), context=Context())
+            self._discovery_job.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+        return self._discovery_job
+
+    def start(self):
+        self._closed = False
+        self.request_discovery()
+
+    async def close(self):
+        self._closed = True
+        jobs = [*self._detect_jobs.values()]
+        if self._discovery_job is not None:
+            jobs.append(self._discovery_job)
+        for job in jobs:
+            if not job.done():
+                job.cancel()
+        await asyncio.gather(*jobs, return_exceptions=True)
+
+    def on_discovery(self, callback):
+        self._discovery_callbacks.append(callback)
+
+    def _views(self):
+        return [item.model_copy(update={'guard': self._adapters['pi'].guard})
+                if str(item.adapter_id) == 'pi' and hasattr(self._adapters.get('pi'), 'guard') else item.model_copy()
+                for item in self._last_agents]
+
+    async def cached_agents(self):
+        """Presentation only: never wait for a CLI or a discovery lock."""
+        self.request_discovery()
+        return self._views()
 
     def runtime_instances(self, adapter_id: str) -> tuple[str, ...]:
         # The same registry-owned identity used by discovery, even while a
@@ -94,30 +145,50 @@ class AdapterManager:
                     "retryable": False,
                 }
             )
-        value = await adapter.detect()
-        self._detect_cache[adapter_id] = (now, value)
-        return value
+        job = self._detect_jobs.get(adapter_id)
+        if job is None or job.done():
+            async def probe():
+                value = await adapter.detect()
+                self._detect_cache[adapter_id] = (time.monotonic(), value)
+                return value
+            job = asyncio.create_task(probe(), context=Context())
+            self._detect_jobs[adapter_id] = job
+            job.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+        return await asyncio.shield(job)
 
     async def list_agents(self) -> list[AgentView]:
-        if self._last_discovery is None or time.monotonic() - self._last_discovery >= self._detect_ttl:
-            async with self._discovery_lock:
-                if self._last_discovery is None or time.monotonic() - self._last_discovery >= self._detect_ttl:
-                    await self._discover()
-        return [item.model_copy(update={'guard': self._adapters['pi'].guard})
-                if str(item.adapter_id) == 'pi' and hasattr(self._adapters.get('pi'), 'guard') else item
-                for item in self._last_agents]
+        # Execution resolution keeps its fresh-observation contract. HTTP list
+        # and bootstrap deliberately use cached_agents instead.
+        if self._expired():
+            job = self.request_discovery()
+            if job is not None:
+                await asyncio.shield(job)
+        return self._views()
 
     async def discover(self) -> AgentDiscoveryResult:
-        async with self._discovery_lock:
-            return await self._discover()
+        job = self.request_discovery(force=True)
+        if job is None:
+            raise RuntimeError('Runtime discovery is shutting down')
+        return await asyncio.shield(job)
 
     async def _discover(self) -> AgentDiscoveryResult:
         started = time.monotonic()
-        rows = [await self._discover_one(adapter) for adapter in self._adapters.values()]
+        rows = []
+        for adapter in self._adapters.values():
+            try:
+                row = await self._discover_one(adapter)
+            except Exception:
+                row = (self._pending(adapter, failed=True), AgentDiscoveryError(
+                    adapterId=adapter.adapter_id, code=ErrorCode.INTERNAL, message='Runtime 检测失败'))
+            rows.append(row)
+            view = row[0] or self._pending(adapter, failed=True)
+            self._last_agents = [view if item.id == view.id else item for item in self._last_agents]
         agents = [item[0] for item in rows if item[0] is not None]
         errors = [item[1] for item in rows if item[1] is not None]
-        self._last_agents = agents
+        # Keep registered identities visible even when a detector fails.
         self._last_discovery = time.monotonic()
+        for callback in self._discovery_callbacks:
+            callback(self._views())
         return AgentDiscoveryResult.model_validate(
             {
                 "discovered": agents,

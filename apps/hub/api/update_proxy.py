@@ -92,9 +92,26 @@ class UpdateAgentProxy:
     def _pid_exists(pid: int) -> bool:
         if pid == os.getpid():
             return True
+        if os.name == 'nt':
+            # os.kill(pid, 0) is not a harmless liveness query on Windows.
+            # Observing bootstrap dependencies must never terminate the updater.
+            import ctypes
+            from ctypes import wintypes
+            kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+            kernel.OpenProcess.restype = wintypes.HANDLE
+            kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+            kernel.WaitForSingleObject.restype = wintypes.DWORD
+            kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+            handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only.
+            if not handle:
+                return False
+            try:
+                return kernel.WaitForSingleObject(handle, 0) == 258  # WAIT_TIMEOUT = still alive.
+            finally:
+                kernel.CloseHandle(handle)
         try:
             os.kill(pid, 0)
         except OSError:
             return False
         return True
-

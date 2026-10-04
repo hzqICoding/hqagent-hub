@@ -26,8 +26,8 @@ class PiVisibility:
         self.cursor_scopes = {}
         self.tombstones = set()
 
-    async def refresh(self):
-        await self.worker.attachments.capabilities.refresh()
+    async def refresh(self, *, cached=False):
+        await self.worker.attachments.capabilities.refresh(cached=cached)
         self.rebuild()
 
     def was_pi(self, identifier):
@@ -157,8 +157,12 @@ class PiVisibility:
             if key in result and isinstance(result[key], list) and 'total' in result:
                 result['total'] = max(len(result[key]), result['total'] - (len(value[key]) - len(result[key])))
         if 'lastEventSeq' in result and isinstance(result.get('agents'), dict):
-            agents = self.worker.attachments.capabilities.agents
-            hidden = [a for a in agents.values() if str(a.adapter_id) == 'pi']
+            latest = getattr(self.worker.bridge.chat.ports.agents, '_last_agents', None)
+            # Bootstrap now reads the manager snapshot, even when an in-flight
+            # capability refresh holds its lock. Project counts from that same
+            # snapshot rather than stale/empty image-capability observations.
+            agents = latest if isinstance(latest, (list, tuple)) else self.worker.attachments.capabilities.agents.values()
+            hidden = [a for a in agents if str(a.adapter_id) == 'pi']
             summary = result['agents']
             for key, count in [('total', len(hidden)), ('ready', sum(str(a.status) == 'ready' for a in hidden)),
                                ('issues', sum(str(a.status) != 'ready' for a in hidden))]:

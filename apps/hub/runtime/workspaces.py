@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+import time
 import uuid
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -83,6 +84,19 @@ class WorkspaceService:
 
     def __init__(self, repository: WorkspaceRepository) -> None:
         self.repository = repository
+        self._views = {}
+
+    async def cached_workspaces(self):
+        """Bootstrap metadata snapshot. Git probes belong to background refresh."""
+        result = []
+        for record in self.repository.list():
+            cached = self._views.get(record.id)
+            if cached and time.monotonic() - cached[0] < 5 and cached[1].path == record.path and str(cached[1].vcs) == record.vcs:
+                result.append(cached[1].model_copy(update={'name': record.name,
+                    'default_profile_id': record.default_profile_id, 'last_opened_at': record.last_opened_at or cached[1].last_opened_at}))
+            else:
+                result.append(self._view(record, unknown=record.vcs == 'git'))
+        return result
 
     # ---------- 查询 ----------
 
@@ -198,7 +212,9 @@ class WorkspaceService:
         if budget > 0:
             try:
                 async with asyncio.timeout(budget):
-                    return await self._to_view(record)
+                    value = await self._to_view(record)
+                    self._views[record.id] = (time.monotonic(), value)
+                    return value
             except TimeoutError:
                 pass
         return self._view(record, unknown=True)
