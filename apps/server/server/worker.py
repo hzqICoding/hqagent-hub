@@ -153,10 +153,10 @@ class WorkerTransport:
             negotiated = wire.offered(raw)
             hello = wire.decode(raw)
             identifier = uid()
-            if hello['wireRevision'] in {2,3,4}:
+            if hello['wireRevision'] in {2,3,4,5}:
                 with self.s.repo.transaction() as tx:
                     owner, device = self.s.security.device_identity(tx, verifier)
-                    if device.get('_wireRevision') in {2,3,4} and device['_wireRevision'] != hello['wireRevision']:
+                    if device.get('_wireRevision') in {2,3,4,5} and device['_wireRevision'] != hello['wireRevision']:
                         device['_upgradeTarget'] = hello['wireRevision']
                         self.s.save(tx, owner, 'device', device['workerId'], device)
             with self.s.repo.transaction() as tx:

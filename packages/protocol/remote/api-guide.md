@@ -1,4 +1,4 @@
-# Hub Server 对外接口规范（协议包 0.11.0）
+# Hub Server 对外接口规范（协议包 0.11.1）
 
 R3完整约束见[R3-contract.md](R3-contract.md)。原生接口仅Cookie；附件浏览器/Worker分别用Cookie/设备凭据，不扩展PAT白名单。电脑是原生会话内容与目录安全的唯一权威。
 
@@ -9,7 +9,7 @@ R3完整约束见[R3-contract.md](R3-contract.md)。原生接口仅Cookie；附�
 ## 1. 基础约定
 
 - HTTPS Base URL：`https://<部署域名>`，资源前缀`/api/v2`。示例域名`hub.example.invalid`及全部示例ID/令牌均是合成数据，不能用于真实认证。
-- `protocolVersion`是协议包版本，当前0.11.0；URI版本仍v2。Worker线路修订支持[1,2,3,4,5]，以wireRevision协商，不能拿包版本相等当接入条件。
+- `protocolVersion`是协议包版本，当前0.11.1；URI版本仍v2。Worker线路修订支持[1,2,3,4,5]，以wireRevision协商，不能拿包版本相等当接入条件。
 - 请求和响应JSON使用UTF-8、camelCase。写入通常`Content-Type: application/json`；无请求体的DELETE不要求伪造JSON。拒绝未声明的输入字段，不接受客户端传owner/账号归属字段。
 - 时间统一RFC3339 UTC `Z`，例如`2026-09-27T12:00:00.000Z`。ID是不可解析的有界字符串，按Schema长度限制，拼URL时编码路径段。安全整数上限2^53-1。
 - 成功信封：`{success:true,data,requestId,protocolVersion}`；失败：`{success:false,error,requestId,protocolVersion}`。两者互斥，不以HTTP200包装失败，不在失败时返回业务data。
@@ -19,7 +19,7 @@ R3完整约束见[R3-contract.md](R3-contract.md)。原生接口仅Cookie；附�
 示例错误（已授权资源的CAS冲突）：
 
 ```json
-{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.11.0"}
+{"success":false,"error":{"code":"CONFLICT","message":"资源版本或状态已变化，请刷新后重试","retryable":false,"detail":{"fields":["expectedVersion"],"currentVersion":3}},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.11.1"}
 ```
 
 ## 2. 鉴权矩阵与凭据边界
@@ -640,7 +640,7 @@ curl -X POST "$BASE/api/v2/devices/worker_demo/workspaces" --cookie "__Host-hqre
 云端GET /devices/{workerId}/native-sessions、GET /native-sessions/{nativeSessionId}、GET /native-sessions/{nativeSessionId}/messages统一遵循：认证/归属→设备不存在或已删除404→同步关闭409。暂停不影响读取；同步关闭也先于正文在线查询。详情/读取未知或跨账号ID仍404，只有已核实的ID归属映射才能判断所属设备的开关。
 
 ```json
-{"success":false,"error":{"code":"REMOTE_SYNC_DISABLED","message":"这台电脑已关闭同步","retryable":false},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.11.0"}
+{"success":false,"error":{"code":"REMOTE_SYNC_DISABLED","message":"这台电脑已关闭同步","retryable":false},"requestId":"req_0123456789abcdef01234567","protocolVersion":"0.11.1"}
 ```
 
 三个接口均返回HTTP409及上述错误，X-Request-Id与信封一致，Cache-Control:no-store。前端显示“这台电脑已关闭同步”，不能显示“没有原生会话”；提示去电脑开启同步，等待补传后刷新，不自动重试。同步开启而确实没有会话时，列表才返回200空页（items=[]、hasMore=false），不存在的详情/读取仍404。sync.reset不保留内容，仅允许无内容的归属映射用于区分已关闭；设备删除优先404。本机原生会话接口不受此门禁影响。
@@ -751,3 +751,15 @@ curl -b "$LOCAL_COOKIE_JAR" -H 'X-HQ-Client-Features: pi-v1' \
 图片仍要当前实例/CLI版本/模型在 `pi-rpc-images-v1` 的五项验证全部通过；GET和catalog不触发收费验证。
 新错误PI_GUARD_UNAVAILABLE、PI_UNCONTROLLED_EXTENSIONS、PI_TOOL_CALL_BLOCKED见自动错误总表；它们只用于本机和线路5的结构化结果，旧1–4不会收到。
 服务器不运行PI，不读取模型配置；保护扩展原始tool参数只在电脑独占RPC中流动，公开风险视图无源码/路径/参数。
+
+
+### 16.1 补冻1：浏览器审批投影（0.11.1）
+
+线路仍为5；无新路由。GET /api/v2/events的RemoteBrowserEvent新增仅pi-v1可见的RemoteBrowserPiApprovalEvent。
+非PI的修订5审批必须投影成旧worker.event → approval.state_changed形状（浏览器兼容标签2）；
+pending实时upsert，approved/rejected/expired移除，旧前端无需修改。不能用conversation.updated替代。
+PI审批只给pi-v1，内层使用RemoteV5ApprovalEvent；没有声明时既不发它，也不发包含其ID、数量或存在提示的替代事件。
+所有命令/同步/进度事件的逐类投影、公共ID映射和无法表示时的410快照对账见PI-contract.md §8。
+兼容标签只存在于浏览器副本，Worker原事实的wireRevision/seq/hash/ACK/grant保持不变。
+云端不存在浏览器WS ticket接口；§15及PI契约所述票据只指本机 /api/v1/auth/ws-ticket，能力绑定由Hub负责。
+云端P1绑定HTTP事件/列表游标能力集，不新增票据接口。

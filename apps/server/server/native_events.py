@@ -1,5 +1,5 @@
 """Revision 3 reliable metadata and resource execution projection."""
-from .common import Fault, digest, require, seconds
+from .common import Fault, digest, require, seconds, validated
 from .native import RESOURCES
 from .service import TERMINAL
 
@@ -9,6 +9,24 @@ class NativeEvents:
 
     def catalog(self, tx, owner, event):
         worker, store, payload = event['workerId'], event['workerStoreId'], event['payload']
+        if event['wireRevision'] == 5:
+            runtimes = {r['agentId']:r for r in payload.get('runtimes',[])}
+            require(len(runtimes)==len(payload.get('runtimes',[])), 'REMOTE_SYNC_CONFLICT')
+            bindings = list(payload.get('nativeImageCapabilities',[]))
+            for scene in payload['scenes']:
+                bindings.extend(scene.get('roleImageCapabilities',[]))
+            for binding in bindings:
+                runtime = runtimes.get(binding.get('agentId'))
+                if runtime and binding.get('agentType'):
+                    require(runtime['agentType']==binding['agentType'],'REMOTE_SYNC_CONFLICT')
+                if binding.get('agentType')=='pi':
+                    require(runtime is not None and runtime['agentType']=='pi','REMOTE_SYNC_CONFLICT')
+                    if 'modelId' in binding:
+                        validated('PiModelSelection',dict(modelId=binding['modelId']))
+            for runtime in runtimes.values():
+                guard=runtime.get('guard',{})
+                if guard.get('status')=='ready':
+                    require(guard.get('isolation')=='hub_extension_only' and guard.get('reasons')==[], 'REMOTE_SYNC_CONFLICT')
         require('authorizedRoots' in payload, 'REMOTE_SYNC_CONFLICT')
         require(len({r['rootId'] for r in payload['authorizedRoots']}) == len(payload['authorizedRoots']), 'REMOTE_SYNC_CONFLICT')
         before = tx.get(owner, 'catalog', worker)
@@ -70,6 +88,12 @@ class NativeEvents:
             return
         require(p['format']['status'] != 'readable' or bool(p['format'].get('readerId')), 'REMOTE_SYNC_CONFLICT')
         require(p['format']['status'] != 'unsupported' or bool(p['format'].get('reason')), 'REMOTE_SYNC_CONFLICT')
+        if p['agentType']=='pi':
+            require(event['wireRevision']==5,'REMOTE_REVISION_REQUIRED')
+            if p['format']['status']=='readable':
+                require(p['format'].get('readerId')=='pi.jsonl.v3.tree' and 'pi' in p['format'],'REMOTE_SYNC_CONFLICT')
+            else:
+                require('unsupportedReason' in p['format'],'REMOTE_SYNC_CONFLICT')
         value = dict(p, nativeSessionId=public, workspaceId=workspace, workerId=worker, _store=store, _localId=local, _generation=event['syncGeneration'], _hash=digest(p))
         self.s.save(tx, owner, 'native-index', public, value)
 

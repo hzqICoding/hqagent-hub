@@ -110,6 +110,18 @@ def test_real_source_process_desktop_lifetime(tmp_path, control):
                LOCALAPPDATA=str(tmp_path / 'app-data'), HOME=str(tmp_path), USERPROFILE=str(tmp_path),
                HQAGENT_CODEX_PATH=str(tmp_path / 'missing'), HQAGENT_CLAUDE_PATH=str(tmp_path / 'missing'))
     data = tmp_path / 'data-root'
+    # A real registered Git workspace is essential: an empty database never
+    # exercises subprocess creation while the parent-control reader is blocked.
+    project = tmp_path / 'project'
+    project.mkdir()
+    subprocess.run(['git', 'init', '--quiet', str(project)], stdin=subprocess.DEVNULL,
+                   capture_output=True, check=True, timeout=10)
+    from storage.database import Database
+    from storage.workspaces import WorkspaceRepository, WorkspaceRecord
+    database = Database(data / 'data' / 'hub.db')
+    database.initialize()
+    WorkspaceRepository(database).save(WorkspaceRecord('desktop-project', str(project), 'project', 'git', None, None))
+    database.close()
     child = subprocess.Popen([sys.executable, '-B', '-m', 'runtime.main', '--data-dir', str(data)],
                              cwd=Path(__file__).resolve().parents[1], env=env, stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -138,6 +150,23 @@ def test_real_source_process_desktop_lifetime(tmp_path, control):
         # Windows venv python.exe is a redirector with a separate interpreter PID.
         assert descriptor.pid > 0 and descriptor.port >= 1024
         assert not (data / 'runtime' / 'hub.json').exists()
+        for endpoint in ('/api/v1/workspaces', '/api/v1/bootstrap'):
+            start = time.monotonic()
+            connection = HTTPConnection('127.0.0.1', descriptor.port, timeout=4)
+            try:
+                connection.request('GET', endpoint, headers={'Authorization': 'Bearer ' + descriptor.token})
+                response = connection.getresponse()
+                assert response.status == 200
+                payload = json.loads(response.read())['data']
+                workspace = payload[0] if endpoint.endswith('/workspaces') else payload['currentWorkspace']
+                assert workspace['id'] == 'desktop-project' and workspace['vcs'] == 'git'
+                assert workspace['isClean'] is True
+                elapsed = time.monotonic() - start
+                assert elapsed < 4
+                print(json.dumps({'mode': 'stdio-v1', 'control': control, 'endpoint': endpoint,
+                                  'elapsedMs': round(elapsed * 1000, 1)}))
+            finally:
+                connection.close()
         if control == 'shutdown':
             # Descriptor placement must not allow two Hubs to own one database.
             duplicate_env = {**env, 'HQAGENT_RUNTIME_DIR': str(tmp_path / 'other-runtime'),
@@ -158,7 +187,9 @@ def test_real_source_process_desktop_lifetime(tmp_path, control):
             child.stdin.close()
             child.stdin = None
         assert child.wait(timeout=15) == 0
-        assert time.monotonic() - start < 15
+        elapsed = time.monotonic() - start
+        assert elapsed < 15
+        print(json.dumps({'control': control, 'exitCode': 0, 'exitMs': round(elapsed * 1000, 1)}))
         output, errors = child.communicate()
         assert descriptor.token.encode() not in output + errors
         assert not (runtime / 'hub.json').exists()

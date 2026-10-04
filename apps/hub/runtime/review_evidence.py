@@ -15,7 +15,8 @@ MAX_FILES = 64
 
 def _git(root: Path, *args: str) -> bytes:
     try:
-        result = subprocess.run(['git', *args], cwd=root, capture_output=True, timeout=15, check=True)
+        result = subprocess.run(['git', *args], cwd=root, stdin=subprocess.DEVNULL,
+                                capture_output=True, timeout=15, check=True)
     except (OSError, subprocess.SubprocessError) as error:
         raise HubError('FEATURE_UNAVAILABLE', '无法读取实现工作树的Git验收证据') from error
     if len(result.stdout) > MAX_EVIDENCE_BYTES:

@@ -1,0 +1,31 @@
+{
+  "type": "worker.event",
+  "serverCursor": "opaque_feature_bound_cursor_synthetic_002",
+  "recordedAt": "2026-09-26T12:00:01Z",
+  "payload": {
+    "type": "approval.state_changed",
+    "eventId": "event_synthetic_pi_approval_5",
+    "workerId": "worker_demo",
+    "workerStoreId": "store_demo",
+    "workerEpoch": "boot_demo",
+    "seq": 2,
+    "occurredAt": "2026-09-26T12:00:00Z",
+    "conversationId": "public_pi_conversation_synthetic",
+    "payload": {
+      "approvalId": "public_pi_approval_synthetic",
+      "resultRef": {
+        "runId": "public_pi_run_synthetic"
+      },
+      "action": "git_push",
+      "targetSummary": "example",
+      "riskLevel": "high",
+      "status": "pending",
+      "requestedAt": "2026-09-26T12:00:00Z",
+      "expiresAt": "2026-09-26T12:05:00Z",
+      "remoteApprovalAllowed": false,
+      "workerPolicyRevision": 1,
+      "denialCode": "PI_TOOL_CALL_BLOCKED"
+    },
+    "wireRevision": 5
+  }
+}
