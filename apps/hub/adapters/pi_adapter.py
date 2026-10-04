@@ -38,8 +38,34 @@ class PiIsolationError(ValueError):
     pass
 
 
-def denied(code='PI_GUARD_UNAVAILABLE', kind='capability_missing'):
-    return AdapterFailure(kind=kind, code=code, message='PI 受控执行未通过本机验证', retryable=False)
+class PiModelError(ValueError):
+    pass
+
+
+def denied(code='PI_GUARD_UNAVAILABLE', kind='capability_missing', *, message=None):
+    messages = {
+        'PI_GUARD_UNAVAILABLE': 'PI 安全扩展握手失败或保护状态已变化，未放行执行',
+        'PI_UNCONTROLLED_EXTENSIONS': 'PI 扩展隔离或 CLI 版本未通过核验，未启动任务',
+        'SESSION_NOT_RESUMABLE': 'PI 会话续接失败，请核对原生会话绑定与执行状态',
+        'PI_TOOL_CALL_BLOCKED': 'PI 工具调用不符合当前安全策略，已被拦截',
+        'PATH_NOT_ALLOWED': 'PI 工作目录不在授权范围内，未启动任务',
+        'AGENT_OFFLINE': 'PI 连接已中断，执行状态仍需核对',
+        'VALIDATION_FAILED': 'PI 模型选择或执行选项未通过本机清单校验',
+        'INTERNAL': 'PI 本轮未返回可验证的执行结果',
+        'TASK_NOT_CANCELLABLE': 'PI 本轮已停止',
+    }
+    return AdapterFailure(kind=kind, code=code, message=message or messages.get(code, 'PI 当前请求未被执行'), retryable=False)
+
+
+def tool_denial(reason):
+    message = {
+        'path_outside_scope': 'PI 尝试访问工作区外或未授权的文件，已被拦截',
+        'unsupported_shell': 'PI 尝试使用无法安全核验的命令，已被拦截',
+        'read_only_tool': 'PI 尝试在只读任务中使用写入或执行工具，已被拦截',
+        'approval_rejected': 'PI 工具调用未获当前审批许可，已被拦截',
+        'approval_expired': 'PI 工具调用审批已过期，已被拦截',
+    }.get(reason, 'PI 工具调用不符合当前安全策略，已被拦截')
+    return denied('PI_TOOL_CALL_BLOCKED', 'path_violation' if reason == 'path_outside_scope' else 'agent_error', message=message)
 
 
 def prompt_input(message, values):
@@ -75,6 +101,7 @@ class PiState(AdapterSessionState):
     result_job: asyncio.Task | None = None
     policy_snapshot: str = ''
     turn_started: bool = False
+    tool_blocks: list = field(default_factory=list)
 
 
 class PiAdapter(AgentAdapter):
@@ -228,10 +255,10 @@ class PiAdapter(AgentAdapter):
             self._models(available, native, default=spec.model_id_ is None)
             selected = spec.model_id_ or self.default_model
             if not metadata_only and selected not in {m['id'] for m in self.models}:
-                raise ValueError('model not available')
+                raise PiModelError('model not available')
             actual = native.get('model') or {}
             if not metadata_only and selected != str(actual.get('provider', '')) + '/' + str(actual.get('id', '')):
-                raise ValueError('PI selected another model')
+                raise PiModelError('PI selected another model')
             return state, native
         except BaseException:
             if await state.connection.force_close():
@@ -241,7 +268,10 @@ class PiAdapter(AgentAdapter):
     def _models(self, available, native, *, default=True):
         models, facts = [], []
         self.model_inputs = {}
-        for row in available.get('models', []):
+        rows = available.get('models')
+        if not isinstance(rows, list):
+            raise ValueError('invalid model catalog shape')
+        for row in rows:
             provider, model = selector(str(row.get('provider', '')) + '/' + str(row.get('id', '')))
             models.append({'id': provider + '/' + model, 'name': provider + '/' + model, 'efforts': [], 'isDefault': False})
             self.model_inputs[provider + '/' + model] = set(row.get('input', []))
@@ -257,7 +287,9 @@ class PiAdapter(AgentAdapter):
 
     async def health(self):
         try:
-            await self.list_models('local.pi.default')
+            models = await self.list_models('local.pi.default')
+            if not models.verified:
+                return denied('VALIDATION_FAILED', message=models.reason)
             return AdapterHealth(status='ready', checkedAt=utc_timestamp(), authValid=True)
         except Exception:
             self.guard = self._guard_view('blocked', 'guard_not_loaded')
@@ -272,10 +304,14 @@ class PiAdapter(AgentAdapter):
             workspaceId='discovery', roleId='analyst', objective='metadata only', worktreePath=str(workspace),
             allowedPaths=[], readOnly=True, sessionPurpose='adhoc', reusePolicy='new_session')
         state, _ = await self._new_connection(spec, metadata_only=True)
+        # Snapshot this response before awaiting cleanup; concurrent execution
+        # metadata must not replace the result of this particular request.
+        models = list(self.models)
         if not await state.connection.force_close():
             raise ValueError('metadata process did not stop')
         self._remove_launch(state)
-        return LocalAgentModelsView(agentInstanceId=agent_instance_id, verified=True, models=self.models)
+        return LocalAgentModelsView(agentInstanceId=agent_instance_id, verified=bool(models), models=models,
+            **{} if models else {'reason': 'PI 模型目录未就绪或读取权限不足，请检查本机 PI 配置后重试'})
 
     def _remove_directory(self, directory):
         # Only a per-launch directory directly beneath our managed sessions.
@@ -345,6 +381,7 @@ class PiAdapter(AgentAdapter):
             return denied('REMOTE_REVISION_REQUIRED', 'capability_missing')
         state = None
         failure_code = 'PI_GUARD_UNAVAILABLE'
+        stage = '启动安全核验'
         try:
             if not spec.worktree_path or not Path(spec.worktree_path).is_dir():
                 return denied('PATH_NOT_ALLOWED', 'path_violation')
@@ -355,17 +392,20 @@ class PiAdapter(AgentAdapter):
             state, native = await self._new_connection(spec)
             if spec.resume_session_id:
                 failure_code = 'SESSION_NOT_RESUMABLE'
+                stage = '原会话写锁或恢复状态不可用'
                 state.writer = SingleInstanceLock(self.root / 'writers' / (sha(spec.resume_session_id) + '.lock'), remove_on_release=False)
                 state.writer.acquire()
                 expected = json.loads(self._binding_path(spec.resume_session_id).read_text('utf-8'))
                 if expected.get('active', True):
                     raise ValueError('previous writer needs recovery')
+                stage = '原会话文件身份或工作区不匹配'
                 path = Path(expected['path']).resolve()
                 if not path.is_relative_to(self.root / 'sessions'):
                     raise ValueError('untrusted session binding')
                 stat = path.stat()
                 if expected['identity'] != [stat.st_dev, stat.st_ino] or expected.get('workspaceId') != spec.workspace_id:
                     raise ValueError('native file identity changed')
+                stage = '切换会话后的安全扩展握手未完成'
                 state.ready.clear()
                 switched = await state.connection.request('switch_session', sessionPath=str(path))
                 if switched.get('cancelled'):
@@ -374,12 +414,14 @@ class PiAdapter(AgentAdapter):
                 if state.failure:
                     raise ValueError('switch guard failed')
                 native = await state.connection.request('get_state')
+                stage = '切换会话后模型与当前选择不一致'
                 restored = native.get('model') or {}
                 wanted = spec.model_id_ or self.default_model
                 if wanted != str(restored.get('provider', '')) + '/' + str(restored.get('id', '')):
                     raise ValueError('switch restored a different model')
                 available = await state.connection.request('get_available_models')
                 self._models(available, native, default=False)
+                stage = '切换后的原生 ID 或文件身份不一致'
                 self._bind(state, native, expected)
             else:
                 self._bind(state, native)
@@ -412,19 +454,31 @@ class PiAdapter(AgentAdapter):
                     self._release(state)
                     self._remove_launch(state)
             from core.errors import HubError
+            if isinstance(error, PiModelError):
+                return denied('VALIDATION_FAILED', 'agent_error')
             if isinstance(error, PiIsolationError):
                 self.guard = self._guard_view('blocked', 'uncontrolled_extensions')
                 return denied('PI_UNCONTROLLED_EXTENSIONS')
             if isinstance(error, HubError):
-                return denied(error.code, 'agent_error')
+                return denied(error.code, 'agent_error', message=error.message)
             if failure_code == 'PI_GUARD_UNAVAILABLE':
                 self.guard = self._guard_view('blocked', 'guard_not_loaded')
-            return denied(failure_code, 'capability_missing' if failure_code == 'PI_GUARD_UNAVAILABLE' else 'agent_error')
+            return denied(failure_code, 'capability_missing' if failure_code == 'PI_GUARD_UNAVAILABLE' else 'agent_error',
+                message=('PI 会话续接失败：' + stage) if failure_code == 'SESSION_NOT_RESUMABLE' else None)
 
     async def resume(self, request):
         state = self.registry.get(request.session_id)
-        if state is None or not state.finished.is_set() or not state.settled.is_set():
-            return denied('SESSION_NOT_RESUMABLE', 'agent_error')
+        if state is None:
+            if request.task_spec is None:
+                return denied('SESSION_NOT_RESUMABLE', 'agent_error', message='PI 会话续接失败：缺少持久执行规格')
+            spec = request.task_spec.model_copy(update={'session_id': request.session_id,
+                'resume_session_id': request.external_session_id, 'objective': request.message})
+            # Restarted owners use the durable inactive binding and exact-file
+            # writer lease. start() still rejects unresolved previous writers.
+            result = await self.start(spec)
+            return result if isinstance(result, AdapterFailure) else None
+        if not state.finished.is_set() or not state.settled.is_set():
+            return denied('SESSION_NOT_RESUMABLE', 'agent_error', message='PI 会话续接失败：上一进程尚未确认停止')
         if request.external_session_id != state.external_session_id:
             return denied('SESSION_NOT_RESUMABLE', 'agent_error')
         if not await state.connection.force_close():
@@ -445,6 +499,12 @@ class PiAdapter(AgentAdapter):
             if item is STREAM_END:
                 return
             yield item
+
+    def can_resume_after_tool_block(self, session_id):
+        state = self.registry.get(session_id)
+        return bool(state and state.tool_blocks and state.result is not None and state.failure is None
+                    and state.settled.is_set() and state.finished.is_set()
+                    and state.process.returncode is not None and state.external_session_id)
 
     async def collect_result(self, session_id):
         state = self.registry.get(session_id)
@@ -588,8 +648,20 @@ class PiAdapter(AgentAdapter):
                     decision.update(decision='allow')
                     decision.pop('reason', None)
                 if decision['decision'] == 'block':
-                    state.failure = denied('PI_TOOL_CALL_BLOCKED', 'path_violation' if decision.get('reason') == 'path_outside_scope' else 'agent_error')
-                    await state.emit(failure_event(state.failure, 'hqagent.guard.check.v1'))
+                    blocked = tool_denial(decision.get('reason'))
+                    if decision.get('reason') == 'guard_not_loaded':
+                        state.failure = denied()
+                    else:
+                        state.tool_blocks.append(PiGuardDecision.model_validate(decision))
+                    # A denied tool is a recoverable action failure, not evidence
+                    # that the native session is damaged. PI receives block and
+                    # may continue with safe tools; retain structured auditing.
+                    from protocol.generated.python import AgentFailedPayload
+                    await state.emit(AdapterEvent.create('hqagent.guard.check.v1', 'agent.failed',
+                        AgentFailedPayload(errorCode=blocked.code, message=blocked.message,
+                            blockers=[{'kind': 'permission_denied', 'message': blocked.message,
+                                'detail': {'scope': 'tool_call', 'adapterFailureKind': str(blocked.kind),
+                                           'guardReason': decision.get('reason')}}])))
                 response = {'type': 'extension_ui_response', 'id': identifier,
                             'value': PiGuardDecision.model_validate(decision).model_dump_json(by_alias=True, exclude_none=True)}
             else:

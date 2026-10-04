@@ -36,6 +36,18 @@ async def cleanup(adapter):
         adapter._release(state)
 
 
+async def denial_evidence(adapter, identifier):
+    state = adapter.registry.get(identifier)
+    assert state.tool_blocks and all(d.decision == 'block' for d in state.tool_blocks)
+    assert state.failure is None and state.settled.is_set() and state.process.returncode is not None
+    events = [event async for event in adapter.stream_events(identifier)]
+    denied = [event.payload for event in events if getattr(event, 'unified_type', None) == 'agent.failed'
+              and event.payload.error_code == 'PI_TOOL_CALL_BLOCKED']
+    assert denied and all(v.blockers[0].detail['scope'] == 'tool_call' for v in denied)
+    assert adapter.can_resume_after_tool_block(identifier)
+    return denied
+
+
 def test_rpc_guard_start_final_and_exact_resume(tmp_path, monkeypatch):
     adapter, spec = adapter_fixture(tmp_path, monkeypatch)
     async def scenario():
@@ -120,7 +132,8 @@ def test_guard_paths_and_read_only_tools(tmp_path, monkeypatch, tool, arguments,
             if allowed:
                 assert result.summary == 'synthetic final'
             else:
-                assert isinstance(result, AdapterFailure) and result.code == 'PI_TOOL_CALL_BLOCKED'
+                assert not isinstance(result, AdapterFailure)
+                await denial_evidence(adapter, spec.session_id)
         finally:
             await cleanup(adapter)
     asyncio.run(scenario())
@@ -136,7 +149,10 @@ def test_guard_source_and_inventory_cannot_be_bypassed(tmp_path, monkeypatch):
             handle = await adapter.start(spec)
             assert not isinstance(handle, AdapterFailure), handle
             result = await adapter.collect_result(spec.session_id)
-            assert isinstance(result, AdapterFailure) and result.kind == 'path_violation'
+            assert result.summary == 'blocked'
+            evidence = await denial_evidence(adapter, spec.session_id)
+            assert evidence[0].blockers[0].detail['adapterFailureKind'] == 'path_violation'
+            assert '已被拦截' in evidence[0].message
         finally:
             await cleanup(adapter)
     asyncio.run(scenario())
@@ -189,7 +205,8 @@ def test_guard_approval_binding_expiry_and_current_policy(tmp_path, monkeypatch,
             if decision == 'approve':
                 assert result.summary == 'synthetic final'
             else:
-                assert isinstance(result, AdapterFailure)
+                assert result.summary == 'blocked'
+                await denial_evidence(adapter, spec.session_id)
             if decision == 'timeout':
                 assert expired == [spec.task_id]
             repeated = await adapter.approve(ApprovalDispatch(approvalId=identifier, decidedAt='2026-10-03T00:00:00Z', externalRequestId=external, decision='approve'))
@@ -307,7 +324,9 @@ def test_guard_rechecks_parameters_and_nested_calls(tmp_path, monkeypatch, mode)
                 # host had authorized the original exact arguments.
                 assert result.summary == 'blocked'
             else:
-                assert isinstance(result, AdapterFailure) and result.code == 'PI_TOOL_CALL_BLOCKED'
+                assert result.summary == 'synthetic final'
+                await denial_evidence(adapter, spec.session_id)
+                assert adapter.registry.get(spec.session_id).tool_blocks[0].tool_call_id == 'nested-call'
         finally:
             await cleanup(adapter)
     asyncio.run(scenario())
@@ -343,7 +362,67 @@ def test_pi_guard_only_reads_exact_verified_attachment(tmp_path, monkeypatch, ta
             handle = await adapter.start(spec)
             assert not isinstance(handle, AdapterFailure), handle
             result = await adapter.collect_result(handle.session_id)
-            assert isinstance(result, AdapterFailure) is not allowed
+            assert not isinstance(result, AdapterFailure)
+            if allowed:
+                assert result.summary == 'synthetic final'
+            else:
+                assert result.summary == 'blocked'
+                await denial_evidence(adapter, spec.session_id)
         finally:
             await cleanup(adapter)
+    asyncio.run(scenario())
+
+
+def test_model_catalog_waits_for_current_availability_snapshot(tmp_path, monkeypatch):
+    adapter, _ = adapter_fixture(tmp_path, monkeypatch, 'catalog-lazy')
+    result = asyncio.run(adapter.list_models('local.pi.default'))
+    assert result.verified and [m.id for m in result.models] == ['synthetic/family/model', 'synthetic/other']
+
+
+def test_empty_model_catalog_is_not_a_verified_selection(tmp_path, monkeypatch):
+    adapter, _ = adapter_fixture(tmp_path, monkeypatch, 'empty-catalog')
+    result = asyncio.run(adapter.list_models('local.pi.default'))
+    assert not result.verified and result.models == [] and result.reason
+
+
+def test_replacement_resume_preserves_context_after_tool_block(tmp_path, monkeypatch):
+    adapter, spec = adapter_fixture(tmp_path, monkeypatch, 'recall')
+    spec = spec.model_copy(update={'objective': 'remember SYNTHETIC_CONTEXT_58'})
+    async def scenario():
+        try:
+            handle = await adapter.start(spec)
+            assert not isinstance(handle, AdapterFailure)
+            assert (await adapter.collect_result(handle.session_id)).summary == 'SYNTHETIC_CONTEXT_58'
+            monkeypatch.setenv('PI_FAKE_TOOL', 'read')
+            monkeypatch.setenv('PI_FAKE_ARGS', '{"path":"../outside"}')
+            request = ResumeRequest(sessionId=handle.session_id, externalSessionId=handle.external_session_id,
+                message='attempt read', taskSpec=spec)
+            assert await adapter.resume(request) is None
+            assert (await adapter.collect_result(handle.session_id)).summary == 'blocked'
+            await denial_evidence(adapter, handle.session_id)
+            monkeypatch.delenv('PI_FAKE_TOOL')
+            assert await adapter.resume(request.model_copy(update={'message': 'recall'})) is None
+            assert (await adapter.collect_result(handle.session_id)).summary == 'SYNTHETIC_CONTEXT_58'
+            assert adapter.registry.get(handle.session_id).external_session_id == handle.external_session_id
+        finally:
+            await cleanup(adapter)
+    asyncio.run(scenario())
+
+
+def test_restart_can_resume_only_a_durably_stopped_binding(tmp_path, monkeypatch):
+    adapter, spec = adapter_fixture(tmp_path, monkeypatch, 'recall')
+    spec = spec.model_copy(update={'objective': 'remember SYNTHETIC_CONTEXT_58'})
+    async def scenario():
+        restarted = PiAdapter(storage_dir=adapter.root, guard_timeout=1)
+        try:
+            handle = await adapter.start(spec)
+            assert not isinstance(handle, AdapterFailure)
+            await adapter.collect_result(handle.session_id)
+            result = await restarted.resume(ResumeRequest(sessionId=handle.session_id,
+                externalSessionId=handle.external_session_id, message='recall', taskSpec=spec))
+            assert result is None, result
+            assert (await restarted.collect_result(handle.session_id)).summary == 'SYNTHETIC_CONTEXT_58'
+        finally:
+            await cleanup(adapter)
+            await cleanup(restarted)
     asyncio.run(scenario())

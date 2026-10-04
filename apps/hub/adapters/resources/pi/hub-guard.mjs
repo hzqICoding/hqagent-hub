@@ -13,7 +13,7 @@ const finite = v => typeof v === 'number' ? Number.isFinite(v) : (!v || typeof v
 export default function (pi) {
   let context;
   try { context = JSON.parse(process.env.HQAGENT_PI_GUARD_CONTEXT || '{}'); } catch { context = {}; }
-  let ready = false, inventory = '', cwd = '';
+  let ready = false, inventory = '', cwd = '', startKey = '', starting;
   const consumed = new Set();
   const safeShell = () => { const settings = pi.getSettings(); return !settings.shellPath && !settings.shellCommandPrefix; };
   const tools = () => stable({ all: pi.getAllTools(), active: [...pi.getActiveTools()].sort(), safeShell: safeShell() });
@@ -41,6 +41,9 @@ export default function (pi) {
     const normalize = p => process.platform === 'win32' ? realpathSync(p).toLowerCase() : realpathSync(p);
     if (normalize(cwd) !== normalize(context.cwd)) return;
     inventory = hash(tools());
+    // RPC get_available_models reads a snapshot, unlike CLI --list-models.
+    // Await PI's own local metadata refresh; never fetch keys or prompt here.
+    await ctx.modelRegistry.refresh({ allowNetwork: false, signal: AbortSignal.timeout(5000) });
     const reply = await dialog(ctx, 'hqagent.guard.handshake.v1', {
       version: 1, sessionId: context.sessionId, guardRevision: revision,
       policyRevision: context.policyRevision, toolInventorySha256: inventory,
@@ -50,7 +53,17 @@ export default function (pi) {
   }
   // PI binds session_start before it attaches its stdin line reader. Waiting
   // in that hook deadlocks editor responses; leave tools closed while it runs.
-  pi.on('session_start', (_event, ctx) => { void handshake(ctx).catch(() => { ready = false; }); });
+  pi.on('session_start', (_event, ctx) => {
+    try {
+      // PI 1.0.1 binds the replacement runtime inside switchSession and once
+      // more in rpc-mode. Same extension + native binding is one handshake;
+      // a replacement loads a fresh closure and must handshake again.
+      const key = stable([ctx.sessionManager.getSessionId(), ctx.sessionManager.getSessionFile(), ctx.cwd]);
+      if (starting && key === startKey && inventory === hash(tools())) return;
+      startKey = key;
+      starting = handshake(ctx).catch(() => { ready = false; });
+    } catch { ready = false; }
+  });
   async function checkTool(event, ctx) {
     if (!ready || cwd !== ctx.cwd) return block();
     let argumentsJson;

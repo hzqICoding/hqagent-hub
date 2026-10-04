@@ -12,13 +12,15 @@ const names = ['bash', 'edit', 'find', 'grep', 'ls', 'powershell', 'read', 'writ
 const handlers = new Map(), ui = new Map();
 let active = names.slice(), tools = names.map(name => ({ name, description: name, parameters: { type: 'object' }, sourceInfo: { source: 'builtin', path: 'builtin:' + name } }));
 let sessionId = randomUUID(), sessionFile = path.join(flag('--session-dir'), sessionId + '.jsonl');
-let last = '', context, turn = 0;
+let last = '', context, turn = 0, memory = '', refreshed = false;
 const emit = value => process.stdout.write(JSON.stringify(value) + '\n');
 let model = { provider: flag('--provider') || 'synthetic', id: flag('--model') || process.env.PI_FAKE_DEFAULT || 'family/model', input: ['text', 'image'] };
-const models = [{ provider: 'synthetic', id: 'family/model', input: ['text', 'image'] }, { provider: 'synthetic', id: 'other', input: ['text'] }];
+const models = JSON.parse(process.env.PI_FAKE_CATALOG || 'null') || [{ provider: 'synthetic', id: 'family/model', input: ['text', 'image'] }, { provider: 'synthetic', id: 'other', input: ['text'] }];
 const api = { on: (name, callback) => handlers.set(name, callback), getAllTools: () => tools, getSettings: () => mode === 'unsafe-shell' ? { shellCommandPrefix: 'synthetic-untrusted-prefix' } : {},
   getActiveTools: () => active, setActiveTools: names => { active = names.slice(); } };
-context = { mode: 'rpc', hasUI: true, cwd: process.cwd(), ui: { editor: (title, prefill) => new Promise(resolve => {
+context = { mode: 'rpc', hasUI: true, cwd: process.cwd(),
+  sessionManager: { getSessionId: () => sessionId, getSessionFile: () => sessionFile },
+  modelRegistry: { refresh: async () => { await new Promise(r => setTimeout(r, 20)); refreshed = true; } }, ui: { editor: (title, prefill) => new Promise(resolve => {
   const id = randomUUID();
   ui.set(id, resolve);
   let body = JSON.parse(prefill);
@@ -34,13 +36,18 @@ async function handleLine(line) {
   if (request.type === 'extension_ui_response') { ui.get(request.id)?.(request.value); ui.delete(request.id); return; }
   const respond = data => emit({ type: 'response', id: request.id, command: request.type, success: true, data });
   if (request.type === 'get_state') return respond({ sessionId, sessionFile, model, isStreaming: false, isCompacting: false, pendingMessageCount: 0 });
-  if (request.type === 'get_available_models') return respond({ models });
+  if (request.type === 'get_available_models') return respond({ models: mode === 'empty-catalog' || mode === 'catalog-lazy' && !refreshed ? [] : models });
   if (request.type === 'switch_session') {
     sessionFile = request.sessionPath;
     const saved = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
-    sessionId = saved.id; turn = saved.turn || 0;
+    sessionId = saved.id; turn = saved.turn || 0; memory = saved.memory || '';
+    // Runtime replacement reloads the extension, then binds the new session
+    // once internally and again in rpc-mode's switch_session command handler.
+    handlers.clear(); guard.default(api);
     if (mode === 'switch-model') model = models[1];
-    await handlers.get('session_start')({}, context);
+    await handlers.get('session_start')({reason: 'resume'}, context);
+    await new Promise(r => setTimeout(r, 5));
+    await handlers.get('session_start')({reason: 'resume'}, context);
     return respond({ cancelled: false });
   }
   if (request.type === 'get_last_assistant_text') return respond({ text: last });
@@ -52,7 +59,8 @@ async function handleLine(line) {
   }
   if (request.type !== 'prompt') return respond({});
   turn += 1;
-  fs.writeFileSync(sessionFile, JSON.stringify({ id: sessionId, turn }));
+  if (request.message.includes('SYNTHETIC_CONTEXT_58')) memory = 'SYNTHETIC_CONTEXT_58';
+  fs.writeFileSync(sessionFile, JSON.stringify({ id: sessionId, turn, memory }));
   emit({ type: 'agent_start' });
   respond({ disposition: 'started' });
   if (mode === 'hold' || mode === 'no-settle' || mode === 'probe' && request.message.includes('long detailed visual analysis')) return;
@@ -66,8 +74,8 @@ async function handleLine(line) {
     decision = await pending;
   }
   const answers = JSON.parse(process.env.PI_FAKE_ANSWERS || '[]');
-  const summary = decision?.block ? 'blocked' : answers[turn - 1] || 'synthetic final';
-  last = JSON.stringify({ status: 'done', summary, changedFiles: [] });
+  const summary = decision?.block ? 'blocked' : answers[turn - 1] || (mode === 'recall' ? memory : 'synthetic final');
+  last = JSON.stringify({ status: decision?.block && process.env.PI_FAKE_BLOCKED_REPORT === '1' ? 'blocked' : 'done', summary, changedFiles: [] });
   emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'synthetic progress' } });
   emit({ type: 'agent_end' });
   setTimeout(() => emit({ type: 'agent_settled' }), 40);
