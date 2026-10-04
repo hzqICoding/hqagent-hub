@@ -7,6 +7,8 @@ Git 状态（是不是仓库、当前分支、干不干净）一律**读时现�
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
 import uuid
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -15,6 +17,7 @@ from pathlib import Path
 from protocol.generated.python import AddWorkspaceInput, WorkspaceView
 
 from core.errors import HubError
+from adapters.process import terminate_process_tree
 from storage.workspaces import WorkspaceRecord, WorkspaceRepository
 
 # 裁决 D38：非 Git 目录是合法工作区，但拿不到 worktree 隔离，只能派只读任务。
@@ -23,6 +26,17 @@ NOT_A_GIT_REPO_REASON = (
     "没有版本控制就无法做 allowed_paths 越界校验，也无法在 Agent 出错时回滚。"
     "可以点「初始化 Git」把它变成仓库，或只派只读任务。"
 )
+GIT_TIMEOUT_SECONDS = 2.0
+WORKSPACE_QUERY_SECONDS = 3.0
+GIT_STATE_UNKNOWN_REASON = "Git 状态暂时无法确认，请稍后重试；当前仅允许只读任务。"
+
+
+async def _stop_git(process):
+    """Reap the owned process tree without extending the query indefinitely."""
+    try:
+        await asyncio.wait_for(terminate_process_tree(process, timeout=0.3), 1)
+    except TimeoutError:
+        pass
 
 
 def _now() -> str:
@@ -35,16 +49,29 @@ async def _git(cwd: Path, *args: str) -> tuple[int, str]:
     不抛异常：调用方要区分「不是仓库」和「git 没装」，而这两种都会非零退出。
     """
     try:
-        process = await asyncio.create_subprocess_exec(
-            "git",
-            *args,
-            cwd=str(cwd),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
+        process = None
+        async with asyncio.timeout(GIT_TIMEOUT_SECONDS):
+            process = await asyncio.create_subprocess_exec(
+                "git",
+                *args,
+                cwd=str(cwd),
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                start_new_session=os.name != 'nt',
+            )
+            stdout, _ = await process.communicate()
     except FileNotFoundError:
         return 127, ""
-    stdout, _ = await process.communicate()
+    except TimeoutError:
+        if process is not None:
+            await _stop_git(process)
+        return 124, ""
+    except asyncio.CancelledError:
+        if process is not None:
+            await _stop_git(process)
+        raise
     return process.returncode or 0, stdout.decode("utf-8", "replace").strip()
 
 
@@ -63,10 +90,13 @@ class WorkspaceService:
         self, search: str | None = None, limit: int | None = None
     ) -> Sequence[WorkspaceView]:
         records = self.repository.list(search, limit)
-        return [await self._to_view(record) for record in records]
+        # One request budget, not N workspaces times N git timeouts. Return all
+        # records and preserve the count even when live VCS facts are unknown.
+        deadline = asyncio.get_running_loop().time() + WORKSPACE_QUERY_SECONDS
+        return [await self._bounded_view(record, deadline - asyncio.get_running_loop().time()) for record in records]
 
     async def get_workspace(self, workspace_id: str) -> WorkspaceView:
-        return await self._to_view(self.repository.get(workspace_id))
+        return await self._bounded_view(self.repository.get(workspace_id), WORKSPACE_QUERY_SECONDS)
 
     # ---------- 变更 ----------
 
@@ -145,19 +175,44 @@ class WorkspaceService:
 
         if exists and vcs == "git":
             # 每次都重新确认它还是不是仓库：用户可能把 .git 删了。
-            if await self._is_git_repo(path):
+            code, inside = await _git(path, "rev-parse", "--is-inside-work-tree")
+            if code in {124, 127}:
+                return self._view(record, unknown=True)
+            if code == 0 and inside == 'true':
                 # 用 --show-current 而不是 rev-parse --abbrev-ref HEAD：
                 # 刚 init 出来的仓库还没有第一个提交，后者会返回字面量 "HEAD"，
                 # 界面上就成了「当前分支：HEAD」。
-                _, branch = await _git(path, "branch", "--show-current")
+                code, branch = await _git(path, "branch", "--show-current")
+                if code != 0:
+                    return self._view(record, unknown=True)
                 code, status = await _git(path, "status", "--porcelain")
-                is_clean = code == 0 and not status
+                if code != 0:
+                    return self._view(record, unknown=True)
+                is_clean = not status
             else:
                 vcs = "none"
 
-        can_write = exists and vcs == "git"
+        return self._view(record, exists=exists, vcs=vcs, branch=branch, is_clean=is_clean)
+
+    async def _bounded_view(self, record, budget):
+        if budget > 0:
+            try:
+                async with asyncio.timeout(budget):
+                    return await self._to_view(record)
+            except TimeoutError:
+                pass
+        return self._view(record, unknown=True)
+
+    @staticmethod
+    def _view(record, *, exists=None, vcs=None, branch=None, is_clean=None, unknown=False):
+        path = Path(record.path)
+        exists = path.is_dir() if exists is None else exists
+        vcs = record.vcs if vcs is None else vcs
+        can_write = exists and vcs == "git" and not unknown
         if not exists:
             reason = "目录不存在或已被移动"
+        elif unknown:
+            reason = GIT_STATE_UNKNOWN_REASON
         elif vcs != "git":
             reason = NOT_A_GIT_REPO_REASON
         else:
@@ -173,7 +228,7 @@ class WorkspaceService:
             "capabilities": {
                 "canRunWriteTasks": can_write,
                 "reason": reason,
-                "canInitGit": exists and vcs != "git",
+                "canInitGit": exists and vcs != "git" and not unknown,
             },
         }
         if record.default_profile_id:
