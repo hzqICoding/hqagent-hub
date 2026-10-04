@@ -104,6 +104,7 @@ export const useChatStore = defineStore('chat', () => {
   const isPolling = ref(false)
   let pollingEpoch = 0
   let activePollEpoch: number | null = null
+  let cursorRecoveryFailures = 0
 
   // Computed
   const activeConversation = computed(() =>
@@ -342,13 +343,13 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function fetchMessages(conversationId: string): Promise<void> {
+  async function fetchMessages(conversationId: string, fromStart = false): Promise<void> {
     if (activeConversationId.value !== conversationId) return
     const generation = viewGeneration
     isLoadingMessages.value = true
     try {
       const gateway = getLocalChatGateway()
-      let after = messages.value.filter(m => m.conversationId === conversationId).reduce((n, m) => Math.max(n, m.sequence), 0)
+      let after = fromStart ? 0 : messages.value.filter(m => m.conversationId === conversationId).reduce((n, m) => Math.max(n, m.sequence), 0)
       for (let pageIndex = 0; pageIndex < 50; pageIndex++) {
         const page = await gateway.listLocalMessages(conversationId, after, 200)
         if (generation !== viewGeneration || activeConversationId.value !== conversationId) return
@@ -756,6 +757,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function stopPolling(): void {
     isPolling.value = false
+    cursorRecoveryFailures = 0
     pollingEpoch++
     viewGeneration++
     if (pollingTimer) {
@@ -1160,12 +1162,14 @@ export const useChatStore = defineStore('chat', () => {
     pollingTimer = null
     const generation = viewGeneration
     let hasMore = false
+    let retryDelay: number | undefined
     loadError.value = null
     // Snapshot reads proceed even when the event request is slow or fails.
     const conversationId = activeConversationId.value
-    const snapshot = conversationId ? Promise.all([
-      fetchConversations(), fetchMessages(conversationId), fetchConversationRuns(conversationId), fetchApprovals(),
-    ]) : Promise.resolve()
+    const snapshot = Promise.all([
+      fetchConversations(), fetchApprovals(),
+      ...(conversationId ? [fetchMessages(conversationId), fetchConversationRuns(conversationId)] : []),
+    ])
     try {
       const gateway = getLocalChatGateway()
       // Bound each batch, then yield to rendering before catching up more pages.
@@ -1178,17 +1182,31 @@ export const useChatStore = defineStore('chat', () => {
         hasMore = page.hasMore && page.nextSeq > after
         if (!hasMore) break
       }
+      cursorRecoveryFailures = 0
     } catch (err: unknown) {
       if (generation !== viewGeneration || epoch !== pollingEpoch) return
       hasMore = false
       if (err instanceof HubApiError && (err.code === 'EVENT_CURSOR_EXPIRED' || err.status === 410)) {
         const latest = err.detail?.latestSeq
-        if (typeof latest !== 'number' || latest < 0) {
-          loadError.value = '事件游标已失效，请重新连接本机服务'
-          stopPolling()
-          return
+        const validLatest = typeof latest === 'number' && Number.isSafeInteger(latest) && latest >= 0
+        lastEventSeq.value = validLatest ? latest : 0
+        cursorRecoveryFailures++
+        // Keep the existing first recovery cadence for a valid high-water mark.
+        // A successful snapshot alone does not prove the event cursor recovered.
+        if (!validLatest || cursorRecoveryFailures > 1) {
+          const delays = [1000, 2000, 5000, 10000, 30000]
+          retryDelay = delays[Math.min(cursorRecoveryFailures - 1, delays.length - 1)]
         }
-        lastEventSeq.value = latest
+        await snapshot
+        if (generation !== viewGeneration || epoch !== pollingEpoch) return
+        await Promise.all([
+          fetchConversations(), fetchApprovals(),
+          ...(conversationId ? [fetchMessages(conversationId, true), fetchConversationRuns(conversationId)] : []),
+        ])
+        if (generation !== viewGeneration || epoch !== pollingEpoch) return
+        if (cursorRecoveryFailures >= 3 && !loadError.value) {
+          loadError.value = '事件同步暂未恢复，正在自动重试；对话快照仍会继续刷新'
+        }
       } else {
         loadError.value = err instanceof Error ? err.message : '服务连接中断，正在重连'
       }
@@ -1196,7 +1214,7 @@ export const useChatStore = defineStore('chat', () => {
       await snapshot
       if (activePollEpoch === epoch) activePollEpoch = null
       // View changes invalidate response data, not the page's polling lifecycle.
-      if (epoch === pollingEpoch) scheduleNextPoll(hasMore || generation !== viewGeneration ? 25 : undefined)
+      if (epoch === pollingEpoch) scheduleNextPoll(retryDelay ?? (hasMore || generation !== viewGeneration ? 25 : undefined))
     }
   }
 

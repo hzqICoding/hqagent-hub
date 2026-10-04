@@ -325,13 +325,11 @@ export class LocalHubGateway implements UiGateway {
         const ws = new WebSocket(wsUrl)
         this.ws = ws
 
-        ws.onopen = () => {
-          this.reconnectAttempts = 0
-        }
-
         ws.onmessage = (msg) => {
           try {
             const event = JSON.parse(msg.data) as HubEvent
+            // Opening a socket does not prove its replay cursor is accepted.
+            this.reconnectAttempts = 0
             if (event.seq > this.lastConfirmedSeq) {
               this.lastConfirmedSeq = event.seq
             }
@@ -352,15 +350,11 @@ export class LocalHubGateway implements UiGateway {
           // F2-R2: Check close code 4410 (EVENT_CURSOR_EXPIRED)
           if (event && (event.code === 4410 || event.code === 4010)) {
             this.lastConfirmedSeq = 0
-            this.getBootstrap()
-              .catch((err) => {
-                console.error('[LocalHubGateway] Failed to refetch bootstrap snapshot on cursor expired', err)
-              })
-              .finally(() => {
-                if (this.subscribers.size > 0) {
-                  this.scheduleReconnect(onError)
-                }
-              })
+            // A stalled snapshot must not prevent reconnecting the event stream.
+            this.scheduleReconnect(onError)
+            void this.getBootstrap().catch(() => {
+              // The reconnect loop retries independently of snapshot availability.
+            })
             return
           }
           if (this.subscribers.size > 0) {
@@ -371,8 +365,10 @@ export class LocalHubGateway implements UiGateway {
         // R3: Catch ticket acquisition failure before WebSocket is created and schedule reconnect
         console.error('[LocalHubGateway] Failed to establish WS connection', err)
         // R6: Reset sequence cursor if cursor expired
-        if (err instanceof HubApiError && err.code === 'EVENT_CURSOR_EXPIRED') {
-          this.lastConfirmedSeq = 0
+        if (err instanceof HubApiError && (err.code === 'EVENT_CURSOR_EXPIRED' || err.status === 410)) {
+          const latest = err.detail?.latestSeq
+          this.lastConfirmedSeq = typeof latest === 'number' && Number.isSafeInteger(latest) && latest >= 0 ? latest : 0
+          void this.getBootstrap().catch(() => { /* Reconnect remains scheduled below. */ })
         }
         if (onError) onError(err)
         if (this.subscribers.size > 0) {

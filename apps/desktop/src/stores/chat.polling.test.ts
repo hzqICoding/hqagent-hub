@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { HubEvent, LocalEventPage } from '@hqagent/protocol'
-import { mockLocalChatGateway, setLocalChatGatewayMode } from '@/shared/api'
+import { HubApiError, mockLocalChatGateway, setLocalChatGatewayMode } from '@/shared/api'
 import { useChatStore } from './chat.store'
 
 function deferred<T>() {
@@ -117,4 +117,72 @@ describe('chat polling lifecycle', () => {
     await vi.advanceTimersByTimeAsync(5000)
     expect(list.mock.calls.length).toBeGreaterThan(count)
   })
+  it.each([undefined, -1, NaN, Infinity, 1.5, '80', Number.MAX_SAFE_INTEGER + 1])(
+    'rebuilds snapshots and keeps polling with invalid latestSeq %s', async (latestSeq) => {
+      const store = useChatStore()
+      store.lastEventSeq = 40
+      const events = vi.spyOn(mockLocalChatGateway, 'listLocalEvents')
+        .mockRejectedValueOnce(new HubApiError('expired', 'EVENT_CURSOR_EXPIRED', 410, { latestSeq }))
+        .mockResolvedValue({ events: [], nextSeq: 81, hasMore: false })
+      const conversations = vi.spyOn(mockLocalChatGateway, 'listLocalConversations')
+      const messages = vi.spyOn(mockLocalChatGateway, 'listLocalMessages')
+      const runs = vi.spyOn(mockLocalChatGateway, 'listConversationRuns')
+      const approvals = vi.spyOn(mockLocalChatGateway, 'listLocalApprovals')
+      store.startPolling()
+      await store.pollEvents()
+      expect(store.lastEventSeq).toBe(0)
+      expect(store.loadError).toBeNull()
+      expect(conversations).toHaveBeenCalledTimes(2)
+      expect(messages).toHaveBeenCalledWith(store.activeConversationId, 0, 200)
+      expect(runs).toHaveBeenCalledTimes(2)
+      expect(approvals).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(999)
+      expect(events).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(events).toHaveBeenNthCalledWith(2, 0, 200)
+      expect(store.lastEventSeq).toBe(81)
+    },
+  )
+
+  it('backs off repeated cursor failures to 30s and recovers without restarting', async () => {
+    const store = useChatStore()
+    const events = vi.spyOn(mockLocalChatGateway, 'listLocalEvents')
+      .mockRejectedValue(new HubApiError('expired', 'EVENT_CURSOR_EXPIRED', 410))
+    store.startPolling()
+    await store.pollEvents()
+    for (const delay of [1000, 2000, 5000, 10000, 30000, 30000]) {
+      const count = events.mock.calls.length
+      await vi.advanceTimersByTimeAsync(delay - 1)
+      expect(events).toHaveBeenCalledTimes(count)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(events).toHaveBeenCalledTimes(count + 1)
+    }
+    expect(store.loadError).toContain('正在自动重试')
+    expect(store.loadError).not.toContain('重新连接')
+    events.mockResolvedValue({ events: [], nextSeq: 91, hasMore: false })
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(store.lastEventSeq).toBe(91)
+    expect(store.loadError).toBeNull()
+    events.mockRejectedValueOnce(new HubApiError('expired again', 'EVENT_CURSOR_EXPIRED', 410))
+    await store.pollEvents()
+    const count = events.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(events).toHaveBeenCalledTimes(count + 1)
+  })
+
+  it('does not restart a stopped lifecycle after a recovery snapshot completes', async () => {
+    const store = useChatStore()
+    const snapshot = deferred<Awaited<ReturnType<typeof mockLocalChatGateway.listLocalMessages>>>()
+    const events = vi.spyOn(mockLocalChatGateway, 'listLocalEvents')
+      .mockRejectedValue(new HubApiError('expired', 'EVENT_CURSOR_EXPIRED', 410))
+    vi.spyOn(mockLocalChatGateway, 'listLocalMessages').mockReturnValueOnce(snapshot.promise)
+    store.startPolling()
+    const polling = store.pollEvents()
+    store.stopPolling()
+    snapshot.resolve([])
+    await polling
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(events).toHaveBeenCalledTimes(1)
+  })
+
 })
