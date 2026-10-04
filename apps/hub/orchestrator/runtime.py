@@ -412,14 +412,14 @@ class WorkflowRuntime:
                     result.summary,
                     event_type="task.failed",
                 )
-        # A policy-blocked PI tool need not destroy a valid, settled native
-        # session, even when the model reports the objective as blocked.
-        continuation = getattr(adapter, "can_resume_after_tool_block", None)
-        retained_tool_block = str(outcome.resolution.agent.adapter_id) == 'pi' and (
+        # A model's goal report is not evidence of native session damage.
+        # PI alone supplies ended/settled/stopped proof for a completed reply.
+        continuation = getattr(adapter, "can_resume_completed_turn", None)
+        retained_completed_turn = str(outcome.resolution.agent.adapter_id) == 'pi' and (
             callable(continuation) and continuation(outcome.session.id))
         session = (
             await self.sessions.finish(outcome.session.id)
-            if result.status == "done" or keep_session_on_report or retained_tool_block
+            if result.status == "done" or keep_session_on_report or retained_completed_turn
             else await self.sessions.close(outcome.session.id)
         )
         return CompletionOutcome(result, session)
