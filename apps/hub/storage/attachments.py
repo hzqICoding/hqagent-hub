@@ -1,5 +1,6 @@
 """Local attachment metadata, ordered message bindings and preparation latch."""
 import json
+from core.diagnostics import emit
 from datetime import datetime, timedelta, timezone
 from core.errors import HubError
 from protocol.generated.python import LocalAttachmentView, MessageAttachmentView
@@ -47,6 +48,7 @@ class AttachmentRepository:
             tx.connection.execute("UPDATE local_attachments SET state='attached',expires_at=NULL WHERE attachment_id=?", (identifier,))
         if identifiers:
             tx.connection.execute("INSERT INTO attachment_preparations VALUES(?,'pending',?,NULL,NULL)", (run_id, json.dumps(source or {})))
+            tx.after_commit(lambda: emit('attachment.preparation', runId=run_id, status='pending'))
 
     def message_rows(self, message_id):
         with self.db.locked_connection() as db:
@@ -66,6 +68,7 @@ class AttachmentRepository:
 
     def transition(self, tx, run_id, state, *, code=None, evidence=None):
         tx.connection.execute('UPDATE attachment_preparations SET state=?,error_code=?,evidence_json=? WHERE run_id=?', (state, code, json.dumps(evidence) if evidence else None, run_id))
+        tx.after_commit(lambda: emit('attachment.preparation', runId=run_id, status=state, errorCode=code))
 
     def touch_message(self, tx, message_id):
         tx.connection.execute("INSERT INTO remote_sync_changes(kind,resource_id,conversation_id) SELECT 'message',message_id,conversation_id FROM local_messages WHERE message_id=?", (message_id,))

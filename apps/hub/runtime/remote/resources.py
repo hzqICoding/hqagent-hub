@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+from core.diagnostics import emit
 import time
 
 from protocol.generated.python import RemoteNativeImportInput, AddWorkspaceInput
@@ -86,6 +87,7 @@ class ResourceCommands:
             logging.getLogger(__name__).info(
                 "resource admission rejected stage=%s elapsed_ms=%.1f code=%s",
                 stage, (time.monotonic()-started)*1000, error.code)
+            emit('remote.admission', stage=stage, elapsedMs=(time.monotonic()-started)*1000, errorCode=error.code)
             raise
 
     def check_clock(self, frame):

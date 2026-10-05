@@ -3,6 +3,7 @@ import json
 import time
 
 from core.errors import HubError
+from core.diagnostics import remote_command
 from runtime.remote.sync import CONTENT_TYPES, WINDOW_BYTES
 
 
@@ -54,4 +55,5 @@ class SendWindow:
                 if frame["type"] in CONTENT_TYPES and sum(p["content"] for p in self.pending.values()) >= 12:
                     continue
             await send(content)
+            remote_command(frame, 'sent')
             self.pending[key] = {"end": end, "size": size, "sent": time.monotonic(), "content": frame["type"] in CONTENT_TYPES}

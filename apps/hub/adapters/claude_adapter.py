@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.diagnostics import catalog_logged
 
 import asyncio
 import json
@@ -144,6 +145,7 @@ class ClaudeAdapter(AgentAdapter):
             for item in CapabilityId
         ]
 
+    @catalog_logged('claude')
     async def list_models(self, agent_instance_id: str):
         return await query_models(self.runner, agent_instance_id)
 
