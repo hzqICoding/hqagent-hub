@@ -414,7 +414,7 @@ const currentTask = computed(() => taskStore.currentTask)
     </div>
 
     <!-- Navigation Tabs -->
-    <div class="flex items-center gap-2 border-b border-border text-xs">
+    <div class="flex items-center gap-2 border-b border-border/30 text-xs">
       <button
         class="px-4 py-2.5 font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5"
         :class="
@@ -482,7 +482,7 @@ const currentTask = computed(() => taskStore.currentTask)
     <div v-else-if="activeTab === 'timeline'" class="space-y-4">
       <div
         v-if="taskStore.currentNodes.length === 0"
-        class="p-8 text-center bg-panel rounded-[var(--radius-md)] border border-border text-text-muted text-xs"
+        class="p-8 text-center bg-panel rounded-xl border border-border/30 text-text-muted text-xs"
       >
         任务刚被调度，尚未产生执行节点。
       </div>
@@ -491,10 +491,10 @@ const currentTask = computed(() => taskStore.currentTask)
         <div
           v-for="(node, index) in taskStore.currentNodes"
           :key="node.id"
-          class="p-5 bg-panel rounded-[var(--radius-md)] border border-border shadow-xs space-y-3"
+          class="p-5 bg-panel rounded-xl border border-border/30 shadow-2xs space-y-3"
         >
           <!-- Node Header -->
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/20 pb-3">
             <div class="flex flex-wrap items-center gap-2">
               <span class="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
                 {{ index + 1 }}
@@ -529,12 +529,12 @@ const currentTask = computed(() => taskStore.currentTask)
           </div>
 
           <!-- Node Summary / Error -->
-          <div v-if="node.outputSummary" class="text-xs text-text bg-surface p-3 rounded-[var(--radius-sm)] border border-border">
+          <div v-if="node.outputSummary" class="text-xs text-text bg-muted/20 p-3 rounded-xl">
             <div class="font-semibold text-text-muted mb-1">执行摘要:</div>
             <p class="leading-relaxed">{{ node.outputSummary }}</p>
           </div>
 
-          <div v-if="node.error" class="text-xs text-danger bg-danger/10 p-3 rounded-[var(--radius-sm)] border border-danger/20">
+          <div v-if="node.error" class="text-xs text-danger bg-danger/10 p-3 rounded-xl border border-danger/20">
             <div class="font-semibold mb-1">错误信息:</div>
             <p class="leading-relaxed font-mono">{{ node.error }}</p>
           </div>
@@ -542,7 +542,7 @@ const currentTask = computed(() => taskStore.currentTask)
           <!-- Violation Paths (Path violation check) -->
           <div
             v-if="node.violationPaths && node.violationPaths.length > 0"
-            class="text-xs text-danger bg-rose-500/10 p-3 rounded-[var(--radius-sm)] border border-rose-500/30"
+            class="text-xs text-danger bg-rose-500/10 p-3 rounded-xl border border-rose-500/25"
           >
             <div class="font-semibold flex items-center gap-1 text-rose-700 dark:text-rose-300 mb-1">
               <AlertCircle class="w-4 h-4" />
@@ -570,7 +570,7 @@ const currentTask = computed(() => taskStore.currentTask)
     <!-- Tab 2: Virtualized Events Stream (10,000 events capable, Trap 5) -->
     <div v-else-if="activeTab === 'events'" class="space-y-3">
       <!-- Controls -->
-      <div class="flex flex-wrap items-center justify-between gap-3 p-3 bg-panel rounded-[var(--radius-md)] border border-border text-xs">
+      <div class="flex flex-wrap items-center justify-between gap-3 p-3 bg-panel rounded-xl border border-border/30 text-xs">
         <div class="flex flex-wrap items-center gap-3">
           <div class="relative w-48">
             <Search class="absolute left-2.5 top-2 w-3.5 h-3.5 text-text-muted" />
@@ -578,13 +578,13 @@ const currentTask = computed(() => taskStore.currentTask)
               v-model="taskStore.eventSearch"
               type="text"
               placeholder="搜索事件与报文..."
-              class="hq-form-control w-full pl-8 pr-2 py-1 bg-surface border border-border rounded text-text placeholder:text-text-muted"
+              class="hq-form-control w-full pl-8 pr-2 py-1 bg-surface border border-border/40 rounded-lg text-text placeholder:text-text-muted"
             />
           </div>
 
           <select
             v-model="taskStore.eventFilterType"
-            class="hq-form-control px-2 py-1 bg-surface border border-border rounded text-text"
+            class="hq-form-control px-2 py-1 bg-surface border border-border/40 rounded-lg text-text"
           >
             <option value="all">全部事件类型</option>
             <option value="agent.progress">agent.progress (进度)</option>
@@ -599,7 +599,7 @@ const currentTask = computed(() => taskStore.currentTask)
 
           <select
             v-model="taskStore.eventFilterNodeId"
-            class="hq-form-control px-2 py-1 bg-surface border border-border rounded text-text"
+            class="hq-form-control px-2 py-1 bg-surface border border-border/40 rounded-lg text-text"
           >
             <option value="all">全部节点</option>
             <option v-for="node in taskStore.currentNodes" :key="node.id" :value="node.id">
@@ -610,7 +610,7 @@ const currentTask = computed(() => taskStore.currentTask)
 
         <div class="flex items-center gap-3">
           <label class="inline-flex items-center gap-1.5 cursor-pointer text-text-muted hover:text-text">
-            <input v-model="autoScrollEvents" type="checkbox" class="hq-form-choice rounded border-border" />
+            <input v-model="autoScrollEvents" type="checkbox" class="hq-form-choice rounded border-border/40" />
             自动滚动至最新
           </label>
           <span class="text-text-muted">共 {{ taskStore.filteredEvents.length }} 条事件</span>
@@ -626,7 +626,7 @@ const currentTask = computed(() => taskStore.currentTask)
       >
         <template #default="{ item: evt }">
           <div
-            class="px-3 py-1.5 border-b border-border/50 hover:bg-hover/60 flex items-center justify-between text-xs font-mono transition-colors"
+            class="px-3 py-1.5 border-b border-border/20 hover:bg-hover/60 flex items-center justify-between text-xs font-mono transition-colors"
           >
             <div class="flex items-center gap-2.5 overflow-hidden">
               <span class="text-text-muted shrink-0 w-12 text-right">#{{ evt.seq }}</span>
@@ -676,7 +676,7 @@ const currentTask = computed(() => taskStore.currentTask)
     <div v-else-if="activeTab === 'artifacts'" class="space-y-4">
       <div
         v-if="taskStore.currentArtifacts.length === 0"
-        class="p-12 text-center bg-panel rounded-[var(--radius-md)] border border-border text-text-muted text-xs"
+        class="p-12 text-center bg-panel rounded-xl border border-border/30 text-text-muted text-xs"
       >
         该任务尚未产出报告或构建文件。
       </div>
@@ -685,7 +685,7 @@ const currentTask = computed(() => taskStore.currentTask)
         <div
           v-for="art in taskStore.currentArtifacts"
           :key="art.id"
-          class="p-4 bg-panel rounded-[var(--radius-md)] border border-border shadow-xs space-y-2"
+          class="p-4 bg-panel rounded-xl border border-border/30 shadow-2xs space-y-2"
         >
           <div class="flex items-center justify-between">
             <span class="px-2 py-0.5 text-[11px] rounded bg-primary/10 text-primary font-semibold uppercase">
@@ -697,7 +697,7 @@ const currentTask = computed(() => taskStore.currentTask)
           <p class="text-xs font-mono text-text-muted truncate" :title="art.path">
             {{ art.path }}
           </p>
-          <div class="text-[11px] text-text-muted pt-2 border-t border-border">
+          <div class="text-[11px] text-text-muted pt-2 border-t border-border/20">
             生成时间: {{ formatTime(art.createdAt) }}
           </div>
         </div>
@@ -706,16 +706,16 @@ const currentTask = computed(() => taskStore.currentTask)
 
     <!-- Tab 4: Worktree & Constraints -->
     <div v-else-if="activeTab === 'worktree'" class="space-y-4 text-xs">
-      <div class="p-5 bg-panel rounded-[var(--radius-md)] border border-border space-y-4">
+      <div class="p-5 bg-panel rounded-xl border border-border/30 space-y-4">
         <h3 class="font-bold text-sm text-text">工作区与独立 Worktree 隔离</h3>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div class="p-3 bg-surface rounded-[var(--radius-sm)] border border-border">
+          <div class="p-3 bg-muted/20 rounded-xl">
             <span class="text-text-muted block mb-1">主工作区路径:</span>
             <span class="font-mono text-text break-all">{{ currentTask?.worktreePath || '默认仓库根路径' }}</span>
           </div>
 
-          <div class="p-3 bg-surface rounded-[var(--radius-sm)] border border-border">
+          <div class="p-3 bg-muted/20 rounded-xl">
             <span class="text-text-muted block mb-1">隔离工作分支:</span>
             <span class="font-mono text-text">{{ currentTask?.branch || 'work/w4-frontend' }}</span>
           </div>
@@ -723,7 +723,7 @@ const currentTask = computed(() => taskStore.currentTask)
 
         <div>
           <span class="font-semibold text-text block mb-1.5">允许修改路径 (Allowed Paths):</span>
-          <div class="p-3 bg-surface rounded-[var(--radius-sm)] border border-border font-mono space-y-1">
+          <div class="p-3 bg-muted/20 rounded-xl font-mono space-y-1">
             <div v-if="!currentTask?.allowedPaths || currentTask.allowedPaths.length === 0" class="text-text-muted">
               未指定限制（默认允许角色权限内路径）
             </div>
@@ -735,7 +735,7 @@ const currentTask = computed(() => taskStore.currentTask)
 
         <div>
           <span class="font-semibold text-text block mb-1.5">验收自动化命令 (Acceptance):</span>
-          <div class="p-3 bg-surface rounded-[var(--radius-sm)] border border-border font-mono space-y-1">
+          <div class="p-3 bg-muted/20 rounded-xl font-mono space-y-1">
             <div v-if="!currentTask?.acceptance || currentTask.acceptance.length === 0" class="text-text-muted">
               未配置验收命令
             </div>

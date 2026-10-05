@@ -200,34 +200,34 @@ async function handleApplyTemplate() {
           <input
             v-model="searchQuery"
             placeholder="搜索预设模板..."
-            class="hq-form-control w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-border-default bg-surface-card text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+            class="hq-form-control w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-border/40 bg-muted/20 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
         </div>
 
-        <div class="flex items-center gap-1 bg-surface-card border border-border-subtle p-0.5 rounded-lg text-2xs">
+        <div class="flex items-center gap-1 bg-muted/20 p-1 rounded-xl text-2xs">
           <button
-            class="px-2.5 py-1 rounded transition-colors"
+            class="px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
             :class="selectedCategory === 'all' ? 'bg-primary-500 text-white font-medium' : 'text-content-secondary hover:text-content-primary'"
             @click="selectedCategory = 'all'"
           >
             全部
           </button>
           <button
-            class="px-2.5 py-1 rounded transition-colors"
+            class="px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
             :class="selectedCategory === 'dev' ? 'bg-primary-500 text-white font-medium' : 'text-content-secondary hover:text-content-primary'"
             @click="selectedCategory = 'dev'"
           >
             开发协作
           </button>
           <button
-            class="px-2.5 py-1 rounded transition-colors"
+            class="px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
             :class="selectedCategory === 'review' ? 'bg-primary-500 text-white font-medium' : 'text-content-secondary hover:text-content-primary'"
             @click="selectedCategory = 'review'"
           >
             代码审查
           </button>
           <button
-            class="px-2.5 py-1 rounded transition-colors"
+            class="px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
             :class="selectedCategory === 'prototype' ? 'bg-primary-500 text-white font-medium' : 'text-content-secondary hover:text-content-primary'"
             @click="selectedCategory = 'prototype'"
           >
@@ -268,7 +268,7 @@ async function handleApplyTemplate() {
       <div
         v-for="tpl in filteredTemplates"
         :key="tpl.id"
-        class="p-5 rounded-xl bg-surface-card border border-border-subtle hover:border-border-default transition-all duration-200 flex flex-col justify-between space-y-4"
+        class="p-5 rounded-xl bg-panel border border-border/30 hover:border-border/60 transition-all duration-200 flex flex-col justify-between space-y-4 shadow-2xs hover:shadow-xs"
       >
         <div class="space-y-3">
           <!-- Card Header -->
@@ -282,19 +282,19 @@ async function handleApplyTemplate() {
                 {{ tpl.description }}
               </p>
             </div>
-            <div class="w-8 h-8 rounded-lg bg-surface-raised border border-border-subtle flex items-center justify-center text-primary-600 flex-shrink-0">
+            <div class="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
               <LayoutTemplate class="w-4 h-4" />
             </div>
           </div>
 
           <!-- Roles required -->
-          <div class="space-y-1.5 pt-2 border-t border-border-subtle">
+          <div class="space-y-1.5 pt-2 border-t border-border/20">
             <span class="text-2xs font-semibold text-content-secondary">所需协作角色 ({{ tpl.requiredRoles.length }})</span>
             <div class="flex items-center gap-1.5 flex-wrap">
               <span
                 v-for="role in tpl.requiredRoles"
                 :key="role.roleId"
-                class="px-2 py-0.5 rounded bg-surface-raised border border-border-subtle text-2xs text-content-secondary"
+                class="px-2 py-0.5 rounded-md bg-muted/60 text-2xs text-content-secondary"
               >
                 {{ role.roleName }}
               </span>
@@ -311,7 +311,7 @@ async function handleApplyTemplate() {
         </div>
 
         <!-- Action Button -->
-        <div class="pt-3 border-t border-border-subtle flex items-center justify-between">
+        <div class="pt-3 border-t border-border/20 flex items-center justify-between">
           <div class="text-2xs text-content-muted flex items-center gap-1">
             <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500" />
             <span>支持按工作区细化覆盖</span>
@@ -334,7 +334,7 @@ async function handleApplyTemplate() {
       @close="isPreviewModalOpen = false"
     >
       <div v-if="activePreviewTemplate" class="space-y-4 py-2">
-        <div class="p-3 rounded-lg bg-surface-raised border border-border-subtle space-y-1">
+        <div class="p-3 rounded-xl bg-muted/20 space-y-1">
           <div class="text-xs font-bold text-content-primary">{{ activePreviewTemplate.name }}</div>
           <p class="text-2xs text-content-muted">{{ activePreviewTemplate.description }}</p>
         </div>
@@ -346,7 +346,7 @@ async function handleApplyTemplate() {
             <div
               v-for="role in activePreviewTemplate.requiredRoles"
               :key="role.roleId"
-              class="flex items-center justify-between p-2 rounded bg-surface-card border border-border-subtle text-2xs"
+              class="flex items-center justify-between p-2.5 rounded-xl bg-muted/20 text-2xs"
             >
               <span class="font-bold text-content-primary">{{ role.roleName }}</span>
               <span class="text-content-muted">自动分配首选就绪 Agent</span>
@@ -354,7 +354,7 @@ async function handleApplyTemplate() {
           </div>
         </div>
 
-        <div class="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 flex items-center gap-2 text-2xs text-emerald-700 dark:text-emerald-300">
+        <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/60 flex items-center gap-2 text-2xs text-emerald-700 dark:text-emerald-300">
           <CheckCircle2 class="w-4 h-4 text-emerald-600" />
           <span>应用后将在「团队配置」中生成新方案，可进一步自定义微调</span>
         </div>

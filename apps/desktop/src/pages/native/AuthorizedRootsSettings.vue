@@ -85,7 +85,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="p-5 bg-panel border border-border rounded-xl space-y-4" data-testid="authorized-roots">
+  <section class="p-5 bg-panel border border-border/40 rounded-xl space-y-4" data-testid="authorized-roots">
     <div class="flex items-center justify-between">
       <div class="space-y-0.5">
         <h2 class="font-semibold text-sm text-text flex items-center gap-2">
@@ -130,7 +130,7 @@ onBeforeUnmount(() => {
 
     <div
       v-if="!roots.length"
-      class="p-6 rounded-lg bg-bg-app border border-dashed border-border/80 text-center text-xs text-text-muted"
+      class="p-6 rounded-lg bg-bg-app border border-dashed border-border/40 text-center text-xs text-text-muted"
     >
       未授权任何根目录
     </div>
@@ -139,7 +139,7 @@ onBeforeUnmount(() => {
       <div
         v-for="(root, index) in roots"
         :key="root.rootId || index"
-        class="p-2.5 bg-bg-app border border-border/80 rounded-lg flex flex-col sm:flex-row sm:items-center gap-2.5 text-xs hover:border-border transition-colors"
+        class="p-2.5 bg-muted/20 hover:bg-muted/40 rounded-xl flex flex-col sm:flex-row sm:items-center gap-2.5 text-xs transition-colors"
       >
         <div class="flex items-center gap-2 shrink-0">
           <Folder class="w-4 h-4 text-primary/80 shrink-0" />
@@ -149,7 +149,7 @@ onBeforeUnmount(() => {
             aria-label="根目录显示名称"
             maxlength="120"
             placeholder="显示名称"
-            class="hq-form-control h-8 px-2.5 text-xs bg-panel border border-border rounded w-36 font-medium text-text focus:outline-none focus:border-primary"
+            class="hq-form-control h-8 px-2.5 text-xs bg-panel border border-border/40 rounded-lg w-36 font-medium text-text focus:outline-none focus:border-primary"
           />
         </div>
         <span
@@ -170,7 +170,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="flex items-center justify-between gap-3 pt-2 border-t border-border/40">
+    <div class="flex items-center justify-between gap-3 pt-2 border-t border-border/20">
       <HqButton
         variant="secondary"
         size="sm"

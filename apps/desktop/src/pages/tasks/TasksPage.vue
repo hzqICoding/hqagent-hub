@@ -218,13 +218,13 @@ const createDisabledReason = computed(() => {
     </div>
 
     <!-- Filter Toolbar -->
-    <div class="flex flex-wrap items-center justify-between gap-4 p-4 bg-panel rounded-[var(--radius-md)] border border-border">
+    <div class="flex flex-wrap items-center justify-between gap-4 p-3 bg-panel rounded-xl border border-border/30">
       <!-- Status Tabs -->
       <div class="flex flex-wrap gap-1.5">
         <button
           v-for="tab in statusFilters"
           :key="tab.value"
-          class="px-3 py-1.5 rounded-[var(--radius-sm)] text-xs font-medium transition-colors"
+          class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
           :class="
             taskStore.filterStatus === tab.value
               ? 'bg-primary text-white shadow-xs'
@@ -244,13 +244,13 @@ const createDisabledReason = computed(() => {
             v-model="taskStore.filterSearch"
             type="text"
             placeholder="搜索目标、ID 或 Agent..."
-            class="hq-form-control w-full pl-9 pr-3 py-1.5 text-xs bg-surface border border-border rounded-[var(--radius-sm)] focus:outline-none focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted"
+            class="hq-form-control w-full pl-9 pr-3 py-1.5 text-xs bg-surface border border-border/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted"
           />
         </div>
 
         <select
           v-model="taskStore.filterWorkspaceId"
-          class="hq-form-control px-3 py-1.5 text-xs bg-surface border border-border rounded-[var(--radius-sm)] text-text focus:outline-none focus:ring-1 focus:ring-primary"
+          class="hq-form-control px-3 py-1.5 text-xs bg-surface border border-border/40 rounded-lg text-text focus:outline-none focus:ring-1 focus:ring-primary"
         >
           <option value="">全部工作区</option>
           <option v-for="ws in workspaceStore.workspaces" :key="ws.id" :value="ws.id">
@@ -292,7 +292,7 @@ const createDisabledReason = computed(() => {
       <div
         v-for="task in taskStore.filteredTasks"
         :key="task.id"
-        class="p-4 bg-panel hover:bg-hover/50 rounded-[var(--radius-md)] border border-border transition-all cursor-pointer group shadow-xs hover:shadow-sm"
+        class="p-4 bg-panel hover:bg-hover/50 rounded-xl border border-border/30 transition-all cursor-pointer group shadow-2xs hover:shadow-xs"
         @click="navigateToTask(task.id)"
       >
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

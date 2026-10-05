@@ -152,8 +152,8 @@ function formatRelativeTime(isoStr: string): string {
     <div v-else class="space-y-6">
       <!-- Summary KPI Bento -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div class="p-4 rounded-xl bg-surface-card border border-border-subtle flex items-center gap-3">
-          <div class="w-10 h-10 rounded-lg bg-surface-raised border border-border-subtle flex items-center justify-center text-primary-600">
+        <div class="p-4 rounded-xl bg-muted/20 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
             <FolderGit2 class="w-5 h-5" />
           </div>
           <div>
@@ -162,8 +162,8 @@ function formatRelativeTime(isoStr: string): string {
           </div>
         </div>
 
-        <div class="p-4 rounded-xl bg-surface-card border border-border-subtle flex items-center gap-3">
-          <div class="w-10 h-10 rounded-lg bg-surface-raised border border-border-subtle flex items-center justify-center text-primary-600">
+        <div class="p-4 rounded-xl bg-muted/20 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
             <GitBranch class="w-5 h-5" />
           </div>
           <div>
@@ -172,8 +172,8 @@ function formatRelativeTime(isoStr: string): string {
           </div>
         </div>
 
-        <div class="p-4 rounded-xl bg-surface-card border border-border-subtle flex items-center gap-3">
-          <div class="w-10 h-10 rounded-lg bg-surface-raised border border-border-subtle flex items-center justify-center text-primary-600">
+        <div class="p-4 rounded-xl bg-muted/20 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
             <Database class="w-5 h-5" />
           </div>
           <div>
@@ -188,8 +188,8 @@ function formatRelativeTime(isoStr: string): string {
         <div
           v-for="ws in workspaceStore.recentWorkspaces"
           :key="ws.id"
-          class="p-4 rounded-xl bg-surface-card border transition-all duration-200"
-          :class="workspaceStore.currentWorkspace?.id === ws.id ? 'border-primary-500 shadow-sm' : 'border-border-subtle hover:border-border-default'"
+          class="p-4 rounded-xl bg-panel border transition-all duration-200"
+          :class="workspaceStore.currentWorkspace?.id === ws.id ? 'border-primary-500 shadow-sm' : 'border-border/30 hover:border-border/60'"
         >
           <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <!-- Left Info -->
@@ -255,7 +255,7 @@ function formatRelativeTime(isoStr: string): string {
             <div class="flex items-center gap-2 self-end md:self-center flex-shrink-0">
               <span
                 v-if="!ws.memoryDirPresent"
-                class="inline-flex items-center gap-1 text-2xs px-2 py-1 rounded bg-muted/70 text-content-muted border border-border-subtle"
+                class="inline-flex items-center gap-1 text-2xs px-2 py-1 rounded-md bg-muted/70 text-content-muted"
                 title="记忆目录由项目内 .hqagent/ 结构定义"
               >
                 <Database class="w-3 h-3 text-content-muted" />

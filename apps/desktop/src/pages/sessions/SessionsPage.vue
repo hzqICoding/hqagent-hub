@@ -146,13 +146,13 @@ function formatTime(timestamp?: string) {
     </div>
 
     <!-- Filter Toolbar -->
-    <div class="flex flex-wrap items-center justify-between gap-4 p-4 bg-panel rounded-[var(--radius-md)] border border-border">
+    <div class="flex flex-wrap items-center justify-between gap-4 p-3 bg-panel rounded-xl border border-border/30">
       <!-- Status Tabs -->
       <div class="flex flex-wrap gap-1.5">
         <button
           v-for="tab in statusFilters"
           :key="tab.value"
-          class="px-3 py-1.5 rounded-[var(--radius-sm)] text-xs font-medium transition-colors"
+          class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
           :class="
             sessionStore.filterStatus === tab.value
               ? 'bg-primary text-white shadow-xs'
@@ -172,12 +172,12 @@ function formatTime(timestamp?: string) {
             v-model="sessionStore.searchQuery"
             type="text"
             placeholder="搜索会话 ID 或 Agent..."
-            class="hq-form-control w-full pl-9 pr-3 py-1.5 text-xs bg-surface border border-border rounded-[var(--radius-sm)] focus:outline-none focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted"
+            class="hq-form-control w-full pl-9 pr-3 py-1.5 text-xs bg-surface border border-border/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted"
           />
         </div>
 
         <label class="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text cursor-pointer">
-          <input v-model="sessionStore.filterOnlyValid" type="checkbox" class="hq-form-choice rounded border-border" />
+          <input v-model="sessionStore.filterOnlyValid" type="checkbox" class="hq-form-choice rounded border-border/40" />
           仅显示有效会话
         </label>
       </div>
@@ -203,9 +203,9 @@ function formatTime(timestamp?: string) {
       <div
         v-for="sess in sessionStore.filteredSessions"
         :key="sess.id"
-        class="p-5 bg-panel rounded-[var(--radius-md)] border border-border shadow-xs hover:border-primary/40 transition-colors space-y-3"
+        class="p-5 bg-panel rounded-xl border border-border/30 shadow-2xs hover:border-border/60 transition-colors space-y-3"
       >
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/20 pb-3">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-mono text-xs font-bold text-text">{{ sess.id }}</span>
             <HqBadge
@@ -216,7 +216,7 @@ function formatTime(timestamp?: string) {
               {{ getStatusBadge(sess.status, sess.isValid).label }}
             </HqBadge>
 
-            <span class="px-2 py-0.5 text-[11px] rounded bg-secondary/10 text-secondary border border-secondary/20 font-medium">
+            <span class="px-2 py-0.5 text-[11px] rounded-md bg-secondary/10 text-secondary font-medium">
               {{ sess.purpose }}
             </span>
           </div>

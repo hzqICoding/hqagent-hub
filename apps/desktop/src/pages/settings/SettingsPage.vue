@@ -162,7 +162,7 @@ onMounted(async () => {
 <template>
   <div class="h-full flex flex-col bg-bg-app text-content-primary overflow-hidden select-none">
     <!-- Top Navigation & Tabs Header -->
-    <div class="border-b border-border bg-panel px-4 sm:px-6 pt-3 shrink-0">
+    <div class="border-b border-border/30 bg-panel px-4 sm:px-6 pt-3 shrink-0">
       <div class="flex items-center justify-between gap-3 mb-2.5">
         <div class="flex items-center gap-3">
           <router-link
@@ -189,7 +189,7 @@ onMounted(async () => {
           :class="[
             activeTab === tab.id
               ? 'border-primary text-primary font-semibold'
-              : 'border-transparent text-text-muted hover:text-text hover:border-border/60'
+              : 'border-transparent text-text-muted hover:text-text'
           ]"
           @click="setTab(tab.id)"
         >
@@ -216,7 +216,7 @@ onMounted(async () => {
         <AuthorizedRootsSettings />
 
         <!-- 已登记项目（只读列表） -->
-        <section class="p-5 bg-panel border border-border rounded-xl space-y-4" data-testid="registered-workspaces">
+        <section class="p-5 bg-panel border border-border/40 rounded-xl space-y-4" data-testid="registered-workspaces">
           <div class="flex items-center justify-between">
             <div class="space-y-0.5">
               <h2 class="font-semibold text-sm text-text flex items-center gap-2">
@@ -235,7 +235,7 @@ onMounted(async () => {
           <!-- 空状态 -->
           <div
             v-if="!chatStore.workspaces.length"
-            class="p-6 rounded-lg bg-bg-app border border-dashed border-border/80 text-center text-xs text-text-muted"
+            class="p-6 rounded-lg bg-bg-app border border-dashed border-border/40 text-center text-xs text-text-muted"
           >
             在对话页新建任务时登记项目
           </div>
@@ -245,10 +245,10 @@ onMounted(async () => {
             <div
               v-for="ws in chatStore.workspaces"
               :key="ws.id"
-              class="p-2.5 bg-bg-app border border-border/80 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs hover:border-border transition-colors"
+              class="p-2.5 bg-muted/20 hover:bg-muted/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs transition-colors"
             >
               <div class="flex items-center gap-2.5 min-w-0">
-                <div class="w-7 h-7 rounded bg-panel border border-border flex items-center justify-center shrink-0 text-text-muted">
+                <div class="w-7 h-7 rounded-lg bg-panel/80 flex items-center justify-center shrink-0 text-text-muted">
                   <FolderGit2 class="w-3.5 h-3.5" />
                 </div>
                 <div class="min-w-0">
@@ -284,7 +284,7 @@ onMounted(async () => {
       <!-- 5. 关于 / 日志 -->
       <div v-else-if="activeTab === 'about'" class="p-6 space-y-6 max-w-5xl mx-auto">
         <!-- Software info card -->
-        <div class="p-5 bg-panel border border-border rounded-xl shadow-xs space-y-4">
+        <div class="p-5 bg-panel border border-border/40 rounded-xl shadow-xs space-y-4">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center font-bold text-base shadow-sm">
@@ -298,16 +298,16 @@ onMounted(async () => {
             <HqBadge variant="neutral" size="sm">v1.5.0</HqBadge>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-2 border-t border-border/50">
-            <div class="p-2.5 rounded-lg bg-bg-app/80 border border-border/50 space-y-0.5">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-2 border-t border-border/20">
+            <div class="p-2.5 rounded-xl bg-muted/20 space-y-0.5">
               <div class="text-[11px] text-text-muted">运行模式</div>
               <div class="font-medium text-text">{{ authStore.isMockMode ? '演示模式 (Mock)' : '真实 Worker 模式' }}</div>
             </div>
-            <div class="p-2.5 rounded-lg bg-bg-app/80 border border-border/50 space-y-0.5">
+            <div class="p-2.5 rounded-xl bg-muted/20 space-y-0.5">
               <div class="text-[11px] text-text-muted">架构版本</div>
               <div class="font-medium text-text">Phase 1 / R1.5 Native + Remote</div>
             </div>
-            <div class="p-2.5 rounded-lg bg-bg-app/80 border border-border/50 space-y-0.5">
+            <div class="p-2.5 rounded-xl bg-muted/20 space-y-0.5">
               <div class="text-[11px] text-text-muted">存储与安全规范</div>
               <div class="font-medium text-text font-mono text-[11px] truncate">%LOCALAPPDATA%\HQAgent-Hub</div>
             </div>
@@ -315,8 +315,8 @@ onMounted(async () => {
         </div>
 
         <!-- Logs Viewer Section -->
-        <div class="p-5 bg-panel border border-border rounded-xl shadow-xs space-y-3">
-          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
+        <div class="p-5 bg-panel border border-border/40 rounded-xl shadow-xs space-y-3">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-2 border-b border-border/20">
             <div class="flex items-center gap-2">
               <Terminal class="w-4 h-4 text-primary" />
               <h3 class="text-xs font-bold text-text">实时系统日志与事件流</h3>
@@ -325,7 +325,7 @@ onMounted(async () => {
 
             <div class="flex items-center gap-2 text-xs">
               <!-- Level Filter -->
-              <div class="flex items-center gap-1 bg-bg-app p-0.5 rounded-lg border border-border/60 text-[11px]">
+              <div class="flex items-center gap-1 bg-muted/30 p-0.5 rounded-lg text-[11px]">
                 <button
                   type="button"
                   class="px-2 py-0.5 rounded-md transition-colors"
@@ -363,8 +363,8 @@ onMounted(async () => {
               <!-- Auto scroll toggle -->
               <button
                 type="button"
-                class="px-2 py-1 rounded-md text-[11px] border border-border/60 hover:bg-bg-app transition-colors flex items-center gap-1"
-                :class="appStore.isAutoScrollLogs ? 'text-primary border-primary/30' : 'text-text-muted'"
+                class="px-2 py-1 rounded-md text-[11px] hover:bg-muted/40 transition-colors flex items-center gap-1"
+                :class="appStore.isAutoScrollLogs ? 'text-primary font-medium' : 'text-text-muted'"
                 @click="appStore.isAutoScrollLogs = !appStore.isAutoScrollLogs"
               >
                 <ArrowDown class="w-3 h-3" />
@@ -374,7 +374,7 @@ onMounted(async () => {
               <!-- Clear logs -->
               <button
                 type="button"
-                class="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-bg-app transition-colors"
+                class="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-muted/40 transition-colors"
                 title="清空日志"
                 @click="appStore.clearLogs()"
               >
@@ -386,7 +386,7 @@ onMounted(async () => {
           <!-- Log stream content box -->
           <div
             ref="logListRef"
-            class="h-96 overflow-y-auto bg-code rounded-lg p-3 font-mono text-[11px] leading-relaxed select-text space-y-1.5 border border-border/60"
+            class="h-96 overflow-y-auto bg-code rounded-xl p-3 font-mono text-[11px] leading-relaxed select-text space-y-1.5 border border-border/20"
           >
             <div v-if="filteredLogs.length === 0" class="h-full flex items-center justify-center text-content-disabled select-none">
               暂无日志记录

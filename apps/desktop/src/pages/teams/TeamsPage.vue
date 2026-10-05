@@ -317,7 +317,7 @@ function getResolveSourceMeta(source: ResolveSource): {
             class="p-3.5 rounded-xl border cursor-pointer transition-all duration-150 relative"
             :class="teamStore.activeProfileId === profile.id
               ? 'bg-primary-50/50 dark:bg-primary-950/20 border-primary-500 shadow-sm'
-              : 'bg-surface-card border-border-subtle hover:border-border-default'"
+              : 'bg-muted/20 hover:bg-muted/40 border-transparent text-content-primary'"
             @click="handleSelectProfile(profile.id)"
           >
             <div class="flex items-start justify-between gap-2">
@@ -329,7 +329,7 @@ function getResolveSourceMeta(source: ResolveSource): {
               {{ profile.description || '无附加描述' }}
             </p>
 
-            <div class="flex items-center justify-between mt-3 pt-2 border-t border-border-subtle/60 text-2xs text-content-muted">
+            <div class="flex items-center justify-between mt-3 pt-2 border-t border-border/20 text-2xs text-content-muted">
               <span>{{ profile.scope === 'global' ? '全局配置' : '工作区专属' }}</span>
               <span>{{ Object.keys(profile.roleBindings || {}).length }} 角色</span>
             </div>
@@ -340,7 +340,7 @@ function getResolveSourceMeta(source: ResolveSource): {
       <!-- Center Column: Role Mapping & Policy Studio (5 cols) -->
       <div v-if="activeProfile" class="lg:col-span-5 space-y-4">
         <!-- Active Profile Header Card -->
-        <div class="p-4 rounded-xl bg-surface-card border border-border-subtle space-y-3">
+        <div class="p-4 rounded-xl bg-panel border border-border/30 space-y-3">
           <div class="flex items-center justify-between">
             <div>
               <h3 class="text-sm font-bold text-content-primary">{{ activeProfile.name }}</h3>
@@ -395,13 +395,13 @@ function getResolveSourceMeta(source: ResolveSource): {
           <div
             v-for="role in STANDARD_ROLES"
             :key="role.roleId"
-            class="p-4 rounded-xl bg-surface-card border border-border-subtle space-y-3"
+            class="p-4 rounded-xl bg-panel border border-border/30 space-y-3"
           >
             <!-- Role Info -->
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <span class="text-xs font-bold text-content-primary">{{ role.roleName }}</span>
-                <span class="text-2xs font-mono text-content-muted bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle">
+                <span class="text-2xs font-mono text-content-secondary bg-muted/60 px-1.5 py-0.5 rounded-md">
                   {{ role.roleId }}
                 </span>
               </div>
@@ -412,7 +412,7 @@ function getResolveSourceMeta(source: ResolveSource): {
             <div class="space-y-1">
               <label class="text-2xs font-medium text-content-secondary">首选 Agent (Primary)</label>
               <select
-                class="hq-form-control w-full text-xs rounded-lg border border-border-default bg-surface-raised px-3 py-1.5 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+                class="hq-form-control w-full text-xs rounded-lg border border-border/40 bg-muted/20 px-3 py-1.5 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
                 :value="activeProfile.roleBindings[role.roleId]?.primaryAgentId || ''"
                 @change="handlePrimaryAgentChange(role.roleId, $event)"
               >
@@ -439,7 +439,7 @@ function getResolveSourceMeta(source: ResolveSource): {
                 <div
                   v-for="fbId in (activeProfile.roleBindings[role.roleId]?.fallbackAgentIds || [])"
                   :key="fbId"
-                  class="flex items-center gap-1 px-2 py-0.5 rounded bg-surface-raised border border-border-subtle text-2xs text-content-secondary"
+                  class="flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/60 text-2xs text-content-secondary"
                 >
                   <span>{{ getAgentDisplayName(fbId) }}</span>
                   <button
@@ -453,7 +453,7 @@ function getResolveSourceMeta(source: ResolveSource): {
 
                 <!-- Add Fallback Select -->
                 <select
-                  class="hq-form-control text-2xs rounded border border-dashed border-border-default bg-transparent px-2 py-0.5 text-content-muted focus:outline-none"
+                  class="hq-form-control text-2xs rounded border border-dashed border-border/40 bg-transparent px-2 py-0.5 text-content-muted focus:outline-none"
                   @change="handleAddFallbackAgent(role.roleId, $event)"
                 >
                   <option value="">+ 添加备用 Agent</option>
@@ -473,8 +473,8 @@ function getResolveSourceMeta(source: ResolveSource): {
 
       <!-- Right Column: Real-time Route Resolution Preview (4 cols) -->
       <div class="lg:col-span-4 space-y-4">
-        <div class="p-4 rounded-xl bg-surface-card border border-border-subtle space-y-4 sticky top-6">
-          <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
+        <div class="p-4 rounded-xl bg-panel border border-border/30 space-y-4 sticky top-6">
+          <div class="flex items-center justify-between pb-3 border-b border-border/20">
             <div class="flex items-center gap-2">
               <Sliders class="w-4 h-4 text-primary-600" />
               <span class="text-xs font-bold text-content-primary">路由解析结果预览</span>
@@ -497,7 +497,7 @@ function getResolveSourceMeta(source: ResolveSource): {
           <!-- Capability Gaps Alert -->
           <div
             v-if="teamStore.resolvedTeam?.hasGaps"
-            class="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 space-y-2"
+            class="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-900/60 space-y-2"
           >
             <div class="flex items-center gap-1.5 text-2xs font-bold text-rose-700 dark:text-rose-300">
               <AlertTriangle class="w-3.5 h-3.5" />
@@ -516,7 +516,7 @@ function getResolveSourceMeta(source: ResolveSource): {
 
           <div
             v-else-if="teamStore.resolvedTeam"
-            class="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 flex items-center gap-2 text-2xs text-emerald-700 dark:text-emerald-300"
+            class="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/60 flex items-center gap-2 text-2xs text-emerald-700 dark:text-emerald-300"
           >
             <CheckCircle2 class="w-3.5 h-3.5 text-emerald-600" />
             <span>所有角色均已满足可用性与能力约束</span>
@@ -527,7 +527,7 @@ function getResolveSourceMeta(source: ResolveSource): {
             <div
               v-for="(item, roleKey) in (teamStore.resolvedTeam?.resolvedRoles || {})"
               :key="roleKey"
-              class="p-3 rounded-lg bg-surface-raised border border-border-subtle space-y-2"
+              class="p-3 rounded-xl bg-muted/20 space-y-2"
             >
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-content-primary">{{ item.roleId }}</span>

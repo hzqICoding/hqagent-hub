@@ -126,9 +126,9 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
     <!-- 4. Content State (or Empty State) -->
     <template v-else>
       <!-- Workspace & Project Header Banner -->
-      <div class="p-4 rounded-xl bg-panel border border-border-subtle flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
+      <div class="p-4 rounded-xl bg-panel border border-border/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-lg bg-primary-50 dark:bg-primary-950 text-primary-600 flex items-center justify-center shrink-0">
+          <div class="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-950 text-primary-600 flex items-center justify-center shrink-0">
             <GitBranch class="w-5 h-5" />
           </div>
           <div>
@@ -165,20 +165,20 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
       <!-- Quick Metrics Cards (4 Columns) -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <!-- Metric 1: Active Tasks -->
-        <div class="p-4 rounded-xl bg-panel border border-border-subtle flex items-center justify-between shadow-2xs">
+        <div class="p-4 rounded-xl bg-muted/20 flex items-center justify-between">
           <div>
             <span class="text-2xs text-content-muted font-medium block">进行中任务</span>
             <span class="text-xl font-extrabold text-content-primary tracking-tight">
               {{ appStore.bootstrap?.activeTasksCount || 0 }}
             </span>
           </div>
-          <div class="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center">
+          <div class="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center">
             <Play class="w-4 h-4" />
           </div>
         </div>
 
         <!-- Metric 2: Pending Approvals -->
-        <div class="p-4 rounded-xl bg-panel border border-border-subtle flex items-center justify-between shadow-2xs">
+        <div class="p-4 rounded-xl bg-muted/20 flex items-center justify-between">
           <div>
             <span class="text-2xs text-content-muted font-medium block">待安全审批</span>
             <span
@@ -189,7 +189,7 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
             </span>
           </div>
           <div
-            class="w-9 h-9 rounded-lg flex items-center justify-center"
+            class="w-9 h-9 rounded-xl flex items-center justify-center"
             :class="(appStore.bootstrap?.pendingApprovalsCount || 0) > 0 ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40' : 'bg-muted text-content-muted'"
           >
             <ShieldAlert class="w-4 h-4" />
@@ -197,20 +197,20 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
         </div>
 
         <!-- Metric 3: Agents Ready Ratio -->
-        <div class="p-4 rounded-xl bg-panel border border-border-subtle flex items-center justify-between shadow-2xs">
+        <div class="p-4 rounded-xl bg-muted/20 flex items-center justify-between">
           <div>
             <span class="text-2xs text-content-muted font-medium block">就绪 Agent</span>
             <span class="text-xl font-extrabold text-content-primary tracking-tight">
               {{ agentStore.readyCount }} <span class="text-xs text-content-muted font-normal">/ {{ agentStore.totalCount }}</span>
             </span>
           </div>
-          <div class="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center">
+          <div class="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center">
             <Bot class="w-4 h-4" />
           </div>
         </div>
 
         <!-- Metric 4: App Version & Hub Status -->
-        <div class="p-4 rounded-xl bg-panel border border-border-subtle flex items-center justify-between shadow-2xs">
+        <div class="p-4 rounded-xl bg-muted/20 flex items-center justify-between">
           <div>
             <span class="text-2xs text-content-muted font-medium block">Local Hub 状态</span>
             <span class="text-xs font-bold text-emerald-600 flex items-center gap-1 mt-1">
@@ -218,7 +218,7 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
               v{{ appStore.bootstrap?.appVersion || '0.1.0' }} 正常
             </span>
           </div>
-          <div class="w-9 h-9 rounded-lg bg-primary-50 dark:bg-primary-950/40 text-primary-600 flex items-center justify-center">
+          <div class="w-9 h-9 rounded-xl bg-primary-50 dark:bg-primary-950/40 text-primary-600 flex items-center justify-center">
             <CheckSquare class="w-4 h-4" />
           </div>
         </div>
@@ -227,10 +227,10 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
       <!-- Bento Layout: Primary Task Card (2 Cols) + Agents Fleet (1 Col) -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Left: Primary Bento Card -->
-        <div class="lg:col-span-2 p-5 rounded-xl bg-panel border border-border-subtle flex flex-col justify-between shadow-2xs">
+        <div class="lg:col-span-2 p-5 rounded-xl bg-panel border border-border/30 flex flex-col justify-between shadow-2xs">
           <div>
             <!-- Card Header -->
-            <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
+            <div class="flex items-center justify-between pb-3 border-b border-border/20">
               <div class="flex items-center gap-2">
                 <Layers class="w-4 h-4 text-primary-600" />
                 <h3 class="text-xs font-bold text-content-primary uppercase tracking-wider">重点协作任务</h3>
@@ -252,7 +252,7 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
               <!-- Waiting Approval Warning -->
               <div
                 v-if="primaryTask.status === 'waiting_approval'"
-                class="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 flex items-center justify-between text-xs"
+                class="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-900/60 flex items-center justify-between text-xs"
               >
                 <div class="flex items-center gap-2 text-rose-700 dark:text-rose-300 font-semibold">
                   <ShieldAlert class="w-4 h-4" />
@@ -291,7 +291,7 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
           </div>
 
           <!-- Footer Button -->
-          <div class="pt-3 border-t border-border-subtle flex justify-end">
+          <div class="pt-3 border-t border-border/20 flex justify-end">
             <HqButton size="sm" variant="secondary" @click="router.push('/tasks')">
               <span>前往任务中心</span>
               <template #iconRight>
@@ -302,9 +302,9 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
         </div>
 
         <!-- Right: Agent Fleet Quick Panel -->
-        <div class="p-5 rounded-xl bg-panel border border-border-subtle flex flex-col justify-between shadow-2xs">
+        <div class="p-5 rounded-xl bg-panel border border-border/30 flex flex-col justify-between shadow-2xs">
           <div>
-            <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
+            <div class="flex items-center justify-between pb-3 border-b border-border/20">
               <div class="flex items-center gap-2">
                 <Bot class="w-4 h-4 text-primary-600" />
                 <h3 class="text-xs font-bold text-content-primary uppercase tracking-wider">Agent 状态群</h3>
@@ -320,7 +320,7 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
                 v-for="agent in agentStore.agents"
                 :key="agent.id"
                 @click="agentStore.selectAgent(agent)"
-                class="p-2 rounded-lg border border-border-subtle hover:border-border-default hover:bg-muted/40 cursor-pointer transition-colors flex items-center justify-between text-xs"
+                class="p-2.5 rounded-xl bg-muted/20 hover:bg-muted/40 cursor-pointer transition-colors flex items-center justify-between text-xs"
               >
                 <div class="flex items-center gap-2.5">
                   <span
@@ -339,7 +339,7 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
             </div>
           </div>
 
-          <div class="pt-3 border-t border-border-subtle flex justify-end">
+          <div class="pt-3 border-t border-border/20 flex justify-end">
             <HqButton size="sm" variant="secondary" @click="router.push('/agents')">
               <span>管理全部 Agent</span>
               <template #iconRight>
@@ -351,8 +351,8 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
       </div>
 
       <!-- Recent Sessions Panel -->
-      <div class="p-5 rounded-xl bg-panel border border-border-subtle shadow-2xs space-y-3">
-        <div class="flex items-center justify-between pb-2 border-b border-border-subtle">
+      <div class="p-5 rounded-xl bg-panel border border-border/30 shadow-2xs space-y-3">
+        <div class="flex items-center justify-between pb-2 border-b border-border/20">
           <div class="flex items-center gap-2">
             <Clock class="w-4 h-4 text-content-muted" />
             <h3 class="text-xs font-bold text-content-primary uppercase tracking-wider">最近活跃会话 (Sessions)</h3>
@@ -367,10 +367,10 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
           <div
             v-for="sess in sessions"
             :key="sess.id"
-            class="p-2.5 rounded-lg border border-border-subtle bg-muted/20 flex items-center justify-between text-xs hover:bg-muted/40 transition-colors"
+            class="p-2.5 rounded-xl bg-muted/20 flex items-center justify-between text-xs hover:bg-muted/40 transition-colors"
           >
             <div class="flex items-center gap-3">
-              <div class="w-7 h-7 rounded bg-primary-50 dark:bg-primary-950 text-primary-600 flex items-center justify-center text-xs font-bold shrink-0">
+              <div class="w-7 h-7 rounded-lg bg-primary-50 dark:bg-primary-950 text-primary-600 flex items-center justify-center text-xs font-bold shrink-0">
                 S
               </div>
               <div>

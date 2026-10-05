@@ -63,7 +63,7 @@ function handleFinish() {
 <template>
   <div class="min-h-screen w-full bg-app flex flex-col justify-between p-6 select-none overflow-y-auto">
     <!-- Header -->
-    <header class="max-w-4xl w-full mx-auto flex items-center justify-between pb-6 border-b border-border-subtle">
+    <header class="max-w-4xl w-full mx-auto flex items-center justify-between pb-6 border-b border-border/30">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center text-white font-bold shadow">
           HQ
@@ -83,7 +83,7 @@ function handleFinish() {
     </header>
 
     <!-- Main Step Card -->
-    <main class="max-w-4xl w-full mx-auto my-8 bg-panel border border-border-default rounded-xl shadow-sm p-8 flex-1 flex flex-col justify-between min-h-[460px]">
+    <main class="max-w-4xl w-full mx-auto my-8 bg-panel border border-border/30 rounded-2xl shadow-xs p-8 flex-1 flex flex-col justify-between min-h-[460px]">
       <!-- STEP 1: WELCOME & LOCAL FIRST -->
       <div v-if="currentStep === 1" class="space-y-6 max-w-2xl mx-auto py-4">
         <div class="text-center space-y-2">
@@ -97,7 +97,7 @@ function handleFinish() {
         </div>
 
         <div class="grid grid-cols-3 gap-4 pt-4 text-xs">
-          <div class="p-4 rounded-lg bg-muted/40 border border-border-subtle space-y-1.5">
+          <div class="p-4 rounded-xl bg-muted/20 space-y-1.5">
             <h4 class="font-bold text-content-primary flex items-center gap-1.5">
               <Server class="w-4 h-4 text-primary-500" />
               Local Hub 架构
@@ -106,7 +106,7 @@ function handleFinish() {
               常驻本机后台调度，提供本地事件总线、Git Worktree 隔离与高风险安全栅栏。
             </p>
           </div>
-          <div class="p-4 rounded-lg bg-muted/40 border border-border-subtle space-y-1.5">
+          <div class="p-4 rounded-xl bg-muted/20 space-y-1.5">
             <h4 class="font-bold text-content-primary flex items-center gap-1.5">
               <Cpu class="w-4 h-4 text-emerald-500" />
               统一适配器 (Adapters)
@@ -115,7 +115,7 @@ function handleFinish() {
               无缝编排 Claude Code、Codex、Antigravity CLI 等多种终端 Agent，职责完全解耦。
             </p>
           </div>
-          <div class="p-4 rounded-lg bg-muted/40 border border-border-subtle space-y-1.5">
+          <div class="p-4 rounded-xl bg-muted/20 space-y-1.5">
             <h4 class="font-bold text-content-primary flex items-center gap-1.5">
               <ShieldCheck class="w-4 h-4 text-amber-500" />
               安全双人确认
@@ -151,16 +151,16 @@ function handleFinish() {
         </div>
 
         <!-- Connected or Mock state -->
-        <div v-else class="p-5 rounded-xl bg-muted/30 border border-border-subtle space-y-4">
-          <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
+        <div v-else class="p-5 rounded-xl bg-muted/20 space-y-4">
+          <div class="flex items-center justify-between pb-3 border-b border-border/20">
             <span class="text-xs text-content-secondary">服务端口</span>
             <span class="text-xs font-mono font-bold text-content-primary">127.0.0.1:44810</span>
           </div>
-          <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
+          <div class="flex items-center justify-between pb-3 border-b border-border/20">
             <span class="text-xs text-content-secondary">运行协议版本</span>
             <span class="text-xs font-mono font-bold text-primary-600">v{{ appStore.bootstrap?.protocolVersion || '1.0.0' }}</span>
           </div>
-          <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
+          <div class="flex items-center justify-between pb-3 border-b border-border/20">
             <span class="text-xs text-content-secondary">应用版本</span>
             <span class="text-xs font-mono font-bold text-content-primary">v{{ appStore.bootstrap?.appVersion || '0.1.0' }}</span>
           </div>
@@ -210,7 +210,7 @@ function handleFinish() {
           <div
             v-for="agent in agentStore.agents"
             :key="agent.id"
-            class="p-3 rounded-lg border border-border-subtle bg-panel flex items-center justify-between text-xs"
+            class="p-3 rounded-xl bg-muted/20 flex items-center justify-between text-xs"
           >
             <div class="flex items-center gap-3">
               <div class="w-8 h-8 rounded-lg bg-primary-50 dark:bg-primary-950 flex items-center justify-center text-primary-600">
@@ -253,13 +253,13 @@ function handleFinish() {
               <input
                 v-model="workspacePath"
                 type="text"
-                class="hq-form-control flex-1 text-xs font-mono bg-panel border border-border-default rounded-md px-3 py-2 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+                class="hq-form-control flex-1 text-xs font-mono bg-panel border border-border/40 rounded-lg px-3 py-2 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
               />
             </div>
             <p class="text-2xs text-content-muted">Git 仓库将自动启用 Worktree 隔离机制，保护您的主分支。</p>
           </div>
 
-          <div class="p-4 rounded-lg bg-muted/30 border border-border-subtle space-y-2">
+          <div class="p-4 rounded-xl bg-muted/20 space-y-2">
             <div class="flex items-center justify-between text-xs">
               <span class="text-content-muted">默认团队 Profile</span>
               <span class="font-semibold text-content-primary">标准全栈三角色协作 (Fullstack Trio)</span>
@@ -290,8 +290,8 @@ function handleFinish() {
             :key="m.id"
             type="button"
             @click="themeStore.setMode(m.id as any)"
-            class="px-4 py-2 rounded-lg text-xs font-medium border transition-colors"
-            :class="themeStore.settings.mode === m.id ? 'border-primary-600 bg-primary-50 text-primary-700 dark:bg-primary-950 font-bold' : 'border-border-default hover:bg-muted text-content-secondary'"
+            class="px-4 py-2 rounded-xl text-xs font-medium border transition-colors cursor-pointer"
+            :class="themeStore.settings.mode === m.id ? 'border-primary-600 bg-primary-50 text-primary-700 dark:bg-primary-950 font-bold' : 'border-border/30 hover:bg-muted/40 text-content-secondary'"
           >
             {{ m.label }}
           </button>
@@ -304,8 +304,8 @@ function handleFinish() {
             :key="pal.id"
             type="button"
             @click="selectPalette(pal.id as ThemePalette)"
-            class="p-3 rounded-lg border text-left flex flex-col gap-2 transition-all"
-            :class="themeStore.settings.palette === pal.id ? 'border-primary-600 ring-2 ring-primary-500/20 shadow-xs' : 'border-border-subtle hover:border-border-default bg-panel'"
+            class="p-3 rounded-xl border text-left flex flex-col gap-2 transition-all cursor-pointer"
+            :class="themeStore.settings.palette === pal.id ? 'border-primary-600 ring-2 ring-primary-500/20 shadow-xs' : 'border-border/30 hover:border-border/60 bg-muted/10'"
           >
             <div class="w-full h-8 rounded-md flex items-center justify-center text-white text-xs font-bold" :style="{ backgroundColor: pal.primaryHex }">
               {{ pal.name }}
@@ -327,7 +327,7 @@ function handleFinish() {
           <p class="text-xs text-content-muted">HQAgent-Hub 已就绪，您可以立即开启多 Agent 协同任务</p>
         </div>
 
-        <div class="p-4 rounded-xl bg-muted/40 border border-border-subtle space-y-2.5 text-xs">
+        <div class="p-4 rounded-xl bg-muted/20 space-y-2.5 text-xs">
           <div class="flex items-center justify-between">
             <span class="text-content-muted">Local Hub 连接</span>
             <span class="text-emerald-600 font-semibold flex items-center gap-1">
@@ -351,7 +351,7 @@ function handleFinish() {
       </div>
 
       <!-- Footer Navigation Buttons -->
-      <footer class="flex items-center justify-between pt-6 border-t border-border-subtle mt-6">
+      <footer class="flex items-center justify-between pt-6 border-t border-border/20 mt-6">
         <HqButton
           v-if="currentStep > 1"
           size="sm"

@@ -33,7 +33,7 @@ async function handleRefresh() {
 </script>
 
 <template>
-  <header class="w-full h-12 border-b border-border-subtle bg-panel/60 backdrop-blur px-2 sm:px-4 flex items-center justify-between shrink-0 select-none z-10">
+  <header class="w-full h-12 border-b border-border/30 bg-panel/60 backdrop-blur px-2 sm:px-4 flex items-center justify-between shrink-0 select-none z-10">
     <!-- Left: Page Title & Breadcrumb -->
     <div class="flex items-center gap-1.5 sm:gap-3 min-w-0">
       <!-- Mobile Main Navigation Toggle -->
@@ -65,7 +65,7 @@ async function handleRefresh() {
       <button
         type="button"
         @click="router.push('/onboarding')"
-        class="hidden sm:flex items-center gap-1.5 text-xs text-content-secondary hover:text-primary-600 hover:bg-muted px-2.5 py-1 rounded-md transition-colors border border-border-subtle"
+        class="hidden sm:flex items-center gap-1.5 text-xs text-content-secondary hover:text-primary-600 hover:bg-muted/60 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
         title="首次引导 (Onboarding)"
       >
         <Compass class="w-3.5 h-3.5 text-primary-600" />
@@ -77,7 +77,7 @@ async function handleRefresh() {
         type="button"
         @click="handleRefresh"
         :disabled="appStore.isLoading"
-        class="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 p-2 sm:p-1.5 text-content-secondary hover:text-primary-600 hover:bg-muted rounded-md transition-colors border border-border-subtle flex items-center justify-center cursor-pointer"
+        class="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 p-2 sm:p-1.5 text-content-secondary hover:text-primary-600 hover:bg-muted/60 rounded-lg transition-colors flex items-center justify-center cursor-pointer"
         title="刷新系统状态"
       >
         <RefreshCw class="w-3.5 h-3.5" :class="appStore.isLoading ? 'animate-spin text-primary-600' : ''" />
@@ -87,7 +87,7 @@ async function handleRefresh() {
       <button
         type="button"
         @click="toggleTheme"
-        class="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 p-2 sm:p-1.5 text-content-secondary hover:text-primary-600 hover:bg-muted rounded-md transition-colors border border-border-subtle flex items-center justify-center cursor-pointer"
+        class="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 p-2 sm:p-1.5 text-content-secondary hover:text-primary-600 hover:bg-muted/60 rounded-lg transition-colors flex items-center justify-center cursor-pointer"
         :title="`切换主题: 当前为${themeStore.isDark ? '深色' : '浅色'}`"
       >
         <Sun v-if="themeStore.isDark" class="w-3.5 h-3.5 text-amber-500" />
@@ -98,8 +98,8 @@ async function handleRefresh() {
       <button
         type="button"
         @click="appStore.openInspector(appStore.inspector.isOpen ? null : 'task', null)"
-        class="hidden sm:flex items-center gap-1 text-xs px-2.5 py-1 rounded-md transition-colors border border-border-subtle"
-        :class="appStore.inspector.isOpen ? 'bg-primary-50 text-primary-600 dark:bg-primary-950/50 border-primary-300 font-semibold' : 'text-content-secondary hover:text-primary-600 hover:bg-muted'"
+        class="hidden sm:flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+        :class="appStore.inspector.isOpen ? 'bg-primary-50 text-primary-600 dark:bg-primary-950/50 font-semibold' : 'text-content-secondary hover:text-primary-600 hover:bg-muted/60'"
         title="切换右侧检视器"
       >
         <PanelRight class="w-3.5 h-3.5" />

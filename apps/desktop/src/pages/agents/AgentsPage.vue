@@ -98,7 +98,7 @@ function handleCloseDiagnosis() {
 
 
     <!-- Status Filter Tabs & Search Bar -->
-    <div class="p-3 bg-panel border border-border-subtle rounded-xl flex flex-col md:flex-row items-center justify-between gap-3 shadow-2xs">
+    <div class="p-3 bg-panel border border-border/30 rounded-xl flex flex-col md:flex-row items-center justify-between gap-3 shadow-2xs">
       <!-- Status Tabs -->
       <div class="flex items-center gap-1 overflow-x-auto w-full md:w-auto">
         <button
@@ -150,7 +150,7 @@ function handleCloseDiagnosis() {
           v-model="agentStore.searchQuery"
           type="text"
           placeholder="搜索名称 / 适配器 / 能力..."
-          class="hq-form-control w-full text-xs pl-8 pr-3 py-1.5 rounded-lg bg-muted/40 border border-border-default text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+          class="hq-form-control w-full text-xs pl-8 pr-3 py-1.5 rounded-lg bg-muted/30 border border-border/40 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
         />
       </div>
     </div>
@@ -203,7 +203,7 @@ function handleCloseDiagnosis() {
         v-for="agent in agentStore.filteredAgents"
         :key="agent.id"
         class="p-5 rounded-xl bg-panel border transition-all duration-150 flex flex-col justify-between shadow-2xs hover:shadow-xs"
-        :class="agentStore.selectedAgent?.id === agent.id ? 'border-primary-500 ring-2 ring-primary-500/20' : 'border-border-subtle hover:border-border-default'"
+        :class="agentStore.selectedAgent?.id === agent.id ? 'border-primary-500 ring-2 ring-primary-500/20' : 'border-border/30 hover:border-border/60'"
       >
         <div class="space-y-3">
           <!-- Card Header -->
@@ -233,7 +233,7 @@ function handleCloseDiagnosis() {
           <!-- Diagnostic Warning if any -->
           <div
             v-if="agent.adapterId !== 'pi' && agent.diagnosticMessage"
-            class="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-2xs text-amber-800 dark:text-amber-200 space-y-1"
+            class="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/60 text-2xs text-amber-800 dark:text-amber-200 space-y-1"
           >
             <div class="flex items-center gap-1 font-semibold">
               <AlertTriangle class="w-3.5 h-3.5 text-amber-600" />
@@ -271,7 +271,7 @@ function handleCloseDiagnosis() {
               <span
                 v-for="cap in agent.capabilities.filter((c) => c.hard)"
                 :key="cap.id"
-                class="px-1.5 py-0.5 rounded text-3xs font-medium bg-muted text-content-secondary border border-border-subtle"
+                class="px-1.5 py-0.5 rounded text-3xs font-medium bg-muted/80 text-content-secondary"
               >
                 {{ cap.name }}
               </span>
@@ -280,13 +280,13 @@ function handleCloseDiagnosis() {
         </div>
 
         <!-- Footer Actions -->
-        <div class="pt-4 mt-4 border-t border-border-subtle flex items-center justify-between text-xs">
+        <div class="pt-4 mt-4 border-t border-border/20 flex items-center justify-between text-xs">
           <div class="flex items-center gap-2">
             <!-- Truthful discovery status badge (governed fake switch) -->
             <span
               class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-2xs font-medium border"
               :class="agent.status === 'disabled'
-                ? 'bg-muted text-content-muted border-border'
+                ? 'bg-muted text-content-muted border-border/40'
                 : 'bg-status-success-soft text-status-success border-status-success/30'"
               title="Agent 运行状态由宿主环境 CLI 安装与适配器探测决定，无需手动切换"
             >
@@ -323,7 +323,7 @@ function handleCloseDiagnosis() {
       width="540px"
     >
       <div v-if="diagnosticModalAgent" class="space-y-4 text-xs">
-        <div class="flex items-center justify-between p-3 rounded-lg bg-muted/40 border border-border-subtle">
+        <div class="flex items-center justify-between p-3 rounded-xl bg-muted/20">
           <div class="flex items-center gap-2.5">
             <RuntimeIcon :agent="diagnosticModalAgent.adapterId" class="w-5 h-5 text-primary-600" />
             <div>
@@ -340,14 +340,14 @@ function handleCloseDiagnosis() {
         <div v-if="diagnosticModalAgent.adapterId !== 'pi'" class="space-y-2">
           <h4 class="font-semibold text-content-primary">系统健康检查项</h4>
           <div class="space-y-1.5">
-            <div class="flex items-center justify-between p-2 rounded bg-panel border border-border-subtle">
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-muted/20">
               <span class="text-content-secondary">可执行文件探测</span>
               <span class="text-emerald-600 font-mono font-medium flex items-center gap-1">
                 <CheckCircle2 class="w-3.5 h-3.5" />
                 就绪 ({{ diagnosticModalAgent.adapterId === 'pi' ? '已定位，不展示路径' : diagnosticModalAgent.executablePath || '已定位' }})
               </span>
             </div>
-            <div class="flex items-center justify-between p-2 rounded bg-panel border border-border-subtle">
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-muted/20">
               <span class="text-content-secondary">版本兼容性</span>
               <span
                 class="font-mono font-medium flex items-center gap-1"
@@ -358,7 +358,7 @@ function handleCloseDiagnosis() {
                 v{{ diagnosticModalAgent.version }} (最低要求: v{{ diagnosticModalAgent.minimumVersion || '1.0.0' }})
               </span>
             </div>
-            <div class="flex items-center justify-between p-2 rounded bg-panel border border-border-subtle">
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-muted/20">
               <span class="text-content-secondary">登录与授权凭证</span>
               <span
                 class="font-medium flex items-center gap-1"

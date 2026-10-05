@@ -135,7 +135,7 @@ function formatTime(timestamp?: string) {
     <!-- Top Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div class="flex items-center gap-3">
-        <div class="p-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-[var(--radius-md)]">
+        <div class="p-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl">
           <ShieldAlert class="w-6 h-6" />
         </div>
         <div>
@@ -157,7 +157,7 @@ function formatTime(timestamp?: string) {
     </div>
 
     <!-- Filter Tabs -->
-    <div class="flex items-center gap-2 border-b border-border text-xs">
+    <div class="flex items-center gap-2 border-b border-border/30 text-xs">
       <button
         class="px-4 py-2 font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5"
         :class="
@@ -205,15 +205,15 @@ function formatTime(timestamp?: string) {
       <div
         v-for="appr in approvalStore.filteredApprovals"
         :key="appr.id"
-        class="p-5 bg-panel rounded-[var(--radius-md)] border shadow-xs space-y-3 transition-colors"
+        class="p-5 bg-panel rounded-xl border shadow-2xs space-y-3 transition-colors"
         :class="
           appr.status === 'pending'
-            ? 'border-amber-500/40 hover:border-amber-500/70'
-            : 'border-border'
+            ? 'border-amber-500/30 hover:border-amber-500/60'
+            : 'border-border/30'
         "
       >
         <!-- Item Header -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/20 pb-3">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-mono text-xs text-text-muted font-bold">{{ appr.id }}</span>
             <span
@@ -258,7 +258,7 @@ function formatTime(timestamp?: string) {
         </div>
 
         <!-- Target Resource Box -->
-        <div class="p-3 bg-surface rounded-[var(--radius-sm)] border border-border space-y-1">
+        <div class="p-3 bg-muted/20 rounded-xl space-y-1">
           <div class="text-xs text-text-muted font-semibold flex items-center gap-1">
             <Terminal class="w-3.5 h-3.5" />
             将要作用的受控资源或执行命令 (Target Resource):
@@ -332,7 +332,7 @@ function formatTime(timestamp?: string) {
           </p>
         </div>
 
-        <div class="p-3 bg-surface rounded-[var(--radius-sm)] border border-border">
+        <div class="p-3 bg-muted/20 rounded-xl">
           <span class="text-text-muted block mb-1">受影响资源 / 命令:</span>
           <span class="font-mono font-bold text-text break-all">
             {{ selectedApproval?.targetResource }}
@@ -347,7 +347,7 @@ function formatTime(timestamp?: string) {
         <!-- Mandatory risk checkbox for high-risk actions -->
         <div
           v-if="approvalStore.isHighRiskAction(selectedApproval?.action || 'deploy')"
-          class="p-3 rounded-[var(--radius-sm)] bg-surface border border-border flex items-start gap-2.5 cursor-pointer"
+          class="p-3 rounded-xl bg-muted/20 flex items-start gap-2.5 cursor-pointer"
           @click="confirmRiskAcknowledged = !confirmRiskAcknowledged"
         >
           <input
