@@ -15,6 +15,8 @@ describe('RemoteChat Workbench and Three-Layer Status', () => {
     mockRemoteGateway.highRiskApprovalAllowed = false
     mockRemoteGateway.controlOutcome = 'confirmed'
     mockRemoteGateway.withdrawalOutcome = 'success'
+    if (mockRemoteGateway.runs[0]) mockRemoteGateway.runs[0].status = 'running'
+    mockRemoteGateway.commands = mockRemoteGateway.commands.filter((c) => c.commandId === 'cmd_demo_001')
   })
 
   afterEach(() => {
@@ -210,5 +212,26 @@ describe('RemoteChat Workbench and Three-Layer Status', () => {
     const copyBtn = wrapper.find('button[title="复制消息内容"]')
     expect(copyBtn.exists()).toBe(true)
   })
+
+  it('renders in-stream live run indicator with cancel button during active run and allows closing diagnostic overlay', async () => {
+    const wrapper = mount(RemoteChatPage)
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    // When run is running, in-stream indicator is displayed in conversation flow
+    expect(store.activeRun?.status).toBe('running')
+    expect(wrapper.text()).toContain('Agent 正在思考并执行…')
+    const stopBtn = wrapper.find('button[title="停止运行"]')
+    expect(stopBtn.exists()).toBe(true)
+
+    // Toggle diagnostic details and close it via X button
+    await wrapper.get('[data-testid=run-status-toggle]').trigger('click')
+    expect(wrapper.find('#remote-status-details').exists()).toBe(true)
+    const closeBtn = wrapper.find('button[title="收起诊断"]')
+    expect(closeBtn.exists()).toBe(true)
+    await closeBtn.trigger('click')
+    expect(wrapper.find('#remote-status-details').exists()).toBe(false)
+  })
 })
+
 

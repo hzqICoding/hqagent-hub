@@ -47,6 +47,7 @@ import {
   Circle,
   Copy,
   Check,
+  Sparkles,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -274,7 +275,7 @@ function scrollToBottom() {
 }
 
 watch(
-  () => chatStore.messages.length,
+  () => [chatStore.messages.length, chatStore.activeRun?.status],
   () => {
     scrollToBottom()
   }
@@ -526,7 +527,32 @@ function getExecutionStatusLabel(status?: string): string {
           <div class="flex items-center gap-1 min-w-0">
             <HqBadge :variant="connectionLabel.variant" class="text-[10px] shrink-0" data-testid="connection-status">{{ connectionLabel.text }}</HqBadge>
             <span v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-[10px] text-content-secondary"><RuntimeIcon :agent="chatStore.activeConversation.agentType" class="inline-block w-4 h-4" /> {{ agentLabel(chatStore.activeConversation.agentType) }}</span>
-            <button v-if="chatStore.activeRun" type="button" data-testid="run-status-toggle" class="shrink-0 rounded px-1 py-0.5 text-[10px]" :class="statusNeedsAttention ? 'text-status-warning bg-status-warning-soft' : 'text-content-muted bg-muted'" :aria-expanded="statusExpanded" aria-controls="remote-status-details" @click="statusExpanded = !statusExpanded">{{ statusLabel }}{{ statusNeedsAttention ? ' !' : '' }}</button>
+            <button
+              v-if="chatStore.activeRun"
+              type="button"
+              data-testid="run-status-toggle"
+              class="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium border transition-all cursor-pointer"
+              :class="[
+                statusNeedsAttention
+                  ? 'text-status-warning bg-status-warning-soft border-warning/40 shadow-xs'
+                  : chatStore.activeRun.status === 'running'
+                    ? 'text-primary bg-primary/10 border-primary/25'
+                    : 'text-content-muted bg-muted border-border/50'
+              ]"
+              :aria-expanded="statusExpanded"
+              aria-controls="remote-status-details"
+              title="点击查看/收起远程执行诊断"
+              @click="statusExpanded = !statusExpanded"
+            >
+              <span
+                v-if="chatStore.activeRun.status === 'running'"
+                class="relative flex h-1.5 w-1.5"
+              >
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary"></span>
+              </span>
+              <span>{{ statusLabel }}{{ statusNeedsAttention ? ' !' : '' }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -751,7 +777,7 @@ function getExecutionStatusLabel(status?: string): string {
       </aside>
 
       <!-- Center Chat Column -->
-      <main class="flex-1 flex flex-col h-full min-w-0 bg-bg-app overflow-hidden">
+      <main class="flex-1 flex flex-col h-full min-w-0 bg-bg-app overflow-hidden relative">
         <div v-if="chatStore.isRemoteSuspended" class="p-3 shrink-0 bg-warning/10 border-b border-warning/30 text-xs text-warning space-y-2">
           <div class="flex items-center justify-between gap-2">
             <span>这台电脑的远程操作已暂停</span>
@@ -775,12 +801,27 @@ function getExecutionStatusLabel(status?: string): string {
           </button>
         </div>
 
-        <!-- 3-LAYER STATUS DASHBOARD BANNER -->
+        <!-- 3-LAYER STATUS DASHBOARD OVERLAY / POPOVER -->
         <section
           v-if="statusExpanded"
           id="remote-status-details"
-          class="p-2.5 bg-panel border-b border-border shrink-0 space-y-2 text-xs max-h-[30dvh] overflow-y-auto"
+          class="absolute top-0 inset-x-0 z-30 p-3 bg-panel/95 backdrop-blur-md border-b border-border shadow-xl space-y-2.5 text-xs max-h-[50dvh] overflow-y-auto"
         >
+          <div class="flex items-center justify-between pb-1 border-b border-border/50">
+            <span class="font-semibold text-text text-xs flex items-center gap-1.5">
+              <Laptop class="w-3.5 h-3.5 text-primary" />
+              远程连接与执行诊断
+            </span>
+            <button
+              type="button"
+              class="p-1 rounded-md hover:bg-muted text-text-muted hover:text-text cursor-pointer transition-colors"
+              title="收起诊断"
+              aria-label="收起诊断"
+              @click="statusExpanded = false"
+            >
+              <X class="w-4 h-4" />
+            </button>
+          </div>
           <p v-if="deliveryFailure" class="text-danger">{{ deliveryFailure.error?.code === 'REMOTE_REVISION_REQUIRED' && (piScenario || chatStore.activeConversation?.agentType === 'pi') ? PI_WIRE_PENDING : deliveryFailure.error?.code?.startsWith('PI_') ? getRemoteErrorMessage(deliveryFailure.error.code) : deliveryFailure.error?.code === 'SESSION_NOT_RESUMABLE' ? getRemoteErrorMessage(deliveryFailure.error.code, deliveryFailure.error.message, chatStore.activeConversation?.conversationKind) : deliveryFailure.error?.message || '送达失败或过期，请核对后重试' }}</p>
           <!-- Three Layers Display -->
           <div class="grid grid-cols-1 gap-1.5 sm:grid-cols-3 bg-bg-app/70 p-2 rounded-lg border border-border/60">
@@ -1061,6 +1102,49 @@ function getExecutionStatusLabel(status?: string): string {
                 <Copy v-else class="w-3 h-3" />
                 <span>{{ copiedMessageId === msg.messageId ? '已复制' : '复制' }}</span>
               </button>
+            </div>
+          </div>
+
+          <!-- In-Stream Live Run & Thinking Indicator (PI-Desktop / Claude style) -->
+          <div
+            v-if="chatStore.activeRun && ['running', 'queued'].includes(chatStore.activeRun.status)"
+            class="flex items-start gap-2.5 max-w-[92%] sm:max-w-2xl py-1 select-text"
+          >
+            <div class="w-7 h-7 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0 mt-0.5 border border-primary/25 shadow-xs">
+              <Sparkles class="w-3.5 h-3.5 animate-pulse text-primary" />
+            </div>
+
+            <div class="flex-1 min-w-0 bg-panel border border-border/80 rounded-2xl rounded-tl-xs p-3 px-3.5 text-xs shadow-xs space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                  </span>
+                  <span class="font-medium text-text text-xs">
+                    {{ chatStore.activeRun.status === 'queued' ? 'Agent 排队准备中…' : 'Agent 正在思考并执行…' }}
+                  </span>
+                </div>
+
+                <!-- Quick stop button directly next to generation indicator -->
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-danger/10 hover:bg-danger/20 text-danger text-[11px] font-medium border border-danger/25 transition-all cursor-pointer active:scale-95"
+                  title="停止运行"
+                  :disabled="chatStore.isActionLoading"
+                  @click="handleControl('cancel')"
+                >
+                  <XCircle class="w-3 h-3" />
+                  <span>停止</span>
+                </button>
+              </div>
+
+              <div class="text-[10px] text-text-muted flex items-center justify-between font-mono">
+                <span class="truncate">Run: {{ chatStore.activeRun.runId }}</span>
+                <span v-if="chatStore.selectedDevice?.displayName" class="truncate ml-2">
+                  @{{ chatStore.selectedDevice.displayName }}
+                </span>
+              </div>
             </div>
           </div>
 
