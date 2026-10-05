@@ -25,6 +25,8 @@ from protocol.generated.python import (
 from adapters.base import AgentAdapter
 from adapters.events import utc_timestamp
 from adapters.failures import version_tuple
+from adapters.versions import cli_version
+from core.diagnostics import emit
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +184,9 @@ class AdapterManager:
                     adapterId=adapter.adapter_id, code=ErrorCode.INTERNAL, message='Runtime 检测失败'))
             rows.append(row)
             view = row[0] or self._pending(adapter, failed=True)
+            emit('agent.discovery', agentId=view.id, agentType=str(view.adapter_id), version=cli_version(view.version) or 'unknown',
+                 status=str(view.status), errorCode=str(row[1].code) if row[1] else None,
+                 elapsedMs=(time.monotonic() - started) * 1000)
             self._last_agents = [view if item.id == view.id else item for item in self._last_agents]
         agents = [item[0] for item in rows if item[0] is not None]
         errors = [item[1] for item in rows if item[1] is not None]

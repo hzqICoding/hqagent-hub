@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.diagnostics import catalog_logged
 
 import asyncio
 import json
@@ -656,6 +657,7 @@ class CodexAdapter(AgentAdapter):
                 return rows
         raise RuntimeError("模型目录分页过多，无法完整核验")
 
+    @catalog_logged('codex')
     async def list_models(self, agent_instance_id: str) -> LocalAgentModelsView:
         executable = self.runner.find("codex")
         if not executable:

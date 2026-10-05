@@ -74,6 +74,8 @@ class CredentialVault:
             self.posix = PosixCredentialStore(directory, atomic_write=self.atomic_write)
 
     def save(self, secret: str) -> None:
+        from core.diagnostics import remember_secret
+        remember_secret(secret)
         if self.posix is not None:
             self.posix.save(secret)
             return
@@ -102,11 +104,16 @@ class CredentialVault:
             path.chmod(0o600)
 
     def read(self) -> str:
+        from core.diagnostics import remember_secret
         if self.posix is not None:
-            return self.posix.read()
+            value = self.posix.read()
+            remember_secret(value)
+            return value
         try:
             content = self.path.read_bytes()
-            return (_dpapi(content, decrypt=True) if os.name == "nt" else content).decode("ascii")
+            value = (_dpapi(content, decrypt=True) if os.name == "nt" else content).decode("ascii")
+            remember_secret(value)
+            return value
         except Exception:
             raise HubError("REMOTE_DEVICE_AUTH_FAILED", "本机设备凭据不可用") from None
 

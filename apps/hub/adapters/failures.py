@@ -14,6 +14,7 @@ from protocol.generated.python import (
 )
 
 from adapters.events import AdapterEvent
+from core.diagnostics import emit
 
 
 _ERROR_CODE_BY_KIND = {
@@ -38,6 +39,7 @@ def failure(
     missing_capabilities: list[CapabilityId] | None = None,
     violation_paths: list[str] | None = None,
 ) -> AdapterFailure:
+    emit('agent.failure', kind=str(kind), errorCode=str(_ERROR_CODE_BY_KIND[kind]))
     raw_text: str | None
     if raw is None:
         raw_text = None

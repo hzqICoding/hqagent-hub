@@ -222,6 +222,11 @@ def create_application(
                 await local_chat.start()
             if not getattr(_app.state, "shutting_down", False):
                 await remote_worker.start()
+            diagnostic_start = getattr(_app.state, 'diagnostic_start', None)
+            if diagnostic_start is not None:
+                import time
+                from core.diagnostics import emit
+                emit('hub.ready', **diagnostic_start[0], elapsedMs=(time.monotonic() - diagnostic_start[1]) * 1000)
             yield
         finally:
             await bootstrap.close()
@@ -261,6 +266,8 @@ def create_application(
     app.include_router(attachment_router(remote_worker.attachments), prefix='/api/v1')
     install_local_routes(app, local_chat, local_auth, resolved_ports, event_store, token,
                          remote_router=remote_router)
+    from api.access_log import AccessLogMiddleware
+    app.add_middleware(AccessLogMiddleware, router=app.router)
 
     bootstrap = BootstrapService(
         resolved_ports,

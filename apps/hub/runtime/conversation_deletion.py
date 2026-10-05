@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from core.diagnostics import emit
 import os
 import shutil
 import uuid
@@ -270,6 +271,7 @@ class ConversationDeletion:
                     status, store, seq = self._remote_intent(tx, conversation)
                     tx.connection.execute('INSERT INTO local_conversation_deletions VALUES(?,?,?,?,?,?,?,?)',
                         (conversation, request_hash(key), expected_version, now(), 'cleaning', status, store, seq))
+                    tx.after_commit(lambda: emit('conversation.deletion', conversationId=conversation, status='cleaning', remoteCleanup=status))
                     tx.connection.execute('DELETE FROM remote_sync_items WHERE conversation_id=?', (conversation,))
                     tx.connection.execute('DELETE FROM remote_sync_changes WHERE conversation_id=?', (conversation,))
                     if self.worker:
@@ -291,9 +293,11 @@ class ConversationDeletion:
             with self.db.transaction() as tx:
                 self._erase_rows(tx, conversation)
                 tx.connection.execute("UPDATE local_conversation_deletions SET state='completed' WHERE conversation_id=?", (conversation,))
+                tx.after_commit(lambda: emit('conversation.deletion', conversationId=conversation, status='completed'))
                 if self.worker:
                     self.worker.repo.seal(tx)
         except Exception as error:
+            emit('conversation.deletion', conversationId=conversation, status='unconfirmed', errorCode='INTERNAL')
             raise HubError('INTERNAL', '对话清理未完成，可使用相同请求标识重试') from error
 
     def _retain_shared_inputs(self, tx, conversation, library):
@@ -482,6 +486,7 @@ class ConversationDeletion:
             if status != row['remote_status']:
                 with self.db.transaction() as tx:
                     tx.connection.execute('UPDATE local_conversation_deletions SET remote_status=? WHERE conversation_id=?', (status, conversation))
+                    tx.after_commit(lambda: emit('conversation.deletion', conversationId=conversation, status='completed', remoteCleanup=status))
         return LocalConversationDeletionView(conversationId=conversation, deletedAt=row['deleted_at'],
                                              localDeleted=True, remoteCleanup=status)
 

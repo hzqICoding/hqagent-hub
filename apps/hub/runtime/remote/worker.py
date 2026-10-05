@@ -9,6 +9,7 @@ import time
 from websockets.asyncio.client import connect
 from protocol.generated.python import PROTOCOL_VERSION
 from core.errors import HubError
+from core.diagnostics import emit, remote_command, transport_logger
 from storage.local_chat import now
 from runtime.remote.link import machine
 from runtime.remote.security import normalize_origin
@@ -71,9 +72,7 @@ class RemoteWorker:
         self.link.before_clear = self.sync.discard_binding
         # websockets DEBUG includes request headers. Isolate the transport logger
         # from application handlers, including applications enabling root DEBUG.
-        self.logger = logging.Logger("remote.transport.silent", level=logging.CRITICAL + 1)
-        self.logger.addHandler(logging.NullHandler())
-        self.logger.propagate = False
+        self.logger = transport_logger()
 
     async def start(self):
         if self.job is not None:
@@ -229,6 +228,7 @@ class RemoteWorker:
                 self.state("offline")
             if time.monotonic() - attempt_started >= 45:
                 delay = self.retry_seconds
+            emit('remote.retry', delayMs=delay * 1000)
             await asyncio.sleep(delay + random.random() * delay * 0.2)
             delay = min(60, delay * 2)
 
@@ -308,6 +308,8 @@ class RemoteWorker:
             async def send(value):
                 async with send_lock:
                     await ws.send(encode(value) if isinstance(value, dict) else value)
+                    if isinstance(value, dict):
+                        remote_command(value, 'sent')
             queries = QueryChannel(self, connection_id, send) if revision >= 3 else None
             self.sync.cancel_queries = queries.cancel_pending if queries else (lambda:None)
             async def heartbeat():
@@ -363,6 +365,7 @@ class RemoteWorker:
                         event = json.loads(content)
                         if event["eventId"] not in sent:
                             await send(content)
+                            remote_command(event, 'sent')
                             sent.add(event["eventId"])
                     if (self.probe_revision2 or (self.peer_revision2 is True and time.monotonic() >= self.next_revision2_probe)) and self.can_upgrade():
                         self.probe_revision2 = True
@@ -390,6 +393,7 @@ class RemoteWorker:
                 nonlocal last_server_time
                 async for content in ws:
                     frame = decode(content, revision=revision)
+                    remote_command(frame, 'received')
                     if self.closed or generation != self.repo.get("link")["generation"]:
                         return
                     if frame["type"] == "worker.hello_rejected":

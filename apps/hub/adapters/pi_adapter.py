@@ -1,5 +1,6 @@
 """PI 1.0.1 RPC adapter; prompts are gated by a pinned exclusive guard."""
 from __future__ import annotations
+from core.diagnostics import emit, catalog_logged
 
 import asyncio
 import base64
@@ -54,6 +55,7 @@ class PiConnectionFailure(Exception):
 
 
 def denied(code='PI_GUARD_UNAVAILABLE', kind='capability_missing', *, message=None):
+    emit('agent.failure', agentType='pi', errorCode=code, kind=kind)
     messages = {
         'PI_GUARD_UNAVAILABLE': 'PI 安全扩展握手失败或保护状态已变化，未放行执行',
         'PI_UNCONTROLLED_EXTENSIONS': 'PI 扩展隔离或 CLI 版本未通过核验，未启动任务',
@@ -151,6 +153,10 @@ class PiAdapter(AgentAdapter):
         return self.failed_starts.get(session_id)
 
     def _guard_view(self, status, reason=None, policy=None):
+        previous = getattr(self, '_logged_guard', None)
+        if previous != (status, reason):
+            self._logged_guard = (status, reason)
+            emit('agent.guard', agentType='pi', status=status, reason=reason)
         return RuntimeGuardView(status=status, isolation='hub_extension_only' if status == 'ready' else 'unknown',
                                 checkedAt=utc_timestamp(), reasons=[reason] if reason else [], **({'policyRevision': policy} if policy else {}))
 
@@ -356,6 +362,7 @@ class PiAdapter(AgentAdapter):
                 return denied()
             return denied('AGENT_OFFLINE', 'transport_error')
 
+    @catalog_logged('pi')
     async def list_models(self, agent_instance_id):
         from protocol.generated.python import AgentTaskSpec
         self.root.mkdir(parents=True, exist_ok=True)

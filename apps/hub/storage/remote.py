@@ -1,5 +1,6 @@
 """Single SQLite admission/outbox ledger, sharing the Hub's durable event sequence."""
 from __future__ import annotations
+from core.diagnostics import emit, remote_command, remember_secret
 
 import hashlib
 import json
@@ -37,6 +38,13 @@ class RemoteRepository:
 
     def put(self, key, value, tx):
         tx.connection.execute("INSERT INTO remote_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json", (key, canonical(value)))
+        if key == 'sync-work' and isinstance(value, dict) and value.get('phase'):
+            phase = value['phase']
+            def changed():
+                if getattr(self, '_diagnostic_sync', None) != phase:
+                    self._diagnostic_sync = phase
+                    emit('remote.sync', state=phase)
+            tx.after_commit(changed)
 
     def seal(self, tx):
         """External monotonic witness precedes COMMIT; a crash gap freezes safely.
@@ -111,12 +119,15 @@ class RemoteRepository:
         return RemoteLinkView.model_validate(self.get("link")["view"])
 
     def set_view(self, tx, value):
+        remember_secret(value.get('pairCode'))
         # GET and event share the generated mapper, including required nulls.
         mapped = RemoteLinkView.model_validate(value).model_dump(mode="json", by_alias=True, exclude_none=True)
         link = self.get("link", tx)
         if link["view"] == mapped:
             return
         link["view"] = mapped
+        tx.after_commit(lambda: emit('remote.state', state=mapped['state'],
+            connectionStatus=mapped.get('connectionStatus'), errorCode=mapped.get('lastErrorCode')))
         self.put("link", link, tx)
         self.events.append(tx, EventDraft(aggregate_type="system", aggregate_id="remote-link",
             type="remote.link.changed", payload=mapped))
@@ -226,6 +237,10 @@ class RemoteRepository:
         content = encode(raw)
         tx.connection.execute("INSERT INTO remote_outbox VALUES(?,?,?,?,?)",
             (raw["workerStoreId"], raw["seq"], raw["eventId"], content, hashlib.sha256(content.encode()).hexdigest()))
+        metadata = {key: raw[key] for key in ('type', 'commandId') if key in raw}
+        if isinstance(raw.get('error'), dict):
+            metadata['error'] = {'code': raw['error'].get('code')}
+        tx.after_commit(lambda: remote_command(metadata, 'queued'))
 
     def frames(self):
         identity = self.get("identity")

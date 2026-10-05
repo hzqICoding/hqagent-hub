@@ -8,6 +8,7 @@ from protocol.generated.python import ApiEnvelope, ApiError
 
 from core.constants import PROTOCOL_VERSION
 from core.errors import HubError
+from core.diagnostics import note_response
 
 
 def dump_model(value: Any) -> Any:
@@ -31,6 +32,7 @@ def success_response(data: Any, status_code: int = 200) -> JSONResponse:
             "protocolVersion": PROTOCOL_VERSION,
         }
     )
+    note_response(envelope.request_id)
     return JSONResponse(
         status_code=status_code,
         content=envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
@@ -54,8 +56,8 @@ def error_response(error: HubError) -> JSONResponse:
             "protocolVersion": PROTOCOL_VERSION,
         }
     )
+    note_response(envelope.request_id, error.code)
     return JSONResponse(
         status_code=error.http_status,
         content=envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
     )
-

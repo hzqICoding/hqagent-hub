@@ -9,6 +9,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
+from core.diagnostics import track_process
 
 
 DEFAULT_STREAM_LIMIT = 16 * 1024 * 1024
@@ -75,6 +76,7 @@ class ProcessRunner:
             creationflags=self._creation_flags(),
             start_new_session=os.name != "nt",
         )
+        track_process(process, 'probe')
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
         except (TimeoutError, asyncio.CancelledError):
@@ -93,7 +95,7 @@ class ProcessRunner:
         cwd: str | Path,
         env: Mapping[str, str] | None = None,
     ) -> asyncio.subprocess.Process:
-        return await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_exec(
             *args,
             cwd=str(cwd),
             env=dict(env) if env else None,
@@ -104,6 +106,8 @@ class ProcessRunner:
             creationflags=self._creation_flags(),
             start_new_session=os.name != "nt",
         )
+        track_process(process, 'interactive')
+        return process
 
     @staticmethod
     def _creation_flags() -> int:

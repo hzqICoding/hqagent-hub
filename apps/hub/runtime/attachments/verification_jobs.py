@@ -9,6 +9,7 @@ from protocol.generated.python import (AdapterFailure, CancelRequest, ERROR_CATA
     LocalImageProbeDiagnostic, LocalImageVerificationJobView, LocalImageVerificationPage,
     LocalImageVerificationRecord, StartLocalImageVerificationInput)
 from core.errors import HubError
+from core.diagnostics import emit
 from adapters.versions import cli_version
 from adapters.image_support import image_model_support, require_image_model
 from runtime.remote.security import CredentialVault
@@ -87,14 +88,17 @@ class VerificationCoordinator:
         self.budget, self.cleanup_budget = budget, cleanup_budget
         self.lock = asyncio.Lock()
         self.tasks, self.adapters = {}, {}
+        self._logged_states = {}
         try:
             self.data = json.loads(self.path.read_text('utf-8'))
         except FileNotFoundError:
             self.data = {'jobs': {}, 'keys': {}, 'cancelKeys': {}}
         # Never replay paid work after a restart. Empty ownership proves that a
         # queued job did not cross the launch boundary; missing PID proves nothing.
+        restored = []
         for job in self.data['jobs'].values():
             if job['view']['status'] not in TERMINAL:
+                restored.append(job)
                 job['view'].update(status='interrupted', finishedAt=now(), appliedToCurrentTarget=False)
                 stopped = all(r.get('stopped') for r in job['resources']) and not job.get('launchPending')
                 if stopped:
@@ -116,6 +120,8 @@ class VerificationCoordinator:
                     diagnostics=job['diagnostics'], target=target, job_id=job['view']['jobId'], completed=False)
                 job['view']['result'] = record_view(record, target)
         self.save()
+        for job in restored:
+            self._log_state(job)
 
     @classmethod
     def for_service(cls, service):
@@ -191,6 +197,14 @@ class VerificationCoordinator:
     def persist(self, job):
         job['view']['updatedAt'] = now()
         self.save()
+        self._log_state(job)
+
+    def _log_state(self, job):
+        view = job['view']
+        state = (view['status'], view['cleanupState'], view['slotHeld'])
+        if self._logged_states.get(view['jobId']) != state:
+            self._logged_states[view['jobId']] = state
+            emit('verification.state', jobId=view['jobId'], status=state[0], cleanupState=state[1], slotHeld=state[2])
 
     def job(self, identifier):
         job = self.data['jobs'].get(identifier)
