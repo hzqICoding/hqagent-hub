@@ -93,15 +93,15 @@ async function logout() {
     <header class="h-14 bg-panel border-b border-border px-4 flex items-center justify-between shrink-0">
       <div><h1 class="font-bold text-sm">我的电脑</h1><p class="text-[10px] text-text-muted">设备管理</p></div>
       <div class="flex items-center gap-2">
-        <HqButton variant="secondary" size="sm" @click="router.push('/remote/tokens')"><KeyRound class="w-3.5 h-3.5" />API 令牌</HqButton>
-        <button type="button" aria-label="退出登录" class="min-w-[44px] min-h-[44px] flex items-center justify-center" @click="logout"><LogOut class="w-4 h-4" /></button>
+        <HqButton variant="secondary" size="md" class="min-h-[36px] text-xs" @click="router.push('/remote/tokens')"><KeyRound class="w-3.5 h-3.5" />API 令牌</HqButton>
+        <button type="button" aria-label="退出登录" class="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-content-muted hover:bg-muted active:bg-elevated transition-colors" @click="logout"><LogOut class="w-4 h-4" /></button>
       </div>
     </header>
     <RemoteRequestNotice />
     <main class="flex-1 min-h-0 overflow-y-auto max-w-lg w-full mx-auto p-4 space-y-4">
-      <div class="flex items-center justify-between gap-2 p-3 rounded-xl bg-panel border border-border">
+      <div class="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-panel border border-border shadow-xs">
         <div><h2 class="text-xs font-semibold">添加电脑设备</h2><p class="text-[11px] text-text-muted">在电脑端生成二维码或短码</p></div>
-        <HqButton size="sm" @click="router.push('/remote/pair')"><Plus class="w-3.5 h-3.5" />输入短码配对</HqButton>
+        <HqButton size="md" class="min-h-[36px] text-xs shrink-0" @click="router.push('/remote/pair')"><Plus class="w-3.5 h-3.5" />输入短码配对</HqButton>
       </div>
       <p v-if="chatStore.deviceRemovalNotice || chatStore.lastRevocationInfo" class="text-xs text-warning">
         {{ chatStore.deviceRemovalNotice || '该电脑已撤销' }}。电脑上的任务可能仍在继续，请到电脑端核对。
@@ -119,14 +119,14 @@ async function logout() {
       </div>
       <p v-if="chatStore.deviceActionError" role="alert" class="text-xs text-status-danger">{{ chatStore.deviceActionError }}</p>
       <p v-if="chatStore.isLoadingDevices" class="text-xs text-text-muted">正在获取设备列表…</p>
-      <HqEmptyState v-else-if="!filteredDevices.length" title="暂无匹配电脑" description="调整筛选，或在电脑端生成配对码添加电脑" />
+      <HqEmptyState v-else-if="!chatStore.deviceError && !filteredDevices.length" title="暂无匹配电脑" description="调整筛选，或在电脑端生成配对码添加电脑" />
       <div v-else class="space-y-3">
-        <div v-for="device in filteredDevices" :key="device.workerId" class="p-4 bg-panel border border-border rounded-xl cursor-pointer" @click="selectDevice(device)">
+        <div v-for="device in filteredDevices" :key="device.workerId" class="p-4 bg-panel border border-border rounded-xl cursor-pointer hover:border-border-strong active:scale-[0.99] transition-all" @click="selectDevice(device)">
           <div class="flex justify-between items-start gap-2">
-            <button type="button" class="min-w-0 text-left flex items-center gap-2" @click.stop="selectDevice(device)">
-              <Laptop class="w-5 h-5 shrink-0" /><span class="text-sm font-semibold truncate">{{ device.displayName || device.deviceName }}</span>
+            <button type="button" class="min-w-0 text-left flex items-center gap-2 flex-1 py-1" @click.stop="selectDevice(device)">
+              <Laptop class="w-5 h-5 shrink-0 text-primary" /><span class="text-sm font-semibold truncate">{{ device.displayName || device.deviceName }}</span>
             </button>
-            <button type="button" :aria-label="`${device.displayName || device.deviceName}的更多操作`" class="shrink-0 p-1" @click.stop="openMenu(device)"><MoreHorizontal class="w-5 h-5" /></button>
+            <button type="button" :aria-label="`${device.displayName || device.deviceName}的更多操作`" class="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-muted active:bg-elevated text-text-muted hover:text-text -mr-2 -mt-1 transition-colors" @click.stop="openMenu(device)"><MoreHorizontal class="w-5 h-5" /></button>
           </div>
           <p class="text-[11px] text-text-muted my-2">{{ device.platform }} · {{ device.architecture }}</p>
           <div class="flex flex-wrap gap-2">
@@ -137,28 +137,33 @@ async function logout() {
         </div>
       </div>
       <section class="border-t border-border pt-3">
-        <button type="button" class="text-xs text-text-muted py-2" :aria-expanded="showRevoked" @click="toggleRevoked">
+        <button type="button" class="text-xs text-text-muted py-2 min-h-[44px] flex items-center" :aria-expanded="showRevoked" @click="toggleRevoked">
           {{ chatStore.revokedDevicesLoaded ? `已撤销（${chatStore.revokedDevices.length}）` : '已撤销（展开查看）' }}
         </button>
         <div v-if="showRevoked" class="space-y-2">
           <p v-if="chatStore.isLoadingRevokedDevices" class="text-xs text-text-muted">正在读取历史记录…</p>
           <p v-else-if="!chatStore.revokedDevices.length" class="text-xs text-text-muted">没有已撤销的设备</p>
-          <div v-for="device in chatStore.revokedDevices" :key="device.workerId" class="p-3 bg-panel rounded-lg flex justify-between gap-2 text-xs">
+          <div v-for="device in chatStore.revokedDevices" :key="device.workerId" class="p-3 bg-panel border border-border rounded-lg flex items-center justify-between gap-2 text-xs">
             <span class="min-w-0 break-words">{{ device.displayName || device.deviceName }} · 已撤销</span>
-            <HqButton variant="danger" size="sm" @click="confirmDeletion(device)">删除</HqButton>
+            <HqButton variant="danger" size="sm" class="min-h-[32px]" @click="confirmDeletion(device)">删除</HqButton>
           </div>
         </div>
       </section>
     </main>
     <HqDialog :open="Boolean(menuDevice)" :title="menuDevice?.displayName || menuDevice?.deviceName" @close="menuWorkerId = null">
       <div v-if="menuDevice" class="space-y-4 text-sm">
-        <p class="text-xs text-text-muted">暂停只限制远程操作，历史与同步保留，不停止电脑上的任务。</p>
-        <HqButton :loading="chatStore.isDeviceActionLoading" :variant="menuDevice.remoteAccess === 'suspended' ? 'primary' : 'secondary'" @click="changeAccess">{{ menuDevice.remoteAccess === 'suspended' ? '恢复远程' : '暂停远程' }}</HqButton>
-        <label class="block text-xs">修改显示名（留空恢复电脑名称）
-          <input v-model="displayName" maxlength="120" aria-label="显示名" class="hq-form-control block w-full p-2 mt-1 rounded border border-border bg-bg-app" />
-        </label>
-        <HqButton size="sm" :loading="chatStore.isDeviceActionLoading" @click="saveName">保存显示名</HqButton>
-        <div class="border-t border-border pt-3"><HqButton variant="danger" :disabled="chatStore.isDeviceActionLoading" @click="confirmDeletion(menuDevice)">删除设备</HqButton></div>
+        <p class="text-xs text-text-muted leading-relaxed">暂停只限制远程操作，历史与同步保留，不停止电脑上的任务。</p>
+        <HqButton :loading="chatStore.isDeviceActionLoading" class="w-full min-h-[40px] justify-center" :variant="menuDevice.remoteAccess === 'suspended' ? 'primary' : 'secondary'" @click="changeAccess">{{ menuDevice.remoteAccess === 'suspended' ? '恢复远程' : '暂停远程' }}</HqButton>
+        <div class="space-y-1.5">
+          <label class="block text-xs font-medium text-text-muted">修改显示名（留空恢复电脑名称）</label>
+          <div class="flex gap-2">
+            <input v-model="displayName" maxlength="120" aria-label="显示名" class="hq-form-control flex-1 h-10 px-3 text-sm rounded-lg border border-border bg-bg-app" />
+            <HqButton size="md" class="min-h-[40px] shrink-0" :loading="chatStore.isDeviceActionLoading" @click="saveName">保存</HqButton>
+          </div>
+        </div>
+        <div class="border-t border-border pt-3">
+          <HqButton variant="danger" class="w-full min-h-[40px] justify-center" :disabled="chatStore.isDeviceActionLoading" @click="confirmDeletion(menuDevice)">删除设备</HqButton>
+        </div>
         <p v-if="chatStore.deviceActionError" role="alert" class="text-xs text-danger">{{ chatStore.deviceActionError }}</p>
         <RemoteRequestNotice />
       </div>

@@ -76,14 +76,14 @@ async function handleLogin() {
             账号用户名
           </label>
           <div class="relative">
-            <User class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+            <User class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
             <input
               id="remote-login-name"
               v-model="loginName"
               type="text"
               autocomplete="username"
               placeholder="请输入 Hub 账号"
-              class="hq-form-control w-full pl-9 pr-3 py-2 text-sm bg-bg-app border border-border rounded-lg text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors"
+              class="hq-form-control w-full h-11 min-h-[44px] pl-10 pr-3 text-sm bg-bg-app border border-border rounded-xl text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors"
               :disabled="authStore.isLoading || Boolean(authStore.retryAfter)"
             />
           </div>
@@ -94,14 +94,14 @@ async function handleLogin() {
             登录口令
           </label>
           <div class="relative">
-            <Lock class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+            <Lock class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
             <input
               id="remote-password"
               v-model="password"
               type="password"
               autocomplete="current-password"
               placeholder="请输入登录口令"
-              class="hq-form-control w-full pl-9 pr-3 py-2 text-sm bg-bg-app border border-border rounded-lg text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors"
+              class="hq-form-control w-full h-11 min-h-[44px] pl-10 pr-3 text-sm bg-bg-app border border-border rounded-xl text-text placeholder:text-text-muted focus:outline-hidden focus:border-primary transition-colors"
               :disabled="authStore.isLoading || Boolean(authStore.retryAfter)"
             />
           </div>
@@ -110,7 +110,7 @@ async function handleLogin() {
         <HqButton
           type="submit"
           variant="primary"
-          class="w-full py-2.5 mt-2 justify-center font-medium shadow-sm"
+          class="w-full h-11 min-h-[44px] mt-2 justify-center font-medium shadow-sm rounded-xl text-sm"
           :loading="authStore.isLoading"
           :disabled="authStore.isLoading || Boolean(authStore.retryAfter)"
         >

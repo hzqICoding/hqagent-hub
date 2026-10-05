@@ -60,24 +60,37 @@ onBeforeUnmount(() => { request++ })
 <template>
   <div class="h-dvh bg-bg-app text-text flex flex-col overflow-hidden">
     <header class="h-14 shrink-0 px-4 bg-panel border-b border-border flex items-center justify-between">
-      <HqButton variant="ghost" size="sm" @click="router.push('/remote/devices')">返回</HqButton>
-      <h1 class="font-bold text-sm">API 令牌</h1><HqButton size="sm" @click="issueOpen = true">新建令牌</HqButton>
+      <HqButton variant="ghost" size="md" class="min-h-[36px]" @click="router.push('/remote/devices')">返回</HqButton>
+      <h1 class="font-bold text-sm">API 令牌</h1>
+      <HqButton size="md" class="min-h-[36px]" @click="issueOpen = true">新建令牌</HqButton>
     </header>
     <RemoteRequestNotice />
     <main class="flex-1 min-h-0 overflow-y-auto w-full max-w-lg mx-auto p-4 space-y-4">
-      <p class="text-xs text-text-muted">用于外部工具管理设备。令牌秘密仅在首次签发时展示，请按需授予权限。</p>
-      <label class="text-xs flex gap-2 items-center"><input class="hq-form-choice" v-model="includeRevoked" type="checkbox" />显示已吊销</label>
+      <p class="text-xs text-text-muted leading-relaxed">用于外部工具管理设备。令牌秘密仅在首次签发时展示，请按需授予权限。</p>
+      <label class="text-xs min-h-[44px] flex items-center gap-2.5 p-2 rounded-lg hover:bg-muted/30 cursor-pointer select-none">
+        <input class="hq-form-choice" v-model="includeRevoked" type="checkbox" />
+        <span class="font-medium text-text">显示已吊销</span>
+      </label>
       <p v-if="error" role="alert" class="text-xs text-danger">{{ error }} <button type="button" class="underline" @click="fetchTokens()">重试</button></p>
       <p v-if="loading" class="text-xs text-text-muted">正在读取令牌…</p>
       <p v-else-if="!tokens.length" class="text-sm text-text-muted py-8 text-center">暂无 API 令牌</p>
-      <article v-for="token in tokens" :key="token.tokenId" class="p-4 rounded-xl border border-border bg-panel space-y-2 text-xs">
-        <div class="flex items-center justify-between gap-2"><h2 class="font-semibold text-sm break-words min-w-0">{{ token.name }}</h2><HqBadge :variant="token.status === 'active' ? 'success' : 'neutral'">{{ { active: '有效', expired: '已过期', revoked: '已吊销' }[token.status] }}</HqBadge></div>
-        <p class="break-all select-text text-text-muted">{{ token.tokenPrefix }}</p>
+      <article v-for="token in tokens" :key="token.tokenId" class="p-4 rounded-xl border border-border bg-panel space-y-2.5 text-xs shadow-xs">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="font-semibold text-sm break-words min-w-0">{{ token.name }}</h2>
+          <HqBadge :variant="token.status === 'active' ? 'success' : 'neutral'">{{ { active: '有效', expired: '已过期', revoked: '已吊销' }[token.status] }}</HqBadge>
+        </div>
+        <p class="break-all select-text font-mono text-[11px] bg-bg-app px-2 py-1 rounded border border-border/60 text-text-muted">{{ token.tokenPrefix }}</p>
         <p class="break-words">权限：{{ token.scopes.join('、') }}</p>
-        <dl class="space-y-1 text-text-muted"><div>创建时间：{{ time(token.createdAt) }}</div><div>最后使用：{{ time(token.lastUsedAt) }}</div><div>到期时间：{{ time(token.expiresAt) }}</div></dl>
-        <HqButton v-if="token.status !== 'revoked'" variant="danger" size="sm" @click="requestRevoke(token.tokenId)">吊销</HqButton>
+        <dl class="space-y-1 text-text-muted">
+          <div>创建时间：{{ time(token.createdAt) }}</div>
+          <div>最后使用：{{ time(token.lastUsedAt) }}</div>
+          <div>到期时间：{{ time(token.expiresAt) }}</div>
+        </dl>
+        <div class="pt-1">
+          <HqButton v-if="token.status !== 'revoked'" variant="danger" size="sm" class="min-h-[32px]" @click="requestRevoke(token.tokenId)">吊销</HqButton>
+        </div>
       </article>
-      <HqButton v-if="nextCursor" variant="secondary" :loading="loading" @click="fetchTokens(true)">加载更多</HqButton>
+      <HqButton v-if="nextCursor" variant="secondary" class="w-full min-h-[40px] justify-center" :loading="loading" @click="fetchTokens(true)">加载更多</HqButton>
     </main>
     <RemoteTokenIssueDialog v-if="issueOpen" @close="issueOpen = false" @created="fetchTokens()" @revoke="requestRevoke($event)" />
 

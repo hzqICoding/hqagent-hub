@@ -600,7 +600,7 @@ function getExecutionStatusLabel(status?: string): string {
             <div
               v-for="conv in group.conversations"
               :key="conv.conversationId"
-              class="w-full text-left p-2.5 rounded-lg text-xs transition-colors flex items-center justify-between gap-2 cursor-pointer group"
+              class="w-full text-left p-3 min-h-[48px] rounded-xl text-xs transition-colors flex items-center justify-between gap-2 cursor-pointer group"
               :class="[
                 conv.conversationId === chatStore.activeConversationId
                   ? 'bg-primary/10 text-primary font-medium border border-primary/20'
@@ -642,12 +642,12 @@ function getExecutionStatusLabel(status?: string): string {
               <!-- Conversation Settings Button -->
               <button
                 type="button"
-                class="p-1 rounded text-text-muted hover:text-text hover:bg-panel opacity-60 group-hover:opacity-100 transition-opacity shrink-0"
+                class="min-w-[40px] min-h-[40px] rounded-lg text-text-muted hover:text-text hover:bg-panel flex items-center justify-center transition-colors shrink-0 -mr-1"
                 :disabled="chatStore.isRemoteSuspended"
                 title="对话设置"
                 @click.stop="openConversationSettings(conv)"
               >
-                <MoreHorizontal class="w-3.5 h-3.5" />
+                <MoreHorizontal class="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -1014,7 +1014,7 @@ function getExecutionStatusLabel(status?: string): string {
         </div>
 
         <!-- Composer -->
-        <footer class="px-[12px] py-3 bg-panel border-t border-border shrink-0 space-y-2">
+        <footer class="px-[12px] py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-panel border-t border-border shrink-0 space-y-2">
           <!-- Busy lock banner -->
           <div
             v-if="chatStore.isConversationBusy"
@@ -1107,10 +1107,11 @@ function getExecutionStatusLabel(status?: string): string {
       </div>
 
       <template #footer>
-        <div class="flex items-center justify-end gap-2">
+        <div class="flex items-center justify-end gap-2 w-full">
           <HqButton
             variant="ghost"
-            size="sm"
+            size="md"
+            class="min-h-[38px]"
             :disabled="isCreating"
             @click="isNewConversationDialogOpen = false"
           >
@@ -1118,7 +1119,8 @@ function getExecutionStatusLabel(status?: string): string {
           </HqButton>
           <HqButton
             variant="primary"
-            size="sm"
+            size="md"
+            class="min-h-[38px]"
             :loading="isCreating"
             :disabled="!canCreate"
             @click="handleCreateConversation"
@@ -1138,7 +1140,7 @@ function getExecutionStatusLabel(status?: string): string {
       @close="commandToWithdraw = null"
     >
       <div class="space-y-3 text-xs text-text">
-        <p>
+        <p class="leading-relaxed">
           在线提交最多等待 30 秒送达。撤回需要电脑确认，不代表已经停止；已产生运行结果时请使用取消运行。
         </p>
         <div class="space-y-1.5">
@@ -1148,16 +1150,17 @@ function getExecutionStatusLabel(status?: string): string {
             v-model="withdrawReason"
             type="text"
             placeholder="例如：指令输入错误"
-            class="hq-form-control w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
+            class="hq-form-control w-full py-2.5 px-3 bg-bg-app border border-border rounded-lg text-sm text-text focus:outline-hidden focus:border-primary"
           />
         </div>
       </div>
 
       <template #footer>
-        <div class="flex items-center justify-end gap-2">
+        <div class="flex items-center justify-end gap-2 w-full">
           <HqButton
             variant="ghost"
-            size="sm"
+            size="md"
+            class="min-h-[38px]"
             :disabled="isWithdrawing"
             @click="commandToWithdraw = null"
           >
@@ -1165,7 +1168,8 @@ function getExecutionStatusLabel(status?: string): string {
           </HqButton>
           <HqButton
             variant="danger"
-            size="sm"
+            size="md"
+            class="min-h-[38px]"
             :loading="isWithdrawing"
             :disabled="chatStore.isRemoteSuspended"
             @click="confirmWithdraw"
@@ -1189,45 +1193,46 @@ function getExecutionStatusLabel(status?: string): string {
             id="settings-title"
             v-model="settingsTitle"
             type="text"
-            class="hq-form-control w-full py-2 px-3 bg-bg-app border border-border rounded-lg text-text focus:outline-hidden focus:border-primary"
+            class="hq-form-control w-full py-2.5 px-3 bg-bg-app border border-border rounded-lg text-sm text-text focus:outline-hidden focus:border-primary"
           />
         </div>
 
         <div class="space-y-1.5">
           <label class="block font-medium text-text-secondary">可见性</label>
           <div class="space-y-2">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" v-model="settingsVisibility" value="both" class="hq-form-choice accent-primary" />
-              <span>两端均可见 (默认)</span>
+            <label class="flex items-center gap-3 p-2.5 rounded-lg border border-border bg-bg-app hover:bg-muted/40 cursor-pointer min-h-[44px]">
+              <input type="radio" v-model="settingsVisibility" value="both" class="hq-form-choice accent-primary shrink-0" />
+              <span class="font-medium text-text">两端均可见 (默认)</span>
             </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" v-model="settingsVisibility" value="pc_only" class="hq-form-choice accent-primary" />
-              <span>仅电脑可见</span>
+            <label class="flex items-center gap-3 p-2.5 rounded-lg border border-border bg-bg-app hover:bg-muted/40 cursor-pointer min-h-[44px]">
+              <input type="radio" v-model="settingsVisibility" value="pc_only" class="hq-form-choice accent-primary shrink-0" />
+              <span class="font-medium text-text">仅电脑可见</span>
             </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" v-model="settingsVisibility" value="mobile_only" class="hq-form-choice accent-primary" />
-              <span>仅手机可见</span>
+            <label class="flex items-center gap-3 p-2.5 rounded-lg border border-border bg-bg-app hover:bg-muted/40 cursor-pointer min-h-[44px]">
+              <input type="radio" v-model="settingsVisibility" value="mobile_only" class="hq-form-choice accent-primary shrink-0" />
+              <span class="font-medium text-text">仅手机可见</span>
             </label>
           </div>
         </div>
 
         <div class="pt-2 border-t border-border">
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" v-model="settingsArchived" class="hq-form-choice accent-primary" />
-            <span>归档此对话</span>
+          <label class="flex items-center gap-3 p-2.5 rounded-lg border border-border bg-bg-app hover:bg-muted/40 cursor-pointer min-h-[44px]">
+            <input type="checkbox" v-model="settingsArchived" class="hq-form-choice accent-primary shrink-0" />
+            <span class="font-medium text-text">归档此对话</span>
           </label>
         </div>
 
-        <div v-if="chatStore.settingsNotice" class="text-xs text-primary/80 bg-primary/10 p-2 rounded">
+        <div v-if="chatStore.settingsNotice" class="text-xs text-primary/80 bg-primary/10 p-2.5 rounded-lg">
           {{ chatStore.settingsNotice }}
         </div>
       </div>
 
       <template #footer>
-        <div class="flex items-center justify-end gap-2">
+        <div class="flex items-center justify-end gap-2 w-full">
           <HqButton
             variant="ghost"
-            size="sm"
+            size="md"
+            class="min-h-[38px]"
             :disabled="isSavingSettings"
             @click="isConvSettingsOpen = false"
           >
@@ -1235,7 +1240,8 @@ function getExecutionStatusLabel(status?: string): string {
           </HqButton>
           <HqButton
             variant="primary"
-            size="sm"
+            size="md"
+            class="min-h-[38px]"
             :loading="isSavingSettings"
             :disabled="chatStore.isRemoteSuspended"
             @click="handleSaveSettings"
@@ -1259,10 +1265,11 @@ function getExecutionStatusLabel(status?: string): string {
       </div>
 
       <template #footer>
-        <div class="flex items-center justify-end gap-2">
+        <div class="flex items-center justify-end gap-2 w-full">
           <HqButton
             variant="ghost"
-            size="sm"
+            size="md"
+            class="min-h-[38px]"
             :disabled="isSavingSettings"
             @click="isPcOnlyConfirmOpen = false"
           >
@@ -1270,7 +1277,8 @@ function getExecutionStatusLabel(status?: string): string {
           </HqButton>
           <HqButton
             variant="danger"
-            size="sm"
+            size="md"
+            class="min-h-[38px]"
             :loading="isSavingSettings"
             :disabled="chatStore.isRemoteSuspended"
             @click="executeSaveSettings"

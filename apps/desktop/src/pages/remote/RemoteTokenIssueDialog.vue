@@ -10,6 +10,16 @@ const name = ref('')
 const scopes = ref<RemoteApiTokenScope[]>([])
 const days = ref(90)
 const permissions: RemoteApiTokenScope[] = ['devices:read', 'devices:manage', 'devices:delete']
+const scopeLabels: Record<RemoteApiTokenScope, string> = {
+  'devices:read': '读取设备信息',
+  'devices:manage': '远程操作管理',
+  'devices:delete': '删除电脑设备',
+}
+const scopeDescriptions: Record<RemoteApiTokenScope, string> = {
+  'devices:read': '允许查询电脑在线状态、硬件架构与项目工作区列表',
+  'devices:manage': '允许修改电脑显示名称、暂停或恢复远程接入',
+  'devices:delete': '允许从云端解除设备连接（高危破坏性操作）',
+}
 const secret = shallowRef('')
 const issuedTokenId = ref<string | null>(null)
 const replayed = ref(false)
@@ -63,30 +73,52 @@ function revokeIssued() {
   <HqDialog :open="true" :title="issuedTokenId ? 'API 令牌已创建' : '新建 API 令牌'" @close="close">
     <div class="space-y-4 text-xs">
       <template v-if="!issuedTokenId">
-        <label class="block">名称<input v-model="name" :disabled="loading" maxlength="120" aria-label="令牌名称" class="hq-form-control block w-full p-2 mt-1 bg-bg-app border border-border rounded" /></label>
-        <fieldset :disabled="loading" class="space-y-2"><legend class="mb-2 font-medium">权限（各自独立）</legend>
-          <label v-for="scope in permissions" :key="scope" class="flex items-center gap-2"><input class="hq-form-choice" v-model="scopes" type="checkbox" :value="scope" />{{ scope }}</label>
+        <label class="block font-medium">名称
+          <input v-model="name" :disabled="loading" maxlength="120" aria-label="令牌名称" class="hq-form-control block w-full p-2.5 mt-1 bg-bg-app border border-border rounded-lg text-sm" placeholder="例如：CI 构建自动化" />
+        </label>
+        <fieldset :disabled="loading" class="space-y-2">
+          <legend class="mb-2 font-medium">权限（各自独立）</legend>
+          <label v-for="scope in permissions" :key="scope" class="flex items-start gap-3 p-3 rounded-xl border border-border bg-bg-app hover:bg-muted/40 cursor-pointer min-h-[44px] transition-colors">
+            <input class="hq-form-choice mt-0.5 shrink-0" v-model="scopes" type="checkbox" :value="scope" />
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5 font-medium text-xs">
+                <span>{{ scopeLabels[scope] }}</span>
+                <span class="text-text-muted font-mono text-[10px]">({{ scope }})</span>
+              </div>
+              <p class="text-[11px] text-text-muted mt-0.5 leading-normal">{{ scopeDescriptions[scope] }}</p>
+            </div>
+          </label>
         </fieldset>
-        <p v-if="scopes.includes('devices:delete')" class="text-warning">删除是破坏性操作</p>
-        <label class="block">有效期（天，默认 90，最多 365）<input v-model.number="days" :disabled="loading" type="number" min="1" max="365" step="1" aria-label="有效期天数" class="hq-form-control block w-full p-2 mt-1 bg-bg-app border border-border rounded" /></label>
-        <p class="text-text-muted">权限只用于设备管理，不授予对话、模型或令牌管理能力。</p>
+        <p v-if="scopes.includes('devices:delete')" class="text-warning font-medium flex items-center gap-1">
+          <span>⚠️</span>
+          <span>删除是破坏性操作</span>
+        </p>
+        <label class="block font-medium">有效期（天，默认 90，最多 365）
+          <input v-model.number="days" :disabled="loading" type="number" min="1" max="365" step="1" aria-label="有效期天数" class="hq-form-control block w-full p-2.5 mt-1 bg-bg-app border border-border rounded-lg text-sm" />
+        </label>
+        <p class="text-text-muted leading-relaxed">权限只用于设备管理，不授予对话、模型或令牌管理能力。</p>
       </template>
       <template v-else-if="secret">
         <p class="font-medium text-warning">关闭后无法再次查看</p>
-        <p class="text-text-muted">请复制到安全位置。不要将令牌发给他人或粘贴到排查记录中。</p>
-        <pre data-testid="issued-secret" class="whitespace-pre-wrap break-all select-text bg-bg-app border border-border p-3 rounded text-xs">{{ secret }}</pre>
-        <HqButton size="sm" @click="copySecret">复制令牌</HqButton><p role="status">{{ copyState }}</p>
+        <p class="text-text-muted leading-relaxed">请复制到安全位置。不要将令牌发给他人或粘贴到排查记录中。</p>
+        <pre data-testid="issued-secret" class="whitespace-pre-wrap break-all select-text bg-bg-app border border-border p-3 rounded-lg text-xs font-mono">{{ secret }}</pre>
+        <div class="flex items-center gap-3">
+          <HqButton size="md" class="min-h-[38px]" @click="copySecret">复制令牌</HqButton>
+          <span role="status" class="text-xs text-text-muted">{{ copyState }}</span>
+        </div>
       </template>
       <template v-else-if="replayed">
         <p role="status">令牌已创建但无法再次显示，如未保存请吊销后重建</p>
-        <HqButton variant="danger" @click="revokeIssued">吊销此令牌</HqButton>
+        <HqButton variant="danger" class="min-h-[38px]" @click="revokeIssued">吊销此令牌</HqButton>
       </template>
       <p v-if="error" role="alert" class="text-danger">{{ error }}</p>
       <RemoteRequestNotice />
     </div>
     <template #footer>
-      <HqButton variant="ghost" @click="close">{{ issuedTokenId ? '关闭' : '取消' }}</HqButton>
-      <HqButton v-if="!issuedTokenId" :disabled="!valid" :loading="loading" @click="issue">签发令牌</HqButton>
+      <div class="flex items-center justify-end gap-2 w-full">
+        <HqButton variant="ghost" size="md" class="min-h-[38px]" @click="close">{{ issuedTokenId ? '关闭' : '取消' }}</HqButton>
+        <HqButton v-if="!issuedTokenId" size="md" class="min-h-[38px]" :disabled="!valid" :loading="loading" @click="issue">签发令牌</HqButton>
+      </div>
     </template>
   </HqDialog>
 </template>
