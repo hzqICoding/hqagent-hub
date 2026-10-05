@@ -133,4 +133,109 @@ describe('ChatPage', () => {
     expect(wrapper.text()).toContain('RTK 定制分析')
     expect(wrapper.text()).toContain('分析当前工程代码结构并提出优化建议')
   })
+
+  it('displays native session in workbench directly with banner confirmation and takes over conversation', async () => {
+    const wrapper = await mountInitializedPage()
+    const store = useChatStore()
+
+    const mockNativeSession = {
+      nativeSessionId: 'native_example_0',
+      title: '终端会话 · 示例重构',
+      agentType: 'claude' as const,
+      workspaceId: store.workspaces[0].id,
+      indexVersion: 1,
+      sourceRevision: 'example_source_revision',
+      activity: { activity: 'closed_confirmed' as const },
+      format: { status: 'readable' as const, cliVersion: '1.0.0' },
+      createdAt: '2026-10-05T00:00:00Z',
+      updatedAt: '2026-10-05T00:00:00Z',
+    }
+
+    const sidebar = wrapper.findComponent({ name: 'ChatSidebar' })
+    await sidebar.vm.$emit('select-native-session', mockNativeSession)
+    await flushPromises()
+
+    // 1. Displayed in main workbench instead of dialog
+    expect(wrapper.find('[data-testid="native-session-workbench-banner"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('终端会话 · 示例重构')
+    expect(wrapper.text()).toContain('终端原生会话（只读历史）')
+    expect(wrapper.text()).toContain('请先在电脑终端里退出这个会话')
+
+    // 2. Takeover button is disabled until checkbox is checked
+    const takeoverBtn = wrapper.findAll('button').find(b => b.text().includes('接管并继续对话'))!
+    expect(takeoverBtn.attributes('disabled')).toBeDefined()
+
+    const checkbox = wrapper.find('[data-testid="native-session-workbench-banner"] input[type="checkbox"]')
+    await checkbox.setValue(true)
+    expect(takeoverBtn.attributes('disabled')).toBeUndefined()
+
+    // 3. Click takeover: imports session and transitions to project task
+    const importSpy = vi.spyOn(mockLocalChatGateway, 'importNativeSession')
+    await takeoverBtn.trigger('click')
+    await flushPromises()
+
+    expect(importSpy).toHaveBeenCalledWith('native_example_0', {
+      terminalClosedConfirmed: true,
+      sourceRevision: 'example_source_revision',
+      expectedIndexVersion: 1,
+    })
+    expect(store.activeConversation?.conversationKind).toBe('native')
+  })
+
+  it('merges consecutive tool calls in native session history into a single line', async () => {
+    const wrapper = await mountInitializedPage()
+    const store = useChatStore()
+
+    vi.spyOn(mockLocalChatGateway, 'readNativeMessages').mockResolvedValueOnce({
+      nativeSessionId: 'native_tool_merge_test',
+      snapshotCursor: 'snap_1',
+      sourceRevision: 'src_1',
+      items: [
+        {
+          messageId: 'tool_msg_1',
+          role: 'tool_summary',
+          text: 'Bash: git status -s',
+          segmentIndex: 0,
+          segmentCount: 1,
+          totalUtf8Bytes: 19,
+          contentSha256: 'd16e78b36451dc121767a6d4ab89b083f686e0893aff8fff936bff2a7b87c019',
+        },
+        {
+          messageId: 'tool_msg_2',
+          role: 'tool_summary',
+          text: 'Bash: npm run test',
+          segmentIndex: 0,
+          segmentCount: 1,
+          totalUtf8Bytes: 18,
+          contentSha256: 'c43a786452781d0da0f8d9dbb1483f2f7c71ca6c1b40c36563ff539e52cb0bf2',
+        },
+      ],
+      hasMore: false,
+    })
+
+    const mockNativeSession = {
+      nativeSessionId: 'native_tool_merge_test',
+      title: '多工具调用原生会话',
+      agentType: 'claude' as const,
+      workspaceId: store.workspaces[0].id,
+      indexVersion: 1,
+      sourceRevision: 'src_1',
+      activity: { activity: 'closed_confirmed' as const },
+      format: { status: 'readable' as const, cliVersion: '1.0.0' },
+      createdAt: '2026-10-05T00:00:00Z',
+      updatedAt: '2026-10-05T00:00:00Z',
+    }
+
+    const sidebar = wrapper.findComponent({ name: 'ChatSidebar' })
+    await sidebar.vm.$emit('select-native-session', mockNativeSession)
+    await flushPromises()
+
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-testid="native-merged-tool-line"]').exists()).toBe(true)
+    })
+
+    const mergedLine = wrapper.find('[data-testid="native-merged-tool-line"]')
+    expect(mergedLine.text()).toContain('执行了 2 个工具调用')
+    expect(mergedLine.text()).toContain('Bash')
+  })
 })

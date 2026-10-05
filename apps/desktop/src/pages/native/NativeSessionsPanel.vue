@@ -18,13 +18,20 @@ const props = withDefaults(defineProps<{
   revisions?: number[]
   projects: { id: string; name: string }[]
   searchQuery?: string
+  workbench?: boolean
+  activeSessionId?: string | null
 }>(), {
   remote: false,
   online: true,
   suspended: false,
   searchQuery: '',
+  workbench: false,
+  activeSessionId: null,
 })
-const emit = defineEmits<{ opened: [] }>()
+const emit = defineEmits<{
+  opened: []
+  'select-session': [session: RuntimeNativeSessionIndex | RemoteNativeSessionView]
+}>()
 const items = ref<(RuntimeNativeSessionIndex | RemoteNativeSessionView)[]>([])
 const selected = ref<RuntimeNativeSessionIndex | RemoteNativeSessionView | null>(null)
 const messages = ref<NativeMessagePart[]>([])
@@ -38,6 +45,41 @@ const confirmed = ref(false)
 const error = ref<ReturnType<typeof nativeFailure> | null>(null)
 const pending = ref<RemoteResourceQueuedReceipt | null>(null)
 const assembler = new NativeMessageAssembler()
+
+function isToolMessage(msg: NativeMessagePart): boolean {
+  return msg.role === 'tool_summary' || /历史调用|历史返回记录|Bash:|执行工具|工具调用/.test(msg.text)
+}
+
+function getToolsSummary(toolMsgs: NativeMessagePart[]): string {
+  const names = new Set<string>()
+  for (const msg of toolMsgs) {
+    if (/Bash:/i.test(msg.text)) names.add('Bash')
+    else if (/File|ReadFile|WriteFile/i.test(msg.text)) names.add('文件操作')
+    else if (/Git/i.test(msg.text)) names.add('Git')
+    else names.add('工具调用')
+  }
+  return Array.from(names).join(', ')
+}
+
+const groupedMessages = computed(() => {
+  const groups: { type: 'single' | 'tools'; message?: NativeMessagePart; toolMessages?: NativeMessagePart[] }[] = []
+  let currentTools: NativeMessagePart[] = []
+  for (const msg of messages.value) {
+    if (isToolMessage(msg)) {
+      currentTools.push(msg)
+    } else {
+      if (currentTools.length > 0) {
+        groups.push({ type: 'tools', toolMessages: [...currentTools] })
+        currentTools = []
+      }
+      groups.push({ type: 'single', message: msg })
+    }
+  }
+  if (currentTools.length > 0) {
+    groups.push({ type: 'tools', toolMessages: [...currentTools] })
+  }
+  return groups
+})
 let generation = 0
 let readGeneration = 0
 let poll: ReturnType<typeof setTimeout> | undefined
@@ -122,7 +164,17 @@ async function read(more = false) {
   } catch (err) { if (current === readGeneration) { error.value = nativeFailure(err); assembler.reset(); messages.value = []; before.value = undefined } }
   finally { if (current === readGeneration) reading.value = false }
 }
-function open(session: RuntimeNativeSessionIndex | RemoteNativeSessionView) { close(); error.value = null; selected.value = session; confirmed.value = false; if (session.format.status === 'readable') void read() }
+function open(session: RuntimeNativeSessionIndex | RemoteNativeSessionView) {
+  if (props.workbench) {
+    emit('select-session', session)
+    return
+  }
+  close()
+  error.value = null
+  selected.value = session
+  confirmed.value = false
+  if (session.format.status === 'readable') void read()
+}
 function close() { readGeneration++; reading.value = false; selected.value = null; messages.value = []; assembler.reset(); before.value = undefined; confirmation.value = false; confirmed.value = false }
 async function prepareImport() {
   if (!selected.value || !selectedReadable.value) return
@@ -230,7 +282,13 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
       <div v-if="!collapsedWorkspaces.has(group.id)" class="pl-2 space-y-1 mb-2">
         <p v-if="!group.readable.length" class="py-2 text-content-secondary pl-4" data-testid="native-empty-readable">暂无可读取的原生会话</p>
         <button v-for="item in group.readable" :key="item.nativeSessionId" type="button" data-testid="native-readable"
-          class="block w-full min-h-[40px] text-left px-3 py-2 rounded-lg hover:bg-muted/60 text-content-primary transition-colors cursor-pointer group" @click="open(item)">
+          class="block w-full min-h-[40px] text-left px-3 py-2 rounded-lg transition-colors cursor-pointer group"
+          :class="[
+            item.nativeSessionId === activeSessionId
+              ? 'bg-muted/80 text-text font-medium'
+              : 'hover:bg-muted/60 text-content-primary'
+          ]"
+          @click="open(item)">
           <span class="block truncate font-medium text-xs text-text group-hover:text-primary transition-colors"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span>
           <span class="block text-[10px] text-content-secondary mt-0.5">{{ agentLabel(item.agentType) }}{{ item.agentType === 'pi' && item.format.pi ? ' · 已保存分支' : '' }} · {{ activityLabel(item.activity.activity) }}</span>
         </button>
@@ -241,7 +299,13 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
           </button>
           <div v-if="expandedWorkspaces.has(group.id)" :id="`${disclosureId}-${groupIndex}`" class="space-y-1 pl-2">
             <button v-for="item in group.unavailable" :key="item.nativeSessionId" type="button" data-testid="native-unavailable"
-              class="block w-full min-h-[40px] text-left px-3 py-2 rounded-lg text-content-secondary hover:bg-muted/50 transition-colors cursor-pointer" @click="open(item)">
+              class="block w-full min-h-[40px] text-left px-3 py-2 rounded-lg transition-colors cursor-pointer"
+              :class="[
+                item.nativeSessionId === activeSessionId
+                  ? 'bg-muted/80 text-text font-medium'
+                  : 'text-content-secondary hover:bg-muted/50'
+              ]"
+              @click="open(item)">
               <span class="block truncate font-medium text-xs text-text"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span>
               <span class="block text-[10px] break-words">{{ formatLabel(item) }}</span>
               <span class="block text-[10px] break-words text-text-muted">{{ item.format.reason || '当前记录格式尚未支持' }}</span>
@@ -266,28 +330,37 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
         <HqButton v-if="before" size="sm" :loading="reading" @click="read(true)">读取更早内容</HqButton>
         <p v-if="reading">正在从电脑读取…</p>
         <p v-if="before && !messages.length" class="text-text-muted">正在等待完整消息片段，请继续读取更早内容</p>
-        <div v-for="message in messages" :key="message.messageId" class="text-xs select-text">
-          <!-- Collapsed history / tool summary records -->
-          <template v-if="message.role === 'tool_summary' || /历史调用|历史返回记录|Bash:/.test(message.text)">
+        <div v-for="(group, gIdx) in groupedMessages" :key="gIdx" class="text-xs select-text">
+          <!-- Merged consecutive tool calls into ONE line -->
+          <template v-if="group.type === 'tools' && group.toolMessages">
             <details class="group/history my-1 py-1.5 px-2.5 rounded-lg bg-panel/50 hover:bg-panel transition-colors">
               <summary class="cursor-pointer select-none text-[11px] text-text-muted hover:text-text flex items-center justify-between font-mono list-none">
                 <span class="flex items-center gap-1.5 truncate">
                   <Terminal class="w-3 h-3 text-text-muted/60 shrink-0" />
-                  <span class="truncate">{{ message.text.split('\n')[0].replace(/^#+\s*/, '') || '工具执行历史' }}</span>
+                  <span class="truncate">
+                    执行了 {{ group.toolMessages.length }} 个工具调用
+                    <span class="text-text-muted/60 font-normal">({{ getToolsSummary(group.toolMessages) }})</span>
+                  </span>
                 </span>
                 <span class="text-[10px] text-text-muted/60 group-open/history:rotate-180 transition-transform shrink-0 ml-1">▼</span>
               </summary>
-              <div class="mt-1.5 p-2 rounded bg-bg-app/80 font-mono text-[11px] text-text-muted whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
-                <HqMarkdown :content="message.text" />
+              <div class="mt-1.5 space-y-1.5 max-h-48 overflow-y-auto">
+                <div
+                  v-for="tMsg in group.toolMessages"
+                  :key="tMsg.messageId"
+                  class="p-2 rounded bg-bg-app/80 font-mono text-[11px] text-text-muted whitespace-pre-wrap break-words"
+                >
+                  <HqMarkdown :content="tMsg.text" />
+                </div>
               </div>
             </details>
           </template>
           <!-- Regular user / assistant messages -->
-          <template v-else>
+          <template v-else-if="group.message">
             <div class="p-3 bg-panel rounded-lg space-y-1 my-1">
-              <span class="text-text-muted text-[10px] block font-mono uppercase">{{ message.role }}</span>
-              <p v-if="message.role === 'user'" class="whitespace-pre-wrap break-words text-text">{{ message.text }}</p>
-              <HqMarkdown v-else :content="message.text" />
+              <span class="text-text-muted text-[10px] block font-mono uppercase">{{ group.message.role }}</span>
+              <p v-if="group.message.role === 'user'" class="whitespace-pre-wrap break-words text-text">{{ group.message.text }}</p>
+              <HqMarkdown v-else :content="group.message.text" />
             </div>
           </template>
         </div>

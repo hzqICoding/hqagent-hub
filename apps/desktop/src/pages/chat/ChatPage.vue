@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { RuntimeNativeSessionIndex, RemoteNativeSessionView, NativeMessagePart } from '@hqagent/protocol'
+import { getLocalChatGateway } from '@/shared/api'
+import { activityLabel, closureText, NativeMessageAssembler, nativeFailure } from '@/pages/native/native-utils'
 import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
 import ConversationDeletion from './components/ConversationDeletion.vue'
 import NativeSyncNotice from '@/pages/native/NativeSyncNotice.vue'
@@ -18,6 +21,7 @@ import {
   HqDialog,
   HqButton,
   HqDropdown,
+  HqMarkdown,
 } from '@/shared/ui'
 import {
   Bot,
@@ -32,6 +36,8 @@ import {
   Plus,
   ArchiveRestore,
   Menu,
+  Terminal,
+  AlertCircle,
 } from 'lucide-vue-next'
 
 const deletionRef = ref<InstanceType<typeof ConversationDeletion> | null>(null)
@@ -46,6 +52,119 @@ const messageContainerRef = ref<HTMLElement | null>(null)
 const isScrolledUp = ref(false)
 const isContextResetDialogOpen = ref(false)
 let mounted = false
+
+// Native sessions state & methods for main chat workbench display
+const activeNativeSession = ref<RuntimeNativeSessionIndex | RemoteNativeSessionView | null>(null)
+const activeNativeSessionId = computed(() => activeNativeSession.value?.nativeSessionId || null)
+const nativeMessages = ref<NativeMessagePart[]>([])
+const nativeBeforeCursor = ref<string | undefined>()
+const isNativeReading = ref(false)
+const isNativeImporting = ref(false)
+const isNativeConfirmed = ref(false)
+const nativeError = ref<ReturnType<typeof nativeFailure> | null>(null)
+const nativeAssembler = new NativeMessageAssembler()
+
+function isToolMessage(msg: NativeMessagePart): boolean {
+  return msg.role === 'tool_summary' || /历史调用|历史返回记录|Bash:|执行工具|工具调用/.test(msg.text)
+}
+
+function getToolsSummary(toolMsgs: NativeMessagePart[]): string {
+  const names = new Set<string>()
+  for (const msg of toolMsgs) {
+    if (/Bash:/i.test(msg.text)) names.add('Bash')
+    else if (/File|ReadFile|WriteFile/i.test(msg.text)) names.add('文件操作')
+    else if (/Git/i.test(msg.text)) names.add('Git')
+    else names.add('工具调用')
+  }
+  return Array.from(names).join(', ')
+}
+
+const groupedNativeMessages = computed(() => {
+  const groups: { type: 'single' | 'tools'; message?: NativeMessagePart; toolMessages?: NativeMessagePart[] }[] = []
+  let currentTools: NativeMessagePart[] = []
+  for (const msg of nativeMessages.value) {
+    if (isToolMessage(msg)) {
+      currentTools.push(msg)
+    } else {
+      if (currentTools.length > 0) {
+        groups.push({ type: 'tools', toolMessages: [...currentTools] })
+        currentTools = []
+      }
+      groups.push({ type: 'single', message: msg })
+    }
+  }
+  if (currentTools.length > 0) {
+    groups.push({ type: 'tools', toolMessages: [...currentTools] })
+  }
+  return groups
+})
+
+async function loadNativeMessages(more = false) {
+  const session = activeNativeSession.value
+  if (!session || session.format.status !== 'readable') return
+  isNativeReading.value = true
+  nativeError.value = null
+  if (!more) {
+    nativeAssembler.reset()
+    nativeMessages.value = []
+    nativeBeforeCursor.value = undefined
+  }
+  try {
+    const page = await getLocalChatGateway().readNativeMessages(
+      session.nativeSessionId,
+      more ? nativeBeforeCursor.value : undefined
+    )
+    if (page.nativeSessionId !== session.nativeSessionId) return
+    const completed = await nativeAssembler.append(page)
+    nativeMessages.value = completed
+    nativeBeforeCursor.value = page.hasMore ? page.before : undefined
+  } catch (err) {
+    nativeError.value = nativeFailure(err)
+  } finally {
+    isNativeReading.value = false
+  }
+}
+
+async function handleSelectNativeSession(session: RuntimeNativeSessionIndex | RemoteNativeSessionView) {
+  activeNativeSession.value = session
+  isNativeConfirmed.value = false
+  nativeError.value = null
+  if (session.format.status === 'readable') {
+    await loadNativeMessages(false)
+  }
+}
+
+async function importActiveNativeSession() {
+  const session = activeNativeSession.value
+  if (!session || !isNativeConfirmed.value || isNativeImporting.value) return
+  isNativeImporting.value = true
+  nativeError.value = null
+  try {
+    const input = {
+      terminalClosedConfirmed: true as const,
+      sourceRevision: session.sourceRevision,
+      expectedIndexVersion: session.indexVersion,
+    }
+    const conversation = await getLocalChatGateway().importNativeSession(session.nativeSessionId, input)
+    chatStore.conversations = [conversation, ...chatStore.conversations.filter(c => c.id !== conversation.id)]
+    activeNativeSession.value = null
+    await chatStore.selectConversation(conversation.id)
+  } catch (err) {
+    nativeError.value = nativeFailure(err)
+    isNativeConfirmed.value = false
+  } finally {
+    isNativeImporting.value = false
+  }
+}
+
+watch(
+  () => chatStore.activeConversationId,
+  (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      activeNativeSession.value = null
+    }
+  }
+)
 
 const isContextResetDisabled = computed(() => !chatStore.canResetContext || chatStore.isActiveConversationArchived || chatStore.isRemoteConversation)
 
@@ -251,8 +370,10 @@ async function restoreActiveConversation() {
         :class="[
           isMobileSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0',
         ]"
+        :active-native-session-id="activeNativeSessionId"
         @close="isMobileSidebarOpen = false"
-        @select="isMobileSidebarOpen = false"
+        @select="activeNativeSession = null; isMobileSidebarOpen = false"
+        @select-native-session="handleSelectNativeSession"
         @delete="deletionRef?.request($event)"
       />
 
@@ -272,7 +393,28 @@ async function restoreActiveConversation() {
               <Menu class="w-5 h-5" />
             </button>
 
-            <div v-if="chatStore.activeConversation" class="flex items-center gap-2 min-w-0">
+            <div v-if="activeNativeSession" class="flex items-center gap-2 min-w-0">
+              <h1 class="text-sm font-semibold text-text truncate">
+                {{ activeNativeSession.title }}
+              </h1>
+
+              <HqBadge size="sm" variant="info" class="text-[10px] shrink-0">
+                <RuntimeIcon :agent="activeNativeSession.agentType" class="inline-block w-4 h-4 mr-0.5" />{{ agentLabel(activeNativeSession.agentType) }}
+              </HqBadge>
+
+              <HqBadge size="sm" variant="neutral" class="text-[10px] shrink-0 font-medium">
+                终端原生会话
+              </HqBadge>
+
+              <div class="hidden md:flex items-center gap-1 text-xs text-text-muted shrink-0">
+                <FolderGit2 class="w-3.5 h-3.5" />
+                <span class="truncate">
+                  {{ chatStore.workspaces.find((w) => w.id === activeNativeSession?.workspaceId)?.name || '未指定工作区' }}
+                </span>
+              </div>
+            </div>
+
+            <div v-else-if="chatStore.activeConversation" class="flex items-center gap-2 min-w-0">
               <h1 class="text-sm font-semibold text-text truncate">
                 {{ chatStore.activeConversation.title }}
               </h1>
@@ -317,7 +459,7 @@ async function restoreActiveConversation() {
             </button>
 
             <HqDropdown
-              v-if="chatStore.activeConversation"
+              v-if="!activeNativeSession && chatStore.activeConversation"
               :items="conversationMenuItems"
               placement="right"
             >
@@ -357,8 +499,202 @@ async function restoreActiveConversation() {
               恢复任务
             </HqButton>
           </div>
+
+          <!-- Native Session Top Banner matching requirement 4: 确认合并进横幅 -->
           <div
-            v-if="chatStore.activeConversation"
+            v-if="activeNativeSession"
+            class="px-4 py-3 bg-panel border-b border-border/70 space-y-2.5 text-xs shrink-0 select-none"
+            data-testid="native-session-workbench-banner"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="space-y-1 min-w-0 flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-semibold text-text text-xs">终端原生会话（只读历史）</span>
+                  <span class="text-[10px] px-1.5 py-0.2 rounded bg-muted text-text-muted font-mono">
+                    {{ activeNativeSession.format.cliVersion ? `CLI ${activeNativeSession.format.cliVersion}` : 'CLI' }}
+                  </span>
+                  <span class="text-[10px] text-text-muted">
+                    {{ activityLabel(activeNativeSession.activity.activity) }}
+                  </span>
+                </div>
+                <p class="text-text-muted text-[11px] leading-relaxed">
+                  {{ closureText }}
+                </p>
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0">
+                <HqButton
+                  size="sm"
+                  variant="secondary"
+                  :loading="isNativeReading"
+                  @click="loadNativeMessages(false)"
+                >
+                  重新读取
+                </HqButton>
+                <HqButton
+                  v-if="nativeBeforeCursor"
+                  size="sm"
+                  variant="secondary"
+                  :loading="isNativeReading"
+                  @click="loadNativeMessages(true)"
+                >
+                  读取更早内容
+                </HqButton>
+              </div>
+            </div>
+
+            <!-- Confirmation & Takeover Row merged into banner -->
+            <div
+              v-if="activeNativeSession.format.status === 'readable'"
+              class="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-border/40"
+            >
+              <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  v-model="isNativeConfirmed"
+                  type="checkbox"
+                  class="hq-form-choice rounded border-border text-primary focus:ring-0"
+                />
+                <span class="text-text font-medium text-xs">我已在终端退出该会话</span>
+              </label>
+
+              <HqButton
+                size="sm"
+                variant="primary"
+                :disabled="!isNativeConfirmed || isNativeImporting"
+                :loading="isNativeImporting"
+                @click="importActiveNativeSession"
+              >
+                接管并继续对话
+              </HqButton>
+            </div>
+
+            <div
+              v-else
+              class="pt-2 border-t border-border/40 text-[11px] text-warning"
+              data-testid="native-unavailable-explanation"
+            >
+              该会话由 {{ agentLabel(activeNativeSession.agentType) }} {{ activeNativeSession.format.cliVersion || '未知 CLI 版本' }} 生成，当前版本的记录格式尚未支持，无法读取或续接。原因：{{ activeNativeSession.format.reason || '当前记录格式尚未支持' }}
+            </div>
+
+            <div
+              v-if="nativeError"
+              role="alert"
+              class="p-2 rounded bg-danger/10 text-danger text-xs flex items-center justify-between gap-2"
+            >
+              <span>{{ nativeError.message }}</span>
+              <span v-if="nativeError.requestId" class="font-mono text-[10px] select-text">{{ nativeError.requestId }}</span>
+            </div>
+          </div>
+
+          <!-- Native Session Workbench Preview Stream with merged tool lines -->
+          <div
+            v-if="activeNativeSession"
+            class="flex-1 min-h-0 overflow-y-auto divide-y divide-border/20 py-2"
+            data-testid="native-session-workbench-messages"
+          >
+            <!-- Loading indicator -->
+            <div v-if="isNativeReading && nativeMessages.length === 0" class="p-8 text-center text-xs text-text-muted">
+              正在从终端读取会话内容…
+            </div>
+
+            <!-- Unsupported format explanation -->
+            <div
+              v-else-if="activeNativeSession.format.status !== 'readable'"
+              class="p-8 max-w-lg mx-auto text-center space-y-2 text-xs"
+            >
+              <div class="w-10 h-10 rounded-xl bg-warning/15 text-warning flex items-center justify-center mx-auto">
+                <AlertCircle class="w-5 h-5" />
+              </div>
+              <p class="font-medium text-text">暂不支持此会话记录格式</p>
+              <p class="text-text-muted leading-relaxed">
+                原因：{{ activeNativeSession.format.reason || '当前记录格式尚未支持' }}
+              </p>
+            </div>
+
+            <!-- Empty readable messages -->
+            <div
+              v-else-if="nativeMessages.length === 0 && !isNativeReading"
+              class="p-8 text-center text-xs text-text-muted"
+            >
+              会话暂无可读取的历史消息
+            </div>
+
+            <!-- Native messages list with merged tool lines -->
+            <div
+              v-else
+              class="space-y-2 p-2 sm:p-4 max-w-3xl mx-auto"
+            >
+              <div
+                v-for="(group, gIdx) in groupedNativeMessages"
+                :key="gIdx"
+                class="transition-colors"
+              >
+                <!-- Consecutive tool calls merged into ONE line -->
+                <div v-if="group.type === 'tools' && group.toolMessages" class="my-1.5" data-testid="native-merged-tool-line">
+                  <details class="group/native-tool rounded-lg border border-border/60 bg-panel/50 hover:bg-panel transition-colors text-xs">
+                    <summary class="cursor-pointer select-none py-1.5 px-3 flex items-center justify-between text-text-muted hover:text-text list-none font-mono text-[11px]">
+                      <span class="flex items-center gap-2 truncate">
+                        <Terminal class="w-3.5 h-3.5 text-primary/70 shrink-0" />
+                        <span class="font-medium text-text truncate">
+                          执行了 {{ group.toolMessages.length }} 个工具调用
+                          <span class="text-text-muted/60 font-normal">({{ getToolsSummary(group.toolMessages) }})</span>
+                        </span>
+                      </span>
+                      <span class="text-[10px] text-text-muted group-open/native-tool:rotate-180 transition-transform shrink-0 ml-2">▼</span>
+                    </summary>
+                    <div class="p-2.5 pt-1 border-t border-border/40 space-y-1.5 max-h-60 overflow-y-auto">
+                      <div
+                        v-for="tMsg in group.toolMessages"
+                        :key="tMsg.messageId"
+                        class="p-2 rounded bg-bg-app font-mono text-[11px] text-text-muted whitespace-pre-wrap break-words"
+                      >
+                        <HqMarkdown :content="tMsg.text" />
+                      </div>
+                    </div>
+                  </details>
+                </div>
+
+                <!-- User message -->
+                <div
+                  v-else-if="group.message?.role === 'user'"
+                  class="flex justify-end my-2"
+                >
+                  <div class="min-w-0 max-w-[92%] sm:max-w-[85%] space-y-1">
+                    <div class="flex items-center justify-end gap-2 text-[11px] text-text-muted select-none">
+                      <span class="font-medium text-text">你</span>
+                      <span>只读历史</span>
+                    </div>
+                    <div class="bg-primary/10 text-text p-3 px-4 rounded-2xl rounded-tr-xs text-xs leading-relaxed whitespace-pre-wrap break-words select-text border border-primary/20 shadow-xs">
+                      {{ group.message.text }}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Assistant message -->
+                <div
+                  v-else-if="group.message"
+                  class="flex items-start gap-2 sm:gap-3 my-2"
+                >
+                  <div class="w-7 h-7 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0 mt-0.5 border border-success/30 shadow-xs">
+                    <RuntimeIcon :agent="activeNativeSession?.agentType" class="w-4 h-4" />
+                  </div>
+                  <div class="flex-1 min-w-0 space-y-1.5">
+                    <div class="flex items-center gap-2 text-[11px] text-text-muted select-none">
+                      <span class="font-semibold text-text text-xs">{{ activeNativeSession?.agentType ? agentLabel(activeNativeSession.agentType) : '原生 Agent' }}</span>
+                      <span class="text-[10px]">只读历史</span>
+                    </div>
+                    <div class="bg-panel border border-border/80 p-3 sm:p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed shadow-sm break-words select-text">
+                      <HqMarkdown :content="group.message.text" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Normal Conversation Stream -->
+          <div
+            v-else-if="chatStore.activeConversation"
             ref="messageContainerRef"
             class="flex-1 min-h-0 overflow-y-auto divide-y divide-border/20 py-2"
             @scroll="handleScroll"
@@ -436,7 +772,7 @@ async function restoreActiveConversation() {
 
           <!-- Floating Jump to bottom button -->
           <div
-            v-if="isScrolledUp && chatStore.activeConversation && chatStore.messages.length > 0"
+            v-if="isScrolledUp && (chatStore.activeConversation || activeNativeSession) && (chatStore.messages.length > 0 || nativeMessages.length > 0)"
             class="absolute bottom-2 left-1/2 -translate-x-1/2 z-10"
           >
             <button
@@ -450,11 +786,24 @@ async function restoreActiveConversation() {
           </div>
         </div>
 
-        <!-- Floating Centered Composer Footer -->
+        <!-- Floating Centered Composer Footer for Normal Conversation -->
         <ChatComposer
           v-if="chatStore.activeConversation && !chatStore.isActiveConversationArchived"
           @request-context-reset="openContextResetDialog"
         />
+
+        <!-- Read-only footer placeholder for native preview session -->
+        <div
+          v-if="activeNativeSession"
+          class="p-3 border-t border-border bg-panel text-center text-xs text-text-muted select-none shrink-0"
+        >
+          <span v-if="activeNativeSession.format.status === 'readable'">
+            当前处于只读预览模式。勾选上方「我已在终端退出该会话」并点击「接管并继续对话」后，即可在此输入并继续对话。
+          </span>
+          <span v-else>
+            当前记录格式尚未支持，无法续接对话。
+          </span>
+        </div>
       </main>
 
       <!-- Mobile backdrop for RunSnapshotDrawer -->

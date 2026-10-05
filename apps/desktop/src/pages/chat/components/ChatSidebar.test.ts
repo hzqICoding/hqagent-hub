@@ -169,8 +169,16 @@ describe('ChatSidebar', () => {
     const nativeTabBtn = wrapper.findAll('button').find(b => b.text() === '原生会话')!
     await nativeTabBtn.trigger('click')
 
-    expect(wrapper.findComponent({ name: 'NativeSessionsPanel' }).exists()).toBe(true)
+    const panel = wrapper.findComponent({ name: 'NativeSessionsPanel' })
+    expect(panel.exists()).toBe(true)
+    expect(panel.props('workbench')).toBe(true)
     expect(wrapper.text()).not.toContain('Active Task')
+
+    // Selecting a session emits select-native-session
+    const dummySession = { nativeSessionId: 'sess_1', title: 'Session 1' } as any
+    await panel.vm.$emit('select-session', dummySession)
+    expect(wrapper.emitted('select-native-session')?.[0]).toEqual([dummySession])
+    expect(wrapper.emitted('close')).toHaveLength(1)
 
     // Switch to archived view via bottom toolbar button
     const archiveBtn = wrapper.find('button[data-testid="sidebar-archived-toggle"]')

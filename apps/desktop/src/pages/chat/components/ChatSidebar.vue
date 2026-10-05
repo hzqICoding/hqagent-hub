@@ -4,7 +4,7 @@ import { agentLabel } from '@/pages/native/native-utils'
 import NativeSessionsPanel from '@/pages/native/NativeSessionsPanel.vue'
 import { ref, computed, onMounted, inject, watch } from 'vue'
 import { routerKey, type Router } from 'vue-router'
-import type { LocalConversationView, LocalSceneId, TaskStatus } from '@hqagent/protocol'
+import type { LocalConversationView, LocalSceneId, TaskStatus, RuntimeNativeSessionIndex, RemoteNativeSessionView } from '@hqagent/protocol'
 import { useChatStore } from '@/stores/chat.store'
 import { useRemoteLinkStore } from '@/stores/remote-link.store'
 import { useThemeStore } from '@/shared/theme/theme.store'
@@ -32,11 +32,21 @@ import {
   X,
 } from 'lucide-vue-next'
 
+const props = defineProps<{
+  activeNativeSessionId?: string | null
+}>()
+
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'close'): void
   (e: 'delete', id: string): void
+  (e: 'select-native-session', session: RuntimeNativeSessionIndex | RemoteNativeSessionView): void
 }>()
+
+function handleNativeSessionSelect(session: RuntimeNativeSessionIndex | RemoteNativeSessionView) {
+  emit('select-native-session', session)
+  emit('close')
+}
 
 const chatStore = useChatStore()
 const remoteLinkStore = useRemoteLinkStore()
@@ -453,6 +463,9 @@ function handleConversationSelect(conversationId: string) {
         v-if="activeListTab === 'native'"
         :projects="chatStore.workspaces.map((w) => ({ id: w.id, name: w.name }))"
         :search-query="chatStore.searchQuery"
+        :workbench="true"
+        :active-session-id="props.activeNativeSessionId"
+        @select-session="handleNativeSessionSelect"
         @opened="emit('close')"
       />
 
