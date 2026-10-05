@@ -172,13 +172,102 @@ describe('ChatSidebar', () => {
     expect(wrapper.findComponent({ name: 'NativeSessionsPanel' }).exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Active Task')
 
-    // Switch to '已归档' tab
-    const archivedTabBtn = wrapper.findAll('button').find(b => b.text() === '已归档')!
-    await archivedTabBtn.trigger('click')
+    // Switch to archived view via bottom toolbar button
+    const archiveBtn = wrapper.find('button[data-testid="sidebar-archived-toggle"]')
+    await archiveBtn.trigger('click')
 
     expect(store.showArchived).toBe(true)
     expect(wrapper.findComponent({ name: 'NativeSessionsPanel' }).exists()).toBe(false)
     expect(wrapper.text()).toContain('Old Archived Task')
     expect(wrapper.text()).not.toContain('Active Task')
   })
+
+  it('renders project section and conversations grouped by workspace', () => {
+    const store = useChatStore()
+    store.workspaces = [
+      { id: 'workspace-a', name: 'Project Alpha', path: 'E:/alpha', vcs: 'git', lastOpenedAt: '2026-09-25T00:00:00Z' },
+    ]
+    store.conversations = [
+      {
+        id: 'conversation-a',
+        title: 'Project Task',
+        workspaceId: 'workspace-a',
+        sceneId: 'analyze',
+        createdAt: '2026-09-25T00:00:00Z',
+        updatedAt: '2026-09-25T00:00:00Z',
+      },
+    ]
+    const wrapper = mount(ChatSidebar)
+
+    expect(wrapper.text()).not.toContain('暂无临时对话')
+    expect(wrapper.text()).toContain('项目')
+    expect(wrapper.text()).toContain('Project Alpha')
+    expect(wrapper.text()).toContain('Project Task')
+  })
+
+  it('guides user to register a project directory when no workspaces exist instead of using fallback', async () => {
+    const store = useChatStore()
+    store.workspaces = []
+    store.conversations = []
+    const wrapper = mount(ChatSidebar)
+
+    expect(wrapper.text()).toContain('暂未登记项目，请先登记本地项目目录以开始任务')
+    const registerBtn = wrapper.findAll('button').find(b => b.text().includes('登记项目目录'))
+    expect(registerBtn).toBeDefined()
+    await registerBtn!.trigger('click')
+
+    expect(document.body.textContent).toContain('创建项目')
+    expect(document.body.textContent).toContain('添加文件夹 · 选择项目目录')
+
+    // Attempting to submit without selecting folder or typing path shows error guidance
+    const submitBtn = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(b =>
+      b.textContent?.includes('创建项目')
+    )
+    // Disabled when no title and no workspace
+    expect(submitBtn?.disabled).toBe(true)
+  })
+
+  it('renders create project modal matching Image 1 layout with character count, sources, and folder picker', async () => {
+    const store = useChatStore()
+    store.workspaces = [
+      { id: 'workspace-a', name: 'Project Alpha', path: 'E:/alpha', vcs: 'git', lastOpenedAt: '2026-09-25T00:00:00Z' },
+    ]
+    const wrapper = mount(ChatSidebar)
+
+    // Click project creation button
+    const createProjectBtn = wrapper.find('button[title="创建项目"]')
+    expect(createProjectBtn.exists()).toBe(true)
+    await createProjectBtn.trigger('click')
+
+    // Modal matching Image 1
+    expect(document.body.textContent).toContain('创建项目')
+    expect(document.body.textContent).toContain('项目名称')
+    expect(document.body.textContent).toContain('0/80')
+    expect(document.body.textContent).toContain('来源')
+    expect(document.body.textContent).toContain('此电脑')
+    expect(document.body.textContent).toContain('Git 仓库')
+    expect(document.body.textContent).toContain('工作区')
+    expect(document.body.textContent).toContain('添加文件夹 · 选择项目目录')
+    expect(document.body.textContent).toContain('初始场景')
+    expect(document.body.textContent).toContain('创建项目')
+  })
+
+  it('toggles archived view from bottom toolbar archive button', async () => {
+    const store = useChatStore()
+    store.workspaces = [
+      { id: 'workspace-a', name: 'Project Alpha', path: 'E:/alpha', vcs: 'git', lastOpenedAt: '2026-09-25T00:00:00Z' },
+    ]
+    const wrapper = mount(ChatSidebar)
+
+    const archiveBtn = wrapper.find('button[data-testid="sidebar-archived-toggle"]')
+    expect(archiveBtn.exists()).toBe(true)
+    expect(store.showArchived).toBe(false)
+
+    await archiveBtn.trigger('click')
+    expect(store.showArchived).toBe(true)
+
+    await archiveBtn.trigger('click')
+    expect(store.showArchived).toBe(false)
+  })
 })
+
