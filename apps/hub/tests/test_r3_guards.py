@@ -234,7 +234,7 @@ def test_ephemeral_query_faults_never_persist_body_or_allocate_outbox(tmp_path,f
                     before=system.db.connection.total_changes
                     await until(lambda: not channel.tasks)
                 else:
-                    await until(lambda:bool(sent),timeout=2)
+                    await until(lambda:bool(sent),timeout=2,scale_timeout=False)
                     assert sent[-1]['error']['code']==('REMOTE_QUERY_TIMEOUT' if failure=='timeout' else 'REMOTE_QUERY_TOO_LARGE')
                 assert system.db.connection.total_changes==before
                 assert all('seq' not in f and 'eventId' not in f for f in sent)

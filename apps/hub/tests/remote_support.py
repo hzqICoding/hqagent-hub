@@ -5,6 +5,8 @@ import asyncio
 import json
 import hashlib
 import logging
+import math
+import os
 import socket
 import ssl
 from datetime import datetime, timedelta, timezone
@@ -51,8 +53,25 @@ def later(seconds=300):
     return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat().replace("+00:00", "Z")
 
 
-async def until(predicate, timeout=8):
-    async with asyncio.timeout(timeout):
+def wait_budget(seconds):
+    """Scale test synchronization ceilings only, never protocol/behavior deadlines.
+
+    Read per call so tests can verify overrides without mutating runtime clocks.
+    Invalid values fail loudly rather than silently removing a timeout.
+    """
+    scale = float(os.environ.get('HQAGENT_TEST_TIMEOUT_SCALE', '1'))
+    if not math.isfinite(scale) or scale <= 0:
+        raise ValueError('HQAGENT_TEST_TIMEOUT_SCALE must be positive and finite')
+    budget = seconds * scale
+    if not math.isfinite(budget):
+        raise ValueError('scaled test timeout must be finite')
+    return budget
+
+
+async def until(predicate, timeout=8, *, scale_timeout=True):
+    # Behavior assertions opt out explicitly. Poll cadence and predicate are
+    # identical at every scale; successful conditions never incur extra sleep.
+    async with asyncio.timeout(wait_budget(timeout) if scale_timeout else timeout):
         while not predicate():
             await asyncio.sleep(0.01)
 
@@ -256,7 +275,7 @@ class FakeRemoteServer:
                 await self.ws.close()
             except Exception:
                 pass
-        await asyncio.wait_for(self.job, 5)
+        await asyncio.wait_for(self.job, wait_budget(5))
         self.socket.close()
 
 
