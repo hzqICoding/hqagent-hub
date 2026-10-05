@@ -16,9 +16,9 @@ import {
 import { HqBadge } from '@/shared/ui'
 import AgentsPage from '@/pages/agents/AgentsPage.vue'
 import ScenesPage from '@/pages/scenes/ScenesPage.vue'
-import WorkspacesPage from '@/pages/workspaces/WorkspacesPage.vue'
 import AuthorizedRootsSettings from '@/pages/native/AuthorizedRootsSettings.vue'
 import RemoteLinkPage from '@/pages/remote-link/RemoteLinkPage.vue'
+import { useChatStore } from '@/stores/chat.store'
 
 const props = withDefaults(
   defineProps<{
@@ -33,6 +33,17 @@ const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const authStore = useLocalAuthStore()
+const chatStore = useChatStore()
+
+async function ensureWorkspacesLoaded() {
+  if (chatStore.workspaces.length === 0) {
+    try {
+      await chatStore.init()
+    } catch {
+      // ignore
+    }
+  }
+}
 
 type TabKey = 'agents' | 'scenes' | 'workspaces' | 'remote-link' | 'about'
 
@@ -86,6 +97,16 @@ watch(
   () => {
     activeTab.value = resolveCurrentTab()
   }
+)
+
+watch(
+  () => activeTab.value,
+  (tab) => {
+    if (tab === 'workspaces') {
+      void ensureWorkspacesLoaded()
+    }
+  },
+  { immediate: true }
 )
 
 function setTab(tabId: TabKey) {
@@ -191,19 +212,68 @@ onMounted(async () => {
       </div>
 
       <!-- 3. 项目与授权目录 -->
-      <div v-else-if="activeTab === 'workspaces'" class="p-6 space-y-6 max-w-7xl mx-auto">
-        <div class="space-y-1">
-          <h2 class="text-base font-bold text-content-primary">项目与授权目录</h2>
-          <p class="text-xs text-content-muted">
-            管理本机注册的工作区，并配置允许手机远程浏览与登记的授权根目录
-          </p>
-        </div>
-
+      <div v-else-if="activeTab === 'workspaces'" class="p-6 space-y-6 max-w-5xl mx-auto" data-testid="settings-workspaces-panel">
         <AuthorizedRootsSettings />
 
-        <div class="pt-2">
-          <WorkspacesPage />
-        </div>
+        <!-- 已登记项目（只读列表） -->
+        <section class="p-5 bg-panel border border-border rounded-xl space-y-4" data-testid="registered-workspaces">
+          <div class="flex items-center justify-between">
+            <div class="space-y-0.5">
+              <h2 class="font-semibold text-sm text-text flex items-center gap-2">
+                <FolderGit2 class="w-4 h-4 text-primary" />
+                已登记项目
+              </h2>
+              <p class="text-xs text-text-muted">
+                对话与任务所关联的本地项目目录
+              </p>
+            </div>
+            <HqBadge v-if="chatStore.workspaces.length" variant="neutral" size="sm">
+              {{ chatStore.workspaces.length }} 个项目
+            </HqBadge>
+          </div>
+
+          <!-- 空状态 -->
+          <div
+            v-if="!chatStore.workspaces.length"
+            class="p-6 rounded-lg bg-bg-app border border-dashed border-border/80 text-center text-xs text-text-muted"
+          >
+            在对话页新建任务时登记项目
+          </div>
+
+          <!-- 项目列表 -->
+          <div v-else class="space-y-2">
+            <div
+              v-for="ws in chatStore.workspaces"
+              :key="ws.id"
+              class="p-2.5 bg-bg-app border border-border/80 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs hover:border-border transition-colors"
+            >
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div class="w-7 h-7 rounded bg-panel border border-border flex items-center justify-center shrink-0 text-text-muted">
+                  <FolderGit2 class="w-3.5 h-3.5" />
+                </div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="font-medium text-text truncate">{{ ws.name }}</span>
+                    <HqBadge v-if="ws.branch" variant="neutral" size="sm" class="font-mono text-[10px]">
+                      {{ ws.branch }}
+                    </HqBadge>
+                    <HqBadge v-else-if="ws.vcs === 'git'" variant="neutral" size="sm" class="text-[10px]">
+                      Git
+                    </HqBadge>
+                  </div>
+                  <div class="font-mono text-[11px] text-text-muted truncate mt-0.5" :title="ws.path">
+                    {{ ws.path }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto text-[11px] text-text-muted">
+                <span v-if="ws.isClean === false" class="text-amber-500">有未提交改动</span>
+                <span v-else-if="ws.isClean === true" class="text-text-muted/70">干净分支</span>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <!-- 4. 连接手机 -->

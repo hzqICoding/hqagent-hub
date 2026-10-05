@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import AuthorizedRootsSettings from '@/pages/native/AuthorizedRootsSettings.vue'
 import { ref, onMounted, onUnmounted, computed, inject, watch } from 'vue'
 import { routeLocationKey, type RouteLocationNormalizedLoaded } from 'vue-router'
 import { pairingQrDataUrl } from '@/shared/qr/pairing-qr-code'
@@ -24,6 +23,7 @@ import {
   Lock,
   ArrowRight,
   Radio,
+  Folder,
 } from 'lucide-vue-next'
 
 const remoteLinkStore = useRemoteLinkStore()
@@ -209,7 +209,20 @@ async function copyPairCode() {
 <template>
   <div class="h-full flex flex-col bg-bg-app overflow-y-auto select-none p-4 sm:p-6 lg:p-8">
     <div class="max-w-3xl w-full mx-auto space-y-6">
-      <AuthorizedRootsSettings />
+      <!-- 授权目录引导条 -->
+      <div class="p-3.5 bg-panel border border-border rounded-xl flex items-center justify-between text-xs text-text-muted gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <Folder class="w-4 h-4 text-primary shrink-0" />
+          <span class="truncate">手机可浏览的目录在『项目与授权目录』中设置</span>
+        </div>
+        <router-link
+          to="/settings?tab=workspaces"
+          class="shrink-0 text-primary hover:text-primary-hover font-medium flex items-center gap-1 hover:underline cursor-pointer"
+        >
+          前往设置
+          <ArrowRight class="w-3.5 h-3.5" />
+        </router-link>
+      </div>
       <!-- Page Header -->
       <div class="flex items-start justify-between gap-4 border-b border-border/80 pb-5">
         <div class="space-y-1 min-w-0">

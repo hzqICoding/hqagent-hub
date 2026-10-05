@@ -132,4 +132,52 @@ describe('SettingsPage & Integrated Navigation', () => {
       query: { tab: 'remote-link' },
     })
   })
+
+  it('workspaces tab displays AuthorizedRootsSettings and read-only registered workspaces', async () => {
+    await router.push('/settings?tab=workspaces')
+    const wrapper = mount(SettingsPage, {
+      global: {
+        plugins: [router],
+      },
+    })
+    await flushPromises()
+
+    // Authorized roots section exists
+    expect(wrapper.find('[data-testid="authorized-roots"]').exists()).toBe(true)
+
+    // Registered workspaces section exists
+    const workspacesSection = wrapper.find('[data-testid="registered-workspaces"]')
+    expect(workspacesSection.exists()).toBe(true)
+    expect(workspacesSection.text()).toContain('已登记项目')
+  })
+
+  it('workspaces tab shows empty state when no workspaces registered', async () => {
+    vi.spyOn(mockLocalChatGateway, 'listLocalWorkspaces').mockResolvedValue([])
+    await router.push('/settings?tab=workspaces')
+    const wrapper = mount(SettingsPage, {
+      global: {
+        plugins: [router],
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('在对话页新建任务时登记项目')
+  })
+
+  it('remote-link tab shows jump notice to workspaces tab instead of inline authorized roots', async () => {
+    await router.push('/settings?tab=remote-link')
+    const wrapper = mount(SettingsPage, {
+      global: {
+        plugins: [router],
+      },
+    })
+    await flushPromises()
+
+    // Does NOT render inline authorized roots in remote-link tab
+    expect(wrapper.find('[data-testid="authorized-roots"]').exists()).toBe(false)
+
+    // Shows single-line description with link
+    expect(wrapper.text()).toContain('手机可浏览的目录在『项目与授权目录』中设置')
+    expect(wrapper.text()).toContain('前往设置')
+  })
 })

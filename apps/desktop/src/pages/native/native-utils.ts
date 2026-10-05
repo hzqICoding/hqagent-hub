@@ -63,3 +63,21 @@ export class NativeMessageAssembler {
     return complete.reverse()
   }
 }
+
+export function defaultRootDisplayName(rawPath: string): string {
+  if (!rawPath) return '授权目录'
+  const normalized = rawPath.trim().replace(/[\\/]+$/, '')
+  const driveMatch = normalized.match(/^([a-zA-Z]):?$/)
+  if (driveMatch) {
+    return `${driveMatch[1].toUpperCase()} 盘`
+  }
+  const segments = normalized.split(/[\\/]/).filter(Boolean)
+  const last = segments[segments.length - 1]
+  if (!last) return '授权目录'
+  const lastDrive = last.match(/^([a-zA-Z]):$/)
+  if (lastDrive) {
+    return `${lastDrive[1].toUpperCase()} 盘`
+  }
+  return last
+}
+
