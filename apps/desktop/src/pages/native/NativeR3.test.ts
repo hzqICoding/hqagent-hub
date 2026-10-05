@@ -198,16 +198,16 @@ describe('R3 roots and workspace registration', () => {
   it('adds and removes local roots through picker and CAS; refreshes on conflict', async () => {
     const wrapper = mount(AuthorizedRootsSettings, options); await flushPromises()
     vi.spyOn(local, 'pickLocalDirectory').mockResolvedValue({ cancelled: false, selectedPath: 'E:/SyntheticRoot' })
-    await button(wrapper, '选择目录添加').trigger('click'); await flushPromises()
+    await button(wrapper, '选择目录').trigger('click'); await flushPromises()
     await wrapper.get('input').setValue('合成授权目录')
     const save = vi.spyOn(local, 'setAuthorizedRoots')
-    await button(wrapper, '保存授权根目录').trigger('click'); await flushPromises()
+    await button(wrapper, '保存设置').trigger('click'); await flushPromises()
     expect(save.mock.calls[0][0]).toEqual({ expectedVersion: 1, roots: [{ displayName: '合成授权目录', path: 'E:/SyntheticRoot' }] })
     local.authorizedRoots.version++
-    await button(wrapper, '移除').trigger('click'); await button(wrapper, '保存授权根目录').trigger('click'); await flushPromises()
+    await button(wrapper, '移除').trigger('click'); await button(wrapper, '保存设置').trigger('click'); await flushPromises()
     expect(wrapper.text()).toContain('授权根目录已变化')
     expect(wrapper.text()).toContain('E:/SyntheticRoot')
-    await button(wrapper, '移除').trigger('click'); await button(wrapper, '保存授权根目录').trigger('click'); await flushPromises()
+    await button(wrapper, '移除').trigger('click'); await button(wrapper, '保存设置').trigger('click'); await flushPromises()
     expect(local.authorizedRoots.roots).toEqual([])
   })
   it('disables the new-task add-project entry when catalog has no authorized roots', async () => {
@@ -241,7 +241,7 @@ describe('R3 roots and workspace registration', () => {
   it('limits local roots to 32', async () => {
     local.authorizedRoots.roots = Array.from({ length: 32 }, (_, i) => ({ rootId: `root_${i}`, displayName: `根 ${i}`, path: `E:/Root${i}`, version: 1 }))
     const wrapper = mount(AuthorizedRootsSettings, options); await flushPromises()
-    expect(button(wrapper, '选择目录添加').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, '选择目录').attributes('disabled')).toBeDefined()
   })
   it('uses actual pairing, offline and sync-disabled reasons; never claims success from a connection', () => {
     const sync = { mirrorEnabled: true, version: 1, syncGeneration: 1 }

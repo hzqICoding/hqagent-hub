@@ -74,7 +74,7 @@ describe('AuthorizedRootsSettings Component', () => {
       selectedPath: 'E:\\OtherPro',
     })
 
-    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('选择目录添加'))!
+    const addBtn = wrapper.findAll('button').find((b) => b.text().trim() === '选择目录')!
     await addBtn.trigger('click')
     await flushPromises()
 
@@ -94,7 +94,7 @@ describe('AuthorizedRootsSettings Component', () => {
       selectedPath: 'E:\\',
     })
 
-    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('选择目录添加'))!
+    const addBtn = wrapper.findAll('button').find((b) => b.text().trim() === '选择目录')!
     await addBtn.trigger('click')
     await flushPromises()
 
@@ -114,7 +114,7 @@ describe('AuthorizedRootsSettings Component', () => {
       selectedPath: 'E:\\OtherPro',
     })
 
-    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('选择目录添加'))!
+    const addBtn = wrapper.findAll('button').find((b) => b.text().trim() === '选择目录')!
     await addBtn.trigger('click')
     await flushPromises()
 
@@ -122,7 +122,7 @@ describe('AuthorizedRootsSettings Component', () => {
     await inputs[1].setValue('自定义工程目录')
 
     const saveSpy = vi.spyOn(local, 'setAuthorizedRoots')
-    const saveBtn = wrapper.findAll('button').find((b) => b.text().includes('保存授权根目录'))!
+    const saveBtn = wrapper.findAll('button').find((b) => b.text().trim() === '保存设置')!
     await saveBtn.trigger('click')
     await flushPromises()
 
@@ -136,5 +136,19 @@ describe('AuthorizedRootsSettings Component', () => {
         ]),
       })
     )
+  })
+
+  it('refreshes roots when clicking the refresh icon button in the header', async () => {
+    const wrapper = mount(AuthorizedRootsSettings)
+    await flushPromises()
+
+    const getSpy = vi.spyOn(local, 'getAuthorizedRoots')
+    const refreshBtn = wrapper.find('button[aria-label="刷新"]')
+    expect(refreshBtn.exists()).toBe(true)
+
+    await refreshBtn.trigger('click')
+    await flushPromises()
+
+    expect(getSpy).toHaveBeenCalled()
   })
 })

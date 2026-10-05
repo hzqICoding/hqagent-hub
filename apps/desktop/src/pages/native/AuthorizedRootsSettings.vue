@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 import type { LocalAuthorizedRootInput, LocalAuthorizedRootsView } from '@hqagent/protocol'
-import { Folder } from 'lucide-vue-next'
+import { Folder, RefreshCw } from 'lucide-vue-next'
 import { getLocalChatGateway } from '@/shared/api'
 import { HqButton, HqBadge } from '@/shared/ui'
 import { nativeFailure, defaultRootDisplayName } from './native-utils'
@@ -96,9 +96,21 @@ onBeforeUnmount(() => {
           手机端可浏览与添加项目的本地目录（最多 32 个）
         </p>
       </div>
-      <HqBadge v-if="roots.length" variant="neutral" size="sm">
-        {{ roots.length }} / 32
-      </HqBadge>
+      <div class="flex items-center gap-2">
+        <HqBadge v-if="roots.length" variant="neutral" size="sm">
+          {{ roots.length }} / 32
+        </HqBadge>
+        <button
+          type="button"
+          :disabled="loading"
+          class="p-1.5 rounded-lg text-text-muted hover:text-text hover:bg-muted/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          title="刷新列表"
+          aria-label="刷新"
+          @click="load"
+        >
+          <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': loading }" />
+        </button>
+      </div>
     </div>
 
     <div
@@ -158,33 +170,24 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/40">
-      <div class="flex items-center gap-2">
-        <HqButton
-          variant="secondary"
-          size="sm"
-          :disabled="loading || roots.length >= 32 || !view"
-          @click="add"
-        >
-          选择目录添加
-        </HqButton>
-        <HqButton
-          size="sm"
-          :loading="loading"
-          :disabled="!view || roots.some((r) => !r.displayName.trim())"
-          @click="save"
-        >
-          保存授权根目录
-        </HqButton>
-        <HqButton
-          size="sm"
-          variant="ghost"
-          :disabled="loading"
-          @click="load"
-        >
-          刷新
-        </HqButton>
-      </div>
+    <div class="flex items-center justify-between gap-3 pt-2 border-t border-border/40">
+      <HqButton
+        variant="secondary"
+        size="sm"
+        :disabled="loading || roots.length >= 32 || !view"
+        @click="add"
+      >
+        选择目录
+      </HqButton>
+
+      <HqButton
+        size="sm"
+        :loading="loading"
+        :disabled="!view || roots.some((r) => !r.displayName.trim())"
+        @click="save"
+      >
+        保存设置
+      </HqButton>
     </div>
   </section>
 </template>
