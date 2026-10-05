@@ -572,7 +572,7 @@ def create_application(
                 last_sent = after or 0
                 for event in replay.events:
                     value = dump_model(event)
-                    remote_worker.pi.rebuild()
+                    await remote_worker.pi.rebuild_async()
                     projected = value if record.features else remote_worker.pi.old_projection(value)
                     if projected is not DROP:
                         await websocket.send_json(projected)
@@ -581,7 +581,7 @@ def create_application(
                     event = await queue.get()
                     if event.seq > last_sent:
                         value = dump_model(event)
-                        remote_worker.pi.rebuild()
+                        await remote_worker.pi.rebuild_async()
                         projected = value if record.features else remote_worker.pi.old_projection(value)
                         if projected is not DROP:
                             await websocket.send_json(projected)

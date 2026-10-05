@@ -233,10 +233,18 @@ class LocalChatService:
                         await self.ports.tasks.expire_approvals()
                     except Exception:
                         logging.getLogger(__name__).error("工具审批过期检查失败，需要检查本机任务状态", exc_info=True)
-            for conversation in self.repository.conversations(include_hidden=True, observe_native=False):
+            for identifier, job in list(self._jobs.items()):
+                if job.done():
+                    try:
+                        job.result()
+                    except (Exception, asyncio.CancelledError):
+                        pass
+                    self._jobs.pop(identifier, None)
+            conversations = await self.repository.database.read_async(self.repository.pending_conversations)
+            for identifier in conversations:
                 if self._quiescing:
                     break
-                job = self._jobs.get(conversation.id)
+                job = self._jobs.get(identifier)
                 if job and not job.done():
                     continue
                 if job:
@@ -245,9 +253,9 @@ class LocalChatService:
                         job.result()
                     except (Exception, asyncio.CancelledError):
                         pass
-                record = self.repository.next_run(conversation.id)
-                if record is not None and record["status"] != "paused":
-                    self._jobs[conversation.id] = asyncio.create_task(self._drive(record))
+                record = await self.repository.database.read_async(self.repository.next_run, identifier)
+                if not self._quiescing and not self._closed and record is not None and record["status"] != "paused":
+                    self._jobs[identifier] = asyncio.create_task(self._drive(record))
             self._wake.clear()
             try:
                 await asyncio.wait_for(self._wake.wait(), self.poll_seconds)

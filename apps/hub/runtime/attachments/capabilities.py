@@ -101,7 +101,8 @@ class ImageCapabilities:
             self.candidates = ()
         resolved = {}
         self.usages = {}
-        for scene in self.worker.bridge.chat.repository.scenes():
+        scenes = await self.worker.repo.database.read_async(self.worker.bridge.chat.repository.scenes)
+        for scene in scenes:
             roles = []
             profile, overrides, options = scene_execution(scene, 'preview:' + str(scene.id))
             snapshot = ProfileSnapshot.from_view(profile)

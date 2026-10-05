@@ -211,14 +211,17 @@ class AttachmentLibrary:
             tx.connection.execute('DELETE FROM attachment_sync_jobs WHERE attachment_id=?', (row['attachment_id'],))
             self.worker.repo.seal(tx)
 
+    def _expired(self):
+        with self.db.transaction() as tx:
+            tx.connection.execute("UPDATE local_attachments SET state='expired' WHERE state='uploaded' AND expires_at<=?", (now(),))
+            return [dict(r) for r in tx.connection.execute("SELECT * FROM local_attachments WHERE state IN ('deleted','expired')")]
+
     async def maintain(self, *, restart=False):
         import time
         if not restart and time.monotonic() - self.maintenance_at < 60:
             return
         self.maintenance_at = time.monotonic()
-        with self.db.transaction() as tx:
-            tx.connection.execute("UPDATE local_attachments SET state='expired' WHERE state='uploaded' AND expires_at<=?", (now(),))
-            rows = [dict(r) for r in tx.connection.execute("SELECT * FROM local_attachments WHERE state IN ('deleted','expired')")]
+        rows = await self.worker.native.io(self._expired)
         for row in rows:
             await self.worker.native.io(self.erase, row)
         if restart:

@@ -234,6 +234,10 @@ class ResourceCommands:
                 self.repo.seal(tx)
 
     async def recover(self, *, restart=False):
+        eligible = await self.repo.database.read_async(lambda:
+            self.repo.get('identity').get('wireRevision', 1) >= 3 and bool(self.repo.get('link')['view'].get('workerId')))
+        if not eligible:
+            return
         if self.repo.get("identity").get("wireRevision", 1) < 3 or not self.repo.get("link")["view"].get("workerId"):
             return
         with self.repo.database.transaction() as tx:

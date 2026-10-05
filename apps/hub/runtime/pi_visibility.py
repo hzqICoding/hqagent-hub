@@ -29,7 +29,7 @@ class PiVisibility:
 
     async def refresh(self, *, cached=False):
         await self.worker.attachments.capabilities.refresh(cached=cached)
-        self.rebuild()
+        await self.rebuild_async()
 
     def was_pi(self, identifier):
         return isinstance(identifier, str) and hashlib.sha256(identifier.encode()).hexdigest() in self.tombstones
@@ -58,8 +58,7 @@ class PiVisibility:
                 return True
         return False
 
-    def rebuild(self):
-        self.tombstones = set(self.worker.repo.get('pi-resource-tombstones') or [])
+    def _inputs(self):
         caps = self.worker.attachments.capabilities
         latest = getattr(self.worker.bridge.chat.ports.agents, '_last_agents', ())
         if not isinstance(latest, (tuple, list)):
@@ -70,53 +69,97 @@ class PiVisibility:
             agents.update(manager.runtime_instances('pi'))
         scenes = {sid for sid, roles in caps.values.items() if any(r.get('agentId') in agents for r in roles)}
         jobs = self.worker.attachments.verifications.data['jobs']
-        pi_jobs = {key for key, job in jobs.items() if self.mentions(job['view']['target'], agents)}
-        with self.db.locked_connection() as db:
-            marker = (db.total_changes, tuple(sorted(agents)), tuple(sorted(scenes)), tuple(sorted(pi_jobs)))
-            if marker == self.changed:
+        pi_jobs = {key for key, job in list(jobs.items()) if self.mentions(job['view']['target'], agents)}
+        return agents, scenes, pi_jobs
+
+    def _marker(self, inputs):
+        # This property performs no SQL and takes no application lock. An
+        # unchanged snapshot can be reused even while another reader owns it.
+        return (self.db.connection.total_changes, *(tuple(sorted(v)) for v in inputs))
+
+    async def rebuild_async(self):
+        while True:
+            inputs = self._inputs()
+            if self._marker(inputs) == self.changed:
                 return
-            resources = set(agents) | pi_jobs
-            for row in db.execute('SELECT scene_id,payload_json FROM local_scenes'):
-                if self.mentions(json.loads(row[1]), agents):
-                    scenes.add(row[0])
-            resources.update(scenes)
-            for row in db.execute('SELECT profile_id,payload_json FROM team_profiles'):
-                if self.mentions(json.loads(row[1]), agents):
-                    resources.add(row[0])
-            for row in db.execute('SELECT task_id,resolved_agent,payload_json FROM task_nodes'):
-                if row[1] in agents or self.mentions(json.loads(row[2]), agents):
-                    resources.add(row[0])
-            for row in db.execute('SELECT task_id,profile_id FROM tasks'):
-                if row[1] in resources:
-                    resources.add(row[0])
-            conversations = set()
-            for row in db.execute('SELECT conversation_id,payload_json FROM local_conversations'):
-                if self.mentions(json.loads(row[1]), resources):
-                    conversations.add(row[0])
+            snapshot = await self.db.read_async(self._build_snapshot, inputs)
+            # A synchronous projection/transaction may have published newer
+            # state during the await. Never overwrite it with a stale scan.
+            if snapshot[0] == self._marker(self._inputs()):
+                self._publish(snapshot)
+                return
+
+    def rebuild(self):
+        # Synchronous transactional guards must see their uncommitted writes.
+        # HTTP response projection also rechecks writes made by its handler.
+        while True:
+            inputs = self._inputs()
+            if self._marker(inputs) == self.changed:
+                return
+            snapshot = self._build_snapshot(inputs)
+            if snapshot[0] == self._marker(self._inputs()):
+                self._publish(snapshot)
+                return
+
+    def _publish(self, snapshot):
+        self.changed, self.agents, self.scenes, self.conversations, self.resources, self.tombstones = snapshot
+
+    def _build_snapshot(self, inputs):
+        agents, scenes, pi_jobs = (set(v) for v in inputs)
+        children = (
+            ('sessions', 'session_id', 'task_id'), ('approvals', 'approval_id', 'task_id'),
+            ('local_messages', 'message_id', 'conversation_id'),
+            ('local_attachments', 'attachment_id', 'conversation_id'),
+            ('native_sources', 'native_id', 'conversation_id'),
+        )
+        # Preserve one consistent read snapshot, but only copy rows under the
+        # lock. JSON decoding and resource classification happen after release.
+        with self.db.locked_connection() as db:
+            marker = self._marker(inputs)
+            tombstones = set(self.worker.repo.get('pi-resource-tombstones') or [])
+            scene_rows = list(db.execute('SELECT scene_id,payload_json FROM local_scenes'))
+            profiles = list(db.execute('SELECT profile_id,payload_json FROM team_profiles'))
+            nodes = list(db.execute('SELECT task_id,resolved_agent,payload_json FROM task_nodes'))
+            tasks = list(db.execute('SELECT task_id,profile_id FROM tasks'))
+            conversation_rows = list(db.execute('SELECT conversation_id,payload_json FROM local_conversations'))
             runs = list(db.execute('SELECT run_id,conversation_id,task_id,scene_json FROM local_runs'))
-            for row in runs:
-                if row[2] in resources or self.mentions(json.loads(row[3]), resources):
-                    conversations.add(row[1])
-            resources.update(conversations)
-            for row in runs:
-                if row[1] in conversations:
-                    resources.add(row[0])
-                    if row[2]:
-                        resources.add(row[2])
-            for table, key, parent in (
-                ('sessions', 'session_id', 'task_id'), ('approvals', 'approval_id', 'task_id'),
-                ('local_messages', 'message_id', 'conversation_id'),
-                ('local_attachments', 'attachment_id', 'conversation_id'),
-                ('native_sources', 'native_id', 'conversation_id'),
-            ):
-                for identifier, owner in db.execute(f'SELECT {key},{parent} FROM {table}'):
-                    if owner in resources:
-                        resources.add(identifier)
-            for row in db.execute('SELECT native_id,index_json FROM native_sources'):
-                if self.mentions(json.loads(row[1]), resources):
-                    resources.add(row[0])
-        self.agents, self.scenes, self.conversations, self.resources = agents, scenes, conversations, resources
-        self.changed = marker
+            child_rows = [list(db.execute(f'SELECT {key},{parent} FROM {table}')) for table, key, parent in children]
+            sources = list(db.execute('SELECT native_id,index_json FROM native_sources'))
+        resources = set(agents) | pi_jobs
+        for row in scene_rows:
+            if self.mentions(json.loads(row[1]), agents):
+                scenes.add(row[0])
+        resources.update(scenes)
+        for row in profiles:
+            if self.mentions(json.loads(row[1]), agents):
+                resources.add(row[0])
+        for row in nodes:
+            if row[1] in agents or self.mentions(json.loads(row[2]), agents):
+                resources.add(row[0])
+        for row in tasks:
+            if row[1] in resources:
+                resources.add(row[0])
+        conversations = set()
+        for row in conversation_rows:
+            if self.mentions(json.loads(row[1]), resources):
+                conversations.add(row[0])
+        for row in runs:
+            if row[2] in resources or self.mentions(json.loads(row[3]), resources):
+                conversations.add(row[1])
+        resources.update(conversations)
+        for row in runs:
+            if row[1] in conversations:
+                resources.add(row[0])
+                if row[2]:
+                    resources.add(row[2])
+        for rows in child_rows:
+            for identifier, owner in rows:
+                if owner in resources:
+                    resources.add(identifier)
+        for row in sources:
+            if self.mentions(json.loads(row[1]), resources):
+                resources.add(row[0])
+        return marker, agents, scenes, conversations, resources, tombstones
 
     def is_pi(self, value):
         self.rebuild()

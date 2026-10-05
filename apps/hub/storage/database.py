@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import sqlite3
-import threading
+import asyncio
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 from storage.migrations import LATEST_SCHEMA_VERSION, MIGRATIONS, current_version
+from storage.locking import DatabaseLock
 
 
 def _timestamp() -> str:
@@ -25,7 +26,11 @@ class Transaction:
 
     def __enter__(self) -> "Transaction":
         self.database._lock.acquire()
-        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+        except BaseException:
+            self.database._lock.release()
+            raise
         return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool:
@@ -47,7 +52,7 @@ class Database:
     def __init__(self, path: Path) -> None:
         self.path = path.resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.RLock()
+        self._lock = DatabaseLock()
         self.connection = sqlite3.connect(
             self.path,
             check_same_thread=False,
@@ -93,6 +98,30 @@ class Database:
 
     def transaction(self) -> Transaction:
         return Transaction(self)
+
+    async def read_async(self, reader, *args, **kwargs):
+        """Run synchronous reads off-loop; drain the thread before DB shutdown.
+
+        Call at an async boundary. Inside an existing transaction keep reads
+        on the owner thread, preserving its uncommitted view and reentrancy.
+        Cancellation cannot stop a Python thread waiting for the SQLite lock.
+        """
+        if self._lock.owned_by_current_thread():
+            return reader(*args, **kwargs)
+        task = asyncio.create_task(asyncio.to_thread(reader, *args, **kwargs))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if task.done() and not task.cancelled():
+                task.exception()
+            raise
 
     @contextmanager
     def locked_connection(self) -> Iterator[sqlite3.Connection]:

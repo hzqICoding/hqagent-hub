@@ -29,7 +29,9 @@ _events = {
     'http.access': {'method', 'route', 'status', 'elapsedMs', 'requestId', 'auth', 'errorCode'},
     'http.exception': {'method', 'route', 'requestId', 'exceptionType', 'stack'},
     'loop.lag': {'lagMs'},
-    'loop.blocked': {'lagMs', 'threadId', 'stack'},
+    'loop.blocked': {'lagMs', 'threadId', 'stack', 'ownerThreadId', 'ownerIsLoopThread', 'ownerHoldMs', 'ownerStack'},
+    'db.lock.slow': {'holdMs', 'threadId', 'isLoopThread', 'stack'},
+    'db.lock.wait': {'waitMs', 'threadId', 'stack', 'ownerThreadId', 'ownerIsLoopThread', 'ownerHoldMs', 'ownerStack'},
     'loop.exception': {'exceptionType', 'stack'},
     'agent.discovery': {'agentId', 'agentType', 'version', 'status', 'errorCode', 'elapsedMs'},
     'agent.models': {'agentId', 'agentType', 'count', 'verified'},
@@ -53,7 +55,7 @@ _legacy = {'runtime.local_chat', 'runtime.conversation_deletion', 'runtime.remot
 _safe_exceptions = {'RuntimeError', 'ValueError', 'TypeError', 'OSError', 'PermissionError',
     'FileNotFoundError', 'TimeoutError', 'CancelledError', 'HubError', 'ConnectionError',
     'BrokenPipeError', 'AssertionError', 'KeyError', 'IndexError', 'HTTPException'}
-_number_fields = {'port', 'pid', 'exitCode', 'threadId', 'status', 'count', 'elapsedMs', 'lagMs', 'delayMs'}
+_number_fields = {'port', 'pid', 'exitCode', 'threadId', 'ownerThreadId', 'status', 'count', 'elapsedMs', 'lagMs', 'delayMs', 'holdMs', 'waitMs', 'ownerHoldMs'}
 _patterns = (
     re.compile(r'(?i)\bBearer\s+[^\s\"\'<>;,]+'),
     re.compile(r'(?i)\b(?:authorization|cookie|set-cookie)\s*[:=][^\r\n]*'),
@@ -141,7 +143,7 @@ class MetadataFilter(logging.Filter):
             value = fields.get(key)
             if value is None:
                 continue
-            if key == 'stack':
+            if key in {'stack', 'ownerStack'}:
                 if isinstance(value, list):
                     row[key] = [{k: clean(f[k]) if k != 'line' else f[k]
                                  for k in ('file', 'line', 'function') if k in f and

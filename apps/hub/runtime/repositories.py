@@ -226,10 +226,12 @@ class ApprovalRepository:
             clauses.append("task_id=?")
             params.append(query["taskId"])
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-        with self.database.locked_connection() as connection:
-            rows = connection.execute(
-                f"SELECT payload_json FROM approvals{where} ORDER BY approval_id", params
-            ).fetchall()
+        def read():
+            with self.database.locked_connection() as connection:
+                return connection.execute(
+                    f"SELECT payload_json FROM approvals{where} ORDER BY approval_id", params
+                ).fetchall()
+        rows = await self.database.read_async(read)
         return [ApprovalView.model_validate_json(row[0]) for row in rows]
 
 
