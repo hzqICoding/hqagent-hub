@@ -44,12 +44,35 @@ interface NavItem {
   badgeVariant?: 'neutral' | 'success' | 'warning' | 'danger'
 }
 
-const navItems = computed<NavItem[]>(() => [
+const hiddenLegacyItemIds = new Set([
+  'overview',
+  'workspaces',
+  'teams',
+  'tasks',
+  'approvals',
+  'sessions',
+  'templates',
+  'updates',
+])
+
+const allNavItems = computed<NavItem[]>(() => [
   {
     id: 'chat',
     label: '角色对话',
     path: '/chat',
     icon: MessageSquare,
+  },
+  {
+    id: 'agents',
+    label: 'Agent 管理',
+    path: '/agents',
+    icon: Bot,
+    featureKey: 'agents',
+    badge: () => {
+      const issues = appStore.bootstrap?.agents.issues || 0
+      return issues > 0 ? `${issues} 异常` : (appStore.bootstrap?.agents.ready ?? null)
+    },
+    badgeVariant: (appStore.bootstrap?.agents.issues || 0) > 0 ? 'danger' : 'success',
   },
   {
     id: 'scenes',
@@ -103,18 +126,6 @@ const navItems = computed<NavItem[]>(() => [
     featureKey: 'sessions',
   },
   {
-    id: 'agents',
-    label: 'Agent 管理',
-    path: '/agents',
-    icon: Bot,
-    featureKey: 'agents',
-    badge: () => {
-      const issues = appStore.bootstrap?.agents.issues || 0
-      return issues > 0 ? `${issues} 异常` : (appStore.bootstrap?.agents.ready ?? null)
-    },
-    badgeVariant: (appStore.bootstrap?.agents.issues || 0) > 0 ? 'danger' : 'success',
-  },
-  {
     id: 'templates',
     label: '任务模板',
     path: '/templates',
@@ -140,6 +151,10 @@ const navItems = computed<NavItem[]>(() => [
     icon: Settings,
   },
 ])
+
+const navItems = computed<NavItem[]>(() =>
+  allNavItems.value.filter((item) => !hiddenLegacyItemIds.has(item.id))
+)
 
 const isDev = import.meta.env.DEV
 

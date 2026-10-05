@@ -304,16 +304,17 @@ async function restoreActiveConversation() {
 
           <!-- Actions & Drawer Toggle -->
           <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
-            <HqButton
-              size="sm"
-              variant="primary"
+            <!-- Header New Task Button: Narrow screens only (hidden on wide screen where ChatSidebar list header already has it) -->
+            <button
+              type="button"
+              class="md:hidden min-h-[44px] min-w-[44px] p-2 rounded-xl bg-primary text-white hover:bg-primary-hover flex items-center justify-center transition-colors cursor-pointer active:scale-95 shadow-xs"
               title="新建任务"
-              class="min-h-[44px] min-w-[44px] px-2.5 sm:px-3 flex items-center justify-center"
+              aria-label="新建任务"
               @click="sidebarRef?.openCreateModal()"
             >
-              <Plus class="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-              <span class="hidden sm:inline ml-1">新建任务</span>
-            </HqButton>
+              <Plus class="w-4 h-4" />
+              <span class="sr-only">新建任务</span>
+            </button>
 
             <HqDropdown
               v-if="chatStore.activeConversation"

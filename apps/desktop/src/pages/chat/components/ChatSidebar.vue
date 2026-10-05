@@ -2,18 +2,21 @@
 import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
 import { agentLabel } from '@/pages/native/native-utils'
 import NativeSessionsPanel from '@/pages/native/NativeSessionsPanel.vue'
-import { ref, inject } from 'vue'
+import { ref, computed, onMounted, inject } from 'vue'
 import { routerKey, type Router } from 'vue-router'
 import type { LocalConversationView, LocalSceneId, TaskStatus } from '@hqagent/protocol'
 import { useChatStore } from '@/stores/chat.store'
+import { useRemoteLinkStore } from '@/stores/remote-link.store'
 import { HqButton, HqDialog, HqDropdown, HqInput, HqSelect } from '@/shared/ui'
 import {
   Archive,
   ArchiveRestore,
   Bot,
+  Circle,
   ChevronDown,
   ChevronRight,
   Eye,
+  Folder,
   FolderGit2,
   MessageSquare,
   MoreHorizontal,
@@ -31,11 +34,22 @@ const emit = defineEmits<{
 }>()
 
 const chatStore = useChatStore()
+const remoteLinkStore = useRemoteLinkStore()
 const router = inject<Router | null>(routerKey, null)
+
+const isPhoneConnected = computed(() => {
+  return remoteLinkStore.isPaired && remoteLinkStore.connectionStatus !== 'offline'
+})
+
+onMounted(() => {
+  if (typeof remoteLinkStore.refreshLink === 'function') {
+    void remoteLinkStore.refreshLink().catch(() => {})
+  }
+})
 
 function navigateToRemoteLink() {
   if (router) {
-    router.push('/remote-link')
+    router.push({ path: '/settings', query: { tab: 'remote-link' } })
   }
 }
 
@@ -338,37 +352,39 @@ function handleConversationSelect(conversationId: string) {
         :key="group.workspace.id"
         class="border-b border-border/50 last:border-b-0"
       >
-        <div class="flex items-center gap-1.5 px-2.5 py-2 text-xs text-text-muted hover:bg-panel-hover/60">
+        <div class="px-2 py-1.5 rounded-lg flex items-center justify-between gap-1 text-xs text-text-muted hover:text-text select-none group">
           <button
             type="button"
-            class="p-0.5 rounded hover:bg-bg-app shrink-0"
+            class="flex items-center gap-1.5 min-w-0 flex-1 text-left py-1 cursor-pointer"
             :title="chatStore.collapsedWorkspaceIds[group.workspace.id] ? '展开项目' : '折叠项目'"
             @click="chatStore.toggleWorkspaceCollapsed(group.workspace.id)"
           >
-            <ChevronRight v-if="chatStore.collapsedWorkspaceIds[group.workspace.id]" class="w-3.5 h-3.5" />
-            <ChevronDown v-else class="w-3.5 h-3.5" />
+            <component
+              :is="chatStore.collapsedWorkspaceIds[group.workspace.id] ? ChevronRight : ChevronDown"
+              class="w-3.5 h-3.5 shrink-0 opacity-70 transition-transform"
+            />
+            <Folder class="w-4 h-4 shrink-0 text-primary/80" />
+            <span class="truncate font-semibold text-text text-xs">{{ group.workspace.name }}</span>
+            <span class="text-[10px] text-text-muted opacity-75">({{ group.conversations.length }})</span>
           </button>
-          <FolderGit2 class="w-3.5 h-3.5 shrink-0 text-primary/80" />
-          <div class="min-w-0 flex-1" :title="group.workspace.path">
-            <p class="font-medium text-text truncate">{{ group.workspace.name }}</p>
-            <p class="text-[10px] truncate opacity-70">{{ group.workspace.path }}</p>
+          <div class="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              class="w-7 h-7 flex items-center justify-center rounded-md text-text-muted hover:text-primary hover:bg-muted active:scale-95 transition-all cursor-pointer"
+              :aria-label="`在${group.workspace.name}新建任务`"
+              title="在此项目新建任务"
+              @click="openCreateModal(group.workspace.id)"
+            >
+              <Plus class="w-4 h-4" />
+            </button>
           </div>
-          <span class="text-[10px] tabular-nums">{{ group.conversations.length }}</span>
-          <button
-            type="button"
-            class="p-1 rounded hover:bg-bg-app hover:text-primary"
-            title="在此项目新建任务"
-            @click="openCreateModal(group.workspace.id)"
-          >
-            <Plus class="w-3.5 h-3.5" />
-          </button>
         </div>
 
-        <div v-if="!chatStore.collapsedWorkspaceIds[group.workspace.id]" class="pb-1.5">
+        <div v-if="!chatStore.collapsedWorkspaceIds[group.workspace.id]" class="pl-3 space-y-0.5 mb-2">
           <button
             v-if="group.conversations.length === 0 && !chatStore.showArchived"
             type="button"
-            class="mx-3 mb-1 w-[calc(100%-1.5rem)] rounded-lg border border-dashed border-border px-3 py-2 text-left text-[11px] text-text-muted hover:border-primary/50 hover:text-primary transition-colors"
+            class="mx-1 mb-1 w-[calc(100%-0.5rem)] rounded-lg border border-dashed border-border px-3 py-2 text-left text-[11px] text-text-muted hover:border-primary/50 hover:text-primary transition-colors cursor-pointer"
             @click="openCreateModal(group.workspace.id)"
           >
             该项目暂无任务，点击新建
@@ -379,36 +395,57 @@ function handleConversationSelect(conversationId: string) {
             :key="conversation.id"
             role="button"
             tabindex="0"
-            class="group mx-1.5 rounded-lg px-2.5 py-2 cursor-pointer transition-colors hover:bg-panel-hover min-h-[44px] flex flex-col justify-center"
-            :class="chatStore.activeConversationId === conversation.id ? 'bg-primary/10 text-text' : ''"
+            class="w-full text-left rounded-xl transition-all flex items-center justify-between gap-2 cursor-pointer group select-none min-h-[44px]"
+            :class="[
+              conversation.id === chatStore.activeConversationId
+                ? 'bg-elevated/90 text-text font-medium shadow-xs border border-border/80 px-3 py-2'
+                : 'text-text-muted hover:text-text hover:bg-muted/40 border border-transparent px-3 py-2',
+            ]"
             @click="handleConversationSelect(conversation.id)"
             @keydown.enter.prevent="handleConversationSelect(conversation.id)"
             @keydown.space.prevent="handleConversationSelect(conversation.id)"
           >
-            <div class="flex items-start gap-2">
+            <div class="min-w-0 flex-1 flex items-center gap-2">
+              <!-- Status Indicator Circle Icon matching mobile -->
+              <Circle
+                class="w-3 h-3 shrink-0 transition-all"
+                :class="[
+                  conversation.id === chatStore.activeConversationId
+                    ? 'text-primary fill-primary/30 opacity-100'
+                    : 'text-text-muted/60 opacity-60 group-hover:opacity-100'
+                ]"
+              />
               <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
-                  <p class="text-xs font-medium text-text truncate leading-tight flex-1">{{ conversation.title }}</p><span v-if="conversation.conversationKind === 'native'" class="text-[10px] text-text-muted"><RuntimeIcon :agent="conversation.agentType" class="inline-block w-4 h-4" />{{ agentLabel(conversation.agentType) }}</span>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span
+                    class="truncate text-xs leading-normal"
+                    :class="conversation.id === chatStore.activeConversationId ? 'font-medium text-text' : 'text-text-muted group-hover:text-text'"
+                  >
+                    {{ conversation.title }}
+                  </span>
+                  <span v-if="conversation.conversationKind === 'native'" class="text-[10px] text-text-muted">
+                    <RuntimeIcon :agent="conversation.agentType" class="inline-block w-3.5 h-3.5" />{{ agentLabel(conversation.agentType) }}
+                  </span>
                   <span
                     v-if="conversation.authority === 'remote'"
-                    class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-primary/15 text-primary border border-primary/25"
+                    class="shrink-0 text-[9px] px-1 py-0.2 rounded font-medium bg-primary/15 text-primary border border-primary/25"
                   >
                     来自手机
                   </span>
                   <span
                     v-if="conversation.visibility === 'mobile_only'"
-                    class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-warning/15 text-warning border border-warning/25"
+                    class="shrink-0 text-[9px] px-1 py-0.2 rounded font-medium bg-warning/15 text-warning border border-warning/25"
                   >
                     已隐藏（仅手机）
                   </span>
                   <span
                     v-else-if="conversation.visibility === 'pc_only'"
-                    class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-muted text-text-muted border border-border"
+                    class="shrink-0 text-[9px] px-1 py-0.2 rounded font-medium bg-muted text-text-muted border border-border"
                   >
                     仅电脑
                   </span>
                 </div>
-                <div class="mt-1.5 flex items-center gap-2 text-[10px] text-text-muted">
+                <div class="mt-0.5 flex items-center gap-2 text-[10px] text-text-muted">
                   <span v-if="getStatusMeta(conversation)" class="inline-flex items-center gap-1">
                     <span class="w-1.5 h-1.5 rounded-full" :class="getStatusMeta(conversation)?.dot" />
                     {{ getStatusMeta(conversation)?.label }}
@@ -416,18 +453,20 @@ function handleConversationSelect(conversationId: string) {
                   <span>{{ formatTime(conversation.updatedAt) }}</span>
                 </div>
               </div>
-              <div class="shrink-0" @click.stop>
-                <HqDropdown :items="taskMenuItems(conversation)" placement="right">
-                  <button
-                    type="button"
-                    class="min-w-[44px] min-h-[44px] -m-1.5 p-2 rounded-lg text-text-muted opacity-60 group-hover:opacity-100 hover:bg-bg-app hover:text-text flex items-center justify-center cursor-pointer transition-colors"
-                    title="任务操作"
-                    aria-label="任务操作"
-                  >
-                    <MoreHorizontal class="w-4 h-4" />
-                  </button>
-                </HqDropdown>
-              </div>
+            </div>
+
+            <div class="shrink-0" @click.stop>
+              <HqDropdown :items="taskMenuItems(conversation)" placement="right">
+                <button
+                  type="button"
+                  class="w-7 h-7 rounded-lg text-text-muted hover:text-text hover:bg-panel flex items-center justify-center transition-all cursor-pointer"
+                  :class="conversation.id === chatStore.activeConversationId ? 'opacity-90' : 'opacity-0 group-hover:opacity-90'"
+                  title="任务操作"
+                  aria-label="任务操作"
+                >
+                  <MoreHorizontal class="w-3.5 h-3.5" />
+                </button>
+              </HqDropdown>
             </div>
           </div>
         </div>
@@ -592,17 +631,28 @@ function handleConversationSelect(conversationId: string) {
       </template>
     </HqDialog>
 
-    <!-- Connect Mobile entry in sidebar footer -->
-    <div class="p-2 border-t border-border bg-panel-header/40 flex items-center justify-between text-xs shrink-0">
+    <!-- Connect Mobile entry in sidebar footer (Requirement 3) -->
+    <div class="p-2.5 border-t border-border bg-panel-header/40 flex items-center justify-between text-xs shrink-0">
       <button
         type="button"
-        class="flex items-center gap-1.5 text-text-muted hover:text-primary transition-colors py-1.5 px-2 rounded-md hover:bg-panel-hover w-full text-left"
-        title="连接手机并开启远程操作"
+        data-testid="sidebar-mobile-link-status"
+        class="flex items-center justify-between text-text-muted hover:text-text transition-all py-2 px-3 rounded-xl hover:bg-panel-hover w-full text-left border border-border/60 bg-bg-app/60 shadow-2xs group cursor-pointer"
+        :title="isPhoneConnected ? '手机已连接，点击前往配置与状态' : '手机未连接，点击前往扫码连接手机'"
         @click="navigateToRemoteLink"
       >
-        <Smartphone class="w-3.5 h-3.5 text-primary shrink-0" />
-        <span class="text-xs font-medium text-text">连接手机</span>
-        <span class="ml-auto text-[10px] text-text-muted">远程面板</span>
+        <div class="flex items-center gap-2 min-w-0">
+          <Smartphone class="w-4 h-4 text-primary shrink-0" />
+          <span class="text-xs font-semibold text-text">手机连接状态</span>
+        </div>
+        <div class="flex items-center gap-1.5 shrink-0 text-[11px]">
+          <span
+            class="w-1.5 h-1.5 rounded-full shrink-0 transition-colors"
+            :class="isPhoneConnected ? 'bg-success animate-pulse' : 'bg-content-disabled'"
+          />
+          <span :class="isPhoneConnected ? 'text-success font-semibold' : 'text-text-muted'">
+            {{ isPhoneConnected ? '已连接' : '未连接' }}
+          </span>
+        </div>
       </button>
     </div>
   </aside>

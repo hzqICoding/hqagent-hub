@@ -25,9 +25,19 @@ const routes: RouteRecordRaw[] = [
     children: [{ path: '', name: 'chat', component: () => import('@/pages/chat/ChatPage.vue'), meta: { title: '本地角色对话工作台' } }],
   },
   {
+    path: '/settings',
+    component: LocalChatLayout,
+    children: [{ path: '', name: 'settings', component: () => import('@/pages/settings/SettingsPage.vue'), meta: { title: '系统设置' } }],
+  },
+  {
+    path: '/agents',
+    component: LocalChatLayout,
+    children: [{ path: '', name: 'agents', component: () => import('@/pages/settings/SettingsPage.vue'), props: { initialTab: 'agents' }, meta: { title: 'Agent 与模型' } }],
+  },
+  {
     path: '/scenes',
     component: LocalChatLayout,
-    children: [{ path: '', name: 'scenes', component: () => import('@/pages/scenes/ScenesPage.vue'), meta: { title: '场景与角色配置' } }],
+    children: [{ path: '', name: 'scenes', component: () => import('@/pages/settings/SettingsPage.vue'), props: { initialTab: 'scenes' }, meta: { title: '场景与角色配置' } }],
   },
   {
     path: '/remote/login',
@@ -66,7 +76,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/remote-link',
     component: LocalChatLayout,
-    children: [{ path: '', name: 'remote-link', component: () => import('@/pages/remote-link/RemoteLinkPage.vue'), meta: { title: '连接手机' } }],
+    children: [{ path: '', name: 'remote-link', component: () => import('@/pages/settings/SettingsPage.vue'), props: { initialTab: 'remote-link' }, meta: { title: '连接手机' } }],
   },
   {
     path: '/',
@@ -81,12 +91,6 @@ const routes: RouteRecordRaw[] = [
         name: 'overview',
         component: () => import('@/pages/overview/OverviewPage.vue'),
         meta: { title: '总览控制台' },
-      },
-      {
-        path: 'agents',
-        name: 'agents',
-        component: () => import('@/pages/agents/AgentsPage.vue'),
-        meta: { title: 'Agent 管理与诊断' },
       },
       {
         path: 'workspaces',
@@ -138,9 +142,7 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'settings',
-        name: 'settings',
-        component: () => import('@/pages/common/PlaceholderPage.vue'),
-        meta: { title: '系统设置', milestone: 'F4' },
+        redirect: '/settings',
       },
     ],
   },
