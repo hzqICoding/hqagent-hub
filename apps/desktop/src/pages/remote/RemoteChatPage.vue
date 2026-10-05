@@ -20,6 +20,7 @@ import {
   HqDialog,
   HqEmptyState,
   HqSelect,
+  HqMarkdown,
   useConfirm,
 } from '@/shared/ui'
 import {
@@ -44,6 +45,8 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  Copy,
+  Check,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -51,6 +54,22 @@ const confirm = useConfirm()
 const chatStore = useRemoteChatStore()
 const authStore = useRemoteAuthStore()
 const piScenario = computed(() => chatStore.activeConversation && !chatStore.activeConversation.agentType && piRemoteCandidates(chatStore.activeConversation, chatStore.catalog).isPi)
+
+const copiedMessageId = ref<string | null>(null)
+
+async function copyMessageText(text: string, messageId: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    copiedMessageId.value = messageId
+    setTimeout(() => {
+      if (copiedMessageId.value === messageId) {
+        copiedMessageId.value = null
+      }
+    }, 2000)
+  } catch {
+    // fallback or ignore clipboard access errors
+  }
+}
 
 const isMobileSidebarOpen = ref(false)
 const attachmentDrafts = ref<InstanceType<typeof AttachmentDrafts> | null>(null)
@@ -1008,21 +1027,41 @@ function getExecutionStatusLabel(status?: string): string {
             class="flex flex-col space-y-1"
             :class="msg.role === 'user' ? 'items-end' : 'items-start'"
           >
+            <!-- User Message (Clean right-aligned bubble) -->
             <div
-              class="max-w-[85%] sm:max-w-md p-3 rounded-2xl text-xs sm:text-sm leading-relaxed"
-              :class="[
-                msg.role === 'user'
-                  ? 'bg-primary text-white rounded-tr-xs'
-                  : 'bg-panel border border-border text-text rounded-tl-xs shadow-xs',
-              ]"
+              v-if="msg.role === 'user'"
+              class="max-w-[85%] sm:max-w-md p-3 px-3.5 rounded-2xl rounded-tr-xs bg-primary text-white text-xs sm:text-sm leading-relaxed shadow-xs select-text"
             >
               <p class="whitespace-pre-wrap break-words">{{ msg.text }}</p>
               <MessageAttachments v-if="msg.attachments?.length" :attachments="msg.attachments" remote />
             </div>
 
-            <span class="text-[10px] text-text-muted px-1">
-              {{ msg.role === 'user' ? '你' : 'Agent' }} • {{ new Date(msg.createdAt).toLocaleTimeString() }}
-            </span>
+            <!-- Assistant / Agent Message (Markdown rendered bubble) -->
+            <div
+              v-else
+              class="w-full max-w-[92%] sm:max-w-2xl bg-panel border border-border text-text rounded-2xl rounded-tl-xs p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed shadow-xs overflow-x-auto select-text"
+            >
+              <HqMarkdown :content="msg.text" />
+              <MessageAttachments v-if="msg.attachments?.length" :attachments="msg.attachments" remote />
+            </div>
+
+            <div class="flex items-center gap-2 text-[10px] text-text-muted px-1 select-none">
+              <span>{{ msg.role === 'user' ? '你' : 'Agent' }}</span>
+              <span>•</span>
+              <span>{{ new Date(msg.createdAt).toLocaleTimeString() }}</span>
+              <button
+                v-if="msg.role !== 'user'"
+                type="button"
+                class="ml-1 inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-text transition-colors p-0.5 cursor-pointer"
+                title="复制消息内容"
+                aria-label="复制消息内容"
+                @click="copyMessageText(msg.text, msg.messageId)"
+              >
+                <Check v-if="copiedMessageId === msg.messageId" class="w-3 h-3 text-success" />
+                <Copy v-else class="w-3 h-3" />
+                <span>{{ copiedMessageId === msg.messageId ? '已复制' : '复制' }}</span>
+              </button>
+            </div>
           </div>
 
           <!-- Pending / Queued Commands Bubble -->

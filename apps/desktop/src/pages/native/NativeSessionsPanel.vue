@@ -5,7 +5,7 @@ import type { RuntimeNativeSessionIndex, RemoteNativeSessionView, NativeMessageP
 import { getLocalChatGateway, getRemoteGateway } from '@/shared/api'
 import { useChatStore } from '@/stores/chat.store'
 import { useRemoteChatStore } from '@/stores/remote-chat.store'
-import { HqDialog, HqButton } from '@/shared/ui'
+import { HqDialog, HqButton, HqMarkdown } from '@/shared/ui'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { overlayId } from '@/shared/ui/overlay-stack'
 import { activityLabel, agentLabel, closureText, NativeMessageAssembler, nativeFailure } from './native-utils'
@@ -214,7 +214,11 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
         <HqButton v-if="before" size="sm" :loading="reading" @click="read(true)">读取更早内容</HqButton>
         <p v-if="reading">正在从电脑读取…</p>
         <p v-if="before && !messages.length" class="text-text-muted">正在等待完整消息片段，请继续读取更早内容</p>
-        <div v-for="message in messages" :key="message.messageId" class="p-3 bg-bg-app border border-border rounded"><span class="text-text-muted">{{ message.role }}</span><p class="whitespace-pre-wrap break-words">{{ message.text }}</p></div>
+        <div v-for="message in messages" :key="message.messageId" class="p-3 bg-bg-app border border-border rounded text-xs select-text">
+          <span class="text-text-muted text-[11px] block mb-1 font-mono uppercase">{{ message.role }}</span>
+          <p v-if="message.role === 'user'" class="whitespace-pre-wrap break-words">{{ message.text }}</p>
+          <HqMarkdown v-else :content="message.text" />
+        </div>
         <p v-if="pending" role="status">正在电脑上导入…</p>
         <p v-if="remote && suspended" class="text-warning">这台电脑的远程操作已暂停</p>
       </div>

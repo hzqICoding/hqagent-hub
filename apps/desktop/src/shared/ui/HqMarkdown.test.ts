@@ -68,4 +68,22 @@ describe('HqMarkdown untrusted content', () => {
     expect(wrapper.text()).toContain('核心文件与职责（5个）：')
     expect(wrapper.find('ol').exists()).toBe(true)
   })
+
+  it('parses standard, indented, CRLF and Chinese headings properly into heading tags', () => {
+    const content = '## 需求分析\r\n段落说明\r\n  ### 次级重点\n##核心结论\n#tag'
+    const wrapper = mount(HqMarkdown, { props: { content } })
+    const h2s = wrapper.findAll('h2')
+    expect(h2s).toHaveLength(2)
+    expect(h2s[0].text()).toBe('需求分析')
+    expect(h2s[1].text()).toBe('核心结论')
+
+    const h3 = wrapper.find('h3')
+    expect(h3.exists()).toBe(true)
+    expect(h3.text()).toBe('次级重点')
+
+    // #tag remains text inside paragraph and not a heading
+    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(wrapper.text()).toContain('#tag')
+  })
 })
+

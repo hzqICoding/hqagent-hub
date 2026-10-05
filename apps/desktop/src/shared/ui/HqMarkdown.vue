@@ -85,9 +85,19 @@ function isSectionTitleLine(line: string): boolean {
   return false
 }
 
+function parseHeadingLine(line: string): { level: number; text: string } | null {
+  // Matches markdown headings: 0-3 leading spaces, 1-6 '#', followed by whitespace or Chinese character
+  const match = line.match(/^ {0,3}(#{1,6})(?:\s+(.*)|(?=[\u4e00-\u9fa5])(.*))$/)
+  if (!match) return null
+  const level = match[1].length
+  const text = (match[2] !== undefined ? match[2] : match[3] || '').trim()
+  return { level, text }
+}
+
 // Lightweight safe markdown block parser with zero external HTML-injection risk
 const parsedBlocks = computed<Block[]>(() => {
-  const lines = props.content.split('\n')
+  const normalized = props.content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const lines = normalized.split('\n')
   const blocks: Block[] = []
   let i = 0
 
@@ -155,24 +165,10 @@ const parsedBlocks = computed<Block[]>(() => {
       continue
     }
 
-    // Headings (H1 - H4)
-    if (line.startsWith('#### ')) {
-      blocks.push({ type: 'heading', level: 4, text: line.slice(5) })
-      i++
-      continue
-    }
-    if (line.startsWith('### ')) {
-      blocks.push({ type: 'heading', level: 3, text: line.slice(4) })
-      i++
-      continue
-    }
-    if (line.startsWith('## ')) {
-      blocks.push({ type: 'heading', level: 2, text: line.slice(3) })
-      i++
-      continue
-    }
-    if (line.startsWith('# ')) {
-      blocks.push({ type: 'heading', level: 1, text: line.slice(2) })
+    // Headings (H1 - H6)
+    const heading = parseHeadingLine(line)
+    if (heading) {
+      blocks.push({ type: 'heading', level: heading.level, text: heading.text })
       i++
       continue
     }
@@ -295,10 +291,7 @@ const parsedBlocks = computed<Block[]>(() => {
     while (
       i < lines.length &&
       lines[i].trim() &&
-      !lines[i].startsWith('# ') &&
-      !lines[i].startsWith('## ') &&
-      !lines[i].startsWith('### ') &&
-      !lines[i].startsWith('#### ') &&
+      !parseHeadingLine(lines[i]) &&
       !lines[i].startsWith('> ') &&
       !lines[i].trim().startsWith('- ') &&
       !lines[i].trim().startsWith('* ') &&
@@ -405,7 +398,7 @@ function formatInline(text: string): string {
         v-html="formatInline(block.text || '')"
       />
       <h4
-        v-else-if="block.type === 'heading' && block.level === 4"
+        v-else-if="block.type === 'heading' && (block.level === 4 || block.level === 5 || block.level === 6)"
         class="text-xs font-medium text-text mt-2 mb-1"
         v-html="formatInline(block.text || '')"
       />

@@ -187,4 +187,28 @@ describe('RemoteChat Workbench and Three-Layer Status', () => {
     await wrapper.vm.$nextTick()
     expect(drawer.classes()).toContain('-translate-x-full')
   })
+
+  it('renders markdown elements (headings, code blocks, lists) in assistant message bubbles and provides copy buttons', async () => {
+    const wrapper = mount(RemoteChatPage)
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    // Store has loaded messages from mock gateway (including msg_004 with ## 架构分析报告)
+    expect(store.messages.length).toBeGreaterThan(0)
+
+    // Heading ## 架构分析报告 must be rendered as an h2 element inside message, NOT raw ## text
+    const messageH2 = wrapper.findAll('h2').find((el) => el.text() === '架构分析报告')
+    expect(messageH2).toBeDefined()
+    expect(messageH2?.exists()).toBe(true)
+
+    // Code block must be rendered inside code block component
+    const codeBlock = wrapper.find('.bg-code')
+    expect(codeBlock.exists()).toBe(true)
+    expect(codeBlock.text()).toContain('getRemoteGateway()')
+
+    // Copy message button must be present on assistant bubble
+    const copyBtn = wrapper.find('button[title="复制消息内容"]')
+    expect(copyBtn.exists()).toBe(true)
+  })
 })
+
