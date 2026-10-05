@@ -7,6 +7,7 @@ import threading
 import time
 
 from core.diagnostics import emit, exception_fields, frame_stack
+from storage.locking import waiting_owner
 
 
 class LoopMonitor:
@@ -56,7 +57,7 @@ class LoopMonitor:
             frame = sys._current_frames().get(self.thread_id)
             try:
                 emit('loop.blocked', level=logging.WARNING, lagMs=stalled * 1000,
-                     threadId=self.thread_id, stack=frame_stack(frame))
+                     threadId=self.thread_id, stack=frame_stack(frame), **waiting_owner(self.thread_id))
             finally:
                 del frame
 
