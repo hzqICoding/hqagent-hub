@@ -234,6 +234,10 @@ class DeliveryBridge(CommandBridge):
     async def expire_pending(self, *, recovery=False):
         """Connection-independent cleanup; never schedule admitted execution."""
         async with self.lock:
+            eligible = await self.repo.database.read_async(
+                lambda: self.busy.enabled() and bool(self.repo.get('link')['view'].get('workerId')))
+            if not eligible:
+                return
             if not self.busy.enabled() or not self.repo.get("link")["view"].get("workerId"):
                 return
             if not self.repo.check_continuity():

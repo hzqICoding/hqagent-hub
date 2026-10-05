@@ -8,6 +8,7 @@ import os
 import secrets
 import time
 import threading
+from itertools import islice
 from pathlib import Path
 
 from protocol.generated.python import (RuntimeNativeSessionIndex, LocalNativeSessionPage, NativeMessagePage,
@@ -290,54 +291,37 @@ class NativeService:
                 key = digest([plugin.runtime_id, (root_identity.st_dev,root_identity.st_ino), plugin.agent_type, source.vendor_id])
                 if key not in managed:
                     found.append((plugin, source, workspace, key))
-        with self.db.transaction() as tx:
-            registered = {w.id for w in workspaces}
-            for row in tx.connection.execute("SELECT * FROM native_sources WHERE removed=0"):
-                if row["workspace_id"] not in registered:
-                    tx.connection.execute("UPDATE native_sources SET removed=1 WHERE native_id=?", (row["native_id"],))
-                elif not row["conversation_id"]:
-                    try:
-                        Path(json.loads(row["source_json"])["path"]).stat()
-                    except FileNotFoundError:
-                        tx.connection.execute("UPDATE native_sources SET removed=2 WHERE native_id=?", (row["native_id"],))
-                    except OSError:
-                        pass  # A scan/permission failure is not a source deletion.
-            for plugin, source, workspace, key in found:
-                if tx.connection.execute('SELECT 1 FROM local_deleted_native_bindings WHERE binding_key=?', (key,)).fetchone():
-                    continue
-                old = tx.connection.execute("SELECT * FROM native_sources WHERE binding_key=?", (key,)).fetchone()
-                if old and old["conversation_id"]:
-                    continue  # A concurrent import won while discovery ran.
-                old_index = json.loads(old["index_json"]) if old else None
-                identifier = old["native_id"] if old else uid("native")
-                activity = evidence(source, self.probe)
-                self.activities[identifier] = activity
-                fmt = {"status": "readable" if source.readable else "unsupported", "cliVersion": public_text(source.version,self.secrets())[:80]}
-                if source.readable:
-                    fmt["readerId"] = source.reader_id
-                if source.reason:
-                    fmt["reason"] = source.reason
-                title = source.title or next((m["text"] for m in source.messages if m["role"] == "user"), "原生会话")[:120]
-                index = {"nativeSessionId": identifier, "workspaceId": workspace, "agentType": source.agent_type,
-                    "title": title, "createdAt": source.created_at, "updatedAt": source.updated_at,
-                    "indexVersion": old_index["indexVersion"] if old_index else 1, "sourceRevision": source.revision,
-                    "format": fmt, "activity": activity}
-                if old_index:
-                    compared = lambda i: {**i, "activity": {k: v for k, v in i["activity"].items() if k != "observedAt"}}
-                    if compared(index) != compared(old_index):
-                        index["indexVersion"] += 1
-                    else:
-                        index = old_index
-                RuntimeNativeSessionIndex.model_validate(index)
-                data = {"root": str(plugin.root), "path": str(source.path), "vendor_id": source.vendor_id,
-                    "cwd": str(source.cwd), "identity": source.identity, "cut": source.cut, "prefix_hash": source.prefix_hash,
-                    "metadata": self.index_for(plugin).load(source.path)["source"],
-                    "timeBasis":{"createdAt":source.created_time_basis,"updatedAt":source.updated_time_basis}}
-                if old and old["source_json"] == json.dumps(data) and old["index_json"] == json.dumps(index) and not old["removed"]:
-                    continue
-                tx.connection.execute("INSERT INTO native_sources(native_id,binding_key,workspace_id,runtime_id,agent_type,source_json,index_json) "
-                    "VALUES(?,?,?,?,?,?,?) ON CONFLICT(binding_key) DO UPDATE SET workspace_id=excluded.workspace_id,source_json=excluded.source_json,index_json=excluded.index_json,removed=0",
-                    (identifier, key, workspace, plugin.runtime_id, source.agent_type, json.dumps(data), json.dumps(index)))
+        registered = {w.id for w in workspaces}
+        with self.db.locked_connection() as db:
+            existing = [dict(row) for row in db.execute('SELECT * FROM native_sources WHERE removed=0')]
+        removals = []
+        for row in existing:
+            removed = 1 if row['workspace_id'] not in registered else None
+            if removed is None and not row['conversation_id']:
+                try:
+                    Path(json.loads(row['source_json'])['path']).stat()
+                except FileNotFoundError:
+                    removed = 2
+                except OSError:
+                    pass  # A scan/permission failure is not a source deletion.
+            if removed is not None:
+                removals.append((removed, row))
+        for offset in range(0, len(removals), 16):
+            with self.db.transaction() as tx:
+                for removed, row in removals[offset:offset + 16]:
+                    # Do not hide a concurrent import or a refreshed source.
+                    tx.connection.execute('UPDATE native_sources SET removed=? WHERE native_id=? '
+                        'AND source_json=? AND workspace_id=? AND conversation_id IS ? AND removed=0',
+                        (removed, row['native_id'], row['source_json'], row['workspace_id'], row['conversation_id']))
+        # Discovery metadata is rebuildable per source, not an all-or-nothing
+        # import. OS observations, credential reads, stat and cache decoding
+        # must never run inside the shared SQLite transaction.
+        pending = iter(found)
+        while batch := list(islice(pending, 16)):
+            from adapters.history import check_cancelled
+            check_cancelled()
+            prepared = [self._prepare_index(*item) for item in batch]
+            self._publish_indexes(prepared)
         with self.db.locked_connection() as db:
             imported = [dict(r) for r in db.execute("SELECT c.* FROM local_conversations c JOIN native_sources n ON n.conversation_id=c.conversation_id WHERE n.removed=0")]
         for row in imported:
@@ -354,12 +338,12 @@ class NativeService:
             if facts(observed) != facts(view):
                 with self.db.transaction() as tx:
                     # Re-read metadata to avoid overwriting a simultaneous rename.
-                    current = LocalConversationView.model_validate_json(tx.connection.execute("SELECT payload_json FROM local_conversations WHERE conversation_id=?",(view.id,)).fetchone()[0])
+                    current_row = tx.connection.execute("SELECT payload_json FROM local_conversations WHERE conversation_id=?",(view.id,)).fetchone()
+                    if current_row is None:
+                        continue  # A concurrent deletion won during observation.
+                    current = LocalConversationView.model_validate_json(current_row[0])
                     if facts(observed) == facts(current):
                         continue
-                    # Native source/activity is replicated metadata, not merely
-                    # display decoration. Advance the same CAS used by rename
-                    # and visibility changes; observation time alone is ignored.
                     stamp = now()
                     current = current.model_copy(update={
                         "native_activity": observed.native_activity,
@@ -370,6 +354,48 @@ class NativeService:
                         "UPDATE local_conversations SET payload_json=?,updated_at=? WHERE conversation_id=?",
                         (current.model_dump_json(by_alias=True, exclude_none=True), stamp, view.id),
                     )
+
+    def _prepare_index(self, plugin, source, workspace, key):
+        activity = evidence(source, self.probe)
+        fmt = {"status": "readable" if source.readable else "unsupported", "cliVersion": public_text(source.version,self.secrets())[:80]}
+        if source.readable:
+            fmt['readerId'] = source.reader_id
+        if source.reason:
+            fmt['reason'] = source.reason
+        title = source.title or next((m['text'] for m in source.messages if m['role'] == 'user'), '原生会话')[:120]
+        index = dict(workspaceId=workspace, agentType=source.agent_type, title=title, createdAt=source.created_at,
+                     updatedAt=source.updated_at, sourceRevision=source.revision, format=fmt, activity=activity)
+        data = {"root": str(plugin.root), "path": str(source.path), "vendor_id": source.vendor_id,
+            "cwd": str(source.cwd), "identity": source.identity, "cut": source.cut, "prefix_hash": source.prefix_hash,
+            "metadata": self.index_for(plugin).load(source.path)["source"],
+            "timeBasis":{"createdAt":source.created_time_basis,"updatedAt":source.updated_time_basis}}
+        return plugin.runtime_id, source.agent_type, workspace, key, index, json.dumps(data)
+
+    def _publish_indexes(self, prepared):
+        with self.db.transaction() as tx:
+            for runtime, agent_type, workspace, key, index, data in prepared:
+                if tx.connection.execute('SELECT 1 FROM local_deleted_native_bindings WHERE binding_key=?', (key,)).fetchone():
+                    continue
+                old = tx.connection.execute("SELECT * FROM native_sources WHERE binding_key=?", (key,)).fetchone()
+                if old and old["conversation_id"]:
+                    continue  # A concurrent import won while discovery ran.
+                old_index = json.loads(old["index_json"]) if old else None
+                identifier = old["native_id"] if old else uid("native")
+                activity = index['activity']
+                tx.after_commit(lambda identifier=identifier, activity=activity: self.activities.__setitem__(identifier, activity))
+                index = {**index, 'nativeSessionId': identifier, 'indexVersion': old_index['indexVersion'] if old_index else 1}
+                if old_index:
+                    compared = lambda i: {**i, "activity": {k: v for k, v in i["activity"].items() if k != "observedAt"}}
+                    if compared(index) != compared(old_index):
+                        index["indexVersion"] += 1
+                    else:
+                        index = old_index
+                RuntimeNativeSessionIndex.model_validate(index)
+                if old and old["source_json"] == data and old["index_json"] == json.dumps(index) and not old["removed"]:
+                    continue
+                tx.connection.execute("INSERT INTO native_sources(native_id,binding_key,workspace_id,runtime_id,agent_type,source_json,index_json) "
+                    "VALUES(?,?,?,?,?,?,?) ON CONFLICT(binding_key) DO UPDATE SET workspace_id=excluded.workspace_id,source_json=excluded.source_json,index_json=excluded.index_json,removed=0",
+                    (identifier, key, workspace, runtime, agent_type, data, json.dumps(index)))
 
     def _cursor(self, value):
         from runtime.pi_visibility import CLIENT_PI

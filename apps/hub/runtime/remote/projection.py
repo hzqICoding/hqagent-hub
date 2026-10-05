@@ -114,7 +114,7 @@ class Projector:
         pi = getattr(self.chat, 'pi', None)
         revision = self.repo.get('identity').get('wireRevision', 1)
         if pi is not None:
-            pi.rebuild()
+            await pi.rebuild_async()
             if revision < 5:
                 value['scenes'] = [s for s in value['scenes'] if s['sceneId'] not in pi.scenes]
         try:

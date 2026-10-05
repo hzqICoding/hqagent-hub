@@ -188,7 +188,7 @@ class RemoteWorker:
     async def run(self):
         delay = self.retry_seconds
         while not self.closed:
-            view = self.repo.get("link")["view"]
+            view = (await self.repo.database.read_async(self.repo.get, 'link'))['view']
             if view["state"] == "pairing":
                 try:
                     await self.link.poll()

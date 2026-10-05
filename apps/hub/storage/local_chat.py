@@ -562,6 +562,17 @@ class LocalChatRepository:
                 "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
                 ('local-run-session-mode:' + record['run_id'], json.dumps(value), now()))
 
+    def pending_conversations(self) -> list[str]:
+        # Supervision needs queue owners, not every conversation DTO and its
+        # busy/native decoration. Keep the existing dispatch order and fences.
+        with self.database.locked_connection() as db:
+            return [row[0] for row in db.execute(
+                "SELECT c.conversation_id FROM local_conversations c "
+                "WHERE EXISTS(SELECT 1 FROM local_runs r WHERE r.conversation_id=c.conversation_id "
+                "AND r.status NOT IN ('succeeded','failed','cancelled')) "
+                "AND NOT EXISTS(SELECT 1 FROM local_conversation_deletions d WHERE d.conversation_id=c.conversation_id) "
+                "ORDER BY c.updated_at DESC")]
+
     def next_run(self, conversation_id: str) -> dict | None:
         with self.database.locked_connection() as db:
             native = db.execute("SELECT 1 FROM local_conversations WHERE conversation_id=? AND json_extract(payload_json,'$.conversationKind')='native'", (conversation_id,)).fetchone() is not None
