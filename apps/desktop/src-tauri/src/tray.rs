@@ -27,7 +27,10 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             SHOW_ID => show_main_window(app),
-            QUIT_ID => app.exit(0),
+            QUIT_ID => {
+                crate::diagnostics::event("INFO", "tray_exit requested");
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

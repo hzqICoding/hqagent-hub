@@ -223,6 +223,8 @@ fn supervise(
     let mut failures = 0_u32;
     // A dedicated client/thread keeps long bootstrap requests out of the watchdog.
     let health = health_client();
+    let console = crate::diagnostics::LogSink::new(
+        spec.runtime_dir.parent().unwrap_or(&spec.runtime_dir).join("logs/core-console.log"));
 
     loop {
         if stop.load(Ordering::SeqCst) {
@@ -280,8 +282,8 @@ fn supervise(
             .env("HQAGENT_RUNTIME_DIR", &spec.runtime_dir)
             .env("HQAGENT_PARENT_CONTROL", "stdio-v1")
             .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(if spec.component == Component::Core { Stdio::piped() } else { Stdio::null() })
+            .stderr(if spec.component == Component::Core { Stdio::piped() } else { Stdio::null() })
             // Relative files from children must never be written into the install directory.
             .current_dir(&spec.runtime_dir);
         #[cfg(windows)]
@@ -315,6 +317,13 @@ fn supervise(
         };
 
         let pid = child.id();
+        crate::diagnostics::event("INFO", &format!("process_start component={} pid={pid} executable={path}", spec.component.display_name()));
+        if let Some(stdout) = child.stdout.take() {
+            crate::diagnostics::drain(stdout, console.clone(), pid, "stdout");
+        }
+        if let Some(stderr) = child.stderr.take() {
+            crate::diagnostics::drain(stderr, console.clone(), pid, "stderr");
+        }
         let mut identity = ProcessIdentity {
             pid,
             instance_id: None,
@@ -351,6 +360,8 @@ fn supervise(
         let exit = loop {
             if stop.load(Ordering::SeqCst) {
                 let forced = stop_child(&mut child);
+                crate::diagnostics::event("INFO", &format!("process_exit component={} pid={pid} reason=shell_shutdown forced={forced} exit={:?}",
+                    spec.component.display_name(), child.try_wait().ok().flatten().and_then(|status| status.code())));
                 set_record(
                     &records,
                     spec.component,
@@ -365,7 +376,10 @@ fn supervise(
             }
 
             match child.try_wait() {
-                Ok(Some(status)) => break format!("进程退出: {status}"),
+                Ok(Some(status)) => {
+                    crate::diagnostics::event("WARN", &format!("process_exit component={} pid={pid} exit={status}", spec.component.display_name()));
+                    break format!("进程退出: {status}");
+                }
                 Ok(None) => {}
                 // A query error is not proof of exit. Keep the owned child handle;
                 // only a confirmed exit or the independent health watchdog can restart it.
@@ -402,9 +416,16 @@ fn supervise(
                 && Instant::now() >= next_health {
                 if let (Ok(client), Some(descriptor)) = (&health, spec.descriptor_path.as_deref()) {
                     let result = check_hub_liveness(client, descriptor, &identity);
+                    if let Err(error) = &result {
+                        crate::diagnostics::event("WARN", &format!("liveness_failed pid={pid} consecutive={} cold_start={} reason={error}",
+                            watchdog.consecutive_failures + 1, process_started.elapsed() < cold_window));
+                    }
                     if let Some(reason) = watchdog.observe(process_started.elapsed(), result) {
+                        crate::diagnostics::event("WARN", &format!("watchdog_restart pid={pid} reason={reason}"));
                         // Stop the old process via its owned handle, never a descriptor PID.
                         let forced = stop_child(&mut child);
+                        crate::diagnostics::event("INFO", &format!("process_exit component=core pid={pid} reason=watchdog forced={forced} exit={:?}",
+                            child.try_wait().ok().flatten().and_then(|status| status.code())));
                         break format!("存活监控请求重启（forced={forced}）: {reason}");
                     }
                 }
@@ -442,10 +463,19 @@ fn set_record(
     status: ProcessStatus,
     identity: Option<ProcessIdentity>,
 ) {
-    records
-        .write()
-        .expect("process records poisoned")
-        .insert(component, ProcessRecord { status, identity });
+    let mut records = records.write().expect("process records poisoned");
+    let changed = records.get(&component).map(|r| std::mem::discriminant(&r.status))
+        != Some(std::mem::discriminant(&status));
+    match &status {
+        ProcessStatus::Backoff { restart_in_ms, message, .. } => crate::diagnostics::event("WARN",
+            &format!("restart_scheduled component={} backoff_ms={restart_in_ms} reason={message}", component.display_name())),
+        ProcessStatus::Missing { path, .. } if changed => crate::diagnostics::event("WARN",
+            &format!("component_missing component={} path={path}", component.display_name())),
+        ProcessStatus::Running { pid, .. } if changed => crate::diagnostics::event("INFO",
+            &format!("component_running component={} pid={pid}", component.display_name())),
+        _ => {}
+    }
+    records.insert(component, ProcessRecord { status, identity });
 }
 
 fn stop_child(child: &mut Child) -> bool {
@@ -550,6 +580,16 @@ mod tests {
         assert_eq!(std::env::current_dir().unwrap(), runtime);
         assert!(!std::env::var("HQAGENT_INSTANCE_ID").unwrap().is_empty());
         if runtime.join("crash").exists() { std::process::exit(17); }
+        if runtime.join("console-flood").exists() {
+            use std::io::Write;
+            // Far larger than OS pipe capacity, on BOTH streams, before readiness.
+            let line = format!("INFO {}\n", "x".repeat(4096));
+            for _ in 0..2048 {
+                std::io::stdout().write_all(line.as_bytes()).unwrap();
+                std::io::stderr().write_all(line.as_bytes()).unwrap();
+            }
+            std::io::stderr().write_all(b"Authorization: Bearer fixture-secret\nTraceback (most recent call last):\nValueError: fixture-secret\n").unwrap();
+        }
         if runtime.join("http-fixture").exists() { start_http_fixture(&runtime); }
         let crash_signal = runtime.join("terminate");
         thread::spawn(move || loop {
@@ -575,6 +615,21 @@ mod tests {
             runtime_dir: runtime.to_path_buf(),
             descriptor_path: None,
         }
+    }
+
+    #[test]
+    fn diagnostics_console_flood_and_unwritable_logs_preserve_startup_and_stdin() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::config::AppPaths::under(dir.path().to_path_buf());
+        // A file where the directory should be reliably simulates failed log opens.
+        std::fs::write(dir.path().join("logs"), "blocked").unwrap();
+        paths.ensure_directories().expect("logging directory cannot block shell setup");
+        std::fs::write(paths.runtime_dir.join("console-flood"), "").unwrap();
+        let supervisor = ProcessSupervisor::start(vec![fixture_spec(&paths.runtime_dir)]);
+        wait_until(|| paths.runtime_dir.join("ready").exists());
+        assert!(supervisor.identity(Component::Core).is_some());
+        supervisor.shutdown();
+        assert_eq!(std::fs::read_to_string(paths.runtime_dir.join("stdin.txt")).unwrap(), "shutdown\n");
     }
 
     fn start_http_fixture(runtime: &std::path::Path) {

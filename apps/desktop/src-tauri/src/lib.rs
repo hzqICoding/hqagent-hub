@@ -2,6 +2,7 @@ mod autostart;
 mod commands;
 mod config;
 mod credentials;
+mod diagnostics;
 mod error;
 mod fs_util;
 mod platform;
@@ -84,6 +85,8 @@ pub fn run() {
                 let _ = window_state::save(&window, &state.paths.window_state);
             }
             state.shutdown();
+            diagnostics::event("INFO", "shell_exit completed");
+            diagnostics::flush();
         }
     });
 }
@@ -115,6 +118,7 @@ fn setup_window_events(window: &WebviewWindow, state_path: std::path::PathBuf) {
     let window_handle = window.clone();
     window.on_window_event(move |event| match event {
         WindowEvent::CloseRequested { api, .. } => {
+            diagnostics::event("INFO", "window_close action=hide_to_tray");
             let _ = window_state::save(&window_handle, &state_path);
             api.prevent_close();
             let _ = window_handle.hide();

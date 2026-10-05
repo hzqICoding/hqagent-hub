@@ -42,7 +42,6 @@ impl AppPaths {
             &self.config_dir,
             &self.runtime_dir,
             &self.root.join("data"),
-            &self.root.join("logs"),
             &self.root.join("updates"),
             &self.root.join("diagnostics"),
         ] {
