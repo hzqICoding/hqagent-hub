@@ -8,6 +8,7 @@ import { HqSelect } from '@/shared/ui'
 describe('ChatSidebar', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    document.body.replaceChildren()
   })
 
   it('uses the active task workspace when opening the shared new task dialog', async () => {
@@ -85,5 +86,50 @@ describe('ChatSidebar', () => {
       button.textContent?.includes('RTK 定制分析')
     )!
     expect(customSceneButton.className).toContain('border-primary')
+  })
+
+  it('distinguishes folder-level plus new conversation from header new task', async () => {
+    const store = useChatStore()
+    store.workspaces = [
+      { id: 'workspace-a', name: 'Project Alpha', path: 'E:/alpha', vcs: 'git', lastOpenedAt: '2026-09-25T00:00:00Z' },
+    ]
+    store.conversations = [
+      {
+        id: 'conversation-a',
+        title: 'Alpha Task',
+        workspaceId: 'workspace-a',
+        sceneId: 'analyze',
+        createdAt: '2026-09-25T00:00:00Z',
+        updatedAt: '2026-09-25T00:00:00Z',
+      },
+    ]
+    store.activeConversationId = 'conversation-a'
+    const wrapper = mount(ChatSidebar)
+
+    // 1. Click folder right-side '+' button
+    const folderPlusBtn = wrapper.find('button[title="在此项目新建对话"]')
+    expect(folderPlusBtn.exists()).toBe(true)
+    await folderPlusBtn.trigger('click')
+
+    expect(document.body.textContent).toContain('新建对话 · Project Alpha')
+    expect(document.body.textContent).toContain('在当前项目「Project Alpha」下创建新对话')
+    const lockedSelect = wrapper.findAllComponents(HqSelect)[0]
+    expect(lockedSelect.props('modelValue')).toBe('workspace-a')
+    expect(lockedSelect.props('disabled')).toBe(true)
+    expect(document.body.textContent).toContain('创建对话')
+    expect(document.body.textContent).not.toContain('选择项目目录')
+
+    // 2. Click header '新建任务' button
+    const cancelBtn = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent?.includes('取消'))
+    cancelBtn?.click()
+    const headerNewTaskBtn = wrapper.findAll('button').find(b => b.text().includes('新建任务'))!
+    await headerNewTaskBtn.trigger('click')
+
+    expect(document.body.textContent).toContain('新建任务')
+    expect(document.body.textContent).toContain('创建独立任务对话')
+    const unlockedSelect = wrapper.findAllComponents(HqSelect)[0]
+    expect(unlockedSelect.props('disabled')).toBe(false)
+    expect(document.body.textContent).toContain('创建任务')
+    expect(document.body.textContent).toContain('选择项目目录')
   })
 })

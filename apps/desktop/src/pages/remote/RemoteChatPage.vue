@@ -1253,6 +1253,7 @@ function getExecutionStatusLabel(status?: string): string {
     <HqDialog
       :open="isNewConversationDialogOpen"
       :title="isWorkspaceLocked ? `新建对话 · ${lockedWorkspaceName}` : '新建任务'"
+      :description="isWorkspaceLocked ? `在当前项目「${lockedWorkspaceName}」下创建新对话` : '选择或添加项目，并创建初始对话'"
       @close="isNewConversationDialogOpen = false"
     >
       <div class="space-y-4 text-xs text-text">
@@ -1260,7 +1261,7 @@ function getExecutionStatusLabel(status?: string): string {
         <div class="space-y-1.5">
           <div class="flex items-center justify-between">
             <label for="new-conv-workspace" class="block font-medium text-text-secondary">
-              {{ isWorkspaceLocked ? '当前所属项目' : '项目' }}
+              {{ isWorkspaceLocked ? '当前所属项目' : '目标项目 / 工作区' }}
             </label>
             <HqButton
               v-if="!isWorkspaceLocked"
@@ -1273,6 +1274,7 @@ function getExecutionStatusLabel(status?: string): string {
             </HqButton>
           </div>
           <p v-if="!isWorkspaceLocked && !chatStore.catalog?.authorizedRoots?.length" class="text-[11px] text-text-muted">电脑未开放远程添加项目</p>
+          <p v-if="isWorkspaceLocked" class="text-[11px] text-text-muted">已锁定当前项目，直接创建该项目下的新对话</p>
           <HqSelect
             id="new-conv-workspace"
             v-model="newWorkspaceId"
@@ -1283,7 +1285,9 @@ function getExecutionStatusLabel(status?: string): string {
           />
         </div>
         <div class="space-y-1.5">
-          <label for="new-conv-title" class="block font-medium text-text-secondary">标题（选填）</label>
+          <label for="new-conv-title" class="block font-medium text-text-secondary">
+            {{ isWorkspaceLocked ? '对话标题（选填）' : '任务标题（选填）' }}
+          </label>
           <input
             id="new-conv-title"
             v-model="newTitle"

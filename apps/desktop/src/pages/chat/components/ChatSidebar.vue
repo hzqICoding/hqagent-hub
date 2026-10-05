@@ -62,6 +62,11 @@ const newWorkspacePath = ref('')
 const isRegistering = ref(false)
 const isPicking = ref(false)
 const createError = ref<string | null>(null)
+const isWorkspaceLocked = ref(false)
+
+const lockedWorkspace = computed(() => {
+  return chatStore.workspaces.find((ws) => ws.id === selectedWorkspaceId.value)
+})
 
 const isRenameDialogOpen = ref(false)
 const renameTarget = ref<LocalConversationView | null>(null)
@@ -96,6 +101,7 @@ async function confirmVisibility() {
 
 function openCreateModal(workspaceId?: string) {
   newTitle.value = ''
+  isWorkspaceLocked.value = Boolean(workspaceId)
   selectedWorkspaceId.value = workspaceId
     || chatStore.activeConversation?.workspaceId
     || chatStore.workspaces[0]?.id
@@ -371,8 +377,8 @@ function handleConversationSelect(conversationId: string) {
             <button
               type="button"
               class="w-7 h-7 flex items-center justify-center rounded-md text-text-muted hover:text-primary hover:bg-muted active:scale-95 transition-all cursor-pointer"
-              :aria-label="`在${group.workspace.name}新建任务`"
-              title="在此项目新建任务"
+              :aria-label="`在${group.workspace.name}新建对话`"
+              title="在此项目新建对话"
               @click="openCreateModal(group.workspace.id)"
             >
               <Plus class="w-4 h-4" />
@@ -475,34 +481,41 @@ function handleConversationSelect(conversationId: string) {
 
     <HqDialog
       :open="isNewConvModalOpen"
-      title="新建任务"
-      description="创建独立任务对话并配置工作区与初始场景（不立即执行模型）"
+      :title="isWorkspaceLocked ? `新建对话 · ${lockedWorkspace?.name || '当前项目'}` : '新建任务'"
+      :description="isWorkspaceLocked ? `在当前项目「${lockedWorkspace?.name || '当前项目'}」下创建新对话` : '创建独立任务对话并配置工作区与初始场景（不立即执行模型）'"
       @close="isNewConvModalOpen = false"
     >
       <form class="space-y-4 py-2 text-xs" @submit.prevent="handleCreateConversation">
         <p v-if="createError" role="alert" class="text-danger bg-danger/10 p-2 rounded">{{ createError }}</p>
         <div>
-          <label class="block font-medium text-text mb-1.5">任务标题 <span class="text-danger">*</span></label>
+          <label class="block font-medium text-text mb-1.5">{{ isWorkspaceLocked ? '对话标题' : '任务标题' }} <span class="text-danger">*</span></label>
           <HqInput v-model="newTitle" placeholder="例如：梳理登录鉴权与连接链路..." autofocus />
         </div>
         <div>
-          <label class="block font-medium text-text mb-1.5">目标项目 / 工作区 <span class="text-danger">*</span></label>
+          <label class="block font-medium text-text mb-1.5">{{ isWorkspaceLocked ? '所属项目' : '目标项目 / 工作区' }} <span class="text-danger">*</span></label>
           <HqSelect
             v-model="selectedWorkspaceId"
             :options="chatStore.workspaces.map((workspace) => ({ label: `${workspace.name} (${workspace.path})`, value: workspace.id }))"
             placeholder="请选择已登记的工作区"
+            :disabled="isWorkspaceLocked"
           />
-          <HqButton type="button" size="sm" class="mt-2" :loading="isPicking" :disabled="isPicking || isRegistering" @click="chooseWorkspace">
-            <FolderGit2 class="w-3.5 h-3.5 mr-1" />
-            {{ isPicking ? '请在本机窗口中选择…' : '选择项目目录' }}
-          </HqButton>
-          <details class="mt-2" :open="!!newWorkspacePath">
-            <summary class="cursor-pointer text-text-muted">手动输入目录</summary>
-            <div class="flex items-center gap-2 mt-2">
-              <HqInput v-model="newWorkspacePath" placeholder="例如 E:\WorkSpace\ua_android" class="flex-1" />
-              <HqButton type="button" size="sm" :disabled="!newWorkspacePath.trim() || isRegistering || isPicking" @click="registerWorkspace">登记目录</HqButton>
-            </div>
-          </details>
+          <template v-if="!isWorkspaceLocked">
+            <HqButton type="button" size="sm" class="mt-2" :loading="isPicking" :disabled="isPicking || isRegistering" @click="chooseWorkspace">
+              <FolderGit2 class="w-3.5 h-3.5 mr-1" />
+              {{ isPicking ? '请在本机窗口中选择…' : '选择项目目录' }}
+            </HqButton>
+            <details class="mt-2" :open="!!newWorkspacePath">
+              <summary class="cursor-pointer text-text-muted">手动输入目录</summary>
+              <div class="flex items-center gap-2 mt-2">
+                <HqInput v-model="newWorkspacePath" placeholder="例如 E:\WorkSpace\ua_android" class="flex-1" />
+                <HqButton type="button" size="sm" :disabled="!newWorkspacePath.trim() || isRegistering || isPicking" @click="registerWorkspace">登记目录</HqButton>
+              </div>
+            </details>
+          </template>
+          <p v-else class="text-[11px] text-text-muted mt-1.5 flex items-center gap-1">
+            <Folder class="w-3.5 h-3.5 text-primary/80 shrink-0" />
+            <span>已锁定当前项目，直接创建该项目下的新对话。如需登记新项目，请使用列表头部的「新建任务」。</span>
+          </p>
         </div>
         <div>
           <label class="block font-medium text-text mb-1.5">初始场景 <span class="text-danger">*</span></label>
@@ -523,7 +536,9 @@ function handleConversationSelect(conversationId: string) {
       </form>
       <template #footer>
         <HqButton size="sm" variant="secondary" @click="isNewConvModalOpen = false">取消</HqButton>
-        <HqButton size="sm" variant="primary" :disabled="!newTitle.trim() || !selectedWorkspaceId || isCreating" :loading="isCreating" @click="handleCreateConversation">创建任务</HqButton>
+        <HqButton size="sm" variant="primary" :disabled="!newTitle.trim() || !selectedWorkspaceId || isCreating" :loading="isCreating" @click="handleCreateConversation">
+          {{ isWorkspaceLocked ? '创建对话' : '创建任务' }}
+        </HqButton>
       </template>
     </HqDialog>
 
