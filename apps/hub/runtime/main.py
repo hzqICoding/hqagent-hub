@@ -6,6 +6,8 @@ import os
 import socket
 import sys
 import uuid
+import time
+import logging
 from datetime import datetime, timezone
 from dataclasses import replace
 from pathlib import Path
@@ -21,6 +23,8 @@ from runtime.descriptor import RuntimeDescriptorFile
 from runtime.instance import SingleInstanceLock, SingleInstanceError
 from runtime.paths import HubPaths
 from runtime.parent_process import ParentProcess, serve_with_parent, take_parent_stdin
+from core.diagnostics import configure_logging, emit, exception_fields
+from runtime.loop_monitor import LoopMonitor
 
 
 def _parse_args() -> argparse.Namespace:
@@ -33,6 +37,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 async def run(data_dir: Path | None = None, environment: str = "production", *, port: int = 0, web_dir: Path | None = None) -> None:
+    launch_started = time.monotonic()
     parent = ParentProcess.from_env()
     if parent.stdio and port != 0:
         raise ValueError("桌面托管模式必须使用随机端口（--port 0）")
@@ -47,6 +52,11 @@ async def run(data_dir: Path | None = None, environment: str = "production", *, 
     started_at = datetime.now(timezone.utc)
     descriptor_file = RuntimeDescriptorFile(paths.runtime / "hub.json")
     lock.acquire()
+    log = configure_logging(paths.root, secrets=(token,))
+    metadata = dict(appVersion=APP_VERSION, protocolVersion=PROTOCOL_VERSION,
+                    environment=environment, port=port, dataRoot=str(paths.root), desktop=parent.stdio)
+    emit('hub.starting', **metadata)
+    monitor = LoopMonitor()
     listener = None
     application = None
     server = None
@@ -54,11 +64,13 @@ async def run(data_dir: Path | None = None, environment: str = "production", *, 
     try:
         if parent.stdio:
             parent_stream = take_parent_stdin()
+        monitor.start()
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind(("127.0.0.1", port))
         listener.listen(128)
         port = int(listener.getsockname()[1])
+        metadata['port'] = port
         ports = build_ports()
         application = create_application(
             paths=paths,
@@ -68,6 +80,7 @@ async def run(data_dir: Path | None = None, environment: str = "production", *, 
             started_at=started_at,
             environment=environment,
         )
+        application.app.state.diagnostic_start = (metadata, launch_started)
         # Database 由 create_application 内部创建，所以补齐要放在它之后。
         await bind_ports(application, ports)
         if environment == "development":
@@ -117,6 +130,7 @@ async def run(data_dir: Path | None = None, environment: str = "production", *, 
             port=port,
             access_log=False,
             log_level="warning",
+            log_config=None,
             timeout_graceful_shutdown=2 if parent.stdio else 12,
         )
         server = uvicorn.Server(config)
@@ -125,17 +139,28 @@ async def run(data_dir: Path | None = None, environment: str = "production", *, 
             await serve_with_parent(server, listener, application, control, owned_stream=True)
         else:
             await server.serve(sockets=[listener])
+    except Exception as error:
+        emit('hub.failure', level=logging.ERROR, **exception_fields(error))
+        raise
     finally:
-        if parent_stream is not None:
-            parent_stream.close()  # Startup failed before a reader acquired the pipe.
-        descriptor_file.remove(instance_id)
-        if (application is not None and not getattr(application.app.state, "lifecycle_closed", False)
-                and (server is None or not server.started)):
-            application.local_auth.close()
-            application.database.close()
-        if listener is not None:
-            listener.close()
-        lock.release()
+        try:
+            await monitor.close()
+            if parent_stream is not None:
+                parent_stream.close()  # Startup failed before a reader acquired the pipe.
+            descriptor_file.remove(instance_id)
+            if (application is not None and not getattr(application.app.state, "lifecycle_closed", False)
+                    and (server is None or not server.started)):
+                application.local_auth.close()
+                application.database.close()
+            if listener is not None:
+                listener.close()
+            lock.release()
+        except Exception as error:
+            emit('hub.failure', level=logging.ERROR, **exception_fields(error))
+            raise
+        finally:
+            emit('hub.stopped', **metadata, elapsedMs=(time.monotonic() - launch_started) * 1000)
+            log.close()
 
 
 def main() -> None:
@@ -146,9 +171,12 @@ def main() -> None:
     args = _parse_args()
     try:
         asyncio.run(run(args.data_dir, args.environment, port=args.port, web_dir=args.web_dir))
-    except (ValueError, SingleInstanceError) as error:
-        print(str(error), file=sys.stderr)
+    except (ValueError, SingleInstanceError):
+        print('Local Hub 配置无效或已有实例运行，请检查本机日志。', file=sys.stderr)
         raise SystemExit(2) from None
+    except Exception:
+        print('Local Hub 启动或运行失败，请检查本机日志。', file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

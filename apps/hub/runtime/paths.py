@@ -64,4 +64,10 @@ class HubPaths:
             self.diagnostics,
             self.worktrees,
         ):
-            path.mkdir(parents=True, exist_ok=True)
+            try:
+                path.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                if path != self.logs:
+                    raise
+                # Logging initializes its own fallback; a read-only log path
+                # must not make the rest of the writable data root unusable.

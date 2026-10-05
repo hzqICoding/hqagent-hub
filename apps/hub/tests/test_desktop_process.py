@@ -100,7 +100,8 @@ def test_parent_shutdown_preserves_inflight_recovery_state(tmp_path):
 
 
 @pytest.mark.parametrize('control', ['shutdown', 'eof'])
-def test_real_source_process_desktop_lifetime(tmp_path, control):
+@pytest.mark.parametrize('log_failure', [False, True])
+def test_real_source_process_desktop_lifetime(tmp_path, control, log_failure):
     env = dict(os.environ)
     for key in ('HQAGENT_HUB_DATA_DIR', 'HQAGENT_PARENT_CONTROL', 'HQAGENT_RUNTIME_DIR', 'HQAGENT_INSTANCE_ID'):
         env.pop(key, None)
@@ -110,6 +111,9 @@ def test_real_source_process_desktop_lifetime(tmp_path, control):
                LOCALAPPDATA=str(tmp_path / 'app-data'), HOME=str(tmp_path), USERPROFILE=str(tmp_path),
                HQAGENT_CODEX_PATH=str(tmp_path / 'missing'), HQAGENT_CLAUDE_PATH=str(tmp_path / 'missing'))
     data = tmp_path / 'data-root'
+    if log_failure:
+        data.mkdir()
+        (data / 'logs').write_text('synthetic non-directory')
     # A real registered Git workspace is essential: an empty database never
     # exercises subprocess creation while the parent-control reader is blocked.
     project = tmp_path / 'project'
@@ -192,6 +196,14 @@ def test_real_source_process_desktop_lifetime(tmp_path, control):
         print(json.dumps({'control': control, 'exitCode': 0, 'exitMs': round(elapsed * 1000, 1)}))
         output, errors = child.communicate()
         assert descriptor.token.encode() not in output + errors
+        if log_failure:
+            assert errors.count(b'Hub file logging unavailable') == 1
+        else:
+            logs = (data / 'logs' / 'hub.log').read_text('utf-8')
+            rows = [json.loads(line) for line in logs.splitlines()]
+            assert {'hub.starting', 'hub.ready', 'hub.stopped', 'http.access'} <= {r['event'] for r in rows}
+            assert descriptor.token not in logs
+            assert next(r for r in rows if r['event'] == 'hub.ready')['port'] == descriptor.port
         assert not (runtime / 'hub.json').exists()
         assert not (data / 'runtime' / 'hub.lock').exists()
     finally:
