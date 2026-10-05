@@ -134,6 +134,14 @@ fn readiness_timeout(age: Duration) -> Duration {
 }
 
 fn trusted_descriptor(path: &Path, identity: &ProcessIdentity) -> Result<HubRuntimeDescriptor, ShellError> {
+    let result = validate_trusted_descriptor(path, identity);
+    if let Err(error) = &result {
+        crate::diagnostics::failure("descriptor_validation_failed", &error.to_string(), Duration::ZERO);
+    }
+    result
+}
+
+fn validate_trusted_descriptor(path: &Path, identity: &ProcessIdentity) -> Result<HubRuntimeDescriptor, ShellError> {
     let descriptor = read_descriptor(path)?;
     verify_private_file_acl(path)?;
     validate_hub_descriptor(&descriptor, identity)?;
@@ -188,7 +196,11 @@ impl HubEndpointProvider {
         }) {
             entry.result.clone()
         } else {
+            let started = Instant::now();
             let result = self.probe_readiness(&descriptor, readiness_timeout(age));
+            if let Err(error) = &result {
+                crate::diagnostics::failure("readiness_failed", &error.to_string(), started.elapsed());
+            }
             *cache = Some(ReadinessCache {
                 pid: descriptor.pid, instance_id: descriptor.instance_id.clone(),
                 checked_at: Instant::now(), result: result.clone(),
@@ -263,7 +275,7 @@ fn read_json_response<T: for<'de> Deserialize<'de>>(
         return Err(ShellError::HubUnavailable("本机响应体超出限制".into()));
     }
     serde_json::from_slice(&bytes)
-        .map_err(|error| ShellError::HubUnavailable(format!("本机响应不是有效 JSON: {error}")))
+        .map_err(|_| ShellError::HubUnavailable("本机响应不是有效 JSON（内容不记录）".into()))
 }
 
 pub fn read_descriptor<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, ShellError> {
@@ -284,7 +296,7 @@ pub fn read_descriptor<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, S
         ShellError::HubUnavailable(format!("无法读取 {}: {error}", path.display()))
     })?;
     serde_json::from_slice(&bytes)
-        .map_err(|error| ShellError::InvalidDescriptor(format!("JSON 校验失败: {error}")))
+        .map_err(|_| ShellError::InvalidDescriptor("JSON 校验失败（内容不记录）".into()))
 }
 
 pub fn validate_hub_descriptor(
@@ -503,6 +515,17 @@ mod tests {
 
     use super::{validate_hub_descriptor, HubRuntimeDescriptor};
     use crate::process_supervisor::ProcessIdentity;
+
+    #[test]
+    fn diagnostics_descriptor_parse_error_never_echoes_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hub.json");
+        std::fs::write(&path, br#"{"private-payload":"do-not-log-me"}"#).unwrap();
+        let error = super::read_descriptor::<HubRuntimeDescriptor>(&path).err().unwrap().to_string();
+        assert!(!error.contains("private-payload"));
+        assert!(!error.contains("do-not-log-me"));
+        assert!(error.contains("内容不记录"));
+    }
 
     #[test]
     fn health_and_readiness_have_independent_cold_start_deadlines() {

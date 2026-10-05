@@ -56,9 +56,15 @@ pub struct ShellState {
 
 impl ShellState {
     pub fn new(paths: AppPaths, resource_dir: PathBuf) -> Result<Self, ShellError> {
+        crate::diagnostics::init(&paths.root);
+        crate::diagnostics::event("INFO", &format!(
+            "shell_start version={} autostart_launch={} config={}",
+            env!("CARGO_PKG_VERSION"), env::args().any(|arg| arg == "--minimized"), paths.shell_config.display()));
         paths.ensure_directories()?;
         let config = Arc::new(ShellConfigStore::load(paths.shell_config.clone())?);
         let settings = config.get();
+        crate::diagnostics::event("INFO", &format!("shell_config autostart_enabled={} core_data_dir={}",
+            settings.autostart, crate::diagnostics::data_dir_arg(&settings.core_args).unwrap_or("<default or environment>")));
         let mut core_args = settings.core_args.clone();
         if !core_args
             .iter()
@@ -196,6 +202,7 @@ impl ShellState {
     }
 
     pub fn shutdown(&self) {
+        crate::diagnostics::event("INFO", "shell_shutdown requested");
         self.monitor_stop.store(true, Ordering::SeqCst);
         // Do not wait up to a cold bootstrap timeout before signalling the child.
         self.supervisor.shutdown();
