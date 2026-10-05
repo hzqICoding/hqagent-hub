@@ -542,7 +542,7 @@ class NativeService:
             type="native.closure.confirmed", payload=payload))
 
     @staticmethod
-    def _import_snapshot(messages, binding):
+    def _import_snapshot(messages):
         """Coalesce only already-filtered summaries; never change preview parts."""
         names = {'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'shell', 'exec_command', 'apply_patch', '工具'}
         result = []
@@ -567,8 +567,7 @@ class NativeService:
                     counts[name] = counts.get(name, 0) + 1
                     previous_call = name if state == '历史调用' else None
             text = '、'.join(name + (f' ×{count}' if count > 1 else '') for name, count in counts.items())
-            merged = {'id': 'message_' + digest(['native-tool-summary', binding, first['id']]),
-                      'role': 'system', 'text': f'工具调用 ×{sum(counts.values())}：{text}'}
+            merged = {'role': 'system', 'text': f'工具调用 ×{sum(counts.values())}：{text}'}
             if 'createdAt' in first:
                 merged['createdAt'] = first['createdAt']
             result.append(merged)
@@ -591,7 +590,7 @@ class NativeService:
             if not row["conversation_id"]:
                 await self.io(self.check, row, source, confirmation)
             verified = await self.io(self.source, row, full=True)
-            messages = await self.io(self._import_snapshot, verified.messages, row['binding_key'])
+            messages = await self.io(self._import_snapshot, verified.messages)
             def commit(tx):
                 current = self.row(identifier)
                 if current["conversation_id"]:
@@ -610,7 +609,9 @@ class NativeService:
                     nativeActivity={**evidence(source, self.probe), "activity": "closed_confirmed", "terminalClosedConfirmedAt": confirmation["confirmedAt"]})
                 tx.connection.execute("INSERT INTO local_conversations VALUES(?,?,?)", (conversation, view.model_dump_json(by_alias=True, exclude_none=True), stamp))
                 for sequence, message in enumerate(messages, 1):
-                    message_id = message['id'] if message['role'] == 'system' else uid('message')
+                    # Binding-level replay returns the existing conversation;
+                    # a new import must not reuse IDs covered by old tombstones.
+                    message_id = uid('message')
                     tx.connection.execute("INSERT INTO local_messages VALUES(?,?,?,?,?,?,?)", (message_id, conversation,
                         sequence, message["role"], message["text"], None, message.get("createdAt", stamp)))
                 tx.connection.execute("UPDATE native_sources SET conversation_id=?,session_id=?,confirmation_json=? WHERE native_id=?",

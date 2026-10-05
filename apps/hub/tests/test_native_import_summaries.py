@@ -7,7 +7,6 @@ import time
 
 import pytest
 
-from adapters.history import digest
 from core.errors import HubError
 from runtime.native.service import NativeService
 from remote_support import System, Workspaces, FakeRemoteServer, until, command_events
@@ -34,16 +33,15 @@ def summary(text, index=0):
 def test_pair_and_orphan_counting_including_multiline_parts(lines, expected):
     messages = [summary(line, n) for n, line in enumerate(lines)]
     original = deepcopy(messages)
-    mapped = NativeService._import_snapshot(messages, 'binding')
+    mapped = NativeService._import_snapshot(messages)
     assert len(mapped) == 1 and mapped[0]['text'] == expected
     assert mapped[0]['role'] == 'system'
     assert mapped[0]['createdAt'] == messages[0]['createdAt']
-    assert mapped[0]['id'] == 'message_' + digest(['native-tool-summary', 'binding', messages[0]['id']])
+    assert 'id' not in mapped[0]
     # Some readers put multiple tools in one Native message. Count their safe
     # lines in the same order, including pairs across message boundaries.
-    assert NativeService._import_snapshot([summary('\n'.join(lines))], 'binding') == mapped
-    assert NativeService._import_snapshot(messages, 'binding') == mapped
-    assert NativeService._import_snapshot(messages, 'other-binding')[0]['id'] != mapped[0]['id']
+    assert NativeService._import_snapshot([summary('\n'.join(lines))]) == mapped
+    assert NativeService._import_snapshot(messages) == mapped
     assert messages == original
 
 
@@ -52,13 +50,13 @@ def test_runs_do_not_cross_public_text_and_unknown_names_cannot_leak():
     assistant = {'id': 'assistant', 'role': 'assistant', 'text': '答复\n```text\nBash：历史调用\n```'}
     messages = [summary('Bash：历史调用'), public, summary('Bash：历史返回记录', 1), assistant,
                 summary('[redacted]：历史调用', 2), summary('sk-PRIVATE /secret/path：历史返回记录', 3)]
-    mapped = NativeService._import_snapshot(messages, 'binding')
+    mapped = NativeService._import_snapshot(messages)
     assert [m['text'] for m in mapped if m['role'] == 'system'] == [
         '工具调用 ×1：Bash', '工具调用 ×1：Bash', '工具调用 ×2：工具 ×2']
     assert mapped[1] == public and mapped[3] == assistant
     assert 'PRIVATE' not in str(mapped) and '/secret/path' not in str(mapped)
-    assert NativeService._import_snapshot([], 'binding') == []
-    assert NativeService._import_snapshot([public, assistant], 'binding') == [public, assistant]
+    assert NativeService._import_snapshot([]) == []
+    assert NativeService._import_snapshot([public, assistant]) == [public, assistant]
 
 
 def history_with_tools(root, workspace):
@@ -153,8 +151,7 @@ def test_local_and_granted_remote_import_share_snapshot_and_binding_idempotency(
                     '工具调用 ×18：Bash ×14、Read ×4', '工具调用 ×2：Read、Bash', '工具调用 ×2：Bash、工具']
                 assert [(m['role'], m['text'], m['created_at']) for m in messages if m['role'] != 'system'] == [
                     (m['role'], m['text'], m['createdAt']) for m in original if m['role'] != 'tool_summary']
-                expected = native._import_snapshot(original, row['binding_key'])
-                assert [m['message_id'] for m in tools] == [m['id'] for m in expected if m['role'] == 'system']
+                expected = native._import_snapshot(original)
                 assert [m['created_at'] for m in tools] == [m['createdAt'] for m in expected if m['role'] == 'system']
                 for key in ('import', 'import', 'another-import-key'):
                     repeat = await system.local.post(url, json=body,
@@ -172,9 +169,15 @@ def test_local_and_granted_remote_import_share_snapshot_and_binding_idempotency(
                     await native.read(identifier, limit=100)
                 assert imported.value.code == 'NOT_FOUND'  # Existing imported-preview fence.
                 results.append(([(m['sequence'], m['role'], m['text'], m['created_at']) for m in messages],
-                                [m['message_id'] for m in tools]))
+                                {m['message_id'] for m in messages}, row['binding_key']))
+                assert len(results[-1][1]) == len(messages)
                 assert not system.adapter.started
             finally:
                 await system.close()
-        assert results[0] == results[1]
+        assert results[0][0] == results[1][0]
+        # Two independent Hub stores simulate rebuilding the same binding.
+        # Content/timestamps agree, but all new IDs (including system summaries)
+        # must be disjoint from the previous import's possible tombstones.
+        assert results[0][2] == results[1][2]
+        assert results[0][1].isdisjoint(results[1][1])
     asyncio.run(scenario())
