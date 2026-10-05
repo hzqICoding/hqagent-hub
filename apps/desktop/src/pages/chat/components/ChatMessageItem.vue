@@ -9,7 +9,6 @@ import { useChatStore } from '@/stores/chat.store'
 import ProcessActivityGroup from './ProcessActivityGroup.vue'
 import {
   Terminal,
-  Sparkles,
   ChevronDown,
   Copy,
   Check,
@@ -22,7 +21,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const chatStore = useChatStore()
-const isExpanded = ref(true)
+const isExpanded = ref(false)
 const isCopied = ref(false)
 
 const activities = computed(() =>
@@ -84,30 +83,30 @@ async function copyText(text: string) {
       v-else-if="message.role === 'system'"
       class="max-w-3xl mx-auto my-1"
     >
-      <div class="rounded-xl border border-border/70 bg-panel/50 overflow-hidden shadow-xs transition-all">
+      <div class="rounded-lg bg-panel/40 hover:bg-panel/70 transition-colors">
         <!-- Header (Clickable disclosure) -->
         <button
           type="button"
-          class="w-full p-2.5 px-3 flex items-center justify-between text-xs hover:bg-panel transition-colors text-left gap-2 select-none"
+          class="w-full py-1.5 px-3 flex items-center justify-between text-xs hover:bg-panel transition-colors text-left gap-2 select-none cursor-pointer rounded-lg"
           @click="isExpanded = !isExpanded"
         >
           <div class="flex items-center gap-2 min-w-0">
-            <div class="w-5 h-5 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <Sparkles class="w-3 h-3" />
+            <div class="w-4 h-4 rounded bg-muted/60 text-text-muted flex items-center justify-center shrink-0">
+              <Terminal class="w-2.5 h-2.5" />
             </div>
-            <span class="font-medium text-text text-xs shrink-0">角色执行过程</span>
-            <span class="text-[10px] text-text-muted font-mono shrink-0">#{{ message.sequence }}</span>
+            <span class="text-[11px] font-medium text-text-muted shrink-0">执行记录</span>
+            <span class="text-[10px] text-text-muted/60 font-mono shrink-0">#{{ message.sequence }}</span>
 
             <!-- Compact preview when collapsed -->
-            <span v-if="!isExpanded" class="text-[11px] text-text-muted truncate ml-1 font-mono">
+            <span v-if="!isExpanded" class="text-[11px] text-text-muted/70 truncate ml-1 font-mono">
               {{ message.text }}
             </span>
           </div>
 
           <div class="flex items-center gap-2 shrink-0">
-            <span class="text-[10px] text-text-muted">{{ formatTime(message.createdAt) }}</span>
+            <span class="text-[10px] text-text-muted/60">{{ formatTime(message.createdAt) }}</span>
             <ChevronDown
-              class="w-3.5 h-3.5 text-text-muted transition-transform duration-200"
+              class="w-3.5 h-3.5 text-text-muted/60 transition-transform duration-200"
               :class="isExpanded ? 'rotate-180' : ''"
             />
           </div>
@@ -116,13 +115,9 @@ async function copyText(text: string) {
         <!-- Expanded Terminal Body -->
         <div
           v-if="isExpanded"
-          class="p-3 border-t border-border/50 bg-bg-app/80 font-mono text-[11px] text-text-muted select-text space-y-1.5 leading-relaxed break-words whitespace-pre-wrap"
+          class="p-2.5 pt-0 font-mono text-[11px] text-text-muted select-text space-y-1.5 leading-relaxed break-words whitespace-pre-wrap"
         >
-          <div class="flex items-center gap-1.5 text-primary text-[10px] uppercase font-semibold tracking-wider select-none">
-            <Terminal class="w-3 h-3" />
-            <span>Agent Execution Log</span>
-          </div>
-          <div class="p-2.5 rounded-lg bg-panel/80 border border-border/60 text-text leading-relaxed">
+          <div class="p-2 rounded bg-bg-app/80 text-text leading-relaxed text-xs">
             {{ message.text }}
           </div>
         </div>

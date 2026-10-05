@@ -73,4 +73,30 @@ describe('ChatMessageItem component', () => {
     await userCopyBtn.trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(sampleUserMsg.text)
   })
+
+  it('renders system execution record collapsed by default and expands on click', async () => {
+    const sampleSystemMsg: LocalMessageView = {
+      id: 'msg_sys_1',
+      conversationId: 'conv_1',
+      role: 'system',
+      text: 'Bash: 历史返回记录\nexit 0',
+      sequence: 3,
+      createdAt: '2026-09-24T12:01:00Z',
+    }
+
+    const wrapper = mount(ChatMessageItem, {
+      props: { message: sampleSystemMsg },
+    })
+
+    expect(wrapper.text()).toContain('执行记录')
+    expect(wrapper.text()).toContain('#3')
+
+    // Terminal body is collapsed initially
+    const disclosureBtn = wrapper.find('button')
+    expect(disclosureBtn.exists()).toBe(true)
+
+    // Click to expand
+    await disclosureBtn.trigger('click')
+    expect(wrapper.text()).toContain('Bash: 历史返回记录')
+  })
 })

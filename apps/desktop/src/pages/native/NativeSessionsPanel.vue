@@ -6,7 +6,7 @@ import { getLocalChatGateway, getRemoteGateway } from '@/shared/api'
 import { useChatStore } from '@/stores/chat.store'
 import { useRemoteChatStore } from '@/stores/remote-chat.store'
 import { HqDialog, HqButton, HqMarkdown } from '@/shared/ui'
-import { ChevronDown, ChevronRight, Folder } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Folder, Terminal } from 'lucide-vue-next'
 import { overlayId } from '@/shared/ui/overlay-stack'
 import { activityLabel, agentLabel, closureText, NativeMessageAssembler, nativeFailure } from './native-utils'
 
@@ -230,18 +230,18 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
       <div v-if="!collapsedWorkspaces.has(group.id)" class="pl-2 space-y-1 mb-2">
         <p v-if="!group.readable.length" class="py-2 text-content-secondary pl-4" data-testid="native-empty-readable">暂无可读取的原生会话</p>
         <button v-for="item in group.readable" :key="item.nativeSessionId" type="button" data-testid="native-readable"
-          class="block w-full min-h-[44px] text-left p-2.5 rounded-xl hover:bg-muted border border-border text-content-primary transition-all cursor-pointer group" @click="open(item)">
+          class="block w-full min-h-[40px] text-left px-3 py-2 rounded-lg hover:bg-muted/60 text-content-primary transition-colors cursor-pointer group" @click="open(item)">
           <span class="block truncate font-medium text-xs text-text group-hover:text-primary transition-colors"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span>
           <span class="block text-[10px] text-content-secondary mt-0.5">{{ agentLabel(item.agentType) }}{{ item.agentType === 'pi' && item.format.pi ? ' · 已保存分支' : '' }} · {{ activityLabel(item.activity.activity) }}</span>
         </button>
         <template v-if="group.unavailable.length">
-          <button type="button" data-testid="native-unavailable-toggle" class="w-full min-h-[44px] flex items-center gap-1 text-left text-content-secondary rounded hover:bg-muted px-2 cursor-pointer transition-colors"
+          <button type="button" data-testid="native-unavailable-toggle" class="w-full min-h-[38px] flex items-center gap-1 text-left text-content-secondary rounded hover:bg-muted/50 px-2 cursor-pointer transition-colors"
             :aria-expanded="expandedWorkspaces.has(group.id)" :aria-controls="`${disclosureId}-${groupIndex}`" @click="toggleUnavailable(group.id)">
             <component :is="expandedWorkspaces.has(group.id) ? ChevronDown : ChevronRight" class="w-4 h-4 shrink-0" />暂不支持（{{ group.unavailable.length }}）
           </button>
           <div v-if="expandedWorkspaces.has(group.id)" :id="`${disclosureId}-${groupIndex}`" class="space-y-1 pl-2">
             <button v-for="item in group.unavailable" :key="item.nativeSessionId" type="button" data-testid="native-unavailable"
-              class="block w-full min-h-[44px] text-left p-2.5 rounded-xl border border-border text-content-secondary hover:bg-muted transition-all cursor-pointer" @click="open(item)">
+              class="block w-full min-h-[40px] text-left px-3 py-2 rounded-lg text-content-secondary hover:bg-muted/50 transition-colors cursor-pointer" @click="open(item)">
               <span class="block truncate font-medium text-xs text-text"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span>
               <span class="block text-[10px] break-words">{{ formatLabel(item) }}</span>
               <span class="block text-[10px] break-words text-text-muted">{{ item.format.reason || '当前记录格式尚未支持' }}</span>
@@ -266,10 +266,30 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
         <HqButton v-if="before" size="sm" :loading="reading" @click="read(true)">读取更早内容</HqButton>
         <p v-if="reading">正在从电脑读取…</p>
         <p v-if="before && !messages.length" class="text-text-muted">正在等待完整消息片段，请继续读取更早内容</p>
-        <div v-for="message in messages" :key="message.messageId" class="p-3 bg-bg-app border border-border rounded text-xs select-text">
-          <span class="text-text-muted text-[11px] block mb-1 font-mono uppercase">{{ message.role }}</span>
-          <p v-if="message.role === 'user'" class="whitespace-pre-wrap break-words">{{ message.text }}</p>
-          <HqMarkdown v-else :content="message.text" />
+        <div v-for="message in messages" :key="message.messageId" class="text-xs select-text">
+          <!-- Collapsed history / tool summary records -->
+          <template v-if="message.role === 'tool_summary' || /历史调用|历史返回记录|Bash:/.test(message.text)">
+            <details class="group/history my-1 py-1.5 px-2.5 rounded-lg bg-panel/50 hover:bg-panel transition-colors">
+              <summary class="cursor-pointer select-none text-[11px] text-text-muted hover:text-text flex items-center justify-between font-mono list-none">
+                <span class="flex items-center gap-1.5 truncate">
+                  <Terminal class="w-3 h-3 text-text-muted/60 shrink-0" />
+                  <span class="truncate">{{ message.text.split('\n')[0].replace(/^#+\s*/, '') || '工具执行历史' }}</span>
+                </span>
+                <span class="text-[10px] text-text-muted/60 group-open/history:rotate-180 transition-transform shrink-0 ml-1">▼</span>
+              </summary>
+              <div class="mt-1.5 p-2 rounded bg-bg-app/80 font-mono text-[11px] text-text-muted whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+                <HqMarkdown :content="message.text" />
+              </div>
+            </details>
+          </template>
+          <!-- Regular user / assistant messages -->
+          <template v-else>
+            <div class="p-3 bg-panel rounded-lg space-y-1 my-1">
+              <span class="text-text-muted text-[10px] block font-mono uppercase">{{ message.role }}</span>
+              <p v-if="message.role === 'user'" class="whitespace-pre-wrap break-words text-text">{{ message.text }}</p>
+              <HqMarkdown v-else :content="message.text" />
+            </div>
+          </template>
         </div>
         <p v-if="pending" role="status">正在电脑上导入…</p>
         <p v-if="remote && suspended" class="text-warning">这台电脑的远程操作已暂停</p>
