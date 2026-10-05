@@ -44,7 +44,7 @@ describe('R3 native sessions', () => {
     const read = vi.spyOn(remote, 'readNativeMessages')
     const wrapper = panel(true, false); await flushPromises()
     expect(wrapper.text()).toContain('示例项目'); expect(wrapper.text()).toContain('Claude Code'); expect(wrapper.text()).toContain('Codex')
-    for (const status of ['可能仍在终端中运行', '终端正在使用', '已确认关闭']) expect(wrapper.text()).toContain(status)
+    for (const status of ['未确认终端状态', '终端正在使用', '已关闭，可继续']) expect(wrapper.text()).toContain(status)
     await wrapper.findAll('button').find((b) => b.text().includes('示例：梳理项目结构'))!.trigger('click')
     expect(wrapper.text()).toContain('电脑离线，无法读取原生会话内容'); expect(read).not.toHaveBeenCalled()
   })

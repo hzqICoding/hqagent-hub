@@ -134,7 +134,7 @@ describe('ChatPage', () => {
     expect(wrapper.text()).toContain('分析当前工程代码结构并提出优化建议')
   })
 
-  it('displays native session in workbench directly with banner confirmation and takes over conversation', async () => {
+  it('displays native session in workbench directly with banner confirmation and takes over conversation (unknown status)', async () => {
     const wrapper = await mountInitializedPage()
     const store = useChatStore()
 
@@ -145,7 +145,7 @@ describe('ChatPage', () => {
       workspaceId: store.workspaces[0].id,
       indexVersion: 1,
       sourceRevision: 'example_source_revision',
-      activity: { activity: 'closed_confirmed' as const },
+      activity: { activity: 'unknown' as const },
       format: { status: 'readable' as const, cliVersion: '1.0.0' },
       createdAt: '2026-10-05T00:00:00Z',
       updatedAt: '2026-10-05T00:00:00Z',
@@ -159,6 +159,7 @@ describe('ChatPage', () => {
     expect(wrapper.find('[data-testid="native-session-workbench-banner"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('终端会话 · 示例重构')
     expect(wrapper.text()).toContain('终端原生会话（只读历史）')
+    expect(wrapper.text()).toContain('未确认终端状态')
     expect(wrapper.text()).toContain('请先在电脑终端里退出这个会话')
 
     // 2. Takeover button is disabled until checkbox is checked
@@ -169,7 +170,7 @@ describe('ChatPage', () => {
     await checkbox.setValue(true)
     expect(takeoverBtn.attributes('disabled')).toBeUndefined()
 
-    // 3. Click takeover: imports session and transitions to project task
+    // 3. Click takeover: imports session and transitions to project task via store
     const importSpy = vi.spyOn(mockLocalChatGateway, 'importNativeSession')
     await takeoverBtn.trigger('click')
     await flushPromises()
@@ -182,7 +183,56 @@ describe('ChatPage', () => {
     expect(store.activeConversation?.conversationKind).toBe('native')
   })
 
-  it('merges consecutive tool calls in native session history into a single line', async () => {
+  it('differentiates banner for closed_confirmed and likely_active terminal states', async () => {
+    const wrapper = await mountInitializedPage()
+    const store = useChatStore()
+    const sidebar = wrapper.findComponent({ name: 'ChatSidebar' })
+
+    // 1. closed_confirmed: no checkbox, direct continue button
+    const closedSession = {
+      nativeSessionId: 'native_closed_1',
+      title: '已确认关闭会话',
+      agentType: 'claude' as const,
+      workspaceId: store.workspaces[0].id,
+      indexVersion: 1,
+      sourceRevision: 'src_closed',
+      activity: { activity: 'closed_confirmed' as const },
+      format: { status: 'readable' as const, cliVersion: '1.0.0' },
+      createdAt: '2026-10-05T00:00:00Z',
+      updatedAt: '2026-10-05T00:00:00Z',
+    }
+    await sidebar.vm.$emit('select-native-session', closedSession)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已关闭，可继续')
+    expect(wrapper.text()).toContain('无需勾选')
+    const continueBtn = wrapper.findAll('button').find(b => b.text().includes('继续这个会话'))!
+    expect(continueBtn.exists()).toBe(true)
+    expect(continueBtn.attributes('disabled')).toBeUndefined()
+
+    // 2. likely_active: disabled with warning notice
+    const activeSession = {
+      nativeSessionId: 'native_active_1',
+      title: '活跃会话',
+      agentType: 'codex' as const,
+      workspaceId: store.workspaces[0].id,
+      indexVersion: 1,
+      sourceRevision: 'src_active',
+      activity: { activity: 'likely_active' as const },
+      format: { status: 'readable' as const, cliVersion: '1.0.0' },
+      createdAt: '2026-10-05T00:00:00Z',
+      updatedAt: '2026-10-05T00:00:00Z',
+    }
+    await sidebar.vm.$emit('select-native-session', activeSession)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('终端正在使用')
+    expect(wrapper.text()).toContain('终端正在使用这个会话，请先在终端退出')
+    const disabledBtn = wrapper.findAll('button').find(b => b.text().includes('接管并继续对话'))!
+    expect(disabledBtn.attributes('disabled')).toBeDefined()
+  })
+
+  it('merges consecutive tool calls by role === tool_summary without folding regular text mentioning Bash', async () => {
     const wrapper = await mountInitializedPage()
     const store = useChatStore()
 
@@ -208,6 +258,15 @@ describe('ChatPage', () => {
           segmentCount: 1,
           totalUtf8Bytes: 18,
           contentSha256: 'c43a786452781d0da0f8d9dbb1483f2f7c71ca6c1b40c36563ff539e52cb0bf2',
+        },
+        {
+          messageId: 'normal_msg_3',
+          role: 'assistant',
+          text: '这里是普通的助手回复，虽然提到 Bash: ls 但绝不应该被折叠为工具调用。',
+          segmentIndex: 0,
+          segmentCount: 1,
+          totalUtf8Bytes: 97,
+          contentSha256: 'e2c8afaec0f003f311bb88e6b66e0eaa3cbc4ce52a101cd9e571c6ea87cd35f4',
         },
       ],
       hasMore: false,
@@ -237,5 +296,7 @@ describe('ChatPage', () => {
     const mergedLine = wrapper.find('[data-testid="native-merged-tool-line"]')
     expect(mergedLine.text()).toContain('执行了 2 个工具调用')
     expect(mergedLine.text()).toContain('Bash')
+    // Regular assistant message mentioning Bash is NOT folded
+    expect(wrapper.text()).toContain('这里是普通的助手回复，虽然提到 Bash: ls 但绝不应该被折叠为工具调用。')
   })
 })

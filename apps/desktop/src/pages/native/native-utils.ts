@@ -2,7 +2,8 @@ import type { NativeActivity, RuntimeNativeAgentType, NativeMessagePage, NativeM
 import { getRemoteErrorMessage } from '@/shared/i18n/remote-errors'
 
 export const agentLabel = (agent?: RuntimeNativeAgentType) => agent === 'claude' ? 'Claude Code' : agent === 'codex' ? 'Codex' : agent === 'pi' ? 'PI' : '原生 Agent'
-export const activityLabel = (activity: NativeActivity) => ({ unknown: '可能仍在终端中运行', likely_active: '终端正在使用', closed_confirmed: '已确认关闭' }[activity])
+export const activityLabel = (activity: NativeActivity) => ({ unknown: '未确认终端状态', likely_active: '终端正在使用', closed_confirmed: '已关闭，可继续' }[activity])
+export const activityColorClass = (activity: NativeActivity) => ({ unknown: 'text-text-muted/70', likely_active: 'text-warning font-medium', closed_confirmed: 'text-success font-medium' }[activity])
 export const closureText = '请先在电脑终端里退出这个会话。同时写入会损坏会话记录。确认已退出后再继续。'
 export function nativeFailure(error: unknown): { message: string; requestId?: string; code?: string } {
   const value = error as { code?: string; message?: string; requestId?: string }

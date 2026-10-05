@@ -8,7 +8,7 @@ import { useRemoteChatStore } from '@/stores/remote-chat.store'
 import { HqDialog, HqButton, HqMarkdown } from '@/shared/ui'
 import { ChevronDown, ChevronRight, Folder, Terminal } from 'lucide-vue-next'
 import { overlayId } from '@/shared/ui/overlay-stack'
-import { activityLabel, agentLabel, closureText, NativeMessageAssembler, nativeFailure } from './native-utils'
+import { activityColorClass, activityLabel, agentLabel, closureText, NativeMessageAssembler, nativeFailure } from './native-utils'
 
 const props = withDefaults(defineProps<{
   remote?: boolean
@@ -47,7 +47,7 @@ const pending = ref<RemoteResourceQueuedReceipt | null>(null)
 const assembler = new NativeMessageAssembler()
 
 function isToolMessage(msg: NativeMessagePart): boolean {
-  return msg.role === 'tool_summary' || /历史调用|历史返回记录|Bash:|执行工具|工具调用/.test(msg.text)
+  return msg.role === 'tool_summary'
 }
 
 function getToolsSummary(toolMsgs: NativeMessagePart[]): string {
@@ -290,7 +290,7 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
           ]"
           @click="open(item)">
           <span class="block truncate font-medium text-xs text-text group-hover:text-primary transition-colors"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span>
-          <span class="block text-[10px] text-content-secondary mt-0.5">{{ agentLabel(item.agentType) }}{{ item.agentType === 'pi' && item.format.pi ? ' · 已保存分支' : '' }} · {{ activityLabel(item.activity.activity) }}</span>
+          <span class="block text-[10px] text-content-secondary mt-0.5">{{ agentLabel(item.agentType) }}{{ item.agentType === 'pi' && item.format.pi ? ' · 已保存分支' : '' }} · <span :class="activityColorClass(item.activity.activity)">{{ activityLabel(item.activity.activity) }}</span></span>
         </button>
         <template v-if="group.unavailable.length">
           <button type="button" data-testid="native-unavailable-toggle" class="w-full min-h-[38px] flex items-center gap-1 text-left text-content-secondary rounded hover:bg-muted/50 px-2 cursor-pointer transition-colors"
@@ -324,7 +324,7 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
         <p class="text-content-secondary break-words">原因：{{ selected.format.reason || '当前记录格式尚未支持' }}</p>
       </div>
       <div v-else class="space-y-3 text-xs">
-        <p v-if="selected"><RuntimeIcon :agent="selected.agentType" class="inline-block w-4 h-4 mr-1" />{{ agentLabel(selected.agentType) }}{{ selected.agentType === 'pi' && selected.format.pi ? ' · 已保存分支' : '' }} · {{ activityLabel(selected.activity.activity) }} · 只读历史</p>
+        <p v-if="selected"><RuntimeIcon :agent="selected.agentType" class="inline-block w-4 h-4 mr-1" />{{ agentLabel(selected.agentType) }}{{ selected.agentType === 'pi' && selected.format.pi ? ' · 已保存分支' : '' }} · <span :class="activityColorClass(selected.activity.activity)">{{ activityLabel(selected.activity.activity) }}</span> · 只读历史</p>
         <p v-if="error" role="alert" class="text-danger">{{ error.message }} <span class="select-text">{{ error.requestId ? `requestId: ${error.requestId}` : '' }}</span></p>
         <HqButton size="sm" :loading="reading" @click="read()">重新读取</HqButton>
         <HqButton v-if="before" size="sm" :loading="reading" @click="read(true)">读取更早内容</HqButton>

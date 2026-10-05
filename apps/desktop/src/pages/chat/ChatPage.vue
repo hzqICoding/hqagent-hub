@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import type { RuntimeNativeSessionIndex, RemoteNativeSessionView, NativeMessagePart } from '@hqagent/protocol'
 import { getLocalChatGateway } from '@/shared/api'
-import { activityLabel, closureText, NativeMessageAssembler, nativeFailure } from '@/pages/native/native-utils'
+import { activityColorClass, activityLabel, agentLabel, closureText, NativeMessageAssembler, nativeFailure } from '@/pages/native/native-utils'
 import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
 import ConversationDeletion from './components/ConversationDeletion.vue'
 import NativeSyncNotice from '@/pages/native/NativeSyncNotice.vue'
-import { agentLabel } from '@/pages/native/native-utils'
 import { ref, onMounted, onUnmounted, watch, nextTick, computed, inject } from 'vue'
 import { routeLocationKey, type RouteLocationNormalizedLoaded } from 'vue-router'
 import { useChatStore } from '@/stores/chat.store'
@@ -65,7 +64,7 @@ const nativeError = ref<ReturnType<typeof nativeFailure> | null>(null)
 const nativeAssembler = new NativeMessageAssembler()
 
 function isToolMessage(msg: NativeMessagePart): boolean {
-  return msg.role === 'tool_summary' || /历史调用|历史返回记录|Bash:|执行工具|工具调用/.test(msg.text)
+  return msg.role === 'tool_summary'
 }
 
 function getToolsSummary(toolMsgs: NativeMessagePart[]): string {
@@ -136,7 +135,9 @@ async function handleSelectNativeSession(session: RuntimeNativeSessionIndex | Re
 
 async function importActiveNativeSession() {
   const session = activeNativeSession.value
-  if (!session || !isNativeConfirmed.value || isNativeImporting.value) return
+  if (!session || isNativeImporting.value) return
+  if (session.activity.activity === 'likely_active') return
+  if (session.activity.activity === 'unknown' && !isNativeConfirmed.value) return
   isNativeImporting.value = true
   nativeError.value = null
   try {
@@ -146,8 +147,8 @@ async function importActiveNativeSession() {
       expectedIndexVersion: session.indexVersion,
     }
     const conversation = await getLocalChatGateway().importNativeSession(session.nativeSessionId, input)
-    chatStore.conversations = [conversation, ...chatStore.conversations.filter(c => c.id !== conversation.id)]
     activeNativeSession.value = null
+    await chatStore.fetchConversations()
     await chatStore.selectConversation(conversation.id)
   } catch (err) {
     nativeError.value = nativeFailure(err)
@@ -513,12 +514,20 @@ async function restoreActiveConversation() {
                   <span class="text-[10px] px-1.5 py-0.2 rounded bg-muted text-text-muted font-mono">
                     {{ activeNativeSession.format.cliVersion ? `CLI ${activeNativeSession.format.cliVersion}` : 'CLI' }}
                   </span>
-                  <span class="text-[10px] text-text-muted">
+                  <span class="text-[10px]" :class="activityColorClass(activeNativeSession.activity.activity)">
                     {{ activityLabel(activeNativeSession.activity.activity) }}
                   </span>
                 </div>
                 <p class="text-text-muted text-[11px] leading-relaxed">
-                  {{ closureText }}
+                  <span v-if="activeNativeSession.activity.activity === 'likely_active'" class="text-warning">
+                    终端正在使用这个会话，请先在终端退出。同时写入会损坏会话记录。
+                  </span>
+                  <span v-else-if="activeNativeSession.activity.activity === 'closed_confirmed'">
+                    终端已确认关闭，可直接接管并继续任务。
+                  </span>
+                  <span v-else>
+                    {{ closureText }}
+                  </span>
                 </p>
               </div>
 
@@ -548,24 +557,60 @@ async function restoreActiveConversation() {
               v-if="activeNativeSession.format.status === 'readable'"
               class="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-border/40"
             >
-              <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  v-model="isNativeConfirmed"
-                  type="checkbox"
-                  class="hq-form-choice rounded border-border text-primary focus:ring-0"
-                />
-                <span class="text-text font-medium text-xs">我已在终端退出该会话</span>
-              </label>
+              <!-- likely_active：禁用勾选和按钮，提示「终端正在使用这个会话，请先在终端退出」 -->
+              <template v-if="activeNativeSession.activity.activity === 'likely_active'">
+                <label class="flex items-center gap-2 select-none opacity-60 cursor-not-allowed">
+                  <input
+                    type="checkbox"
+                    disabled
+                    class="hq-form-choice rounded border-border text-primary focus:ring-0 cursor-not-allowed"
+                  />
+                  <span class="text-text font-medium text-xs">终端正在使用这个会话，请先在终端退出</span>
+                </label>
 
-              <HqButton
-                size="sm"
-                variant="primary"
-                :disabled="!isNativeConfirmed || isNativeImporting"
-                :loading="isNativeImporting"
-                @click="importActiveNativeSession"
-              >
-                接管并继续对话
-              </HqButton>
+                <HqButton
+                  size="sm"
+                  variant="secondary"
+                  disabled
+                >
+                  接管并继续对话
+                </HqButton>
+              </template>
+
+              <!-- closed_confirmed：不用勾选，直接显示「继续这个会话」 -->
+              <template v-else-if="activeNativeSession.activity.activity === 'closed_confirmed'">
+                <span class="text-xs text-text-muted">终端已确认关闭，无需勾选</span>
+                <HqButton
+                  size="sm"
+                  variant="primary"
+                  :loading="isNativeImporting"
+                  @click="importActiveNativeSession"
+                >
+                  继续这个会话
+                </HqButton>
+              </template>
+
+              <!-- unknown：保持现在的勾选加按钮 -->
+              <template v-else>
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    v-model="isNativeConfirmed"
+                    type="checkbox"
+                    class="hq-form-choice rounded border-border text-primary focus:ring-0"
+                  />
+                  <span class="text-text font-medium text-xs">我已在终端退出该会话</span>
+                </label>
+
+                <HqButton
+                  size="sm"
+                  variant="primary"
+                  :disabled="!isNativeConfirmed || isNativeImporting"
+                  :loading="isNativeImporting"
+                  @click="importActiveNativeSession"
+                >
+                  接管并继续对话
+                </HqButton>
+              </template>
             </div>
 
             <div
@@ -797,11 +842,17 @@ async function restoreActiveConversation() {
           v-if="activeNativeSession"
           class="p-3 border-t border-border bg-panel text-center text-xs text-text-muted select-none shrink-0"
         >
-          <span v-if="activeNativeSession.format.status === 'readable'">
-            当前处于只读预览模式。勾选上方「我已在终端退出该会话」并点击「接管并继续对话」后，即可在此输入并继续对话。
+          <span v-if="activeNativeSession.format.status !== 'readable'">
+            当前记录格式尚未支持，无法续接对话。
+          </span>
+          <span v-else-if="activeNativeSession.activity.activity === 'likely_active'" class="text-warning">
+            终端正在使用这个会话，请先在终端退出。
+          </span>
+          <span v-else-if="activeNativeSession.activity.activity === 'closed_confirmed'">
+            当前处于只读预览模式。点击上方「继续这个会话」后，即可在此输入并继续对话。
           </span>
           <span v-else>
-            当前记录格式尚未支持，无法续接对话。
+            当前处于只读预览模式。勾选上方「我已在终端退出该会话」并点击「接管并继续对话」后，即可在此输入并继续对话。
           </span>
         </div>
       </main>
