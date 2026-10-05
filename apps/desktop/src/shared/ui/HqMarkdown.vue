@@ -331,7 +331,7 @@ function formatInline(text: string): string {
   let replaced = escaped.replace(/`([^`]+)`/g, (_m, code) => {
     const token = `\u0000CODE_${codeTokens.length}\u0000`
     codeTokens.push(
-      `<code class="px-1.5 py-0.5 rounded bg-muted/60 border border-border/60 font-mono text-[11px] text-text font-medium select-all">${code}</code>`
+      `<code class="px-1.5 py-0.5 rounded-md bg-muted/70 font-mono text-[11px] text-text font-medium select-all">${code}</code>`
     )
     return token
   })
@@ -357,13 +357,13 @@ function formatInline(text: string): string {
 
   // 3. Bold & Italic
   replaced = replaced
-    .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-text">$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em class="italic text-text/90">$1</em>')
+  .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-text">$1</strong>')
+  .replace(/\*(.*?)\*/g, '<em class="italic text-text/90">$1</em>')
 
   // 4. File paths auto-detection (e.g., ua_settings/.../RtkSettingFragment.kt:12 or E:/Workspace/ua_android/build.gradle)
   const filePathRegex = /(^|[\s(（[<])([a-zA-Z0-9_\-./\\]+[/\\][a-zA-Z0-9_\-.]+\.(?:kt|java|ts|tsx|vue|js|jsx|json|yaml|yml|xml|gradle|md|go|rs|py|c|cpp|h|css|scss|html)(?::\d+)?)(?=$|[\s)）\]>，。；;：,:])/g
   replaced = replaced.replace(filePathRegex, (_m, prefix, path) => {
-    return `${prefix}<code class="px-1.5 py-0.5 rounded bg-panel-hover border border-border/80 font-mono text-[11px] text-primary font-medium hover:border-primary/50 transition-colors select-all">${path}</code>`
+    return `${prefix}<code class="px-1.5 py-0.5 rounded-md bg-muted/70 font-mono text-[11px] text-primary font-medium hover:bg-muted transition-colors select-all">${path}</code>`
   })
 
   // 5. Restore link and code tokens
@@ -384,7 +384,7 @@ function formatInline(text: string): string {
       <!-- Headings -->
       <h1
         v-if="block.type === 'heading' && block.level === 1"
-        class="text-base font-bold text-text mt-4 mb-2 pb-1.5 border-b border-border/80"
+        class="text-base font-bold text-text mt-4 mb-2 pb-1.5 border-b border-border/20"
         v-html="formatInline(block.text || '')"
       />
       <h2
@@ -415,7 +415,7 @@ function formatInline(text: string): string {
       <!-- Horizontal Rule -->
       <hr
         v-else-if="block.type === 'hr'"
-        class="my-3 border-t border-border/70"
+        class="my-3 border-t border-border/20"
       />
 
       <!-- Paragraph -->
@@ -462,9 +462,9 @@ function formatInline(text: string): string {
       <!-- Table with PI-Desktop style toolbar -->
       <div
         v-else-if="block.type === 'table' && block.columns"
-        class="my-3 rounded-xl border border-border/80 bg-panel/50 overflow-hidden shadow-xs group"
+        class="my-3 rounded-xl bg-muted/20 overflow-hidden group"
       >
-        <div class="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-b border-border/70 text-[11px] text-text-muted">
+        <div class="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-b border-border/20 text-[11px] text-text-muted">
           <span class="font-mono text-[10px] tracking-wider uppercase">Table ({{ block.rows?.length || 0 }} rows)</span>
           <button
             type="button"
@@ -480,7 +480,7 @@ function formatInline(text: string): string {
 
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs border-collapse">
-            <thead class="bg-muted/30 border-b border-border/70 text-text font-semibold">
+            <thead class="bg-muted/30 border-b border-border/20 text-text font-semibold">
               <tr>
                 <th
                   v-for="(col, cIdx) in block.columns"
@@ -491,7 +491,7 @@ function formatInline(text: string): string {
                 />
               </tr>
             </thead>
-            <tbody class="divide-y divide-border/40">
+            <tbody class="divide-y divide-border/20">
               <tr
                 v-for="(row, rIdx) in block.rows"
                 :key="rIdx"

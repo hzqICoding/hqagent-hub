@@ -2,7 +2,7 @@
 import AttachmentDrafts from '@/shared/attachments/AttachmentDrafts.vue'
 import { attachmentErrorText } from '@/shared/attachments/transport'
 import { Paperclip } from 'lucide-vue-next'
-import { closureText, nativeFailure } from '@/pages/native/native-utils'
+import { closureText, nativeFailure, activityLabel } from '@/pages/native/native-utils'
 import { ref, computed, nextTick, watch } from 'vue'
 import { useChatStore } from '@/stores/chat.store'
 import {
@@ -15,6 +15,7 @@ import {
   X,
   Square,
   RotateCcw,
+  Check,
 } from 'lucide-vue-next'
 
 const chatStore = useChatStore()
@@ -38,8 +39,14 @@ const attachmentsBlocked = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const canSend = computed(() => {
+  if (chatStore.activeConversation?.conversationKind === 'native') {
+    const act = chatStore.activeConversation.nativeActivity?.activity
+    if (act === 'likely_active') return false
+    if (act !== 'closed_confirmed' && (!nativeConfirmed.value || !chatStore.activeConversation.nativeSourceRevision)) {
+      return false
+    }
+  }
   return (
-    (chatStore.activeConversation?.conversationKind !== 'native' || chatStore.activeConversation.nativeActivity?.activity === 'closed_confirmed' || (nativeConfirmed.value && Boolean(chatStore.activeConversation.nativeSourceRevision))) &&
     !chatStore.piGuardIssue &&
     !attachmentsBlocked.value &&
     !chatStore.isConversationBusy &&
@@ -123,12 +130,36 @@ function handleStopRun() {
 <template>
   <div class="w-full shrink-0 px-2.5 sm:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-1 select-none">
     <div class="max-w-3xl mx-auto w-full space-y-2">
-      <div v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-xs p-2 space-y-1">
-        <p>固定继续原生会话</p>
-        <template v-if="chatStore.activeConversation.nativeActivity?.activity !== 'closed_confirmed' || nativeError?.code === 'NATIVE_SESSION_CHANGED'">
-          <p>{{ closureText }}</p><label class="flex gap-2"><input class="hq-form-choice" v-model="nativeConfirmed" type="checkbox" />我已在终端退出该会话</label>
+      <div v-if="chatStore.activeConversation?.conversationKind === 'native'" class="text-xs px-3 py-2 rounded-xl bg-muted/20 text-text-muted space-y-1.5">
+        <div class="flex items-center justify-between text-[11px]">
+          <span class="font-medium text-text-muted/80">原生会话状态</span>
+          <span
+            class="text-[10px]"
+            :class="chatStore.activeConversation.nativeActivity?.activity === 'closed_confirmed' ? 'text-success font-medium' : chatStore.activeConversation.nativeActivity?.activity === 'likely_active' ? 'text-warning font-medium' : 'text-text-muted/70'"
+          >
+            {{ chatStore.activeConversation.nativeActivity?.activity ? activityLabel(chatStore.activeConversation.nativeActivity.activity) : '未确认终端状态' }}
+          </span>
+        </div>
+        <template v-if="chatStore.activeConversation.nativeActivity?.activity === 'likely_active'">
+          <div class="text-[11px] text-warning flex items-center gap-1.5 py-0.5">
+            <AlertCircle class="w-3.5 h-3.5 shrink-0" />
+            <span>终端正在使用这个会话，请先在终端退出</span>
+          </div>
         </template>
-        <p v-if="nativeError" role="alert" class="text-danger">{{ nativeError.message }} <span class="select-text">{{ nativeError.requestId ? `requestId: ${nativeError.requestId}` : '' }}</span></p>
+        <template v-else-if="chatStore.activeConversation.nativeActivity?.activity === 'closed_confirmed' && nativeError?.code !== 'NATIVE_SESSION_CHANGED'">
+          <div class="text-[11px] text-success/90 py-0.5 flex items-center gap-1.5">
+            <Check class="w-3.5 h-3.5 shrink-0" />
+            <span>继续这个会话</span>
+          </div>
+        </template>
+        <template v-else>
+          <p class="text-[11px] leading-relaxed">{{ closureText }}</p>
+          <label class="flex items-center gap-2 cursor-pointer pt-0.5 text-text">
+            <input class="hq-form-choice" v-model="nativeConfirmed" type="checkbox" />
+            <span>我已在终端退出该会话</span>
+          </label>
+        </template>
+        <p v-if="nativeError" role="alert" class="text-danger text-[11px]">{{ nativeError.message }} <span class="select-text font-mono">{{ nativeError.requestId ? `requestId: ${nativeError.requestId}` : '' }}</span></p>
       </div>
       <p v-if="chatStore.piGuardIssue" role="alert" class="text-sm text-status-warning">{{ chatStore.piGuardIssue }}</p>
       <!-- 1. Floating Queued Messages Deck -->

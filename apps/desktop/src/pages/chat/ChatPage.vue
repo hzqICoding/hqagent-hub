@@ -95,6 +95,45 @@ const groupedNativeMessages = computed(() => {
   return groups
 })
 
+const groupedConversationMessages = computed(() => {
+  const groups: { type: 'single' | 'system_group'; message?: (typeof chatStore.messages)[number]; systemMessages?: (typeof chatStore.messages)[number][] }[] = []
+  let currentSystem: (typeof chatStore.messages)[number][] = []
+
+  for (const msg of chatStore.messages) {
+    if (msg.role === 'system') {
+      currentSystem.push(msg)
+    } else {
+      if (currentSystem.length > 1) {
+        groups.push({ type: 'system_group', systemMessages: [...currentSystem] })
+        currentSystem = []
+      } else if (currentSystem.length === 1) {
+        groups.push({ type: 'single', message: currentSystem[0] })
+        currentSystem = []
+      }
+      groups.push({ type: 'single', message: msg })
+    }
+  }
+
+  if (currentSystem.length > 1) {
+    groups.push({ type: 'system_group', systemMessages: [...currentSystem] })
+  } else if (currentSystem.length === 1) {
+    groups.push({ type: 'single', message: currentSystem[0] })
+  }
+
+  return groups
+})
+
+function getSystemGroupSummary(systemMsgs: (typeof chatStore.messages)[number][]): string {
+  const names = new Set<string>()
+  for (const msg of systemMsgs) {
+    if (/Bash:/i.test(msg.text)) names.add('Bash')
+    else if (/File|ReadFile|WriteFile/i.test(msg.text)) names.add('文件操作')
+    else if (/Git/i.test(msg.text)) names.add('Git')
+    else names.add('工具调用')
+  }
+  return Array.from(names).join(', ')
+}
+
 async function loadNativeMessages(more = false) {
   const session = activeNativeSession.value
   if (!session || session.format.status !== 'readable') return
@@ -754,11 +793,37 @@ async function restoreActiveConversation() {
             </div>
 
             <!-- Message items list -->
-            <ChatMessageItem
-              v-for="msg in chatStore.messages"
-              :key="msg.id"
-              :message="msg"
-            />
+            <template v-for="(group, gIdx) in groupedConversationMessages" :key="gIdx">
+              <!-- Consecutive system / tool calls collapsed into a single compact line -->
+              <div v-if="group.type === 'system_group' && group.systemMessages" class="max-w-3xl mx-auto my-1 px-2 sm:px-4">
+                <details class="group/system-tools rounded-xl bg-muted/20 hover:bg-muted/40 transition-colors text-xs overflow-hidden">
+                  <summary class="cursor-pointer select-none py-1.5 px-3 flex items-center justify-between text-text-muted hover:text-text list-none font-mono text-[11px]">
+                    <span class="flex items-center gap-2 truncate">
+                      <Terminal class="w-3.5 h-3.5 text-primary/70 shrink-0" />
+                      <span class="font-medium text-text truncate">
+                        执行了 {{ group.systemMessages.length }} 个工具调用
+                        <span class="text-text-muted/60 font-normal">({{ getSystemGroupSummary(group.systemMessages) }})</span>
+                      </span>
+                    </span>
+                    <span class="text-[10px] text-text-muted group-open/system-tools:rotate-180 transition-transform shrink-0 ml-2">▼</span>
+                  </summary>
+                  <div class="p-2 pt-0.5 space-y-1 max-h-64 overflow-y-auto">
+                    <ChatMessageItem
+                      v-for="sMsg in group.systemMessages"
+                      :key="sMsg.id"
+                      :message="sMsg"
+                    />
+                  </div>
+                </details>
+              </div>
+
+              <!-- Single message (user, assistant, or single system) -->
+              <ChatMessageItem
+                v-else-if="group.message"
+                :key="group.message.id"
+                :message="group.message"
+              />
+            </template>
 
             <!-- Live In-Progress Execution Activity Accordion -->
             <div

@@ -34,11 +34,11 @@ async function copyToClipboard() {
 </script>
 
 <template>
-  <div class="border border-border rounded-[var(--radius-sm)] overflow-hidden bg-code text-content-primary text-xs font-mono">
+  <div class="rounded-xl overflow-hidden bg-code text-content-primary text-xs font-mono">
     <!-- Header -->
     <div
       v-if="title || language || copyable"
-      class="flex items-center justify-between px-3 py-1.5 bg-muted/60 border-b border-border text-[11px] text-content-secondary select-none"
+      class="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-b border-border/20 text-[11px] text-content-secondary select-none"
     >
       <div class="flex items-center gap-2 truncate">
         <span v-if="title" class="font-medium text-content-primary truncate">{{ title }}</span>

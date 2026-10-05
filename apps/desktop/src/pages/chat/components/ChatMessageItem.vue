@@ -52,7 +52,7 @@ async function copyText(text: string) {
 </script>
 
 <template>
-  <div class="py-2.5 px-2 sm:px-4 transition-colors">
+  <div :class="message.role === 'system' ? 'py-0.5' : 'py-2.5 px-2 sm:px-4'" class="transition-colors">
     <!-- User Message (Clean right-aligned bubble) -->
     <div v-if="message.role === 'user'" class="flex justify-end max-w-3xl mx-auto">
       <div class="min-w-0 max-w-[92%] sm:max-w-[85%] space-y-1 group">
@@ -81,13 +81,13 @@ async function copyText(text: string) {
     <!-- System / Role Process Step (Collapsible Accordion like PI-Desktop ActivityGroup) -->
     <div
       v-else-if="message.role === 'system'"
-      class="max-w-3xl mx-auto my-1"
+      class="max-w-3xl mx-auto my-0.5"
     >
-      <div class="rounded-lg bg-panel/40 hover:bg-panel/70 transition-colors">
+      <div class="rounded-xl bg-muted/20 hover:bg-muted/40 transition-colors">
         <!-- Header (Clickable disclosure) -->
         <button
           type="button"
-          class="w-full py-1.5 px-3 flex items-center justify-between text-xs hover:bg-panel transition-colors text-left gap-2 select-none cursor-pointer rounded-lg"
+          class="w-full py-1.5 px-3 flex items-center justify-between text-xs hover:bg-panel/30 transition-colors text-left gap-2 select-none cursor-pointer rounded-xl"
           @click="isExpanded = !isExpanded"
         >
           <div class="flex items-center gap-2 min-w-0">
@@ -159,11 +159,11 @@ async function copyText(text: string) {
           :initially-expanded="false"
         />
 
-        <div class="relative group/bubble bg-panel/40 p-3 sm:p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed break-words overflow-x-auto max-w-full select-text">
+        <div class="relative group/bubble py-1 text-xs leading-relaxed break-words overflow-x-auto max-w-full select-text">
           <!-- Floating quick copy icon button at top-right corner of the bubble -->
           <button
             type="button"
-            class="absolute top-2 right-2 sm:top-3 sm:right-3 min-w-[32px] min-h-[32px] p-1.5 px-2 rounded-lg bg-muted/80 hover:bg-muted text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] cursor-pointer z-10 opacity-70 hover:opacity-100"
+            class="absolute top-0 right-0 min-w-[30px] min-h-[30px] p-1 px-2 rounded-lg bg-muted/80 hover:bg-muted text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] cursor-pointer z-10 opacity-0 group-hover/bubble:opacity-100"
             :title="isCopied ? '已复制到剪贴板' : '一键复制整条消息'"
             aria-label="一键复制整条消息"
             @click.stop="copyText(message.text)"
