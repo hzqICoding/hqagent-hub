@@ -8,7 +8,7 @@ import { useLocalAuthStore } from '@/stores/local-auth.store'
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
-it('waits without a code page, reconnects automatically, preserves pages and toggles autostart', async () => {
+it('waits without a code page, reconnects automatically and preserves pages', async () => {
   vi.useFakeTimers()
   const pinia = createPinia(); setActivePinia(pinia)
   const auth = useLocalAuthStore()
@@ -17,7 +17,6 @@ it('waits without a code page, reconnects automatically, preserves pages and tog
     return false
   }).mockResolvedValue(true)
   vi.mocked(invoke).mockImplementation(async (command) => {
-    if (command === 'get_autostart_enabled') return true
     if (command === 'get_shell_status') return { childProcesses: [{ component: 'update-agent', state: 'missing' }] }
     return undefined
   })
@@ -37,7 +36,5 @@ it('waits without a code page, reconnects automatically, preserves pages and tog
   expect(wrapper.get('[data-draft]').element).toBe(draft)
   await vi.advanceTimersByTimeAsync(2000); await flushPromises()
   expect(wrapper.get('[data-draft]').element).toBe(draft)
-  await wrapper.get('input[type=checkbox]').setValue(false)
-  expect(invoke).toHaveBeenCalledWith('set_autostart_enabled', { enabled: false })
   wrapper.unmount()
 })

@@ -553,6 +553,17 @@ export const useChatStore = defineStore('chat', () => {
     return workspace
   }
 
+  function removeWorkspace(workspaceId: string): void {
+    workspaces.value = workspaces.value.filter((w) => w.id !== workspaceId)
+    conversations.value = conversations.value.filter((c) => c.workspaceId !== workspaceId)
+    if (activeConversation.value?.workspaceId === workspaceId) {
+      activeConversationId.value = conversations.value[0]?.id || null
+    }
+    const nextCollapsed = { ...collapsedWorkspaceIds.value }
+    delete nextCollapsed[workspaceId]
+    collapsedWorkspaceIds.value = nextCollapsed
+  }
+
   async function pickWorkspaceDirectory(): Promise<string | null> {
     const gateway = getLocalChatGateway()
     if (!gateway.pickLocalDirectory) return null
@@ -1335,6 +1346,7 @@ export const useChatStore = defineStore('chat', () => {
     renameConversation,
     setConversationArchived,
     registerWorkspace,
+    removeWorkspace,
     pickWorkspaceDirectory,
     sendMessage,
     controlRun,

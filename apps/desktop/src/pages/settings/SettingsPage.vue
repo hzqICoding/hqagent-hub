@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app.store'
 import { useLocalAuthStore } from '@/stores/local-auth.store'
+import { invoke } from '@tauri-apps/api/core'
 import {
   Bot,
   Sliders,
@@ -12,8 +13,9 @@ import {
   ArrowLeft,
   Trash2,
   ArrowDown,
+  Laptop,
 } from 'lucide-vue-next'
-import { HqBadge } from '@/shared/ui'
+import { HqBadge, HqSwitch, useConfirm, useToast } from '@/shared/ui'
 import AgentsPage from '@/pages/agents/AgentsPage.vue'
 import ScenesPage from '@/pages/scenes/ScenesPage.vue'
 import AuthorizedRootsSettings from '@/pages/native/AuthorizedRootsSettings.vue'
@@ -152,7 +154,58 @@ function getLevelBadgeVariant(level: string): 'neutral' | 'success' | 'warning' 
   }
 }
 
+const autostart = ref(false)
+const isAutostartSaving = ref(false)
+const autostartError = ref('')
+const confirm = useConfirm()
+const toast = useToast()
+
+async function loadAutostart() {
+  try {
+    autostart.value = await invoke<boolean>('get_autostart_enabled')
+  } catch {
+    // Non-Tauri or test environment
+  }
+}
+
+async function handleAutostartChange(enabled: boolean) {
+  isAutostartSaving.value = true
+  autostartError.value = ''
+  try {
+    await invoke('set_autostart_enabled', { enabled })
+    autostart.value = enabled
+  } catch {
+    autostartError.value = '无法保存开机自启设置，请稍后重试。'
+    autostart.value = !enabled
+  } finally {
+    isAutostartSaving.value = false
+  }
+}
+
+async function handleDeleteWorkspace(ws: { id: string; name: string }) {
+  const convCount = chatStore.conversations.filter((c) => c.workspaceId === ws.id).length
+  const description = convCount > 0
+    ? `项目「${ws.name}」包含 ${convCount} 个对话。\n删除项目将解除该项目登记并清理关联对话，本地磁盘文件保留不受影响。此操作不能撤销。`
+    : `「${ws.name}」\n将从项目列表中解除登记该项目。本地磁盘文件不会被删除。此操作不能撤销。`
+
+  const confirmed = await confirm({
+    title: '删除项目？',
+    description,
+    confirmText: '删除项目',
+    danger: true,
+  })
+
+  if (!confirmed) return
+  try {
+    chatStore.removeWorkspace(ws.id)
+    toast.success(`已删除项目「${ws.name}」`)
+  } catch (err) {
+    toast.danger(err instanceof Error ? err.message : '删除项目失败')
+  }
+}
+
 onMounted(async () => {
+  void loadAutostart()
   if (activeTab.value === 'about') {
     await appStore.fetchBootstrap()
   }
@@ -270,6 +323,15 @@ onMounted(async () => {
               <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto text-[11px] text-text-muted">
                 <span v-if="ws.isClean === false" class="text-amber-500">有未提交改动</span>
                 <span v-else-if="ws.isClean === true" class="text-text-muted/70">干净分支</span>
+                <button
+                  type="button"
+                  class="p-1.5 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
+                  title="删除项目"
+                  aria-label="删除项目"
+                  @click="handleDeleteWorkspace(ws)"
+                >
+                  <Trash2 class="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           </div>
@@ -313,6 +375,39 @@ onMounted(async () => {
             </div>
           </div>
         </div>
+
+        <!-- 系统偏好与开机自启卡片 -->
+        <section class="p-5 bg-panel border border-border/40 rounded-xl shadow-xs space-y-4" data-testid="settings-autostart-section">
+          <div class="flex items-center justify-between">
+            <div class="space-y-0.5">
+              <h3 class="text-sm font-semibold text-text flex items-center gap-2">
+                <Laptop class="w-4 h-4 text-primary" />
+                系统偏好
+              </h3>
+              <p class="text-xs text-text-muted">桌面客户端启动与后台服务行为</p>
+            </div>
+          </div>
+
+          <div class="pt-2 border-t border-border/20">
+            <div class="flex items-center justify-between gap-4 py-1">
+              <div class="space-y-0.5">
+                <div class="text-xs font-medium text-text">开机自启</div>
+                <div class="text-[11px] text-text-muted">
+                  计算机开机登录后自动在后台启动 HQAgent Hub 本机服务
+                </div>
+              </div>
+              <div class="flex items-center gap-3 shrink-0">
+                <span v-if="autostartError" role="alert" class="text-xs text-danger">{{ autostartError }}</span>
+                <HqSwitch
+                  :model-value="autostart"
+                  :disabled="isAutostartSaving"
+                  data-testid="autostart-switch"
+                  @change="handleAutostartChange"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
 
         <!-- Logs Viewer Section -->
         <div class="p-5 bg-panel border border-border/40 rounded-xl shadow-xs space-y-3">

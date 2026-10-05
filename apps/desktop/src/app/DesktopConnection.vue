@@ -6,11 +6,8 @@ import { useLocalAuthStore } from '@/stores/local-auth.store'
 const auth = useLocalAuthStore()
 const connected = ref(false)
 const everConnected = ref(false)
-const autostart = ref(false)
-const saving = ref(false)
 const message = ref('正在启动本机 Hub，连接就绪后将自动进入。')
 const reason = ref('')
-const settingsError = ref('')
 const updateAgentMissing = ref(false)
 let stopped = false
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -34,37 +31,17 @@ async function refresh() {
   }
 }
 
-async function changeAutostart(event: Event) {
-  const enabled = (event.target as HTMLInputElement).checked
-  saving.value = true
-  settingsError.value = ''
-  try {
-    await invoke('set_autostart_enabled', { enabled })
-    autostart.value = enabled
-  } catch {
-    settingsError.value = '无法保存开机自启设置，请稍后重试。'
-    ;(event.target as HTMLInputElement).checked = autostart.value
-  } finally { saving.value = false }
-}
-
-onMounted(async () => {
+onMounted(() => {
   void refresh()
-  try { autostart.value = await invoke<boolean>('get_autostart_enabled') }
-  catch { settingsError.value = '无法读取开机自启状态。' }
 })
 onUnmounted(() => { stopped = true; clearTimeout(timer) })
 </script>
 
 <template>
   <div class="h-full flex flex-col min-h-0">
-    <div class="shrink-0 px-4 py-2 border-b border-border/30 bg-panel text-xs flex items-center gap-4">
+    <div v-if="!connected || updateAgentMissing" class="shrink-0 px-4 py-2 border-b border-border/30 bg-panel text-xs flex items-center gap-4">
       <span role="status">{{ connected ? 'Hub：运行中' : 'Hub：连接中' }}</span>
       <span v-if="updateAgentMissing" class="text-text-muted">更新组件未安装</span>
-      <label class="ml-auto flex items-center gap-2">
-        <input type="checkbox" :checked="autostart" :disabled="saving" @change="changeAutostart">
-        开机自启
-      </label>
-      <span v-if="settingsError" role="alert">{{ settingsError }}</span>
     </div>
     <div v-if="!connected" role="status" class="p-6 text-sm">
       <p>{{ message }}</p>

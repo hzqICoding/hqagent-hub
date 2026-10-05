@@ -4,24 +4,27 @@ import { agentLabel } from '@/pages/native/native-utils'
 import NativeSessionsPanel from '@/pages/native/NativeSessionsPanel.vue'
 import { ref, computed, onMounted, inject, watch } from 'vue'
 import { routerKey, type Router } from 'vue-router'
-import type { LocalConversationView, LocalSceneId, TaskStatus, RuntimeNativeSessionIndex, RemoteNativeSessionView } from '@hqagent/protocol'
+import type { LocalConversationView, LocalSceneId, TaskStatus, RuntimeNativeSessionIndex, RemoteNativeSessionView, WorkspaceView } from '@hqagent/protocol'
 import { useChatStore } from '@/stores/chat.store'
 import { useRemoteLinkStore } from '@/stores/remote-link.store'
 import { useThemeStore } from '@/shared/theme/theme.store'
-import { HqButton, HqDialog, HqDropdown, HqInput, HqSelect } from '@/shared/ui'
+import { HqButton, HqDialog, HqDropdown, HqInput, HqSelect, useConfirm, useToast } from '@/shared/ui'
 import {
   Archive,
   ArchiveRestore,
   Bot,
   ChevronDown,
   ChevronRight,
+  Copy,
   Eye,
   Folder,
+  FolderOpen,
   FolderPlus,
   GitBranch,
   Laptop,
   MessageSquare,
   MoreHorizontal,
+  MoreVertical,
   Pencil,
   Plus,
   Search,
@@ -29,6 +32,7 @@ import {
   Smartphone,
   Sun,
   Moon,
+  Trash2,
   X,
 } from 'lucide-vue-next'
 
@@ -52,6 +56,8 @@ const chatStore = useChatStore()
 const remoteLinkStore = useRemoteLinkStore()
 const themeStore = useThemeStore()
 const router = inject<Router | null>(routerKey, null)
+const toast = useToast()
+const confirm = useConfirm()
 
 const activeListTab = ref<'tasks' | 'native' | 'archived'>('tasks')
 
@@ -355,6 +361,79 @@ function taskMenuItems(conversation: LocalConversationView) {
   ]
 }
 
+function workspaceMenuItems(workspace: WorkspaceView) {
+  return [
+    {
+      id: 'copy-name',
+      label: '复制项目名称',
+      icon: Copy,
+      action: async () => {
+        try {
+          await navigator.clipboard.writeText(workspace.name)
+          toast.success('已复制项目名称')
+        } catch {
+          toast.danger('复制失败')
+        }
+      },
+    },
+    {
+      id: 'settings',
+      label: '项目设置',
+      icon: Settings,
+      action: () => {
+        if (router) {
+          router.push({ path: '/settings', query: { tab: 'workspaces' } })
+        }
+      },
+    },
+    {
+      id: 'explorer',
+      label: '在文件管理器中显示',
+      icon: FolderOpen,
+      action: async () => {
+        try {
+          await navigator.clipboard.writeText(workspace.path)
+          toast.success(`已复制项目路径：${workspace.path}`)
+        } catch {
+          toast.danger('复制路径失败')
+        }
+      },
+    },
+    {
+      id: 'delete',
+      label: '删除项目',
+      icon: Trash2,
+      danger: true,
+      action: () => {
+        void requestDeleteWorkspace(workspace)
+      },
+    },
+  ]
+}
+
+async function requestDeleteWorkspace(workspace: WorkspaceView) {
+  const convCount = chatStore.conversations.filter((c) => c.workspaceId === workspace.id).length
+  const description = convCount > 0
+    ? `项目「${workspace.name}」包含 ${convCount} 个对话。\n删除项目将解除该项目登记并清理关联对话，本地磁盘文件保留不受影响。此操作不能撤销。`
+    : `「${workspace.name}」\n将从项目列表中解除登记该项目。本地磁盘文件不会被删除。此操作不能撤销。`
+
+  const confirmed = await confirm({
+    title: '删除项目？',
+    description,
+    confirmText: '删除项目',
+    danger: true,
+  })
+
+  if (!confirmed) return
+
+  try {
+    chatStore.removeWorkspace(workspace.id)
+    toast.success(`已删除项目「${workspace.name}」`)
+  } catch (error) {
+    toast.danger(error instanceof Error ? error.message : '删除项目失败')
+  }
+}
+
 const statusMeta: Partial<Record<TaskStatus, { label: string; dot: string }>> = {
   draft: { label: '草稿', dot: 'bg-text-muted' },
   queued: { label: '排队', dot: 'bg-status-info' },
@@ -557,7 +636,26 @@ function handleConversationSelect(conversationId: string) {
                 <span class="truncate font-semibold text-text text-xs">{{ group.workspace.name }}</span>
                 <span class="text-[10px] text-text-muted opacity-75">({{ group.conversations.length }})</span>
               </button>
-              <div class="flex items-center gap-1 shrink-0">
+              <div class="flex items-center gap-0.5 shrink-0" @click.stop>
+                <HqDropdown :items="workspaceMenuItems(group.workspace)" placement="right">
+                  <template #default="{ isOpen }">
+                    <button
+                      type="button"
+                      class="w-6 h-6 flex items-center justify-center rounded-md text-text-muted hover:text-text hover:bg-muted active:scale-95 transition-all cursor-pointer"
+                      :class="[
+                        hoveredWorkspaceIds[group.workspace.id] || isOpen
+                          ? 'opacity-100 pointer-events-auto'
+                          : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto',
+                        'transition-opacity duration-200'
+                      ]"
+                      :aria-label="`项目「${group.workspace.name}」操作`"
+                      title="项目操作"
+                    >
+                      <MoreVertical class="w-3.5 h-3.5" />
+                    </button>
+                  </template>
+                </HqDropdown>
+
                 <button
                   type="button"
                   class="w-6 h-6 flex items-center justify-center rounded-md text-text-muted hover:text-primary hover:bg-muted active:scale-95 transition-all cursor-pointer"

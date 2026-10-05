@@ -277,5 +277,22 @@ describe('ChatSidebar', () => {
     await archiveBtn.trigger('click')
     expect(store.showArchived).toBe(false)
   })
+
+  it('provides project operation dropdown with copy name, settings, show in explorer, and delete project', async () => {
+    const store = useChatStore()
+    store.workspaces = [
+      { id: 'workspace-a', name: 'Project Alpha', path: 'E:/alpha', vcs: 'git', lastOpenedAt: '2026-09-25T00:00:00Z' },
+    ]
+    const wrapper = mount(ChatSidebar)
+
+    const menuBtn = wrapper.find('button[title="项目操作"]')
+    expect(menuBtn.exists()).toBe(true)
+    await menuBtn.trigger('click')
+
+    expect(document.body.textContent).toContain('复制项目名称')
+    expect(document.body.textContent).toContain('项目设置')
+    expect(document.body.textContent).toContain('在文件管理器中显示')
+    expect(document.body.textContent).toContain('删除项目')
+  })
 })
 

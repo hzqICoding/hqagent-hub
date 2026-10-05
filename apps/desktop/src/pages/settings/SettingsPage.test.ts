@@ -2,12 +2,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { invoke } from '@tauri-apps/api/core'
 import SettingsPage from './SettingsPage.vue'
 import LocalChatLayout from '@/app/layouts/LocalChatLayout.vue'
 import ChatSidebar from '@/pages/chat/components/ChatSidebar.vue'
 import { useRemoteLinkStore } from '@/stores/remote-link.store'
 import { mockLocalChatGateway } from '@/shared/api/mock-local-chat-gateway'
 import { setLocalChatGatewayForTesting } from '@/shared/api/local-chat-provider'
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 
 describe('SettingsPage & Integrated Navigation', () => {
   let router: any
@@ -16,6 +19,7 @@ describe('SettingsPage & Integrated Navigation', () => {
     setActivePinia(createPinia())
     mockLocalChatGateway.reset()
     setLocalChatGatewayForTesting(mockLocalChatGateway)
+    vi.mocked(invoke).mockResolvedValue(false as any)
 
     router = createRouter({
       history: createMemoryHistory(),
@@ -34,7 +38,7 @@ describe('SettingsPage & Integrated Navigation', () => {
     vi.restoreAllMocks()
   })
 
-  it('LocalChatLayout removes the 4 top links and provides the settings button and theme toggle', async () => {
+  it('LocalChatLayout removes top-right clutter and renders clean brand header', async () => {
     await router.push('/chat')
     const wrapper = mount(LocalChatLayout, {
       global: {
@@ -47,11 +51,11 @@ describe('SettingsPage & Integrated Navigation', () => {
     expect(wrapper.find('nav').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('本地对话')
 
-    // Brand and Settings button exist
+    // Brand header exists cleanly
     expect(wrapper.text()).toContain('HQAgent Hub')
-    const settingsLink = wrapper.find('a[href="/settings"]')
-    expect(settingsLink.exists()).toBe(true)
-    expect(settingsLink.text()).toContain('设置')
+    // Top-right buttons are cleanly removed
+    expect(wrapper.find('a[href="/settings"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('本机 Worker')
   })
 
   it('SettingsPage renders all 5 tabs and defaults to agents', async () => {
@@ -179,5 +183,30 @@ describe('SettingsPage & Integrated Navigation', () => {
     // Shows single-line description with link
     expect(wrapper.text()).toContain('手机可浏览的目录在『项目与授权目录』中设置')
     expect(wrapper.text()).toContain('前往设置')
+  })
+
+  it('renders autostart switch in about tab and toggles autostart via invoke', async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === 'get_autostart_enabled') return false
+      return undefined
+    })
+    await router.push('/settings?tab=about')
+    const wrapper = mount(SettingsPage, {
+      global: {
+        plugins: [router],
+      },
+    })
+    await flushPromises()
+
+    const autostartSection = wrapper.find('[data-testid="settings-autostart-section"]')
+    expect(autostartSection.exists()).toBe(true)
+    expect(autostartSection.text()).toContain('开机自启')
+
+    const switchBtn = wrapper.find('[data-testid="autostart-switch"] button[role="switch"]')
+    expect(switchBtn.exists()).toBe(true)
+    await switchBtn.trigger('click')
+    await flushPromises()
+
+    expect(invoke).toHaveBeenCalledWith('set_autostart_enabled', { enabled: true })
   })
 })
