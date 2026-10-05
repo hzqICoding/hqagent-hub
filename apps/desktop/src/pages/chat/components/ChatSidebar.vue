@@ -2,7 +2,7 @@
 import RuntimeIcon from '@/shared/runtime/RuntimeIcon.vue'
 import { agentLabel } from '@/pages/native/native-utils'
 import NativeSessionsPanel from '@/pages/native/NativeSessionsPanel.vue'
-import { ref, computed, onMounted, inject } from 'vue'
+import { ref, computed, onMounted, inject, watch } from 'vue'
 import { routerKey, type Router } from 'vue-router'
 import type { LocalConversationView, LocalSceneId, TaskStatus } from '@hqagent/protocol'
 import { useChatStore } from '@/stores/chat.store'
@@ -36,6 +36,25 @@ const emit = defineEmits<{
 const chatStore = useChatStore()
 const remoteLinkStore = useRemoteLinkStore()
 const router = inject<Router | null>(routerKey, null)
+
+const activeListTab = ref<'tasks' | 'native' | 'archived'>('tasks')
+
+function setListTab(tab: 'tasks' | 'native' | 'archived') {
+  activeListTab.value = tab
+  if (tab === 'archived') {
+    chatStore.showArchived = true
+  } else if (tab === 'tasks') {
+    chatStore.showArchived = false
+  }
+}
+
+watch(() => chatStore.showArchived, (archived) => {
+  if (archived && activeListTab.value !== 'archived') {
+    activeListTab.value = 'archived'
+  } else if (!archived && activeListTab.value === 'archived') {
+    activeListTab.value = 'tasks'
+  }
+})
 
 const isPhoneConnected = computed(() => {
   return remoteLinkStore.isPaired && remoteLinkStore.connectionStatus !== 'offline'
@@ -309,25 +328,33 @@ function handleConversationSelect(conversationId: string) {
           class="hq-form-control w-full pl-8 pr-2.5 py-1.5 text-xs bg-bg-app border border-border rounded-[var(--radius-sm)] text-text placeholder-text-muted/60 focus:outline-none focus:border-primary transition-colors"
         />
       </div>
-      <div class="grid grid-cols-2 gap-1 rounded-lg bg-bg-app p-1 text-[11px]">
+      <div class="grid grid-cols-3 gap-1 rounded-lg bg-bg-app p-1 text-[11px]">
         <button
           type="button"
-          class="rounded-md px-2 py-1 transition-colors"
-          :class="!chatStore.showArchived ? 'bg-panel text-text shadow-xs' : 'text-text-muted hover:text-text'"
-          @click="chatStore.showArchived = false"
+          class="rounded-md px-1.5 py-1 transition-colors cursor-pointer text-center font-medium truncate"
+          :class="activeListTab === 'tasks' ? 'bg-panel text-text shadow-xs' : 'text-text-muted hover:text-text'"
+          @click="setListTab('tasks')"
         >
-          当前任务
+          项目任务
         </button>
         <button
           type="button"
-          class="rounded-md px-2 py-1 transition-colors"
-          :class="chatStore.showArchived ? 'bg-panel text-text shadow-xs' : 'text-text-muted hover:text-text'"
-          @click="chatStore.showArchived = true"
+          class="rounded-md px-1.5 py-1 transition-colors cursor-pointer text-center font-medium truncate"
+          :class="activeListTab === 'native' ? 'bg-panel text-text shadow-xs' : 'text-text-muted hover:text-text'"
+          @click="setListTab('native')"
+        >
+          原生会话
+        </button>
+        <button
+          type="button"
+          class="rounded-md px-1.5 py-1 transition-colors cursor-pointer text-center font-medium truncate"
+          :class="activeListTab === 'archived' ? 'bg-panel text-text shadow-xs' : 'text-text-muted hover:text-text'"
+          @click="setListTab('archived')"
         >
           已归档
         </button>
       </div>
-      <div class="flex items-center justify-between pt-0.5 px-0.5 text-[11px] text-text-muted">
+      <div v-if="activeListTab !== 'native'" class="flex items-center justify-between pt-0.5 px-0.5 text-[11px] text-text-muted">
         <label class="flex items-center gap-1.5 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -344,16 +371,25 @@ function handleConversationSelect(conversationId: string) {
     </div>
 
     <div class="flex-1 overflow-y-auto py-1.5">
-      <NativeSessionsPanel :projects="chatStore.workspaces.map((w) => ({ id: w.id, name: w.name }))" @opened="emit('close')" />
-      <div
-        v-if="chatStore.groupedConversations.length === 0"
-        class="p-6 text-center text-xs text-text-muted"
-      >
-        <MessageSquare class="w-8 h-8 mx-auto mb-2 text-text-muted/40" />
-        <p>暂无匹配项目或任务</p>
-      </div>
+      <!-- Native Sessions Panel (Shown only in '原生会话' tab) -->
+      <NativeSessionsPanel
+        v-if="activeListTab === 'native'"
+        :projects="chatStore.workspaces.map((w) => ({ id: w.id, name: w.name }))"
+        :search-query="chatStore.searchQuery"
+        @opened="emit('close')"
+      />
 
-      <section
+      <!-- Tasks List Panel (Active Tasks & Archived Tasks) -->
+      <template v-else>
+        <div
+          v-if="chatStore.groupedConversations.length === 0"
+          class="p-6 text-center text-xs text-text-muted"
+        >
+          <MessageSquare class="w-8 h-8 mx-auto mb-2 text-text-muted/40" />
+          <p>{{ activeListTab === 'archived' ? '暂无已归档任务' : '暂无匹配项目或任务' }}</p>
+        </div>
+
+        <section
         v-for="group in chatStore.groupedConversations"
         :key="group.workspace.id"
         class="border-b border-border/50 last:border-b-0"
@@ -477,6 +513,7 @@ function handleConversationSelect(conversationId: string) {
           </div>
         </div>
       </section>
+      </template>
     </div>
 
     <HqDialog

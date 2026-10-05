@@ -132,4 +132,53 @@ describe('ChatSidebar', () => {
     expect(document.body.textContent).toContain('创建任务')
     expect(document.body.textContent).toContain('选择项目目录')
   })
+
+  it('switches between 项目任务, 原生会话, and 已归档 tabs', async () => {
+    const store = useChatStore()
+    store.workspaces = [
+      { id: 'workspace-a', name: 'Project Alpha', path: 'E:/alpha', vcs: 'git', lastOpenedAt: '2026-09-25T00:00:00Z' },
+    ]
+    store.conversations = [
+      {
+        id: 'conversation-active',
+        title: 'Active Task',
+        workspaceId: 'workspace-a',
+        sceneId: 'analyze',
+        archived: false,
+        createdAt: '2026-09-25T00:00:00Z',
+        updatedAt: '2026-09-25T00:00:00Z',
+      },
+      {
+        id: 'conversation-archived',
+        title: 'Old Archived Task',
+        workspaceId: 'workspace-a',
+        sceneId: 'analyze',
+        archived: true,
+        createdAt: '2026-09-24T00:00:00Z',
+        updatedAt: '2026-09-24T00:00:00Z',
+      },
+    ]
+    const wrapper = mount(ChatSidebar)
+
+    // Default: '项目任务' tab active
+    expect(wrapper.text()).toContain('Active Task')
+    expect(wrapper.text()).not.toContain('Old Archived Task')
+    expect(wrapper.findComponent({ name: 'NativeSessionsPanel' }).exists()).toBe(false)
+
+    // Switch to '原生会话' tab
+    const nativeTabBtn = wrapper.findAll('button').find(b => b.text() === '原生会话')!
+    await nativeTabBtn.trigger('click')
+
+    expect(wrapper.findComponent({ name: 'NativeSessionsPanel' }).exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Active Task')
+
+    // Switch to '已归档' tab
+    const archivedTabBtn = wrapper.findAll('button').find(b => b.text() === '已归档')!
+    await archivedTabBtn.trigger('click')
+
+    expect(store.showArchived).toBe(true)
+    expect(wrapper.findComponent({ name: 'NativeSessionsPanel' }).exists()).toBe(false)
+    expect(wrapper.text()).toContain('Old Archived Task')
+    expect(wrapper.text()).not.toContain('Active Task')
+  })
 })

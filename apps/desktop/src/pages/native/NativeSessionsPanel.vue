@@ -6,11 +6,24 @@ import { getLocalChatGateway, getRemoteGateway } from '@/shared/api'
 import { useChatStore } from '@/stores/chat.store'
 import { useRemoteChatStore } from '@/stores/remote-chat.store'
 import { HqDialog, HqButton, HqMarkdown } from '@/shared/ui'
-import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Folder } from 'lucide-vue-next'
 import { overlayId } from '@/shared/ui/overlay-stack'
 import { activityLabel, agentLabel, closureText, NativeMessageAssembler, nativeFailure } from './native-utils'
 
-const props = withDefaults(defineProps<{ remote?: boolean; workerId?: string; online?: boolean; suspended?: boolean; revisions?: number[]; projects: { id: string; name: string }[] }>(), { remote: false, online: true, suspended: false })
+const props = withDefaults(defineProps<{
+  remote?: boolean
+  workerId?: string
+  online?: boolean
+  suspended?: boolean
+  revisions?: number[]
+  projects: { id: string; name: string }[]
+  searchQuery?: string
+}>(), {
+  remote: false,
+  online: true,
+  suspended: false,
+  searchQuery: '',
+})
 const emit = defineEmits<{ opened: [] }>()
 const items = ref<(RuntimeNativeSessionIndex | RemoteNativeSessionView)[]>([])
 const selected = ref<RuntimeNativeSessionIndex | RemoteNativeSessionView | null>(null)
@@ -33,17 +46,33 @@ let refreshTimer: ReturnType<typeof setInterval> | undefined
 const supported = computed(() => !props.remote || !props.revisions || props.revisions.some((revision) => revision === 3 || revision === 4 || revision === 5))
 // UI state is ephemeral: no session metadata or disclosure preferences enter storage.
 const expandedWorkspaces = ref(new Set<string>())
+const collapsedWorkspaces = ref(new Set<string>())
+function toggleWorkspace(workspaceId: string) {
+  if (collapsedWorkspaces.value.has(workspaceId)) {
+    collapsedWorkspaces.value.delete(workspaceId)
+  } else {
+    collapsedWorkspaces.value.add(workspaceId)
+  }
+}
 const disclosureId = overlayId()
 const selectedReadable = computed(() => selected.value?.format.status === 'readable')
-const groups = computed(() => [...new Set(items.value.map((item) => item.workspaceId))].map((id) => {
-  const sorted = items.value.filter((item) => item.workspaceId === id).sort((a, b) =>
-    (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0) || a.nativeSessionId.localeCompare(b.nativeSessionId))
-  return {
-    id, name: props.projects.find((project) => project.id === id)?.name || id,
-    readable: sorted.filter((item) => item.format.status === 'readable'),
-    unavailable: sorted.filter((item) => item.format.status !== 'readable'),
-  }
-}))
+const groups = computed(() => {
+  const query = (props.searchQuery || '').trim().toLowerCase()
+  return [...new Set(items.value.map((item) => item.workspaceId))].map((id) => {
+    const sorted = items.value.filter((item) => item.workspaceId === id).sort((a, b) =>
+      (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0) || a.nativeSessionId.localeCompare(b.nativeSessionId))
+    const projectName = props.projects.find((project) => project.id === id)?.name || id
+    const filtered = query
+      ? sorted.filter((item) => item.title.toLowerCase().includes(query) || projectName.toLowerCase().includes(query))
+      : sorted
+    return {
+      id,
+      name: projectName,
+      readable: filtered.filter((item) => item.format.status === 'readable'),
+      unavailable: filtered.filter((item) => item.format.status !== 'readable'),
+    }
+  }).filter((group) => !query || group.readable.length > 0 || group.unavailable.length > 0)
+})
 function toggleUnavailable(workspaceId: string) {
   if (expandedWorkspaces.value.has(workspaceId)) expandedWorkspaces.value.delete(workspaceId)
   else expandedWorkspaces.value.add(workspaceId)
@@ -170,33 +199,56 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); alive = false; generation++
 </script>
 
 <template>
-  <section class="p-3 border-t border-border text-xs space-y-2 max-h-[40vh] overflow-y-auto shrink-0" data-testid="native-sessions">
-    <div class="flex justify-between items-center"><h2 class="font-semibold">原生会话</h2><button type="button" class="min-h-[44px] min-w-[44px] text-primary" :disabled="loading" @click="list()">刷新</button></div>
+  <section class="p-3 text-xs space-y-2 shrink-0" data-testid="native-sessions">
+    <div class="flex justify-between items-center pb-1">
+      <div class="flex items-center gap-1.5 min-w-0">
+        <h2 class="font-semibold text-text text-xs">原生会话</h2>
+        <span class="text-[10px] text-text-muted bg-panel-header px-1.5 py-0.5 rounded font-medium">
+          CLI
+        </span>
+      </div>
+      <button type="button" class="min-h-[44px] min-w-[44px] text-primary hover:text-primary-hover px-2 py-1 rounded hover:bg-muted text-xs cursor-pointer transition-colors" :disabled="loading" @click="list()">刷新</button>
+    </div>
     <p v-if="!supported" class="text-warning">电脑不支持修订 3，请升级电脑端后查看原生会话</p>
     <p v-else-if="loading" class="text-text-muted">正在读取原生会话索引…</p>
     <p v-else-if="!items.length && !error" class="text-text-muted">{{ remote ? '暂无可用的原生会话索引；请在电脑确认同步已开启、修订 3 连接已就绪。当前接口未提供同步开关状态。' : '没有已登记项目内的原生会话' }}</p>
     <p v-if="cursor" class="text-content-secondary">以下数量仅统计已加载的会话</p>
     <div v-for="(group, groupIndex) in groups" :key="group.id" class="space-y-1" :data-workspace="group.id">
-      <h3 class="text-content-secondary break-words">{{ group.name }} · 可用 {{ group.readable.length }}</h3>
-      <p v-if="!group.readable.length" class="py-2 text-content-secondary" data-testid="native-empty-readable">暂无可读取的原生会话</p>
-      <button v-for="item in group.readable" :key="item.nativeSessionId" type="button" data-testid="native-readable"
-        class="block w-full min-h-[44px] text-left p-2 rounded hover:bg-muted border border-border text-content-primary" @click="open(item)">
-        <span class="block truncate"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span><span class="block text-[10px] text-content-secondary">{{ agentLabel(item.agentType) }}{{ item.agentType === 'pi' && item.format.pi ? ' · 已保存分支' : '' }} · {{ activityLabel(item.activity.activity) }}</span>
-      </button>
-      <template v-if="group.unavailable.length">
-        <button type="button" data-testid="native-unavailable-toggle" class="w-full min-h-[44px] flex items-center gap-1 text-left text-content-secondary rounded hover:bg-muted"
-          :aria-expanded="expandedWorkspaces.has(group.id)" :aria-controls="`${disclosureId}-${groupIndex}`" @click="toggleUnavailable(group.id)">
-          <component :is="expandedWorkspaces.has(group.id) ? ChevronDown : ChevronRight" class="w-4 h-4 shrink-0" />暂不支持（{{ group.unavailable.length }}）
-        </button>
-        <div v-if="expandedWorkspaces.has(group.id)" :id="`${disclosureId}-${groupIndex}`" class="space-y-1">
-          <button v-for="item in group.unavailable" :key="item.nativeSessionId" type="button" data-testid="native-unavailable"
-            class="block w-full min-h-[44px] text-left p-2 rounded border border-border text-content-secondary hover:bg-muted" @click="open(item)">
-            <span class="block truncate"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span>
-            <span class="block break-words">{{ formatLabel(item) }}</span>
-            <span class="block break-words">{{ item.format.reason || '当前记录格式尚未支持' }}</span>
-          </button>
+      <div
+        class="px-2 py-1.5 rounded-lg flex items-center justify-between gap-1 text-xs text-text-muted hover:text-text select-none cursor-pointer transition-colors hover:bg-muted/40 group"
+        @click="toggleWorkspace(group.id)"
+      >
+        <div class="flex items-center gap-1.5 min-w-0 flex-1 text-left py-0.5">
+          <component
+            :is="collapsedWorkspaces.has(group.id) ? ChevronRight : ChevronDown"
+            class="w-3.5 h-3.5 shrink-0 opacity-70 transition-transform"
+          />
+          <Folder class="w-4 h-4 shrink-0 text-primary/80" />
+          <h3 class="truncate font-semibold text-text text-xs">{{ group.name }} · 可用 {{ group.readable.length }}</h3>
         </div>
-      </template>
+      </div>
+      <div v-if="!collapsedWorkspaces.has(group.id)" class="pl-2 space-y-1 mb-2">
+        <p v-if="!group.readable.length" class="py-2 text-content-secondary pl-4" data-testid="native-empty-readable">暂无可读取的原生会话</p>
+        <button v-for="item in group.readable" :key="item.nativeSessionId" type="button" data-testid="native-readable"
+          class="block w-full min-h-[44px] text-left p-2.5 rounded-xl hover:bg-muted border border-border text-content-primary transition-all cursor-pointer group" @click="open(item)">
+          <span class="block truncate font-medium text-xs text-text group-hover:text-primary transition-colors"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span>
+          <span class="block text-[10px] text-content-secondary mt-0.5">{{ agentLabel(item.agentType) }}{{ item.agentType === 'pi' && item.format.pi ? ' · 已保存分支' : '' }} · {{ activityLabel(item.activity.activity) }}</span>
+        </button>
+        <template v-if="group.unavailable.length">
+          <button type="button" data-testid="native-unavailable-toggle" class="w-full min-h-[44px] flex items-center gap-1 text-left text-content-secondary rounded hover:bg-muted px-2 cursor-pointer transition-colors"
+            :aria-expanded="expandedWorkspaces.has(group.id)" :aria-controls="`${disclosureId}-${groupIndex}`" @click="toggleUnavailable(group.id)">
+            <component :is="expandedWorkspaces.has(group.id) ? ChevronDown : ChevronRight" class="w-4 h-4 shrink-0" />暂不支持（{{ group.unavailable.length }}）
+          </button>
+          <div v-if="expandedWorkspaces.has(group.id)" :id="`${disclosureId}-${groupIndex}`" class="space-y-1 pl-2">
+            <button v-for="item in group.unavailable" :key="item.nativeSessionId" type="button" data-testid="native-unavailable"
+              class="block w-full min-h-[44px] text-left p-2.5 rounded-xl border border-border text-content-secondary hover:bg-muted transition-all cursor-pointer" @click="open(item)">
+              <span class="block truncate font-medium text-xs text-text"><RuntimeIcon :agent="item.agentType" class="inline-block w-4 h-4 mr-1" />{{ item.title }}</span>
+              <span class="block text-[10px] break-words">{{ formatLabel(item) }}</span>
+              <span class="block text-[10px] break-words text-text-muted">{{ item.format.reason || '当前记录格式尚未支持' }}</span>
+            </button>
+          </div>
+        </template>
+      </div>
     </div>
     <HqButton v-if="cursor" size="sm" :loading="loading" @click="list(true)">更多原生会话</HqButton>
     <p v-if="pending" role="status" class="text-primary">正在电脑上导入… 等待导入结果与对话同步</p>
