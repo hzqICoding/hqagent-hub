@@ -40,6 +40,10 @@ import {
   Undo2,
   MessageSquare,
   MoreHorizontal,
+  Folder,
+  ChevronDown,
+  ChevronRight,
+  Circle,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -58,6 +62,16 @@ const messageContainerRef = ref<HTMLElement | null>(null)
 // Dialog states
 const isNewConversationDialogOpen = ref(false)
 const addingWorkspace = ref(false)
+const isWorkspaceLocked = ref(false)
+const collapsedWorkspaces = ref<Record<string, boolean>>({})
+
+function toggleWorkspace(workspaceId: string) {
+  collapsedWorkspaces.value[workspaceId] = !collapsedWorkspaces.value[workspaceId]
+}
+
+const lockedWorkspaceName = computed(() => {
+  return chatStore.catalog?.workspaces.find((ws) => ws.workspaceId === newWorkspaceId.value)?.name || '当前项目'
+})
 const nativeConfirmed = ref(false)
 const nativeCanSend = computed(() => chatStore.activeConversation?.conversationKind !== 'native' || chatStore.activeConversation.nativeActivity?.activity === 'closed_confirmed' || (nativeConfirmed.value && Boolean(chatStore.activeConversation.nativeSourceRevision)))
 watch(() => chatStore.activeConversation?.nativeSourceRevision, () => { nativeConfirmed.value = false })
@@ -85,6 +99,7 @@ function setCatalogDefaults(workspaceId?: string) {
 async function openCreateDialog(workspaceId?: string) {
   if (chatStore.isRemoteSuspended) return
   newTitle.value = ''
+  isWorkspaceLocked.value = Boolean(workspaceId)
   isNewConversationDialogOpen.value = true
   if (!chatStore.catalog && !chatStore.isLoadingCatalog) await chatStore.fetchCatalog()
   setCatalogDefaults(workspaceId)
@@ -585,70 +600,111 @@ function getExecutionStatusLabel(status?: string): string {
           <div
             v-for="group in chatStore.conversationsByWorkspace"
             :key="group.workspaceId"
-            class="space-y-1"
+            class="space-y-0.5"
           >
-            <div class="px-2 py-1 text-[11px] font-medium text-text-muted flex items-center justify-between">
-              <span class="truncate">{{ group.workspaceName }}</span>
-              <div class="flex items-center gap-2">
-                <span class="text-[10px] tabular-nums">{{ group.conversations.length }}</span>
-                <button type="button" class="p-1 text-primary" :disabled="chatStore.isRemoteSuspended" :aria-label="`在${group.workspaceName}新建任务`" @click="openCreateDialog(group.workspaceId)">
+            <!-- Folder header row -->
+            <div class="px-2 py-1.5 rounded-lg flex items-center justify-between gap-1 text-xs text-text-muted hover:text-text select-none group">
+              <button
+                type="button"
+                class="flex items-center gap-1.5 min-w-0 flex-1 text-left py-1 cursor-pointer"
+                @click="toggleWorkspace(group.workspaceId)"
+              >
+                <component
+                  :is="collapsedWorkspaces[group.workspaceId] ? ChevronRight : ChevronDown"
+                  class="w-3.5 h-3.5 shrink-0 opacity-70 transition-transform"
+                />
+                <Folder class="w-4 h-4 shrink-0 text-primary/80" />
+                <span class="truncate font-semibold text-text text-xs">{{ group.workspaceName }}</span>
+                <span class="text-[10px] text-text-muted opacity-75">({{ group.conversations.length }})</span>
+              </button>
+              <div class="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  class="w-7 h-7 flex items-center justify-center rounded-md text-text-muted hover:text-primary hover:bg-muted active:scale-95 transition-all"
+                  :disabled="chatStore.isRemoteSuspended"
+                  :aria-label="`在${group.workspaceName}新建任务`"
+                  title="在此项目新建对话"
+                  @click="openCreateDialog(group.workspaceId)"
+                >
                   <Plus class="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            <div
-              v-for="conv in group.conversations"
-              :key="conv.conversationId"
-              class="w-full text-left p-3 min-h-[48px] rounded-xl text-xs transition-colors flex items-center justify-between gap-2 cursor-pointer group"
-              :class="[
-                conv.conversationId === chatStore.activeConversationId
-                  ? 'bg-primary/10 text-primary font-medium border border-primary/20'
-                  : 'text-text hover:bg-panel-hover border border-transparent',
-              ]"
-              @click="
-                chatStore.selectConversation(conv.conversationId);
-                isMobileSidebarOpen = false;
-              "
-            >
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="truncate font-medium">{{ conv.title }}</span>
-                  <span
-                    v-if="conv.visibility === 'mobile_only'"
-                    class="shrink-0 text-[9px] px-1 py-0.5 rounded bg-warning/15 text-warning border border-warning/25"
-                  >
-                    仅手机
-                  </span>
-                  <span
-                    v-else-if="conv.visibility === 'pc_only'"
-                    class="shrink-0 text-[9px] px-1 py-0.5 rounded bg-muted text-text-muted border border-border"
-                  >
-                    仅电脑
-                  </span>
-                  <span
-                    v-if="conv.busy"
-                    class="shrink-0 text-[9px] px-1 py-0.5 rounded bg-warning/15 text-warning"
-                  >
-                    忙碌
-                  </span>
-                </div>
-                <div class="flex items-center gap-2 text-[10px] text-text-muted mt-0.5">
-                  <span>{{ conv.conversationKind === 'native' ? agentLabel(conv.agentType) : `场景: ${conv.sceneId}` }}</span>
-                  <span v-if="conv.archived">(已归档)</span>
-                </div>
-              </div>
-
-              <!-- Conversation Settings Button -->
-              <button
-                type="button"
-                class="min-w-[40px] min-h-[40px] rounded-lg text-text-muted hover:text-text hover:bg-panel flex items-center justify-center transition-colors shrink-0 -mr-1"
-                :disabled="chatStore.isRemoteSuspended"
-                title="对话设置"
-                @click.stop="openConversationSettings(conv)"
+            <!-- Conversations list in folder -->
+            <div v-if="!collapsedWorkspaces[group.workspaceId]" class="pl-3 space-y-0.5 mb-2">
+              <div
+                v-for="conv in group.conversations"
+                :key="conv.conversationId"
+                class="w-full text-left rounded-xl transition-all flex items-center justify-between gap-2 cursor-pointer group select-none min-h-[44px]"
+                :class="[
+                  conv.conversationId === chatStore.activeConversationId
+                    ? 'bg-elevated/90 text-text font-medium shadow-xs border border-border/80 px-3 py-2'
+                    : 'text-text-muted hover:text-text hover:bg-muted/40 border border-transparent px-3 py-2',
+                ]"
+                @click="
+                  chatStore.selectConversation(conv.conversationId);
+                  isMobileSidebarOpen = false;
+                "
               >
-                <MoreHorizontal class="w-4 h-4" />
-              </button>
+                <div class="min-w-0 flex-1 flex items-center gap-2">
+                  <!-- Status Indicator Icon -->
+                  <Circle
+                    class="w-3 h-3 shrink-0 transition-all"
+                    :class="[
+                      conv.conversationId === chatStore.activeConversationId
+                        ? 'text-primary fill-primary/30 opacity-100'
+                        : 'text-text-muted/60 opacity-60 group-hover:opacity-100'
+                    ]"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        class="truncate text-xs leading-normal"
+                        :class="conv.conversationId === chatStore.activeConversationId ? 'font-medium text-text' : 'text-text-muted group-hover:text-text'"
+                      >
+                        {{ conv.title }}
+                      </span>
+                      <span
+                        v-if="conv.visibility === 'mobile_only'"
+                        class="shrink-0 text-[9px] px-1 py-0.2 rounded bg-warning/15 text-warning border border-warning/25"
+                      >
+                        仅手机
+                      </span>
+                      <span
+                        v-else-if="conv.visibility === 'pc_only'"
+                        class="shrink-0 text-[9px] px-1 py-0.2 rounded bg-muted text-text-muted border border-border"
+                      >
+                        仅电脑
+                      </span>
+                      <span
+                        v-if="conv.busy"
+                        class="shrink-0 text-[9px] px-1 py-0.2 rounded bg-warning/15 text-warning animate-pulse"
+                      >
+                        忙碌
+                      </span>
+                      <span
+                        v-if="conv.archived"
+                        class="shrink-0 text-[9px] text-text-muted"
+                      >
+                        (已归档)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Conversation Settings Button -->
+                <button
+                  type="button"
+                  class="w-7 h-7 rounded-lg text-text-muted hover:text-text hover:bg-panel flex items-center justify-center transition-all shrink-0 -mr-1"
+                  :class="conv.conversationId === chatStore.activeConversationId ? 'opacity-90' : 'opacity-0 group-hover:opacity-90'"
+                  :disabled="chatStore.isRemoteSuspended"
+                  title="对话设置"
+                  @click.stop="openConversationSettings(conv)"
+                >
+                  <MoreHorizontal class="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1073,17 +1129,35 @@ function getExecutionStatusLabel(status?: string): string {
     <!-- Create Conversation Dialog -->
     <HqDialog
       :open="isNewConversationDialogOpen"
-      title="新建任务"
+      :title="isWorkspaceLocked ? `新建对话 · ${lockedWorkspaceName}` : '新建任务'"
       @close="isNewConversationDialogOpen = false"
     >
       <div class="space-y-4 text-xs text-text">
         <p v-if="chatStore.actionError" role="alert" class="text-danger">{{ chatStore.actionError }}</p>
         <div class="space-y-1.5">
-          <div class="flex items-center justify-between"><label for="new-conv-workspace" class="block font-medium text-text-secondary">项目</label>
-            <HqButton size="sm" variant="ghost" :disabled="!chatStore.catalog?.authorizedRoots?.length || chatStore.isRemoteSuspended || !chatStore.isWorkerOnline" @click="addingWorkspace = true">添加项目</HqButton>
+          <div class="flex items-center justify-between">
+            <label for="new-conv-workspace" class="block font-medium text-text-secondary">
+              {{ isWorkspaceLocked ? '当前所属项目' : '项目' }}
+            </label>
+            <HqButton
+              v-if="!isWorkspaceLocked"
+              size="sm"
+              variant="ghost"
+              :disabled="!chatStore.catalog?.authorizedRoots?.length || chatStore.isRemoteSuspended || !chatStore.isWorkerOnline"
+              @click="addingWorkspace = true"
+            >
+              添加项目
+            </HqButton>
           </div>
-          <p v-if="!chatStore.catalog?.authorizedRoots?.length" class="text-[11px] text-text-muted">电脑未开放远程添加项目</p>
-          <HqSelect id="new-conv-workspace" v-model="newWorkspaceId" label="项目" :placeholder="catalogHint" :disabled="!chatStore.catalog || chatStore.isLoadingCatalog" :options="(chatStore.catalog?.workspaces || []).map((ws) => ({ value: ws.workspaceId, label: ws.name }))" />
+          <p v-if="!isWorkspaceLocked && !chatStore.catalog?.authorizedRoots?.length" class="text-[11px] text-text-muted">电脑未开放远程添加项目</p>
+          <HqSelect
+            id="new-conv-workspace"
+            v-model="newWorkspaceId"
+            label="项目"
+            :placeholder="catalogHint"
+            :disabled="isWorkspaceLocked || !chatStore.catalog || chatStore.isLoadingCatalog"
+            :options="(chatStore.catalog?.workspaces || []).map((ws) => ({ value: ws.workspaceId, label: ws.name }))"
+          />
         </div>
         <div class="space-y-1.5">
           <label for="new-conv-title" class="block font-medium text-text-secondary">标题（选填）</label>
