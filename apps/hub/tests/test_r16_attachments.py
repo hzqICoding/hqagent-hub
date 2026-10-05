@@ -6,7 +6,7 @@ from urllib.parse import quote
 import httpx
 import pytest
 from protocol.generated import python as dto
-from remote_support import System, until
+from remote_support import System, until, wait_budget
 from runtime.attachments.capabilities import VerificationStore, REQUIRED_PROBES
 from adapters.path_guard import PathGuard
 from test_r15_joint_server import RealPair, server_source
@@ -176,7 +176,7 @@ def test_preparation_cancel_or_restart_releases_busy_without_agent(tmp_path, res
             body = HeldBody()
             pair.system.worker.attachments.library.http_factory = lambda: httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=body, headers={'Content-Length': str(attachment.size_bytes)})))
             command = await send_phone(pair, conversation, attachment)
-            await asyncio.wait_for(body.entered.wait(), 8)
+            await asyncio.wait_for(body.entered.wait(), wait_budget(8))
             row = pair.system.worker.delivery.row(command)
             run = row['run_id']
             assert pair.legacy_ids[0] in pair.system.worker.busy.ids()

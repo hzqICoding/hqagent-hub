@@ -240,7 +240,7 @@ def test_private_events_omit_content_remote_events_do_not_and_heartbeat_is_real(
                 assert "LOCAL_ONLY_MARKER" not in json.dumps(server.frames)
                 assert "ABCD2345" not in json.dumps(server.frames)
                 assert any(f["type"] == "run.state_changed" for f in server.frames)
-                await until(lambda: any(f["type"] == "worker.heartbeat" for f in server.frames), timeout=18)
+                await until(lambda: any(f["type"] == "worker.heartbeat" for f in server.frames), timeout=18, scale_timeout=False)
                 assert not server.errors
         finally:
             await system.close()

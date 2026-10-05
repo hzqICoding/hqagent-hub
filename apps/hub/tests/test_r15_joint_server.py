@@ -14,7 +14,7 @@ import pytest
 import uvicorn
 from protocol.generated import python as dto
 
-from remote_support import System, TLS_FILES, until, WORKER_CODECS, SERVER_CODECS
+from remote_support import System, TLS_FILES, until, wait_budget, WORKER_CODECS, SERVER_CODECS
 from runtime.paths import HubPaths
 from runtime.remote.security import CredentialVault
 from runtime.remote.worker import NoRedirectConnect
@@ -209,7 +209,7 @@ class RealPair:
         await self.system.close()
         await self.browser.aclose()
         self.server.should_exit = True
-        await asyncio.wait_for(self.server_job, 5)
+        await asyncio.wait_for(self.server_job, wait_budget(5))
         self.socket.close()
         self.wire_patch.undo()
 
@@ -266,7 +266,7 @@ def test_real_r1_upgrade_backfill_and_computer_rounds_keep_reply_and_connection(
     async def scenario():
         async with RealPair(tmp_path, hold_history=during_history, revision=server_revision) as pair:
             if during_history:
-                await asyncio.wait_for(pair.history_held.wait(), 5)
+                await asyncio.wait_for(pair.history_held.wait(), wait_budget(5))
                 assert pair.system.repo.get("sync-work")["phase"] == "backfilling"
             else:
                 await until(lambda: pair.system.repo.get("sync-work")["phase"] == "synced")

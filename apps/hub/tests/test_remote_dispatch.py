@@ -1,8 +1,41 @@
 from __future__ import annotations
 
 import asyncio
+import pytest
 
-from remote_support import FakeRemoteServer, System, command_events, until
+from remote_support import FakeRemoteServer, System, command_events, until, wait_budget
+
+
+def test_wait_budget_defaults_to_one_and_scales_only_synchronization(monkeypatch):
+    monkeypatch.delenv('HQAGENT_TEST_TIMEOUT_SCALE', raising=False)
+    assert wait_budget(8) == 8
+    monkeypatch.setenv('HQAGENT_TEST_TIMEOUT_SCALE', '3')
+    assert wait_budget(8) == 24
+    assert wait_budget(2) == 6
+    budgets, intervals = [], []
+    original = asyncio.timeout
+    def observed_timeout(seconds):
+        budgets.append(seconds)
+        return original(seconds)
+    async def sleep(seconds):
+        intervals.append(seconds)
+    monkeypatch.setattr(asyncio, 'timeout', observed_timeout)
+    monkeypatch.setattr(asyncio, 'sleep', sleep)
+    async def scenario():
+        samples = iter((False, True))
+        await until(lambda: next(samples))
+        await until(lambda: True, timeout=12)
+        await until(lambda: True, timeout=2, scale_timeout=False)
+    asyncio.run(scenario())
+    assert budgets == [24, 36, 2]
+    assert intervals == [0.01]
+
+
+@pytest.mark.parametrize('value', ['0', '-1', 'nan', 'inf', 'bad', ''])
+def test_invalid_wait_scale_never_disables_timeout(monkeypatch, value):
+    monkeypatch.setenv('HQAGENT_TEST_TIMEOUT_SCALE', value)
+    with pytest.raises(ValueError):
+        wait_budget(8)
 
 
 def test_slow_cancel_does_not_block_admission_or_another_run_and_same_run_is_serial(tmp_path):
@@ -27,13 +60,15 @@ def test_slow_cancel_does_not_block_admission_or_another_run_and_same_run_is_ser
                     return await original_cancel(request)
                 system.adapter.cancel = slow_cancel
                 await server.send(system.command("cancel-a", conversation="conversation-a", kind="run.cancel", payload={"runId": a["run_id"]}))
-                await asyncio.wait_for(entered.wait(), 2)
+                await asyncio.wait_for(entered.wait(), wait_budget(2))
                 await server.send(system.command("resume-a", conversation="conversation-a", kind="run.resume", payload={"runId": a["run_id"]}))
                 await server.send(system.command("cancel-b", conversation="conversation-b", kind="run.cancel", payload={"runId": b["run_id"]}))
                 await server.send(system.command("run-c", conversation="conversation-c"))
-                await until(lambda: command_events(server, "run-c", "command.accepted"), timeout=2)
-                await until(lambda: command_events(server, "resume-a", "command.accepted"), timeout=2)
-                await until(lambda: command_events(server, "cancel-b", "command.completed"), timeout=2)
+                # These three ceilings assert nonblocking admission/control,
+                # not merely readiness; slow CI must not relax this behavior.
+                await until(lambda: command_events(server, "run-c", "command.accepted"), timeout=2, scale_timeout=False)
+                await until(lambda: command_events(server, "resume-a", "command.accepted"), timeout=2, scale_timeout=False)
+                await until(lambda: command_events(server, "cancel-b", "command.completed"), timeout=2, scale_timeout=False)
                 assert not release.is_set()
                 assert system.repo.inbox("cancel-a")["status"] == "executing"
                 assert system.repo.inbox("resume-a")["status"] == "admitted"
@@ -74,7 +109,7 @@ def test_duplicate_admission_and_recover_do_not_launch_a_second_live_control(tmp
                 system.adapter.cancel = slow
                 command = system.command("cancel", kind="run.cancel", payload={"runId": row["run_id"]})
                 await server.send(command)
-                await asyncio.wait_for(entered.wait(), 2)
+                await asyncio.wait_for(entered.wait(), wait_budget(2))
                 await until(lambda: command_events(server, "cancel", "command.accepted"))
                 count = len(command_events(server, "cancel", "command.accepted"))
                 await server.send(command)
@@ -111,7 +146,7 @@ def test_reconnect_reports_inflight_control_unknown_and_does_not_resume_its_effe
                     await asyncio.Event().wait()
                 system.adapter.cancel = unknown_cancel
                 await server.send(system.command("cancel", kind="run.cancel", payload={"runId": row["run_id"]}))
-                await asyncio.wait_for(entered.wait(), 2)
+                await asyncio.wait_for(entered.wait(), wait_budget(2))
                 await server.send(system.command("resume", kind="run.resume", payload={"runId": row["run_id"]}))
                 await until(lambda: command_events(server, "resume", "command.accepted"))
                 assert system.repo.inbox("resume")["status"] == "admitted"
@@ -148,7 +183,7 @@ def test_ws_queue_backpressure_does_not_disconnect_when_more_than_200_commands_a
                     command["targetWorkerId"] = "wrong-worker"
                     await server.send(command)
                     if index == 0:
-                        await asyncio.wait_for(entered.wait(), 2)
+                        await asyncio.wait_for(entered.wait(), wait_budget(2))
                 await server.send(system.command("after-burst", conversation="independent"))
                 await asyncio.sleep(0.1)
                 assert server.connections == 1

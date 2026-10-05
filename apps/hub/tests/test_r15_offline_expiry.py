@@ -65,7 +65,7 @@ def test_disconnected_reservation_expires_without_user_write_and_computer_stays_
                 assert (await conversation_view(system, conversation.id)).busy is True
                 await disconnect_without_reconnecting(system)
                 # No GET, archive or enqueue can trigger this durable release.
-                await until(lambda: rejected(system, "offline-held"), timeout=5)
+                await until(lambda: rejected(system, "offline-held"), timeout=5, scale_timeout=False)
                 assert time.time() <= instant(frame["deliverBy"]) + 5
                 await asyncio.sleep(max(0, instant(frame["deliverBy"]) - time.time()))
                 assert (await conversation_view(system, conversation.id)).busy is False
