@@ -8,7 +8,7 @@ import os
 import secrets
 import time
 import threading
-from itertools import islice
+from itertools import groupby, islice
 from pathlib import Path
 
 from protocol.generated.python import (RuntimeNativeSessionIndex, LocalNativeSessionPage, NativeMessagePage,
@@ -541,6 +541,39 @@ class NativeService:
         self.repo.events.append(tx, EventDraft(aggregate_type="system", aggregate_id="native-audit",
             type="native.closure.confirmed", payload=payload))
 
+    @staticmethod
+    def _import_snapshot(messages, binding):
+        """Coalesce only already-filtered summaries; never change preview parts."""
+        names = {'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'shell', 'exec_command', 'apply_patch', '工具'}
+        result = []
+        for tools, group in groupby(messages, key=lambda m: m['role'] == 'tool_summary'):
+            if not tools:
+                result.extend(group)
+                continue
+            first = None
+            counts, previous_call = {}, None
+            for message in group:
+                if first is None:
+                    first = message
+                for line in message['text'].splitlines() or ['']:
+                    name, _, state = line.partition('：')
+                    if name not in names or state not in {'历史调用', '历史返回记录', '历史搜索调用'}:
+                        # Filtered/unknown notices must not turn into a name,
+                        # command, parameter or path in the public summary.
+                        name, state = '工具', None
+                    if state == '历史返回记录' and previous_call == name:
+                        previous_call = None
+                        continue
+                    counts[name] = counts.get(name, 0) + 1
+                    previous_call = name if state == '历史调用' else None
+            text = '、'.join(name + (f' ×{count}' if count > 1 else '') for name, count in counts.items())
+            merged = {'id': 'message_' + digest(['native-tool-summary', binding, first['id']]),
+                      'role': 'system', 'text': f'工具调用 ×{sum(counts.values())}：{text}'}
+            if 'createdAt' in first:
+                merged['createdAt'] = first['createdAt']
+            result.append(merged)
+        return result
+
     async def import_session(self, identifier, value, key, request_id, *, confirmation=None, command_id=None, remote_scope=None, on_commit=None):
         async with self.lock:
             row = self.row(identifier)
@@ -558,6 +591,7 @@ class NativeService:
             if not row["conversation_id"]:
                 await self.io(self.check, row, source, confirmation)
             verified = await self.io(self.source, row, full=True)
+            messages = await self.io(self._import_snapshot, verified.messages, row['binding_key'])
             def commit(tx):
                 current = self.row(identifier)
                 if current["conversation_id"]:
@@ -575,9 +609,10 @@ class NativeService:
                     agentType=row["agent_type"], nativeSessionId=identifier, nativeSourceRevision=source.revision,
                     nativeActivity={**evidence(source, self.probe), "activity": "closed_confirmed", "terminalClosedConfirmedAt": confirmation["confirmedAt"]})
                 tx.connection.execute("INSERT INTO local_conversations VALUES(?,?,?)", (conversation, view.model_dump_json(by_alias=True, exclude_none=True), stamp))
-                for sequence, message in enumerate(verified.messages, 1):
-                    tx.connection.execute("INSERT INTO local_messages VALUES(?,?,?,?,?,?,?)", (uid("message"), conversation,
-                        sequence, "system" if message["role"] == "tool_summary" else message["role"], message["text"], None, message.get("createdAt", stamp)))
+                for sequence, message in enumerate(messages, 1):
+                    message_id = message['id'] if message['role'] == 'system' else uid('message')
+                    tx.connection.execute("INSERT INTO local_messages VALUES(?,?,?,?,?,?,?)", (message_id, conversation,
+                        sequence, message["role"], message["text"], None, message.get("createdAt", stamp)))
                 tx.connection.execute("UPDATE native_sources SET conversation_id=?,session_id=?,confirmation_json=? WHERE native_id=?",
                     (conversation, session, json.dumps(confirmation), identifier))
                 self.audit(tx, row, confirmation, command_id, remote_scope)
