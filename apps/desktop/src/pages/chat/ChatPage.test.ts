@@ -299,4 +299,72 @@ describe('ChatPage', () => {
     // Regular assistant message mentioning Bash is NOT folded
     expect(wrapper.text()).toContain('这里是普通的助手回复，虽然提到 Bash: ls 但绝不应该被折叠为工具调用。')
   })
+
+  it('renders 20 consecutive system messages as 1 line, expands on click to show all messages', async () => {
+    const wrapper = await mountInitializedPage()
+    const store = useChatStore()
+    store.messages = Array.from({ length: 20 }, (_, i) => ({
+      id: `sys_${i}`,
+      conversationId: 'conv_1',
+      sequence: i + 1,
+      role: 'system',
+      text: `Bash: echo step_${i}`,
+      createdAt: '2026-10-06T00:00:00Z',
+    }))
+    await wrapper.vm.$nextTick()
+
+    const toggles = wrapper.findAll('[data-testid="system-group-toggle"]')
+    expect(toggles).toHaveLength(1)
+    expect(toggles[0].text()).toContain('🔧 工具调用 ×20（Bash ×20）')
+
+    // Initially collapsed
+    expect(wrapper.find('[data-testid="system-group-content"]').exists()).toBe(false)
+
+    // Click to expand
+    await toggles[0].trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="system-group-content"]').exists()).toBe(true)
+    const content = wrapper.get('[data-testid="system-group-content"]')
+    for (let i = 0; i < 20; i++) {
+      expect(content.text()).toContain(`Bash: echo step_${i}`)
+    }
+  })
+
+  it('keeps system message groups between user and assistant messages isolated without interference', async () => {
+    const wrapper = await mountInitializedPage()
+    const store = useChatStore()
+    store.messages = [
+      { id: 'u1', conversationId: 'conv_1', sequence: 1, role: 'user', text: '开始执行任务', createdAt: '2026-10-06T00:00:00Z' },
+      { id: 's1', conversationId: 'conv_1', sequence: 2, role: 'system', text: 'Bash: pwd', createdAt: '2026-10-06T00:00:01Z' },
+      { id: 's2', conversationId: 'conv_1', sequence: 3, role: 'system', text: 'Bash: ls', createdAt: '2026-10-06T00:00:02Z' },
+      { id: 's3', conversationId: 'conv_1', sequence: 4, role: 'system', text: 'Read: file.txt', createdAt: '2026-10-06T00:00:03Z' },
+      { id: 'a1', conversationId: 'conv_1', sequence: 5, role: 'assistant', text: '第一阶段就绪', createdAt: '2026-10-06T00:00:04Z' },
+      { id: 's4', conversationId: 'conv_1', sequence: 6, role: 'system', text: 'Git: status', createdAt: '2026-10-06T00:00:05Z' },
+      { id: 's5', conversationId: 'conv_1', sequence: 7, role: 'system', text: 'Git: diff', createdAt: '2026-10-06T00:00:06Z' },
+      { id: 'u2', conversationId: 'conv_1', sequence: 8, role: 'user', text: '确认无误，继续', createdAt: '2026-10-06T00:00:07Z' },
+      { id: 's6', conversationId: 'conv_1', sequence: 9, role: 'system', text: 'Bash: git commit', createdAt: '2026-10-06T00:00:08Z' },
+      { id: 'a2', conversationId: 'conv_1', sequence: 10, role: 'assistant', text: '全部完成', createdAt: '2026-10-06T00:00:09Z' },
+    ]
+    await wrapper.vm.$nextTick()
+
+    const toggles = wrapper.findAll('[data-testid="system-group-toggle"]')
+    // Only groups with 2+ consecutive system messages become system-group toggles
+    expect(toggles).toHaveLength(2)
+    expect(toggles[0].text()).toContain('🔧 工具调用 ×3（Bash ×2、Read ×1）')
+    expect(toggles[1].text()).toContain('🔧 工具调用 ×2（Git ×2）')
+
+    // Single system message s6 is not in a collapsed group toggle
+    expect(wrapper.text()).toContain('Bash: git commit')
+
+    // Expanding group 1 does not expand group 2
+    expect(wrapper.findAll('[data-testid="system-group-content"]')).toHaveLength(0)
+    await toggles[0].trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const expandedContents = wrapper.findAll('[data-testid="system-group-content"]')
+    expect(expandedContents).toHaveLength(1)
+    expect(expandedContents[0].text()).toContain('Bash: pwd')
+    expect(expandedContents[0].text()).not.toContain('Git: diff')
+  })
 })

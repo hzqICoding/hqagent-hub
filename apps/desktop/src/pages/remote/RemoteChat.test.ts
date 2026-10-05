@@ -232,6 +232,77 @@ describe('RemoteChat Workbench and Three-Layer Status', () => {
     await closeBtn.trigger('click')
     expect(wrapper.find('#remote-status-details').exists()).toBe(false)
   })
+
+  it('renders 20 consecutive system messages as 1 line in remote chat, expands on click to show all messages', async () => {
+    const wrapper = mount(RemoteChatPage)
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    store.messages = Array.from({ length: 20 }, (_, i) => ({
+      messageId: `remote_sys_${i}`,
+      conversationId: 'conv_demo_001',
+      sequence: i + 1,
+      role: 'system',
+      text: `Bash: echo step_${i}`,
+      createdAt: '2026-10-06T00:00:00Z',
+    }))
+    await wrapper.vm.$nextTick()
+
+    const toggles = wrapper.findAll('[data-testid="remote-system-group-toggle"]')
+    expect(toggles).toHaveLength(1)
+    expect(toggles[0].text()).toContain('🔧 工具调用 ×20（Bash ×20）')
+
+    // Initially collapsed
+    expect(wrapper.find('[data-testid="remote-system-group-content"]').exists()).toBe(false)
+
+    // Click to expand
+    await toggles[0].trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="remote-system-group-content"]').exists()).toBe(true)
+    const content = wrapper.get('[data-testid="remote-system-group-content"]')
+    for (let i = 0; i < 20; i++) {
+      expect(content.text()).toContain(`Bash: echo step_${i}`)
+    }
+  })
+
+  it('keeps remote system message groups between user and assistant messages isolated without interference', async () => {
+    const wrapper = mount(RemoteChatPage)
+    const store = useRemoteChatStore()
+    await flushPromises()
+
+    store.messages = [
+      { messageId: 'ru1', conversationId: 'conv_demo_001', role: 'user', text: '你好，开始执行', createdAt: '2026-10-06T00:00:00Z' },
+      { messageId: 'rs1', conversationId: 'conv_demo_001', role: 'system', text: 'Bash: pwd', createdAt: '2026-10-06T00:00:01Z' },
+      { messageId: 'rs2', conversationId: 'conv_demo_001', role: 'system', text: 'Bash: ls', createdAt: '2026-10-06T00:00:02Z' },
+      { messageId: 'rs3', conversationId: 'conv_demo_001', role: 'system', text: 'Read: main.go', createdAt: '2026-10-06T00:00:03Z' },
+      { messageId: 'ra1', conversationId: 'conv_demo_001', role: 'assistant', text: '检查完成', createdAt: '2026-10-06T00:00:04Z' },
+      { messageId: 'rs4', conversationId: 'conv_demo_001', role: 'system', text: 'Git: commit', createdAt: '2026-10-06T00:00:05Z' },
+      { messageId: 'rs5', conversationId: 'conv_demo_001', role: 'system', text: 'Git: push', createdAt: '2026-10-06T00:00:06Z' },
+      { messageId: 'ru2', conversationId: 'conv_demo_001', role: 'user', text: '再检查一下', createdAt: '2026-10-06T00:00:07Z' },
+      { messageId: 'rs6', conversationId: 'conv_demo_001', role: 'system', text: 'Bash: status', createdAt: '2026-10-06T00:00:08Z' },
+      { messageId: 'ra2', conversationId: 'conv_demo_001', role: 'assistant', text: '一切正常', createdAt: '2026-10-06T00:00:09Z' },
+    ]
+    await wrapper.vm.$nextTick()
+
+    const toggles = wrapper.findAll('[data-testid="remote-system-group-toggle"]')
+    expect(toggles).toHaveLength(2)
+    expect(toggles[0].text()).toContain('🔧 工具调用 ×3（Bash ×2、Read ×1）')
+    expect(toggles[1].text()).toContain('🔧 工具调用 ×2（Git ×2）')
+
+    // Single system message rs6 is not collapsed into a toggle
+    expect(wrapper.text()).toContain('Bash: status')
+
+    // Expanding group 1 does not expand group 2
+    expect(wrapper.findAll('[data-testid="remote-system-group-content"]')).toHaveLength(0)
+    await toggles[0].trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const expanded = wrapper.findAll('[data-testid="remote-system-group-content"]')
+    expect(expanded).toHaveLength(1)
+    expect(expanded[0].text()).toContain('Bash: pwd')
+    expect(expanded[0].text()).not.toContain('Git: push')
+  })
 })
 
 

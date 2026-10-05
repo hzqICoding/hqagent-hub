@@ -11,6 +11,7 @@ import { agentLabel, closureText } from '@/pages/native/native-utils'
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import RemoteRequestNotice from './RemoteRequestNotice.vue'
+import { groupConsecutiveSystemMessages } from '@/pages/chat/chat-message-grouping'
 import { useRemoteChatStore } from '@/stores/remote-chat.store'
 import { useRemoteAuthStore } from '@/stores/remote-auth.store'
 import type { RemoteApprovalView, RemoteCommandView, RemoteConversationView } from '@hqagent/protocol'
@@ -70,6 +71,20 @@ async function copyMessageText(text: string, messageId: string) {
   } catch {
     // fallback or ignore clipboard access errors
   }
+}
+
+const groupedConversationMessages = computed(() =>
+  groupConsecutiveSystemMessages(chatStore.messages)
+)
+
+const expandedSystemGroups = ref<Record<number, boolean>>({})
+
+function toggleSystemGroup(groupIndex: number) {
+  expandedSystemGroups.value[groupIndex] = !expandedSystemGroups.value[groupIndex]
+}
+
+function isSystemGroupExpanded(groupIndex: number): boolean {
+  return !!expandedSystemGroups.value[groupIndex]
 }
 
 const isMobileSidebarOpen = ref(false)
@@ -281,7 +296,11 @@ watch(
   }
 )
 
-watch(() => chatStore.activeConversationId, () => { nativeConfirmed.value = false; nextMessageNew.value = false })
+watch(() => chatStore.activeConversationId, () => {
+  nativeConfirmed.value = false
+  nextMessageNew.value = false
+  expandedSystemGroups.value = {}
+})
 const newTopicDisabledReason = computed(() => {
   if (!chatStore.activeConversation) return '请先选择对话'
   if (chatStore.activeConversation.conversationKind === 'native') return '原生会话固定继续上下文，不支持新话题'
@@ -1062,48 +1081,108 @@ function getExecutionStatusLabel(status?: string): string {
           </div>
 
           <!-- Message Bubbles -->
-          <div
-            v-for="msg in chatStore.messages"
-            :key="msg.messageId"
-            class="flex flex-col space-y-1"
-            :class="msg.role === 'user' ? 'items-end' : 'items-start'"
+          <template
+            v-for="(group, gIdx) in groupedConversationMessages"
+            :key="group.type === 'single' ? group.message.messageId : `remote-sys-group-${gIdx}`"
           >
-            <!-- User Message (Clean right-aligned bubble) -->
+            <!-- Consecutive system / tool calls collapsed into a single compact line -->
             <div
-              v-if="msg.role === 'user'"
-              class="max-w-[85%] sm:max-w-md p-3 px-3.5 rounded-2xl rounded-tr-xs bg-primary text-white text-xs sm:text-sm leading-relaxed shadow-xs select-text"
+              v-if="group.type === 'system_group' && group.systemMessages"
+              class="w-full max-w-[92%] sm:max-w-2xl my-1"
             >
-              <p class="whitespace-pre-wrap break-words">{{ msg.text }}</p>
-              <MessageAttachments v-if="msg.attachments?.length" :attachments="msg.attachments" remote />
+              <div class="rounded-xl bg-muted/20 hover:bg-muted/30 transition-colors text-xs overflow-hidden border border-border/40">
+                <button
+                  type="button"
+                  class="w-full select-none py-2 px-3 flex items-center justify-between text-text-muted hover:text-text font-mono text-[11px] text-left cursor-pointer"
+                  data-testid="remote-system-group-toggle"
+                  @click="toggleSystemGroup(gIdx)"
+                >
+                  <span class="flex items-center gap-1.5 truncate">
+                    <span class="font-medium text-text truncate">{{ group.title }}</span>
+                  </span>
+                  <span
+                    class="text-[10px] text-text-muted transition-transform shrink-0 ml-2"
+                    :class="{ 'rotate-180': isSystemGroupExpanded(gIdx) }"
+                  >▼</span>
+                </button>
+                <div
+                  v-if="isSystemGroupExpanded(gIdx)"
+                  data-testid="remote-system-group-content"
+                  class="p-2 pt-0.5 space-y-2 border-t border-border/30 max-h-72 overflow-y-auto"
+                >
+                  <div
+                    v-for="sMsg in group.systemMessages"
+                    :key="sMsg.messageId"
+                    class="flex flex-col space-y-1 items-start text-xs font-mono"
+                  >
+                    <div class="w-full bg-panel border border-border/60 text-text rounded-xl p-2.5 text-xs leading-relaxed select-text">
+                      <HqMarkdown :content="sMsg.text" />
+                      <MessageAttachments v-if="sMsg.attachments?.length" :attachments="sMsg.attachments" remote />
+                    </div>
+                    <div class="flex items-center gap-2 text-[10px] text-text-muted px-1 select-none">
+                      <span>系统</span>
+                      <span>•</span>
+                      <span>{{ new Date(sMsg.createdAt).toLocaleTimeString() }}</span>
+                      <button
+                        type="button"
+                        class="ml-1 inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-text transition-colors p-0.5 cursor-pointer"
+                        title="复制消息内容"
+                        aria-label="复制消息内容"
+                        @click="copyMessageText(sMsg.text, sMsg.messageId)"
+                      >
+                        <Check v-if="copiedMessageId === sMsg.messageId" class="w-3 h-3 text-success" />
+                        <Copy v-else class="w-3 h-3" />
+                        <span>{{ copiedMessageId === sMsg.messageId ? '已复制' : '复制' }}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <!-- Assistant / Agent Message (Markdown rendered bubble) -->
+            <!-- Single Message (User, Assistant, or Single System) -->
             <div
-              v-else
-              class="w-full max-w-[92%] sm:max-w-2xl bg-panel border border-border text-text rounded-2xl rounded-tl-xs p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed shadow-xs overflow-x-auto select-text"
+              v-else-if="group.type === 'single' && group.message"
+              class="flex flex-col space-y-1"
+              :class="group.message.role === 'user' ? 'items-end' : 'items-start'"
             >
-              <HqMarkdown :content="msg.text" />
-              <MessageAttachments v-if="msg.attachments?.length" :attachments="msg.attachments" remote />
-            </div>
-
-            <div class="flex items-center gap-2 text-[10px] text-text-muted px-1 select-none">
-              <span>{{ msg.role === 'user' ? '你' : 'Agent' }}</span>
-              <span>•</span>
-              <span>{{ new Date(msg.createdAt).toLocaleTimeString() }}</span>
-              <button
-                v-if="msg.role !== 'user'"
-                type="button"
-                class="ml-1 inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-text transition-colors p-0.5 cursor-pointer"
-                title="复制消息内容"
-                aria-label="复制消息内容"
-                @click="copyMessageText(msg.text, msg.messageId)"
+              <!-- User Message (Clean right-aligned bubble) -->
+              <div
+                v-if="group.message.role === 'user'"
+                class="max-w-[85%] sm:max-w-md p-3 px-3.5 rounded-2xl rounded-tr-xs bg-primary text-white text-xs sm:text-sm leading-relaxed shadow-xs select-text"
               >
-                <Check v-if="copiedMessageId === msg.messageId" class="w-3 h-3 text-success" />
-                <Copy v-else class="w-3 h-3" />
-                <span>{{ copiedMessageId === msg.messageId ? '已复制' : '复制' }}</span>
-              </button>
+                <p class="whitespace-pre-wrap break-words">{{ group.message.text }}</p>
+                <MessageAttachments v-if="group.message.attachments?.length" :attachments="group.message.attachments" remote />
+              </div>
+
+              <!-- Assistant / Agent / Single System Message (Markdown rendered bubble) -->
+              <div
+                v-else
+                class="w-full max-w-[92%] sm:max-w-2xl bg-panel border border-border text-text rounded-2xl rounded-tl-xs p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed shadow-xs overflow-x-auto select-text"
+              >
+                <HqMarkdown :content="group.message.text" />
+                <MessageAttachments v-if="group.message.attachments?.length" :attachments="group.message.attachments" remote />
+              </div>
+
+              <div class="flex items-center gap-2 text-[10px] text-text-muted px-1 select-none">
+                <span>{{ group.message.role === 'user' ? '你' : (group.message.role === 'system' ? '系统' : 'Agent') }}</span>
+                <span>•</span>
+                <span>{{ new Date(group.message.createdAt).toLocaleTimeString() }}</span>
+                <button
+                  v-if="group.message.role !== 'user'"
+                  type="button"
+                  class="ml-1 inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-text transition-colors p-0.5 cursor-pointer"
+                  title="复制消息内容"
+                  aria-label="复制消息内容"
+                  @click="copyMessageText(group.message.text, group.message.messageId)"
+                >
+                  <Check v-if="copiedMessageId === group.message.messageId" class="w-3 h-3 text-success" />
+                  <Copy v-else class="w-3 h-3" />
+                  <span>{{ copiedMessageId === group.message.messageId ? '已复制' : '复制' }}</span>
+                </button>
+              </div>
             </div>
-          </div>
+          </template>
 
           <!-- In-Stream Live Run & Thinking Indicator (PI-Desktop / Claude style) -->
           <div
