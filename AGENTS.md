@@ -67,7 +67,9 @@ commit message、PR 描述、tag 说明**一律不出现任何 AI 署名**：
 
 ## 7. 安全红线
 
-- Hub Token / WS Ticket / Update Agent Token 不得进入任何 HTTP 响应体、事件 payload、日志或前端持久化存储。
+- Hub Token / Update Agent Token 不得进入任何 HTTP 响应体、事件 payload、日志或前端持久化存储。
+- WS Ticket 只能由专用签发接口 `POST /api/v1/auth/ws-ticket` 返回给已鉴权的调用方（短时、单次、绑定能力集）；除此之外同样不得进入其它响应体、事件 payload、日志或前端持久化存储。
+- 设备配对码、API 令牌（PAT）等一次性秘密只能由各自契约规定的专用接口交付一次，不得出现在普通 View、事件、截图或日志中。
 - 验签失败没有"忽略并继续"入口。
 - 危险动作（deploy / git_push / git_merge / delete / shell / network / db_migrate）未经审批不得执行。
 - 运行期不写安装目录，用户数据一律写 `%LOCALAPPDATA%\HQAgent-Hub\`。
