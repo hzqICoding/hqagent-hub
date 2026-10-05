@@ -225,13 +225,13 @@ function handleStopRun() {
         <span class="text-xs font-medium">对话正在进行，结束后再继续</span>
       </div>
 
-      <div class="bg-panel border border-border rounded-2xl overflow-hidden">
+      <div class="bg-panel border border-border/50 focus-within:border-primary/50 rounded-2xl overflow-hidden transition-colors shadow-xs">
         <AttachmentDrafts class="px-[12px]" v-if="chatStore.activeConversationId" :key="chatStore.activeConversationId" ref="attachmentDrafts" :conversation-id="chatStore.activeConversationId" :disabled="chatStore.isSending || chatStore.isActiveConversationArchived" @blocked="attachmentsBlocked = $event" />
         <div class="hq-composer-row px-[12px] py-3">
           <button type="button" aria-label="添加附件" class="hq-composer-icon text-content-muted" :disabled="chatStore.isSending || chatStore.isActiveConversationArchived || !chatStore.activeConversationId" @click="attachmentDrafts?.open()"><Paperclip class="w-5 h-5" /></button>
           <textarea ref="textareaRef" v-model="inputText" :maxlength="32000" rows="1" :disabled="chatStore.isConversationBusy || chatStore.isActiveConversationArchived"
             :placeholder="chatStore.isConversationBusy ? '对话正在进行，结束后再继续' : '输入任务目标或补充要求…'"
-            class="hq-form-control hq-composer-text border border-border text-sm" @input="handleInput" @keydown="handleKeyDown" />
+            class="hq-form-control hq-form-control--embedded hq-composer-text text-sm" @input="handleInput" @keydown="handleKeyDown" />
           <button v-if="chatStore.isCurrentRunActive && inputText.trim().length === 0" type="button" class="hq-composer-send bg-status-danger-soft text-status-danger" title="中止当前执行轮次" aria-label="中止当前执行轮次" @click="handleStopRun"><Square class="w-4 h-4 fill-current" /></button>
           <button v-else type="button" class="hq-composer-send" :class="canSend ? 'bg-action-primary text-action-primary-text hover:bg-action-primary-hover' : 'bg-muted text-content-disabled cursor-not-allowed'" :disabled="!canSend || chatStore.isSending" title="发送目标指令 (Enter)" aria-label="发送目标指令" @click="handleSend"><ArrowUp class="w-5 h-5" /></button>
         </div>

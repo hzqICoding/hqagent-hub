@@ -390,7 +390,7 @@ function handleConversationSelect(conversationId: string) {
 </script>
 
 <template>
-  <aside class="w-[85vw] max-w-[320px] md:w-72 lg:w-80 h-full border-r border-border bg-panel flex flex-col shrink-0 select-none">
+  <aside class="w-[85vw] max-w-[320px] md:w-72 lg:w-80 h-full border-r border-border/30 bg-panel flex flex-col shrink-0 select-none">
     <div class="p-3.5 pb-2 flex items-center justify-between gap-2">
       <div class="flex items-center gap-2 min-w-0">
         <Bot class="w-5 h-5 text-primary shrink-0" />
@@ -413,17 +413,17 @@ function handleConversationSelect(conversationId: string) {
       </div>
     </div>
 
-    <div class="px-3 pb-2.5 border-b border-border/40 space-y-2">
+    <div class="px-3 pb-2.5 border-b border-border/30 space-y-2">
       <div class="relative">
         <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
         <input
           v-model="chatStore.searchQuery"
           type="text"
           placeholder="搜索任务或项目..."
-          class="hq-form-control w-full pl-8 pr-2.5 py-1.5 text-xs bg-bg-app border border-border rounded-[var(--radius-sm)] text-text placeholder-text-muted/60 focus:outline-none focus:border-primary transition-colors"
+          class="hq-form-control w-full pl-8 pr-2.5 py-1.5 text-xs bg-bg-app/70 border border-border/40 rounded-lg text-text placeholder-text-muted/60 focus:outline-none focus:border-primary transition-colors"
         />
       </div>
-      <div class="grid grid-cols-2 gap-1 rounded-lg bg-bg-app p-1 text-[11px]">
+      <div class="grid grid-cols-2 gap-1 rounded-lg bg-bg-app/60 p-1 text-[11px]">
         <button
           type="button"
           class="rounded-md px-1.5 py-1 transition-colors cursor-pointer text-center font-medium truncate"
@@ -927,7 +927,7 @@ function handleConversationSelect(conversationId: string) {
     </HqDialog>
 
     <!-- Sidebar bottom toolbar (Settings, Archive, Mobile connection, Theme toggle, Version) matching Image 4 -->
-    <div class="px-3 py-2 border-t border-border/40 flex items-center justify-between text-xs shrink-0 select-none">
+    <div class="px-3 py-2 border-t border-border/30 flex items-center justify-between text-xs shrink-0 select-none">
       <div class="flex items-center gap-1">
         <!-- Settings button -->
         <button

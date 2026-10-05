@@ -43,7 +43,7 @@ function toggleTheme() {
 
 <template>
   <div class="h-full flex flex-col bg-app text-content-primary overflow-hidden">
-    <header class="shrink-0 border-b border-border bg-panel px-4 py-2.5 flex items-center justify-between gap-3 z-20">
+    <header class="shrink-0 border-b border-border/30 bg-panel px-4 py-2.5 flex items-center justify-between gap-3 z-20">
       <div class="flex items-center gap-3">
         <router-link to="/chat" class="font-bold text-sm text-content-primary hover:text-primary transition-colors flex items-center gap-2">
           <div class="w-6 h-6 rounded-md bg-primary flex items-center justify-center text-white font-bold text-xs shadow-xs">
@@ -53,9 +53,20 @@ function toggleTheme() {
         </router-link>
       </div>
 
-      <div class="flex items-center gap-3 shrink-0">
-        <span class="text-xs" :class="auth.isMockMode ? 'text-warning font-medium' : 'text-text-muted'">
-          {{ auth.isMockMode ? '演示数据 · 不会执行真实任务' : '本机 Worker' }}
+      <div class="flex items-center gap-2.5 shrink-0">
+        <div v-if="auth.isMockMode" class="flex items-center gap-1.5 text-xs">
+          <span class="text-warning font-medium">演示数据</span>
+          <button
+            type="button"
+            class="text-[11px] px-1.5 py-0.5 rounded text-warning/90 hover:text-warning bg-warning/10 hover:bg-warning/20 border border-warning/20 font-medium transition-colors cursor-pointer"
+            title="切回真实 Worker"
+            @click="auth.setGatewayMode('real')"
+          >
+            切回真实
+          </button>
+        </div>
+        <span v-else class="text-xs text-text-muted">
+          本机 Worker
         </span>
 
         <!-- Theme toggle -->
@@ -73,11 +84,11 @@ function toggleTheme() {
         <!-- Right-side Settings button -->
         <router-link
           to="/settings"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border cursor-pointer"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
           :class="[
             isSettingsActive
-              ? 'bg-primary/10 text-primary border-primary/30 font-semibold shadow-xs'
-              : 'text-content-secondary hover:text-content-primary hover:bg-muted border-border/60'
+              ? 'bg-primary/10 text-primary font-semibold'
+              : 'text-content-secondary hover:text-content-primary hover:bg-muted'
           ]"
           title="系统与功能设置"
           aria-label="系统与功能设置"

@@ -71,7 +71,7 @@ async function copyText(text: string) {
           <span>{{ formatTime(message.createdAt) }}</span>
         </div>
 
-        <div class="bg-primary/10 text-text p-3 px-4 rounded-2xl rounded-tr-xs text-xs leading-relaxed whitespace-pre-wrap break-words select-text border border-primary/20 shadow-xs">
+        <div class="bg-primary/15 text-text p-3 px-4 rounded-2xl rounded-tr-xs text-xs leading-relaxed whitespace-pre-wrap break-words select-text">
           {{ message.text }}
           <MessageAttachments v-if="message.attachments?.length" :attachments="message.attachments" />
         </div>
@@ -126,7 +126,7 @@ async function copyText(text: string) {
 
     <!-- Assistant Final Reply (Clean typography, bot avatar, markdown body, quick copy buttons) -->
     <div v-else class="max-w-3xl mx-auto flex items-start gap-2 sm:gap-3 group">
-      <div class="w-7 h-7 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0 mt-0.5 border border-success/30 shadow-xs">
+      <div class="w-7 h-7 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0 mt-0.5">
         <RuntimeIcon :agent="chatStore.activeConversation?.agentType" class="w-4 h-4" />
       </div>
 
@@ -140,7 +140,7 @@ async function copyText(text: string) {
 
           <button
             type="button"
-            class="min-h-[36px] sm:min-h-0 p-1 px-1.5 rounded hover:bg-panel-hover border border-transparent hover:border-border/60 text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] cursor-pointer opacity-70 hover:opacity-100"
+            class="min-h-[36px] sm:min-h-0 p-1 px-1.5 rounded hover:bg-panel-hover text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] cursor-pointer opacity-70 hover:opacity-100"
             title="复制回复内容"
             aria-label="复制回复内容"
             @click="copyText(message.text)"
@@ -159,11 +159,11 @@ async function copyText(text: string) {
           :initially-expanded="false"
         />
 
-        <div class="relative group/bubble bg-panel border border-border/80 p-3 sm:p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed shadow-sm break-words overflow-x-auto max-w-full select-text">
+        <div class="relative group/bubble bg-panel/40 p-3 sm:p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed break-words overflow-x-auto max-w-full select-text">
           <!-- Floating quick copy icon button at top-right corner of the bubble -->
           <button
             type="button"
-            class="absolute top-2 right-2 sm:top-3 sm:right-3 min-w-[32px] min-h-[32px] p-1.5 px-2 rounded-lg bg-bg-app/90 hover:bg-panel-hover border border-border/70 text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] shadow-xs cursor-pointer z-10 opacity-70 hover:opacity-100"
+            class="absolute top-2 right-2 sm:top-3 sm:right-3 min-w-[32px] min-h-[32px] p-1.5 px-2 rounded-lg bg-muted/80 hover:bg-muted text-text-muted hover:text-text transition-all flex items-center gap-1 text-[10px] cursor-pointer z-10 opacity-70 hover:opacity-100"
             :title="isCopied ? '已复制到剪贴板' : '一键复制整条消息'"
             aria-label="一键复制整条消息"
             @click.stop="copyText(message.text)"
@@ -180,7 +180,7 @@ async function copyText(text: string) {
         <div class="flex items-center justify-between pt-0.5 px-1 text-[11px] text-text-muted select-none">
           <button
             type="button"
-            class="min-h-[36px] sm:min-h-0 p-1 px-2 rounded-md hover:bg-panel border border-border/40 text-text-muted hover:text-text transition-colors flex items-center gap-1.5 text-[10px] cursor-pointer"
+            class="min-h-[36px] sm:min-h-0 p-1 px-2 rounded-md hover:bg-panel text-text-muted hover:text-text transition-colors flex items-center gap-1.5 text-[10px] cursor-pointer"
             :title="isCopied ? '已复制到剪贴板' : '一键复制整条消息'"
             aria-label="复制全文"
             @click="copyText(message.text)"

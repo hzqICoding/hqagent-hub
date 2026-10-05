@@ -6,9 +6,9 @@
   --color-bg-muted: #f1f5f9;
   --color-bg-code: #eef2f7;
 
-  --color-border-subtle: #e2e8f0;
-  --color-border-default: #cbd5e1;
-  --color-border-strong: #94a3b8;
+  --color-border-subtle: rgba(0, 0, 0, 0.05);
+  --color-border-default: rgba(0, 0, 0, 0.09);
+  --color-border-strong: rgba(0, 0, 0, 0.16);
 
   --color-text-primary: #0f172a;
   --color-text-secondary: #475569;

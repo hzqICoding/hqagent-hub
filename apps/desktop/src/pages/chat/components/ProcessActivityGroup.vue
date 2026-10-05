@@ -93,11 +93,11 @@ const summaryTitle = computed(() => {
 </script>
 
 <template>
-  <div class="my-2 rounded-xl border border-border/70 bg-panel/40 overflow-hidden shadow-xs transition-all">
+  <div class="my-2 rounded-xl bg-muted/30 hover:bg-muted/50 overflow-hidden transition-all">
     <!-- Header button -->
     <button
       type="button"
-      class="w-full min-h-[44px] p-2.5 px-3 flex items-center justify-between text-xs hover:bg-panel transition-colors text-left gap-2 select-none cursor-pointer"
+      class="w-full min-h-[44px] p-2.5 px-3 flex items-center justify-between text-xs hover:bg-panel/40 transition-colors text-left gap-2 select-none cursor-pointer"
       @click="isExpanded = !isExpanded"
     >
       <div class="flex items-center gap-2 min-w-0">
@@ -121,7 +121,7 @@ const summaryTitle = computed(() => {
         <!-- Step count pill -->
         <span
           v-if="activities.length > 0"
-          class="px-1.5 py-0.5 rounded-full bg-panel-hover border border-border/60 text-[10px] text-text-muted font-mono shrink-0"
+          class="px-1.5 py-0.5 rounded-md bg-muted text-[10px] text-text-muted font-mono shrink-0"
         >
           {{ activities.length }} 步
         </span>
@@ -141,12 +141,12 @@ const summaryTitle = computed(() => {
     <!-- Body timeline -->
     <div
       v-if="isExpanded && activities.length > 0"
-      class="p-2.5 px-3 border-t border-border/50 bg-bg-app/50 max-h-72 overflow-y-auto space-y-1.5"
+      class="p-2.5 px-3 border-t border-border/20 bg-bg-app/40 max-h-72 overflow-y-auto space-y-1.5"
     >
       <div
         v-for="item in activities"
         :key="item.id"
-        class="group/item rounded-lg p-1.5 px-2 hover:bg-panel/70 transition-colors text-xs cursor-pointer select-none border border-transparent hover:border-border/40"
+        class="group/item rounded-lg p-1.5 px-2 hover:bg-panel/60 transition-colors text-xs cursor-pointer select-none"
         @click="toggleItemDetail(item.id)"
       >
         <div class="flex items-center justify-between gap-2 min-w-0">

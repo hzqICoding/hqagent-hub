@@ -57,7 +57,7 @@ onUnmounted(() => { stopped = true; clearTimeout(timer) })
 
 <template>
   <div class="h-full flex flex-col min-h-0">
-    <div class="shrink-0 px-4 py-2 border-b border-border text-xs flex items-center gap-4">
+    <div class="shrink-0 px-4 py-2 border-b border-border/30 bg-panel text-xs flex items-center gap-4">
       <span role="status">{{ connected ? 'Hub：运行中' : 'Hub：连接中' }}</span>
       <span v-if="updateAgentMissing" class="text-text-muted">更新组件未安装</span>
       <label class="ml-auto flex items-center gap-2">

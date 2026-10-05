@@ -123,9 +123,9 @@ function getReviewVerdictMeta(verdict: string) {
 </script>
 
 <template>
-  <aside class="w-full sm:w-[380px] md:w-[360px] lg:w-[400px] h-full border-l border-border bg-panel flex flex-col shrink-0 overflow-y-auto overflow-x-hidden select-none">
+  <aside class="w-full sm:w-[380px] md:w-[360px] lg:w-[400px] h-full border-l border-border/30 bg-panel flex flex-col shrink-0 overflow-y-auto overflow-x-hidden select-none">
     <!-- Header -->
-    <div class="p-3.5 border-b border-border flex items-center justify-between shrink-0">
+    <div class="p-3.5 border-b border-border/30 flex items-center justify-between shrink-0">
       <div class="flex items-center gap-2 min-w-0">
         <Layers class="w-4 h-4 text-primary shrink-0" />
         <h3 class="text-xs font-semibold text-text truncate">本轮场景与执行详情</h3>
@@ -200,7 +200,7 @@ function getReviewVerdictMeta(verdict: string) {
 
       <!-- Action Control Buttons -->
       <div
-        class="p-2.5 rounded-[var(--radius-sm)] bg-bg-app border border-border flex items-center justify-between gap-1.5"
+        class="p-2 rounded-xl bg-muted/30 flex items-center justify-between gap-1.5"
       >
         <HqButton
           v-if="activeRun.status === 'running'"
@@ -257,7 +257,7 @@ function getReviewVerdictMeta(verdict: string) {
           <span class="font-mono">v{{ scene?.version }}</span>
         </div>
 
-        <div class="p-2.5 rounded-[var(--radius-sm)] bg-bg-app border border-border space-y-2">
+        <div class="p-3 rounded-xl bg-muted/30 space-y-2.5">
           <div class="flex items-center justify-between">
             <span class="font-medium text-text">{{ scene?.name }}</span>
             <HqBadge size="sm" variant="neutral">{{ scene?.id }}</HqBadge>
@@ -273,12 +273,12 @@ function getReviewVerdictMeta(verdict: string) {
           </div>
 
           <!-- Roles in Snapshot -->
-          <div class="pt-2 border-t border-border space-y-1.5">
+          <div class="pt-2 border-t border-border/20 space-y-1.5">
             <span class="text-[10px] text-text-muted uppercase tracking-wider block">参与角色分配</span>
             <div
               v-for="role in scene?.roles"
               :key="role.roleId"
-              class="p-1.5 rounded bg-panel border border-border/80 text-[11px] space-y-0.5"
+              class="p-2 rounded-lg bg-bg-app/60 text-[11px] space-y-0.5"
             >
               <div class="flex items-center justify-between gap-1 min-w-0">
                 <span class="font-medium text-text truncate">{{ role.roleName || role.roleId }}</span>
@@ -301,7 +301,7 @@ function getReviewVerdictMeta(verdict: string) {
           <div
             v-for="node in task.nodes"
             :key="node.id"
-            class="p-2 rounded-[var(--radius-sm)] bg-bg-app border border-border space-y-1.5"
+            class="p-2.5 rounded-xl bg-muted/30 space-y-2"
           >
             <div class="flex items-center justify-between gap-1">
               <span class="font-medium text-text text-xs truncate">
@@ -309,7 +309,7 @@ function getReviewVerdictMeta(verdict: string) {
                 <span v-if="hasCustomNodeName(node)" class="ml-1 text-[10px] font-mono text-text-muted">{{ node.roleId }}</span>
               </span>
               <span
-                class="px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0"
+                class="px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0"
                 :class="getNodeStatusBadge(node.status).class"
               >
                 {{ getNodeStatusBadge(node.status).label }}
@@ -328,7 +328,7 @@ function getReviewVerdictMeta(verdict: string) {
 
             <div
               v-if="node.sessionId || node.externalSessionId"
-              class="p-1.5 rounded bg-panel border border-border/80 text-[10px] font-mono text-text-muted space-y-1 break-all"
+              class="p-1.5 rounded bg-bg-app/60 text-[10px] font-mono text-text-muted space-y-1 break-all"
             >
               <div v-if="node.sessionId">Hub Session: {{ node.sessionId }}</div>
               <div v-if="node.externalSessionId">原生 Session: {{ node.externalSessionId }}</div>
@@ -357,7 +357,7 @@ function getReviewVerdictMeta(verdict: string) {
               <div v-else class="text-text-muted">尚未产生验收结论</div>
             </div>
 
-            <div v-if="node.outputSummary" class="mt-1.5 p-2 rounded-lg bg-bg-app/60 border border-border/50 text-[11px] leading-relaxed break-words">
+            <div v-if="node.outputSummary" class="mt-1.5 p-2 rounded-lg bg-bg-app/60 text-[11px] leading-relaxed break-words">
               <HqMarkdown :content="node.outputSummary" />
             </div>
           </div>
@@ -370,7 +370,7 @@ function getReviewVerdictMeta(verdict: string) {
           <span class="font-medium text-text">真实变更文件</span>
           <span class="text-text-muted">{{ allChangedFiles.length }} 个文件</span>
         </div>
-        <div class="p-2 rounded-[var(--radius-sm)] bg-bg-app border border-border max-h-36 overflow-y-auto space-y-1 font-mono text-[11px]">
+        <div class="p-2 rounded-xl bg-muted/30 max-h-36 overflow-y-auto space-y-1 font-mono text-[11px]">
           <div
             v-for="file in allChangedFiles"
             :key="file"
@@ -402,7 +402,7 @@ function getReviewVerdictMeta(verdict: string) {
           <div
             v-for="art in task.artifacts"
             :key="art.id"
-            class="p-2 rounded-[var(--radius-sm)] bg-bg-app border border-border flex items-center justify-between text-xs min-w-0 gap-2"
+            class="p-2 rounded-lg bg-muted/30 flex items-center justify-between text-xs min-w-0 gap-2"
           >
             <div class="flex items-center gap-1.5 truncate min-w-0">
               <Package class="w-3.5 h-3.5 text-primary shrink-0" />

@@ -8,7 +8,6 @@ import NativeSyncNotice from '@/pages/native/NativeSyncNotice.vue'
 import { ref, onMounted, onUnmounted, watch, nextTick, computed, inject } from 'vue'
 import { routeLocationKey, type RouteLocationNormalizedLoaded } from 'vue-router'
 import { useChatStore } from '@/stores/chat.store'
-import { useLocalAuthStore } from '@/stores/local-auth.store'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMessageItem from './components/ChatMessageItem.vue'
 import ProcessActivityGroup from './components/ProcessActivityGroup.vue'
@@ -27,7 +26,6 @@ import {
   FolderGit2,
   PanelRightClose,
   PanelRightOpen,
-  Radio,
   Sparkles,
   ArrowDown,
   MoreHorizontal,
@@ -41,7 +39,6 @@ import {
 
 const deletionRef = ref<InstanceType<typeof ConversationDeletion> | null>(null)
 const chatStore = useChatStore()
-const authStore = useLocalAuthStore()
 const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null)
 
 const isMobileSidebarOpen = ref(false)
@@ -333,27 +330,6 @@ async function restoreActiveConversation() {
       {{ chatStore.loadError }}
     </div>
 
-    <!-- Mock Mode Warning Banner if active -->
-    <div
-      v-if="authStore.isMockMode"
-      class="px-4 py-1.5 bg-warning/15 border-b border-warning/30 flex items-center justify-between text-xs text-text select-none shrink-0"
-    >
-      <div class="flex items-center gap-2">
-        <Radio class="w-3.5 h-3.5 text-warning shrink-0 animate-pulse" />
-        <span class="font-medium text-warning">演示模式 (Mock) 运行中</span>
-        <span class="text-text-muted hidden sm:inline">
-          — 正在使用本地场景 Fixture 进行无服务独立开发验证，数据变更在内存中有效
-        </span>
-      </div>
-
-      <button
-        type="button"
-        class="text-[11px] text-primary underline hover:text-primary-hover font-medium cursor-pointer"
-        @click="authStore.setGatewayMode('real')"
-      >
-        切回真实 Worker
-      </button>
-    </div>
 
     <!-- 3-Column Workbench -->
     <div class="flex-1 min-h-0 flex overflow-hidden relative">
@@ -381,7 +357,7 @@ async function restoreActiveConversation() {
       <!-- Center Column: Active Chat Stream & Composer -->
       <main class="flex-1 flex flex-col h-full bg-bg-app min-w-0 overflow-hidden">
         <!-- Center Header -->
-        <header class="p-2.5 sm:p-3 border-b border-border bg-panel flex items-center justify-between gap-2 sm:gap-3 shrink-0 select-none">
+        <header class="p-2.5 sm:p-3 border-b border-border/30 bg-panel flex items-center justify-between gap-2 sm:gap-3 shrink-0 select-none">
           <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
             <!-- Mobile Sidebar Drawer Toggle Button -->
             <button
@@ -634,7 +610,7 @@ async function restoreActiveConversation() {
           <!-- Native Session Workbench Preview Stream with merged tool lines -->
           <div
             v-if="activeNativeSession"
-            class="flex-1 min-h-0 overflow-y-auto divide-y divide-border/20 py-2"
+            class="flex-1 min-h-0 overflow-y-auto space-y-4 py-4 px-2 sm:px-4"
             data-testid="native-session-workbench-messages"
           >
             <!-- Loading indicator -->
@@ -667,7 +643,7 @@ async function restoreActiveConversation() {
             <!-- Native messages list with merged tool lines -->
             <div
               v-else
-              class="space-y-2 p-2 sm:p-4 max-w-3xl mx-auto"
+              class="space-y-3 max-w-3xl mx-auto"
             >
               <div
                 v-for="(group, gIdx) in groupedNativeMessages"
@@ -676,8 +652,8 @@ async function restoreActiveConversation() {
               >
                 <!-- Consecutive tool calls merged into ONE line -->
                 <div v-if="group.type === 'tools' && group.toolMessages" class="my-1.5" data-testid="native-merged-tool-line">
-                  <details class="group/native-tool rounded-lg border border-border/60 bg-panel/50 hover:bg-panel transition-colors text-xs">
-                    <summary class="cursor-pointer select-none py-1.5 px-3 flex items-center justify-between text-text-muted hover:text-text list-none font-mono text-[11px]">
+                  <details class="group/native-tool rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors text-xs overflow-hidden">
+                    <summary class="cursor-pointer select-none py-2 px-3 flex items-center justify-between text-text-muted hover:text-text list-none font-mono text-[11px]">
                       <span class="flex items-center gap-2 truncate">
                         <Terminal class="w-3.5 h-3.5 text-primary/70 shrink-0" />
                         <span class="font-medium text-text truncate">
@@ -687,11 +663,11 @@ async function restoreActiveConversation() {
                       </span>
                       <span class="text-[10px] text-text-muted group-open/native-tool:rotate-180 transition-transform shrink-0 ml-2">▼</span>
                     </summary>
-                    <div class="p-2.5 pt-1 border-t border-border/40 space-y-1.5 max-h-60 overflow-y-auto">
+                    <div class="p-2.5 pt-1 border-t border-border/20 space-y-1.5 max-h-60 overflow-y-auto">
                       <div
                         v-for="tMsg in group.toolMessages"
                         :key="tMsg.messageId"
-                        class="p-2 rounded bg-bg-app font-mono text-[11px] text-text-muted whitespace-pre-wrap break-words"
+                        class="p-2 rounded-lg bg-bg-app font-mono text-[11px] text-text-muted whitespace-pre-wrap break-words"
                       >
                         <HqMarkdown :content="tMsg.text" />
                       </div>
@@ -709,7 +685,7 @@ async function restoreActiveConversation() {
                       <span class="font-medium text-text">你</span>
                       <span>只读历史</span>
                     </div>
-                    <div class="bg-primary/10 text-text p-3 px-4 rounded-2xl rounded-tr-xs text-xs leading-relaxed whitespace-pre-wrap break-words select-text border border-primary/20 shadow-xs">
+                    <div class="bg-primary/15 text-text p-3 px-4 rounded-2xl rounded-tr-xs text-xs leading-relaxed whitespace-pre-wrap break-words select-text">
                       {{ group.message.text }}
                     </div>
                   </div>
@@ -720,7 +696,7 @@ async function restoreActiveConversation() {
                   v-else-if="group.message"
                   class="flex items-start gap-2 sm:gap-3 my-2"
                 >
-                  <div class="w-7 h-7 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0 mt-0.5 border border-success/30 shadow-xs">
+                  <div class="w-7 h-7 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0 mt-0.5">
                     <RuntimeIcon :agent="activeNativeSession?.agentType" class="w-4 h-4" />
                   </div>
                   <div class="flex-1 min-w-0 space-y-1.5">
@@ -728,7 +704,7 @@ async function restoreActiveConversation() {
                       <span class="font-semibold text-text text-xs">{{ activeNativeSession?.agentType ? agentLabel(activeNativeSession.agentType) : '原生 Agent' }}</span>
                       <span class="text-[10px]">只读历史</span>
                     </div>
-                    <div class="bg-panel border border-border/80 p-3 sm:p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed shadow-sm break-words select-text">
+                    <div class="bg-panel/50 p-3 sm:p-4 rounded-2xl rounded-tl-xs text-xs leading-relaxed break-words select-text">
                       <HqMarkdown :content="group.message.text" />
                     </div>
                   </div>
@@ -741,7 +717,7 @@ async function restoreActiveConversation() {
           <div
             v-else-if="chatStore.activeConversation"
             ref="messageContainerRef"
-            class="flex-1 min-h-0 overflow-y-auto divide-y divide-border/20 py-2"
+            class="flex-1 min-h-0 overflow-y-auto space-y-4 py-4 px-2 sm:px-4"
             @scroll="handleScroll"
           >
             <NativeSyncNotice :agent-type="chatStore.activeConversation?.agentType" v-if="chatStore.activeConversation?.conversationKind === 'native'" :key="chatStore.activeConversationId || undefined" />
