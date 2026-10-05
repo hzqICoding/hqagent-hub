@@ -10,6 +10,15 @@
   --color-status-info-soft: #e0f2fe;
   --color-status-neutral: #64748b;
   --color-status-neutral-soft: #f1f5f9;
+
+  /* High contrast danger solid button tokens (C02) */
+  --color-danger-solid-bg: #dc2626;
+  --color-danger-solid-bg-hover: #b91c1c;
+  --color-danger-solid-text: #ffffff;
+
+  /* Link & active item text tokens (C03) */
+  --color-link-text: #2563eb;
+  --color-link-text-hover: #1d4ed8;
 }
 
 /* ==================== Status Semantics (Dark) ==================== */
@@ -24,6 +33,15 @@
   --color-status-info-soft: rgb(56 189 248 / 15%);
   --color-status-neutral: #94a3b8;
   --color-status-neutral-soft: rgb(148 163 184 / 15%);
+
+  /* High contrast danger solid button tokens in dark mode (C02) */
+  --color-danger-solid-bg: #e11d48;
+  --color-danger-solid-bg-hover: #be123c;
+  --color-danger-solid-text: #ffffff;
+
+  /* Link & active item text tokens in dark mode (C03) */
+  --color-link-text: #60a5fa;
+  --color-link-text-hover: #93c5fd;
 }
 
 /* ==================== 8 Built-in Role Colors ==================== */

@@ -211,15 +211,23 @@ onMounted(async () => {
   chatStore.startDevicePolling(15000)
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('keydown', handleSidebarKeydown)
   }
   scrollToBottom()
 })
+
+function handleSidebarKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && isMobileSidebarOpen.value) {
+    isMobileSidebarOpen.value = false
+  }
+}
 
 onUnmounted(() => {
   chatStore.stopPolling()
   chatStore.stopDevicePolling()
   if (typeof document !== 'undefined') {
     document.removeEventListener('visibilitychange', handleVisibilityChange)
+    window.removeEventListener('keydown', handleSidebarKeydown)
   }
 })
 
@@ -309,8 +317,11 @@ function canWithdraw(cmd: RemoteCommandView): boolean {
 
 async function handleSendMessage() {
   if (chatStore.isRemoteSuspended) { chatStore.sendError = '这台电脑的远程操作已暂停'; return }
+  if (!chatStore.activeConversationId) {
+    chatStore.sendError = '请先选择或新建对话'
+    return
+  }
   const text = inputText.value.trim()
-  if (!chatStore.activeConversationId) return
   if (!text || chatStore.isSending || attachmentsBlocked.value || !nativeCanSend.value) return
 
   if (!chatStore.isWorkerOnline) {
@@ -410,6 +421,14 @@ async function handleApproval(approval: RemoteApprovalView, decision: 'approve' 
     chatStore.actionError = '设备离线，发送失败'
     return
   }
+  if (decision === 'approve') {
+    const ok = await confirm({
+      title: '确认批准执行操作？',
+      description: `操作: ${approval.action}\n目标: ${approval.targetSummary || '当前任务'}\n风险级别: ${approval.riskLevel === 'high' ? '高风险' : '普通风险'}`,
+      confirmText: '确认批准',
+    })
+    if (!ok) return
+  }
   try {
     await chatStore.decideApproval(approval.approvalId, decision)
   } catch {
@@ -496,7 +515,12 @@ function getExecutionStatusLabel(status?: string): string {
 
       <!-- Left Sidebar Drawer -->
       <aside
-        class="fixed inset-y-0 left-0 z-50 w-72 max-w-[80vw] bg-panel border-r border-border flex flex-col transition-transform duration-200 ease-in-out shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label="远程对话列表"
+        :inert="!isMobileSidebarOpen"
+        tabindex="-1"
+        class="fixed inset-y-0 left-0 z-50 w-72 max-w-[80vw] bg-panel border-r border-border flex flex-col transition-transform duration-200 ease-in-out shadow-2xl outline-none"
         :class="[isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full']"
       >
         <div class="p-3 border-b border-border flex items-center justify-between shrink-0">
@@ -889,7 +913,30 @@ function getExecutionStatusLabel(status?: string): string {
           </div>
 
           <div
-            v-if="chatStore.messages.length === 0"
+            v-if="!chatStore.activeConversationId"
+            class="h-full flex items-center justify-center p-6 text-center"
+          >
+            <HqEmptyState
+              title="未选择对话"
+              description="请从左侧列表选择对话，或创建新任务与电脑上的 Agent 沟通"
+            >
+              <template #action>
+                <div class="flex items-center gap-2 justify-center mt-3">
+                  <HqButton size="sm" variant="secondary" @click="isMobileSidebarOpen = true">
+                    <MessageSquare class="w-3.5 h-3.5 mr-1" />
+                    查看对话列表
+                  </HqButton>
+                  <HqButton size="sm" variant="primary" :disabled="chatStore.isRemoteSuspended || !chatStore.isWorkerOnline" @click="openCreateDialog()">
+                    <Plus class="w-3.5 h-3.5 mr-1" />
+                    新建任务
+                  </HqButton>
+                </div>
+              </template>
+            </HqEmptyState>
+          </div>
+
+          <div
+            v-else-if="chatStore.messages.length === 0"
             class="h-full flex items-center justify-center"
           >
             <HqEmptyState
@@ -1002,9 +1049,9 @@ function getExecutionStatusLabel(status?: string): string {
               ref="composerRef"
               v-model="inputText"
               rows="1"
-              placeholder="输入给电脑上 Agent 的指令..."
+              :placeholder="chatStore.activeConversationId ? '输入给电脑上 Agent 的指令...' : '请先在左侧选择或新建对话...'"
               class="hq-form-control hq-composer-text text-sm border border-border"
-              :disabled="chatStore.isRemoteSuspended || chatStore.isSending || chatStore.isConversationBusy"
+              :disabled="!chatStore.activeConversationId || chatStore.isRemoteSuspended || chatStore.isSending || chatStore.isConversationBusy"
               @keydown.enter.exact.prevent="handleSendMessage"
             />
 
@@ -1013,7 +1060,7 @@ function getExecutionStatusLabel(status?: string): string {
               aria-label="发送消息"
               class="hq-composer-send"
               :loading="chatStore.isSending"
-              :disabled="Boolean(chatStore.piGuardIssue) || attachmentsBlocked || !nativeCanSend || chatStore.isRemoteSuspended || !inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
+              :disabled="!chatStore.activeConversationId || Boolean(chatStore.piGuardIssue) || attachmentsBlocked || !nativeCanSend || chatStore.isRemoteSuspended || !inputText.trim() || chatStore.isSending || chatStore.isConversationBusy"
               @click="handleSendMessage"
             >
               <Send class="w-4 h-4" />

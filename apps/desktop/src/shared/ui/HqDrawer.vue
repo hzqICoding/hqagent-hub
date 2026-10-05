@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { watch, onMounted, onUnmounted } from 'vue'
+import { watch, onBeforeUnmount, nextTick, ref } from 'vue'
+import { enterOverlay, overlayId } from './overlay-stack'
 import { X } from 'lucide-vue-next'
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   width?: string
   height?: string
   closable?: boolean
+  initialFocus?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -17,6 +19,7 @@ const props = withDefaults(defineProps<Props>(), {
   width: '380px',
   height: '400px',
   closable: true,
+  initialFocus: undefined,
 })
 
 const emit = defineEmits<{
@@ -29,52 +32,56 @@ function close() {
   emit('close')
 }
 
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && props.open && props.closable) {
-    close()
-  }
-}
+const panel = ref<HTMLElement | null>(null)
+const id = overlayId()
+const zIndex = ref(50)
+let layer: ReturnType<typeof enterOverlay> | undefined
+let generation = 0
 
 watch(
   () => props.open,
-  (isOpen) => {
-    if (typeof document !== 'undefined') {
-      if (isOpen) {
-        document.body.style.overflow = 'hidden'
-      } else {
-        document.body.style.overflow = ''
-      }
+  async (open) => {
+    const current = ++generation
+    if (!open) {
+      layer?.leave()
+      layer = undefined
+      return
     }
-  }
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    await nextTick()
+    if (current !== generation || !props.open) return
+    layer = enterOverlay(() => panel.value, () => { if (props.closable) close() }, opener, props.initialFocus)
+    zIndex.value = layer.zIndex
+  },
+  { immediate: true, flush: 'post' }
 )
 
-onMounted(() => {
-  window.addEventListener('keydown', handleKeydown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown)
-  if (typeof document !== 'undefined') {
-    document.body.style.overflow = ''
-  }
+onBeforeUnmount(() => {
+  generation++
+  layer?.leave()
 })
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="fixed inset-0 z-50 overflow-hidden">
+    <div v-if="open" class="fixed inset-0 overflow-hidden" :style="{ zIndex }">
       <!-- Backdrop -->
       <div
-        class="fixed inset-0 bg-black/50 backdrop-blur-[1px] transition-opacity"
+        class="fixed inset-0 backdrop-blur-[2px] transition-opacity"
+        style="background: var(--color-overlay)"
+        data-testid="drawer-backdrop"
         @click="closable ? close() : null"
       />
 
       <!-- Drawer Content -->
       <div
+        ref="panel"
+        tabindex="-1"
         role="dialog"
         aria-modal="true"
+        :aria-labelledby="title || $slots.title ? `${id}-title` : undefined"
         :class="[
-          'fixed z-10 bg-panel border-border shadow-2xl flex flex-col transition-transform duration-200 ease-out',
+          'fixed z-10 bg-panel border-border shadow-dialog flex flex-col transition-transform duration-200 ease-out',
           placement === 'right'
             ? 'top-0 right-0 bottom-0 border-l'
             : placement === 'left'
@@ -88,14 +95,15 @@ onUnmounted(() => {
       >
         <!-- Header -->
         <div class="flex items-center justify-between px-4 py-3 border-b border-border-subtle shrink-0">
-          <h3 class="text-sm font-semibold text-content-primary">
+          <h3 :id="`${id}-title`" class="text-sm font-semibold text-content-primary">
             <slot name="title">{{ title }}</slot>
           </h3>
 
           <button
             v-if="closable"
             type="button"
-            class="text-content-muted hover:text-content-primary rounded p-1 hover:bg-muted transition-colors"
+            aria-label="关闭抽屉"
+            class="min-w-[44px] min-h-[44px] flex items-center justify-center text-content-muted hover:text-content-primary rounded-[var(--radius-xs)] hover:bg-muted transition-colors"
             @click="close"
           >
             <X class="h-4 w-4" />

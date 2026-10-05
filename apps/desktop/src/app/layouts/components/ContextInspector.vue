@@ -165,15 +165,18 @@ function getStatusBadgeVariant(status: string): 'neutral' | 'success' | 'warning
           </div>
         </div>
 
-        <!-- Actions -->
-        <div class="pt-2 border-t border-border-subtle flex gap-2">
+        <!-- Actions & Info -->
+        <div class="pt-2 border-t border-border-subtle flex flex-col gap-2">
+          <div class="p-2 rounded bg-muted/60 text-2xs text-content-muted leading-relaxed">
+            💡 Agent 运行状态由宿主环境 CLI 安装与适配器探测决定。
+          </div>
           <HqButton
             size="sm"
-            class="flex-1"
-            :variant="agentData.status === 'disabled' ? 'primary' : 'secondary'"
-            @click="agentStore.toggleAgent(agentData.id, agentData.status === 'disabled')"
+            class="w-full"
+            variant="secondary"
+            @click="agentStore.fetchAgents"
           >
-            {{ agentData.status === 'disabled' ? '启用该 Agent' : '停用该 Agent' }}
+            刷新实例探测
           </HqButton>
         </div>
       </template>

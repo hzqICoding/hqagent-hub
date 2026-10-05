@@ -34,7 +34,15 @@ async function fetchTokens(more = false) {
 }
 async function requestRevoke(tokenId: string) {
   if (revoking.value) return
-  if (!await confirm({ title: '确认吊销 API 令牌？', description: '吊销后，使用此令牌的外部工具将立即失去访问权限。此操作不能恢复。', confirmText: '确认吊销', danger: true })) return
+  const token = tokens.value.find((t) => t.tokenId === tokenId)
+  const tokenName = token?.name || '未命名令牌'
+  const tokenPrefix = token?.tokenPrefix || tokenId.slice(0, 8)
+  if (!await confirm({
+    title: `确认吊销 API 令牌「${tokenName}」？`,
+    description: `令牌「${tokenName}」（前缀: ${tokenPrefix}…）吊销后，使用此令牌的外部工具将立即失去访问权限。此操作无法撤销。`,
+    confirmText: '确认吊销',
+    danger: true
+  })) return
   revoking.value = true
   error.value = ''
   try {

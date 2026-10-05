@@ -282,16 +282,17 @@ function handleCloseDiagnosis() {
         <!-- Footer Actions -->
         <div class="pt-4 mt-4 border-t border-border-subtle flex items-center justify-between text-xs">
           <div class="flex items-center gap-2">
-            <!-- Toggle enable/disable switch -->
-            <label class="flex items-center gap-1.5 cursor-pointer text-2xs text-content-secondary">
-              <input
-                type="checkbox"
-                :checked="agent.status !== 'disabled'"
-                @change="(e) => agentStore.toggleAgent(agent.id, (e.target as HTMLInputElement).checked)"
-                class="hq-form-choice rounded border-border-default text-primary-600 focus:ring-0"
-              />
-              <span>{{ agent.status === 'disabled' ? '已停用' : '启用' }}</span>
-            </label>
+            <!-- Truthful discovery status badge (governed fake switch) -->
+            <span
+              class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-2xs font-medium border"
+              :class="agent.status === 'disabled'
+                ? 'bg-muted text-content-muted border-border'
+                : 'bg-status-success-soft text-status-success border-status-success/30'"
+              title="Agent 运行状态由宿主环境 CLI 安装与适配器探测决定，无需手动切换"
+            >
+              <span class="w-1.5 h-1.5 rounded-full" :class="agent.status === 'disabled' ? 'bg-content-muted' : 'bg-status-success'" />
+              <span>{{ agent.status === 'disabled' ? '未就绪' : 'CLI 探测就绪' }}</span>
+            </span>
           </div>
 
           <div class="flex items-center gap-2">

@@ -253,17 +253,14 @@ function formatRelativeTime(isoStr: string): string {
 
             <!-- Actions -->
             <div class="flex items-center gap-2 self-end md:self-center flex-shrink-0">
-              <HqButton
+              <span
                 v-if="!ws.memoryDirPresent"
-                size="sm"
-                variant="secondary"
-                @click="workspaceStore.initMemoryDir(ws.id)"
+                class="inline-flex items-center gap-1 text-2xs px-2 py-1 rounded bg-muted/70 text-content-muted border border-border-subtle"
+                title="记忆目录由项目内 .hqagent/ 结构定义"
               >
-                <template #icon>
-                  <Database class="w-3 h-3 text-primary-600" />
-                </template>
-                初始化记忆
-              </HqButton>
+                <Database class="w-3 h-3 text-content-muted" />
+                记忆未初始化
+              </span>
 
               <HqButton
                 v-if="workspaceStore.currentWorkspace?.id !== ws.id"
@@ -277,8 +274,8 @@ function formatRelativeTime(isoStr: string): string {
               <HqButton
                 size="sm"
                 variant="ghost"
-                class="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                title="从列表移除工作区"
+                class="text-content-muted hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                title="从列表隐藏此工作区（不影响磁盘文件）"
                 @click="workspaceStore.removeWorkspace(ws.id)"
               >
                 <Trash2 class="w-3.5 h-3.5" />
@@ -293,7 +290,7 @@ function formatRelativeTime(isoStr: string): string {
     <HqDialog
       :open="isAddModalOpen"
       title="添加工作区目录"
-      description="添加本机已有的代码目录，支持 Git 仓库及多工作树隔离"
+      description="登记本机已有的代码目录到本地 Hub。若需在手机端浏览此目录，请在「连接手机」配置授权根。"
       @close="isAddModalOpen = false"
     >
       <div class="space-y-4 py-2">

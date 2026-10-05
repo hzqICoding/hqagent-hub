@@ -70,7 +70,14 @@ async function saveName() {
 async function confirmDeletion(device: RemoteDeviceView) {
   if (chatStore.isDeviceActionLoading) return
   chatStore.deviceActionError = null
-  if (!await confirm({ title: '确认删除设备？', description: '这台电脑在服务器上的对话副本会被删除，电脑本地不受影响。\n电脑上正在执行的任务可能仍在继续。\n以后要再连接，只能在电脑端重新扫码。', confirmText: '确认删除', danger: true })) return
+  const targetName = device.displayName || device.deviceName || '未命名电脑'
+  const safeId = device.workerId.slice(0, 10)
+  if (!await confirm({
+    title: `确认删除电脑「${targetName}」？`,
+    description: `即将删除设备「${targetName}」(ID: ${safeId}...)。\n这台电脑在服务器上的对话副本会被删除，电脑本地不受影响。\n电脑上正在执行的任务可能仍在继续。\n以后要再连接，只能在电脑端重新扫码。`,
+    confirmText: '确认删除',
+    danger: true
+  })) return
   if (await chatStore.deleteDevice(device.workerId, showRevoked.value)) menuWorkerId.value = null
 }
 async function logout() {

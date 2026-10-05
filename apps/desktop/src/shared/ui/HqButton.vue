@@ -33,7 +33,7 @@ const variantClasses = computed(() => {
     case 'secondary':
       return 'bg-muted hover:bg-elevated active:bg-app text-content-primary border-border hover:border-border-strong'
     case 'danger':
-      return 'bg-status-danger hover:opacity-90 active:opacity-80 text-white border-transparent'
+      return 'bg-status-danger !bg-[var(--color-danger-solid-bg,#dc2626)] hover:!bg-[var(--color-danger-solid-bg-hover,#b91c1c)] active:opacity-90 text-[var(--color-danger-solid-text,#ffffff)] border-transparent shadow-xs'
     case 'outline':
       return 'bg-transparent hover:bg-muted active:bg-app text-content-primary border-border hover:border-action-primary'
     case 'ghost':
@@ -46,12 +46,12 @@ const variantClasses = computed(() => {
 const sizeClasses = computed(() => {
   switch (props.size) {
     case 'sm':
-      return 'h-7 px-2.5 text-xs gap-1.5 rounded-[var(--radius-sm)]'
+      return 'min-h-[28px] h-7 px-2.5 text-xs gap-1.5 rounded-[var(--radius-sm)]'
     case 'lg':
-      return 'h-11 px-5 text-base gap-2.5 rounded-[var(--radius-md)]'
+      return 'min-h-[44px] h-11 px-5 text-base gap-2.5 rounded-[var(--radius-md)]'
     case 'md':
     default:
-      return 'h-9 px-3.5 text-sm gap-2 rounded-[var(--radius-sm)]'
+      return 'min-h-[36px] h-9 px-3.5 text-sm gap-2 rounded-[var(--radius-sm)]'
   }
 })
 
