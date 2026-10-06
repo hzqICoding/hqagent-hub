@@ -210,7 +210,7 @@ async function copyPairCode() {
   <div class="h-full flex flex-col bg-bg-app overflow-y-auto select-none p-4 sm:p-6 lg:p-8">
     <div class="max-w-3xl w-full mx-auto space-y-6">
       <!-- 授权目录引导条 -->
-      <div class="p-3.5 bg-panel border border-border/40 rounded-xl flex items-center justify-between text-xs text-text-muted gap-3">
+      <div class="p-3.5 bg-panel border border-border-subtle rounded-xl flex items-center justify-between text-xs text-text-muted gap-3">
         <div class="flex items-center gap-2.5 min-w-0">
           <Folder class="w-4 h-4 text-primary shrink-0" />
           <span class="truncate">手机可浏览的目录在『项目与授权目录』中设置</span>
@@ -224,7 +224,7 @@ async function copyPairCode() {
         </router-link>
       </div>
       <!-- Page Header -->
-      <div class="flex items-start justify-between gap-4 border-b border-border/30 pb-5">
+      <div class="flex items-start justify-between gap-4 border-b border-border-subtle pb-5">
         <div class="space-y-1 min-w-0">
           <div class="flex items-center gap-2.5">
             <Smartphone class="w-6 h-6 text-primary shrink-0" />
@@ -274,7 +274,7 @@ async function copyPairCode() {
       <!-- STATE 1: UNPAIRED (未配对状态) -->
       <div
         v-if="remoteLinkStore.isUnpaired"
-        class="bg-panel border border-border/40 rounded-2xl p-5 sm:p-7 shadow-xs space-y-6"
+        class="bg-panel border border-border-subtle rounded-2xl p-5 sm:p-7 shadow-xs space-y-6"
       >
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
@@ -313,7 +313,7 @@ async function copyPairCode() {
                 v-model="inputServerOrigin"
                 type="text"
                 :placeholder="DEFAULT_REMOTE_SERVER"
-                class="hq-form-control w-full pl-9 pr-3 py-2 text-xs bg-bg-app border border-border/40 rounded-xl text-text placeholder-text-muted/50 focus:outline-none focus:border-primary transition-colors font-mono"
+                class="hq-form-control w-full pl-9 pr-3 py-2 text-xs bg-bg-app border border-border-subtle rounded-xl text-text placeholder-text-muted/50 focus:outline-none focus:border-primary transition-colors font-mono"
               />
             </div>
             <p class="text-[11px] text-text-muted">
@@ -331,7 +331,7 @@ async function copyPairCode() {
                 v-model="inputDeviceName"
                 type="text"
                 placeholder="我的电脑"
-                class="hq-form-control w-full pl-9 pr-3 py-2 text-xs bg-bg-app border border-border/40 rounded-xl text-text placeholder-text-muted/50 focus:outline-none focus:border-primary transition-colors"
+                class="hq-form-control w-full pl-9 pr-3 py-2 text-xs bg-bg-app border border-border-subtle rounded-xl text-text placeholder-text-muted/50 focus:outline-none focus:border-primary transition-colors"
               />
             </div>
             <p class="text-[11px] text-text-muted">
@@ -367,7 +367,7 @@ async function copyPairCode() {
       <!-- STATE 2: PAIRING (正在配对中) -->
       <div
         v-else-if="remoteLinkStore.isPairing"
-        class="bg-panel border border-border/40 rounded-2xl p-5 sm:p-7 shadow-xs space-y-6"
+        class="bg-panel border border-border-subtle rounded-2xl p-5 sm:p-7 shadow-xs space-y-6"
       >
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <div class="flex items-center gap-2">
@@ -547,7 +547,7 @@ async function copyPairCode() {
           </div>
         </div>
 
-        <div class="flex items-center justify-between border-t border-border/20 pt-4">
+        <div class="flex items-center justify-between border-t border-border-subtle pt-4">
           <p class="text-xs text-text-muted">
             已成功接入手机远程通道。两端可互通协作对话。
           </p>

@@ -481,7 +481,7 @@ onMounted(async () => {
           <!-- Log stream content box -->
           <div
             ref="logListRef"
-            class="h-96 overflow-y-auto bg-code rounded-xl p-3 font-mono text-[11px] leading-relaxed select-text space-y-1.5 border border-border/20"
+            class="h-96 overflow-y-auto bg-code rounded-xl p-3 font-mono text-[11px] leading-relaxed select-text space-y-1.5 border border-border-subtle"
           >
             <div v-if="filteredLogs.length === 0" class="h-full flex items-center justify-center text-content-disabled select-none">
               暂无日志记录

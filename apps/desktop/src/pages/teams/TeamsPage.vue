@@ -329,7 +329,7 @@ function getResolveSourceMeta(source: ResolveSource): {
               {{ profile.description || '无附加描述' }}
             </p>
 
-            <div class="flex items-center justify-between mt-3 pt-2 border-t border-border/20 text-2xs text-content-muted">
+            <div class="flex items-center justify-between mt-3 pt-2 border-t border-border-subtle text-2xs text-content-muted">
               <span>{{ profile.scope === 'global' ? '全局配置' : '工作区专属' }}</span>
               <span>{{ Object.keys(profile.roleBindings || {}).length }} 角色</span>
             </div>
@@ -340,7 +340,7 @@ function getResolveSourceMeta(source: ResolveSource): {
       <!-- Center Column: Role Mapping & Policy Studio (5 cols) -->
       <div v-if="activeProfile" class="lg:col-span-5 space-y-4">
         <!-- Active Profile Header Card -->
-        <div class="p-4 rounded-xl bg-panel border border-border/30 space-y-3">
+        <div class="p-4 rounded-xl bg-panel border border-border-subtle space-y-3">
           <div class="flex items-center justify-between">
             <div>
               <h3 class="text-sm font-bold text-content-primary">{{ activeProfile.name }}</h3>
@@ -395,7 +395,7 @@ function getResolveSourceMeta(source: ResolveSource): {
           <div
             v-for="role in STANDARD_ROLES"
             :key="role.roleId"
-            class="p-4 rounded-xl bg-panel border border-border/30 space-y-3"
+            class="p-4 rounded-xl bg-panel border border-border-subtle space-y-3"
           >
             <!-- Role Info -->
             <div class="flex items-center justify-between">
@@ -412,7 +412,7 @@ function getResolveSourceMeta(source: ResolveSource): {
             <div class="space-y-1">
               <label class="text-2xs font-medium text-content-secondary">首选 Agent (Primary)</label>
               <select
-                class="hq-form-control w-full text-xs rounded-lg border border-border/40 bg-muted/20 px-3 py-1.5 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+                class="hq-form-control w-full text-xs rounded-lg border border-border-subtle bg-muted/20 px-3 py-1.5 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
                 :value="activeProfile.roleBindings[role.roleId]?.primaryAgentId || ''"
                 @change="handlePrimaryAgentChange(role.roleId, $event)"
               >
@@ -453,7 +453,7 @@ function getResolveSourceMeta(source: ResolveSource): {
 
                 <!-- Add Fallback Select -->
                 <select
-                  class="hq-form-control text-2xs rounded border border-dashed border-border/40 bg-transparent px-2 py-0.5 text-content-muted focus:outline-none"
+                  class="hq-form-control text-2xs rounded border border-border-subtle bg-muted/20 px-2 py-0.5 text-content-muted focus:outline-none"
                   @change="handleAddFallbackAgent(role.roleId, $event)"
                 >
                   <option value="">+ 添加备用 Agent</option>
@@ -473,8 +473,8 @@ function getResolveSourceMeta(source: ResolveSource): {
 
       <!-- Right Column: Real-time Route Resolution Preview (4 cols) -->
       <div class="lg:col-span-4 space-y-4">
-        <div class="p-4 rounded-xl bg-panel border border-border/30 space-y-4 sticky top-6">
-          <div class="flex items-center justify-between pb-3 border-b border-border/20">
+        <div class="p-4 rounded-xl bg-panel border border-border-subtle space-y-4 sticky top-6">
+          <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
             <div class="flex items-center gap-2">
               <Sliders class="w-4 h-4 text-primary-600" />
               <span class="text-xs font-bold text-content-primary">路由解析结果预览</span>

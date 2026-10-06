@@ -52,13 +52,13 @@ onMounted(async () => {
 function getRiskBadge(level: RiskLevel) {
   switch (level) {
     case 'critical':
-      return { label: '极高风险 (Critical)', class: 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/40 font-bold animate-pulse' }
+      return { label: '极高风险 (Critical)', class: 'bg-rose-500/20 text-rose-700 dark:text-rose-300 font-bold animate-pulse' }
     case 'high':
-      return { label: '高风险 (High)', class: 'bg-amber-500/20 text-amber-800 dark:text-amber-200 border-amber-500/40 font-semibold' }
+      return { label: '高风险 (High)', class: 'bg-amber-500/20 text-amber-800 dark:text-amber-200 font-semibold' }
     case 'medium':
-      return { label: '中等风险 (Medium)', class: 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-200 border-yellow-500/30' }
+      return { label: '中等风险 (Medium)', class: 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-200' }
     default:
-      return { label: '低风险 (Low)', class: 'bg-panel text-text-muted border-border' }
+      return { label: '低风险 (Low)', class: 'bg-muted text-text-muted' }
   }
 }
 
@@ -149,7 +149,7 @@ function formatTime(timestamp?: string) {
       <div class="flex items-center gap-3">
         <span
           v-if="approvalStore.pendingCount > 0"
-          class="px-3 py-1 text-xs font-bold rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/40 animate-pulse"
+          class="px-3 py-1 text-xs font-bold rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-200 animate-pulse"
         >
           {{ approvalStore.pendingCount }} 个待处理审批
         </span>
@@ -157,7 +157,7 @@ function formatTime(timestamp?: string) {
     </div>
 
     <!-- Filter Tabs -->
-    <div class="flex items-center gap-2 border-b border-border/30 text-xs">
+    <div class="flex items-center gap-2 border-b border-border-subtle text-xs">
       <button
         class="px-4 py-2 font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5"
         :class="
@@ -209,15 +209,15 @@ function formatTime(timestamp?: string) {
         :class="
           appr.status === 'pending'
             ? 'border-amber-500/30 hover:border-amber-500/60'
-            : 'border-border/30'
+            : 'border-border-subtle'
         "
       >
         <!-- Item Header -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/20 pb-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border-subtle pb-3">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-mono text-xs text-text-muted font-bold">{{ appr.id }}</span>
             <span
-              class="px-2 py-0.5 text-xs rounded border"
+              class="px-2 py-0.5 text-xs rounded"
               :class="getRiskBadge(appr.riskLevel).class"
             >
               {{ getRiskBadge(appr.riskLevel).label }}

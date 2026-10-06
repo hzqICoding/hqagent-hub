@@ -38,7 +38,7 @@ async function copyToClipboard() {
     <!-- Header -->
     <div
       v-if="title || language || copyable"
-      class="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-b border-border/20 text-[11px] text-content-secondary select-none"
+      class="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-b border-border-subtle text-[11px] text-content-secondary select-none"
     >
       <div class="flex items-center gap-2 truncate">
         <span v-if="title" class="font-medium text-content-primary truncate">{{ title }}</span>

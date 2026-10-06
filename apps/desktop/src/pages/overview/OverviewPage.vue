@@ -126,7 +126,7 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
     <!-- 4. Content State (or Empty State) -->
     <template v-else>
       <!-- Workspace & Project Header Banner -->
-      <div class="p-4 rounded-xl bg-panel border border-border/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
+      <div class="p-4 rounded-xl bg-panel border border-border-subtle flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-950 text-primary-600 flex items-center justify-center shrink-0">
             <GitBranch class="w-5 h-5" />
@@ -227,10 +227,10 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
       <!-- Bento Layout: Primary Task Card (2 Cols) + Agents Fleet (1 Col) -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Left: Primary Bento Card -->
-        <div class="lg:col-span-2 p-5 rounded-xl bg-panel border border-border/30 flex flex-col justify-between shadow-2xs">
+        <div class="lg:col-span-2 p-5 rounded-xl bg-panel border border-border-subtle flex flex-col justify-between shadow-2xs">
           <div>
             <!-- Card Header -->
-            <div class="flex items-center justify-between pb-3 border-b border-border/20">
+            <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
               <div class="flex items-center gap-2">
                 <Layers class="w-4 h-4 text-primary-600" />
                 <h3 class="text-xs font-bold text-content-primary uppercase tracking-wider">重点协作任务</h3>
@@ -291,7 +291,7 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
           </div>
 
           <!-- Footer Button -->
-          <div class="pt-3 border-t border-border/20 flex justify-end">
+          <div class="pt-3 border-t border-border-subtle flex justify-end">
             <HqButton size="sm" variant="secondary" @click="router.push('/tasks')">
               <span>前往任务中心</span>
               <template #iconRight>
@@ -302,9 +302,9 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
         </div>
 
         <!-- Right: Agent Fleet Quick Panel -->
-        <div class="p-5 rounded-xl bg-panel border border-border/30 flex flex-col justify-between shadow-2xs">
+        <div class="p-5 rounded-xl bg-panel border border-border-subtle flex flex-col justify-between shadow-2xs">
           <div>
-            <div class="flex items-center justify-between pb-3 border-b border-border/20">
+            <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
               <div class="flex items-center gap-2">
                 <Bot class="w-4 h-4 text-primary-600" />
                 <h3 class="text-xs font-bold text-content-primary uppercase tracking-wider">Agent 状态群</h3>
@@ -339,7 +339,7 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
             </div>
           </div>
 
-          <div class="pt-3 border-t border-border/20 flex justify-end">
+          <div class="pt-3 border-t border-border-subtle flex justify-end">
             <HqButton size="sm" variant="secondary" @click="router.push('/agents')">
               <span>管理全部 Agent</span>
               <template #iconRight>
@@ -351,8 +351,8 @@ function getTaskBadgeVariant(status: string): 'neutral' | 'success' | 'warning' 
       </div>
 
       <!-- Recent Sessions Panel -->
-      <div class="p-5 rounded-xl bg-panel border border-border/30 shadow-2xs space-y-3">
-        <div class="flex items-center justify-between pb-2 border-b border-border/20">
+      <div class="p-5 rounded-xl bg-panel border border-border-subtle shadow-2xs space-y-3">
+        <div class="flex items-center justify-between pb-2 border-b border-border-subtle">
           <div class="flex items-center gap-2">
             <Clock class="w-4 h-4 text-content-muted" />
             <h3 class="text-xs font-bold text-content-primary uppercase tracking-wider">最近活跃会话 (Sessions)</h3>

@@ -496,7 +496,7 @@ async function restoreActiveConversation() {
           <!-- Native Session Top Banner matching requirement 4: 确认合并进横幅 -->
           <div
             v-if="activeNativeSession"
-            class="px-4 py-3 bg-panel border-b border-border/70 space-y-2.5 text-xs shrink-0 select-none"
+            class="px-4 py-3 bg-panel border-b border-border-subtle space-y-2.5 text-xs shrink-0 select-none"
             data-testid="native-session-workbench-banner"
           >
             <div class="flex items-start justify-between gap-3">
@@ -547,7 +547,7 @@ async function restoreActiveConversation() {
             <!-- Confirmation & Takeover Row merged into banner -->
             <div
               v-if="activeNativeSession.format.status === 'readable'"
-              class="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-border/40"
+              class="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle"
             >
               <!-- likely_active：禁用勾选和按钮，提示「终端正在使用这个会话，请先在终端退出」 -->
               <template v-if="activeNativeSession.activity.activity === 'likely_active'">
@@ -607,7 +607,7 @@ async function restoreActiveConversation() {
 
             <div
               v-else
-              class="pt-2 border-t border-border/40 text-[11px] text-warning"
+              class="pt-2 border-t border-border-subtle text-[11px] text-warning"
               data-testid="native-unavailable-explanation"
             >
               该会话由 {{ agentLabel(activeNativeSession.agentType) }} {{ activeNativeSession.format.cliVersion || '未知 CLI 版本' }} 生成，当前版本的记录格式尚未支持，无法读取或续接。原因：{{ activeNativeSession.format.reason || '当前记录格式尚未支持' }}
@@ -679,7 +679,7 @@ async function restoreActiveConversation() {
                       </span>
                       <span class="text-[10px] text-text-muted group-open/native-tool:rotate-180 transition-transform shrink-0 ml-2">▼</span>
                     </summary>
-                    <div class="p-2.5 pt-1 border-t border-border/20 space-y-1.5 max-h-60 overflow-y-auto">
+                    <div class="p-2.5 pt-1 border-t border-border-subtle space-y-1.5 max-h-60 overflow-y-auto">
                       <div
                         v-for="tMsg in group.toolMessages"
                         :key="tMsg.messageId"
@@ -757,7 +757,7 @@ async function restoreActiveConversation() {
                   v-for="starter in getStarterPrompts(chatStore.activeConversation.sceneId)"
                   :key="starter"
                   type="button"
-                  class="w-full p-2.5 px-3.5 rounded-xl bg-panel hover:bg-panel-hover border border-border/80 hover:border-primary/40 text-xs text-text flex items-center justify-between group transition-all shadow-xs cursor-pointer"
+                  class="w-full p-2.5 px-3.5 rounded-xl bg-panel hover:bg-panel-hover border border-border-subtle hover:border-border text-xs text-text flex items-center justify-between group transition-all shadow-xs cursor-pointer"
                   @click="applyStarterPrompt(starter)"
                 >
                   <div class="flex items-center gap-2 min-w-0">

@@ -189,7 +189,7 @@ function formatRelativeTime(isoStr: string): string {
           v-for="ws in workspaceStore.recentWorkspaces"
           :key="ws.id"
           class="p-4 rounded-xl bg-panel border transition-all duration-200"
-          :class="workspaceStore.currentWorkspace?.id === ws.id ? 'border-primary-500 shadow-sm' : 'border-border/30 hover:border-border/60'"
+          :class="workspaceStore.currentWorkspace?.id === ws.id ? 'border-primary-500 shadow-sm' : 'border-border-subtle hover:border-border'"
         >
           <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <!-- Left Info -->

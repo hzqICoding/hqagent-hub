@@ -241,7 +241,7 @@ const summaryTitle = computed(() => {
         <!-- Collapsible detail / output preview -->
         <div
           v-if="expandedItemIds.has(item.id)"
-          class="mt-2 p-2.5 rounded-lg bg-panel/90 border border-border/70 text-[11px] font-mono text-text space-y-2 select-text"
+          class="mt-2 p-2.5 rounded-lg bg-panel/90 border border-border-subtle text-[11px] font-mono text-text space-y-2 select-text"
           @click.stop
         >
           <!-- Full target / command / file path with wrapping -->
@@ -250,7 +250,7 @@ const summaryTitle = computed(() => {
               <span class="font-medium">完整目标 / 路径:</span>
               <button
                 type="button"
-                class="p-0.5 px-1.5 rounded bg-bg-app hover:bg-panel-hover border border-border/60 text-text-muted hover:text-text transition-all text-[9px] flex items-center gap-1 cursor-pointer"
+                class="p-0.5 px-1.5 rounded bg-bg-app hover:bg-panel-hover border border-border-subtle text-text-muted hover:text-text transition-all text-[9px] flex items-center gap-1 cursor-pointer"
                 @click.stop="copyDetail(item.target, item.id + '_target')"
               >
                 <Check v-if="copiedItemId === item.id + '_target'" class="w-2.5 h-2.5 text-success" />
@@ -258,7 +258,7 @@ const summaryTitle = computed(() => {
                 <span>{{ copiedItemId === item.id + '_target' ? '已复制' : '复制目标' }}</span>
               </button>
             </div>
-            <div class="p-1.5 px-2 rounded bg-bg-app/80 border border-border/50 text-[11px] font-mono break-all whitespace-pre-wrap leading-relaxed select-all">
+            <div class="p-1.5 px-2 rounded bg-bg-app/80 border border-border-subtle text-[11px] font-mono break-all whitespace-pre-wrap leading-relaxed select-all">
               {{ item.target }}
             </div>
           </div>
@@ -269,7 +269,7 @@ const summaryTitle = computed(() => {
               <span class="font-medium">调用参数:</span>
               <button
                 type="button"
-                class="p-0.5 px-1.5 rounded bg-bg-app hover:bg-panel-hover border border-border/60 text-text-muted hover:text-text transition-all text-[9px] flex items-center gap-1 cursor-pointer"
+                class="p-0.5 px-1.5 rounded bg-bg-app hover:bg-panel-hover border border-border-subtle text-text-muted hover:text-text transition-all text-[9px] flex items-center gap-1 cursor-pointer"
                 @click.stop="copyDetail(item.rawArgs, item.id + '_args')"
               >
                 <Check v-if="copiedItemId === item.id + '_args'" class="w-2.5 h-2.5 text-success" />
@@ -277,7 +277,7 @@ const summaryTitle = computed(() => {
                 <span>{{ copiedItemId === item.id + '_args' ? '已复制' : '复制参数' }}</span>
               </button>
             </div>
-            <pre class="p-1.5 px-2 rounded bg-bg-app/80 border border-border/50 text-[10px] font-mono break-all whitespace-pre-wrap leading-relaxed overflow-x-auto max-h-32">{{ formatArgsPreview(item.rawArgs) }}</pre>
+            <pre class="p-1.5 px-2 rounded bg-bg-app/80 border border-border-subtle text-[10px] font-mono break-all whitespace-pre-wrap leading-relaxed overflow-x-auto max-h-32">{{ formatArgsPreview(item.rawArgs) }}</pre>
           </div>
 
           <!-- Execution output / result -->
@@ -286,7 +286,7 @@ const summaryTitle = computed(() => {
               <span class="font-medium">执行输出:</span>
               <button
                 type="button"
-                class="p-0.5 px-1.5 rounded bg-bg-app hover:bg-panel-hover border border-border/60 text-text-muted hover:text-text transition-all text-[9px] flex items-center gap-1 cursor-pointer"
+                class="p-0.5 px-1.5 rounded bg-bg-app hover:bg-panel-hover border border-border-subtle text-text-muted hover:text-text transition-all text-[9px] flex items-center gap-1 cursor-pointer"
                 @click.stop="copyDetail(item.detail, item.id + '_out')"
               >
                 <Check v-if="copiedItemId === item.id + '_out'" class="w-2.5 h-2.5 text-success" />
@@ -294,7 +294,7 @@ const summaryTitle = computed(() => {
                 <span>{{ copiedItemId === item.id + '_out' ? '已复制' : '复制输出' }}</span>
               </button>
             </div>
-            <pre class="p-2 rounded bg-bg-app/90 border border-border/50 text-[10px] font-mono break-all whitespace-pre-wrap leading-relaxed overflow-y-auto max-h-48 select-text">{{ item.detail }}</pre>
+            <pre class="p-2 rounded bg-bg-app/90 border border-border-subtle text-[10px] font-mono break-all whitespace-pre-wrap leading-relaxed overflow-y-auto max-h-48 select-text">{{ item.detail }}</pre>
           </div>
         </div>
       </div>

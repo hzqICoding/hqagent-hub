@@ -167,7 +167,7 @@ function handleStopRun() {
         <div
           v-for="(q, idx) in chatStore.queuedMessages"
           :key="q.id"
-          class="p-2 px-3 rounded-xl bg-panel/95 backdrop-blur border border-border/80 shadow-xs flex items-center justify-between text-xs text-text-muted gap-2"
+          class="p-2 px-3 rounded-xl bg-panel/95 backdrop-blur border border-border-subtle shadow-xs flex items-center justify-between text-xs text-text-muted gap-2"
         >
           <div class="flex items-center gap-2 min-w-0">
             <Clock class="w-3.5 h-3.5 text-warning shrink-0 animate-pulse" />

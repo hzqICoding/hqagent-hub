@@ -33,7 +33,7 @@ async function handleRefresh() {
 </script>
 
 <template>
-  <header class="w-full h-12 border-b border-border/30 bg-panel/60 backdrop-blur px-2 sm:px-4 flex items-center justify-between shrink-0 select-none z-10">
+  <header class="w-full h-12 border-b border-border-subtle bg-panel/60 backdrop-blur px-2 sm:px-4 flex items-center justify-between shrink-0 select-none z-10">
     <!-- Left: Page Title & Breadcrumb -->
     <div class="flex items-center gap-1.5 sm:gap-3 min-w-0">
       <!-- Mobile Main Navigation Toggle -->

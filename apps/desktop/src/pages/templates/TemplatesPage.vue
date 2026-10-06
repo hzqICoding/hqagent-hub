@@ -200,7 +200,7 @@ async function handleApplyTemplate() {
           <input
             v-model="searchQuery"
             placeholder="搜索预设模板..."
-            class="hq-form-control w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-border/40 bg-muted/20 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+            class="hq-form-control w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-border-subtle bg-muted/20 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
         </div>
 
@@ -268,7 +268,7 @@ async function handleApplyTemplate() {
       <div
         v-for="tpl in filteredTemplates"
         :key="tpl.id"
-        class="p-5 rounded-xl bg-panel border border-border/30 hover:border-border/60 transition-all duration-200 flex flex-col justify-between space-y-4 shadow-2xs hover:shadow-xs"
+        class="p-5 rounded-xl bg-panel border border-border-subtle hover:border-border transition-all duration-200 flex flex-col justify-between space-y-4 shadow-2xs hover:shadow-xs"
       >
         <div class="space-y-3">
           <!-- Card Header -->
@@ -288,7 +288,7 @@ async function handleApplyTemplate() {
           </div>
 
           <!-- Roles required -->
-          <div class="space-y-1.5 pt-2 border-t border-border/20">
+          <div class="space-y-1.5 pt-2 border-t border-border-subtle">
             <span class="text-2xs font-semibold text-content-secondary">所需协作角色 ({{ tpl.requiredRoles.length }})</span>
             <div class="flex items-center gap-1.5 flex-wrap">
               <span
@@ -311,7 +311,7 @@ async function handleApplyTemplate() {
         </div>
 
         <!-- Action Button -->
-        <div class="pt-3 border-t border-border/20 flex items-center justify-between">
+        <div class="pt-3 border-t border-border-subtle flex items-center justify-between">
           <div class="text-2xs text-content-muted flex items-center gap-1">
             <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500" />
             <span>支持按工作区细化覆盖</span>

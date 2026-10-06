@@ -74,12 +74,12 @@ onBeforeUnmount(() => { request++ })
       <p v-if="error" role="alert" class="text-xs text-danger">{{ error }} <button type="button" class="underline" @click="fetchTokens()">重试</button></p>
       <p v-if="loading" class="text-xs text-text-muted">正在读取令牌…</p>
       <p v-else-if="!tokens.length" class="text-sm text-text-muted py-8 text-center">暂无 API 令牌</p>
-      <article v-for="token in tokens" :key="token.tokenId" class="p-4 rounded-xl border border-border bg-panel space-y-2.5 text-xs shadow-xs">
+      <article v-for="token in tokens" :key="token.tokenId" class="p-4 rounded-xl border border-border-subtle bg-panel space-y-2.5 text-xs shadow-xs">
         <div class="flex items-center justify-between gap-2">
           <h2 class="font-semibold text-sm break-words min-w-0">{{ token.name }}</h2>
           <HqBadge :variant="token.status === 'active' ? 'success' : 'neutral'">{{ { active: '有效', expired: '已过期', revoked: '已吊销' }[token.status] }}</HqBadge>
         </div>
-        <p class="break-all select-text font-mono text-[11px] bg-bg-app px-2 py-1 rounded border border-border/60 text-text-muted">{{ token.tokenPrefix }}</p>
+        <p class="break-all select-text font-mono text-[11px] bg-bg-app px-2 py-1 rounded border border-border-subtle text-text-muted">{{ token.tokenPrefix }}</p>
         <p class="break-words">权限：{{ token.scopes.join('、') }}</p>
         <dl class="space-y-1 text-text-muted">
           <div>创建时间：{{ time(token.createdAt) }}</div>

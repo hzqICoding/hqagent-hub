@@ -119,7 +119,7 @@ async function handleLogin() {
       </form>
 
       <!-- Footer Info -->
-      <div class="pt-2 text-center text-[11px] text-text-muted border-t border-border/50">
+      <div class="pt-2 text-center text-[11px] text-text-muted border-t border-border-subtle">
         所有模型调用与执行均在您绑定的本地电脑完成
       </div>
     </div>

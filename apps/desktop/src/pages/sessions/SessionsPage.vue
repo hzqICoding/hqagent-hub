@@ -146,7 +146,7 @@ function formatTime(timestamp?: string) {
     </div>
 
     <!-- Filter Toolbar -->
-    <div class="flex flex-wrap items-center justify-between gap-4 p-3 bg-panel rounded-xl border border-border/30">
+    <div class="flex flex-wrap items-center justify-between gap-4 p-3 bg-panel rounded-xl border border-border-subtle">
       <!-- Status Tabs -->
       <div class="flex flex-wrap gap-1.5">
         <button
@@ -172,12 +172,12 @@ function formatTime(timestamp?: string) {
             v-model="sessionStore.searchQuery"
             type="text"
             placeholder="搜索会话 ID 或 Agent..."
-            class="hq-form-control w-full pl-9 pr-3 py-1.5 text-xs bg-surface border border-border/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted"
+            class="hq-form-control w-full pl-9 pr-3 py-1.5 text-xs bg-surface border border-border-subtle rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted"
           />
         </div>
 
         <label class="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text cursor-pointer">
-          <input v-model="sessionStore.filterOnlyValid" type="checkbox" class="hq-form-choice rounded border-border/40" />
+          <input v-model="sessionStore.filterOnlyValid" type="checkbox" class="hq-form-choice rounded border-border-subtle" />
           仅显示有效会话
         </label>
       </div>
@@ -203,9 +203,9 @@ function formatTime(timestamp?: string) {
       <div
         v-for="sess in sessionStore.filteredSessions"
         :key="sess.id"
-        class="p-5 bg-panel rounded-xl border border-border/30 shadow-2xs hover:border-border/60 transition-colors space-y-3"
+        class="p-5 bg-panel rounded-xl border border-border-subtle shadow-2xs hover:border-border transition-colors space-y-3"
       >
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/20 pb-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border-subtle pb-3">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-mono text-xs font-bold text-text">{{ sess.id }}</span>
             <HqBadge

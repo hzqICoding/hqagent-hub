@@ -63,7 +63,7 @@ function handleFinish() {
 <template>
   <div class="min-h-screen w-full bg-app flex flex-col justify-between p-6 select-none overflow-y-auto">
     <!-- Header -->
-    <header class="max-w-4xl w-full mx-auto flex items-center justify-between pb-6 border-b border-border/30">
+    <header class="max-w-4xl w-full mx-auto flex items-center justify-between pb-6 border-b border-border-subtle">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center text-white font-bold shadow">
           HQ
@@ -83,7 +83,7 @@ function handleFinish() {
     </header>
 
     <!-- Main Step Card -->
-    <main class="max-w-4xl w-full mx-auto my-8 bg-panel border border-border/30 rounded-2xl shadow-xs p-8 flex-1 flex flex-col justify-between min-h-[460px]">
+    <main class="max-w-4xl w-full mx-auto my-8 bg-panel border border-border-subtle rounded-2xl shadow-xs p-8 flex-1 flex flex-col justify-between min-h-[460px]">
       <!-- STEP 1: WELCOME & LOCAL FIRST -->
       <div v-if="currentStep === 1" class="space-y-6 max-w-2xl mx-auto py-4">
         <div class="text-center space-y-2">
@@ -152,15 +152,15 @@ function handleFinish() {
 
         <!-- Connected or Mock state -->
         <div v-else class="p-5 rounded-xl bg-muted/20 space-y-4">
-          <div class="flex items-center justify-between pb-3 border-b border-border/20">
+          <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
             <span class="text-xs text-content-secondary">服务端口</span>
             <span class="text-xs font-mono font-bold text-content-primary">127.0.0.1:44810</span>
           </div>
-          <div class="flex items-center justify-between pb-3 border-b border-border/20">
+          <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
             <span class="text-xs text-content-secondary">运行协议版本</span>
             <span class="text-xs font-mono font-bold text-primary-600">v{{ appStore.bootstrap?.protocolVersion || '1.0.0' }}</span>
           </div>
-          <div class="flex items-center justify-between pb-3 border-b border-border/20">
+          <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
             <span class="text-xs text-content-secondary">应用版本</span>
             <span class="text-xs font-mono font-bold text-content-primary">v{{ appStore.bootstrap?.appVersion || '0.1.0' }}</span>
           </div>
@@ -253,7 +253,7 @@ function handleFinish() {
               <input
                 v-model="workspacePath"
                 type="text"
-                class="hq-form-control flex-1 text-xs font-mono bg-panel border border-border/40 rounded-lg px-3 py-2 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
+                class="hq-form-control flex-1 text-xs font-mono bg-panel border border-border-subtle rounded-lg px-3 py-2 text-content-primary focus:outline-none focus:ring-1 focus:ring-primary-500"
               />
             </div>
             <p class="text-2xs text-content-muted">Git 仓库将自动启用 Worktree 隔离机制，保护您的主分支。</p>
@@ -291,7 +291,7 @@ function handleFinish() {
             type="button"
             @click="themeStore.setMode(m.id as any)"
             class="px-4 py-2 rounded-xl text-xs font-medium border transition-colors cursor-pointer"
-            :class="themeStore.settings.mode === m.id ? 'border-primary-600 bg-primary-50 text-primary-700 dark:bg-primary-950 font-bold' : 'border-border/30 hover:bg-muted/40 text-content-secondary'"
+            :class="themeStore.settings.mode === m.id ? 'border-primary-600 bg-primary-50 text-primary-700 dark:bg-primary-950 font-bold' : 'border-border-subtle hover:bg-muted/40 text-content-secondary'"
           >
             {{ m.label }}
           </button>
@@ -305,7 +305,7 @@ function handleFinish() {
             type="button"
             @click="selectPalette(pal.id as ThemePalette)"
             class="p-3 rounded-xl border text-left flex flex-col gap-2 transition-all cursor-pointer"
-            :class="themeStore.settings.palette === pal.id ? 'border-primary-600 ring-2 ring-primary-500/20 shadow-xs' : 'border-border/30 hover:border-border/60 bg-muted/10'"
+            :class="themeStore.settings.palette === pal.id ? 'border-primary-600 ring-2 ring-primary-500/20 shadow-xs' : 'border-border-subtle hover:border-border bg-muted/10'"
           >
             <div class="w-full h-8 rounded-md flex items-center justify-center text-white text-xs font-bold" :style="{ backgroundColor: pal.primaryHex }">
               {{ pal.name }}
@@ -351,7 +351,7 @@ function handleFinish() {
       </div>
 
       <!-- Footer Navigation Buttons -->
-      <footer class="flex items-center justify-between pt-6 border-t border-border/20 mt-6">
+      <footer class="flex items-center justify-between pt-6 border-t border-border-subtle mt-6">
         <HqButton
           v-if="currentStep > 1"
           size="sm"

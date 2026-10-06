@@ -384,7 +384,7 @@ function formatInline(text: string): string {
       <!-- Headings -->
       <h1
         v-if="block.type === 'heading' && block.level === 1"
-        class="text-base font-bold text-text mt-4 mb-2 pb-1.5 border-b border-border/20"
+        class="text-base font-bold text-text mt-4 mb-2 pb-1.5 border-b border-border-subtle"
         v-html="formatInline(block.text || '')"
       />
       <h2
@@ -415,7 +415,7 @@ function formatInline(text: string): string {
       <!-- Horizontal Rule -->
       <hr
         v-else-if="block.type === 'hr'"
-        class="my-3 border-t border-border/20"
+        class="my-3 border-t border-border-subtle"
       />
 
       <!-- Paragraph -->
@@ -464,7 +464,7 @@ function formatInline(text: string): string {
         v-else-if="block.type === 'table' && block.columns"
         class="my-3 rounded-xl bg-muted/20 overflow-hidden group"
       >
-        <div class="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-b border-border/20 text-[11px] text-text-muted">
+        <div class="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-b border-border-subtle text-[11px] text-text-muted">
           <span class="font-mono text-[10px] tracking-wider uppercase">Table ({{ block.rows?.length || 0 }} rows)</span>
           <button
             type="button"
@@ -480,7 +480,7 @@ function formatInline(text: string): string {
 
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs border-collapse">
-            <thead class="bg-muted/30 border-b border-border/20 text-text font-semibold">
+            <thead class="bg-muted/30 border-b border-border-subtle text-text font-semibold">
               <tr>
                 <th
                   v-for="(col, cIdx) in block.columns"

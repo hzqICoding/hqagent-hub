@@ -178,7 +178,7 @@ async function handleConfirm() {
         <!-- Preview Card -->
         <div
           v-if="previewData"
-          class="p-4 rounded-xl bg-bg-app border border-border/80 space-y-3 animate-fade-in"
+          class="p-4 rounded-xl bg-bg-app border border-border-subtle space-y-3 animate-fade-in"
         >
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-lg bg-panel border border-border flex items-center justify-center text-text shrink-0">
@@ -197,7 +197,7 @@ async function handleConfirm() {
             <HqBadge variant="info">待绑定</HqBadge>
           </div>
 
-          <div class="text-[11px] text-text-muted border-t border-border/40 pt-2 flex justify-between">
+          <div class="text-[11px] text-text-muted border-t border-border-subtle pt-2 flex justify-between">
             <span>挑战 ID: {{ previewData.pairRequestId.slice(0, 12) }}...</span>
             <span>核对无误后请确认</span>
           </div>

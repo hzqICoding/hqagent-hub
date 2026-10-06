@@ -170,7 +170,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="flex items-center justify-between gap-3 pt-2 border-t border-border/20">
+    <div class="flex items-center justify-between gap-3 pt-2 border-t border-border-subtle">
       <HqButton
         variant="secondary"
         size="sm"

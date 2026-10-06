@@ -556,7 +556,7 @@ function getExecutionStatusLabel(status?: string): string {
                   ? 'text-status-warning bg-status-warning-soft border-warning/40 shadow-xs'
                   : chatStore.activeRun.status === 'running'
                     ? 'text-primary bg-primary/10 border-primary/25'
-                    : 'text-content-muted bg-muted border-border/50'
+                    : 'text-content-muted bg-muted border-border-subtle'
               ]"
               :aria-expanded="statusExpanded"
               aria-controls="remote-status-details"
@@ -624,7 +624,7 @@ function getExecutionStatusLabel(status?: string): string {
           <!-- Pending Creation Placeholder (F1) -->
           <div
             v-if="chatStore.pendingConversation"
-            class="p-2.5 rounded-lg text-xs border border-dashed transition-all"
+            class="p-2.5 rounded-lg text-xs border transition-all"
             :class="[
               chatStore.pendingConversation.status === 'creating'
                 ? 'bg-primary/5 border-primary/30 text-text-muted opacity-80 cursor-not-allowed select-none'
@@ -703,7 +703,7 @@ function getExecutionStatusLabel(status?: string): string {
                 class="w-full text-left rounded-xl transition-all flex items-center justify-between gap-2 cursor-pointer group select-none min-h-[44px]"
                 :class="[
                   conv.conversationId === chatStore.activeConversationId
-                    ? 'bg-elevated/90 text-text font-medium shadow-xs border border-border/80 px-3 py-2'
+                    ? 'bg-elevated/90 text-text font-medium shadow-xs border border-border-subtle px-3 py-2'
                     : 'text-text-muted hover:text-text hover:bg-muted/40 border border-transparent px-3 py-2',
                 ]"
                 @click="
@@ -826,7 +826,7 @@ function getExecutionStatusLabel(status?: string): string {
           id="remote-status-details"
           class="absolute top-0 inset-x-0 z-30 p-3 bg-panel/95 backdrop-blur-md border-b border-border shadow-xl space-y-2.5 text-xs max-h-[50dvh] overflow-y-auto"
         >
-          <div class="flex items-center justify-between pb-1 border-b border-border/50">
+          <div class="flex items-center justify-between pb-1 border-b border-border-subtle">
             <span class="font-semibold text-text text-xs flex items-center gap-1.5">
               <Laptop class="w-3.5 h-3.5 text-primary" />
               远程连接与执行诊断
@@ -843,7 +843,7 @@ function getExecutionStatusLabel(status?: string): string {
           </div>
           <p v-if="deliveryFailure" class="text-danger">{{ deliveryFailure.error?.code === 'REMOTE_REVISION_REQUIRED' && (piScenario || chatStore.activeConversation?.agentType === 'pi') ? PI_WIRE_PENDING : deliveryFailure.error?.code?.startsWith('PI_') ? getRemoteErrorMessage(deliveryFailure.error.code) : deliveryFailure.error?.code === 'SESSION_NOT_RESUMABLE' ? getRemoteErrorMessage(deliveryFailure.error.code, deliveryFailure.error.message, chatStore.activeConversation?.conversationKind) : deliveryFailure.error?.message || '送达失败或过期，请核对后重试' }}</p>
           <!-- Three Layers Display -->
-          <div class="grid grid-cols-1 gap-1.5 sm:grid-cols-3 bg-bg-app/70 p-2 rounded-lg border border-border/60">
+          <div class="grid grid-cols-1 gap-1.5 sm:grid-cols-3 bg-bg-app/70 p-2 rounded-lg border border-border-subtle">
             <!-- Layer 1: Transport State -->
             <div class="space-y-0.5">
               <span class="text-[10px] text-text-muted font-medium">1. 传输状态</span>
@@ -1001,7 +1001,7 @@ function getExecutionStatusLabel(status?: string): string {
               <span>高风险操作，请回到电脑上处理</span>
             </div>
 
-            <div class="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
+            <div class="flex items-center justify-end gap-2 pt-1 border-t border-border-subtle">
               <HqButton
                 variant="danger"
                 size="sm"
@@ -1090,7 +1090,7 @@ function getExecutionStatusLabel(status?: string): string {
               v-if="group.type === 'system_group' && group.systemMessages"
               class="w-full max-w-[92%] sm:max-w-2xl my-1"
             >
-              <div class="rounded-xl bg-muted/20 hover:bg-muted/30 transition-colors text-xs overflow-hidden border border-border/40">
+              <div class="rounded-xl bg-muted/20 hover:bg-muted/30 transition-colors text-xs overflow-hidden border border-border-subtle">
                 <button
                   type="button"
                   class="w-full select-none py-2 px-3 flex items-center justify-between text-text-muted hover:text-text font-mono text-[11px] text-left cursor-pointer"
@@ -1108,14 +1108,14 @@ function getExecutionStatusLabel(status?: string): string {
                 <div
                   v-if="isSystemGroupExpanded(gIdx)"
                   data-testid="remote-system-group-content"
-                  class="p-2 pt-0.5 space-y-2 border-t border-border/30 max-h-72 overflow-y-auto"
+                  class="p-2 pt-0.5 space-y-2 border-t border-border-subtle max-h-72 overflow-y-auto"
                 >
                   <div
                     v-for="sMsg in group.systemMessages"
                     :key="sMsg.messageId"
                     class="flex flex-col space-y-1 items-start text-xs font-mono"
                   >
-                    <div class="w-full bg-panel border border-border/60 text-text rounded-xl p-2.5 text-xs leading-relaxed select-text">
+                    <div class="w-full bg-panel border border-border-subtle text-text rounded-xl p-2.5 text-xs leading-relaxed select-text">
                       <HqMarkdown :content="sMsg.text" />
                       <MessageAttachments v-if="sMsg.attachments?.length" :attachments="sMsg.attachments" remote />
                     </div>
@@ -1193,7 +1193,7 @@ function getExecutionStatusLabel(status?: string): string {
               <Sparkles class="w-3.5 h-3.5 animate-pulse text-primary" />
             </div>
 
-            <div class="flex-1 min-w-0 bg-panel border border-border/80 rounded-2xl rounded-tl-xs p-3 px-3.5 text-xs shadow-xs space-y-2">
+            <div class="flex-1 min-w-0 bg-panel border border-border-subtle rounded-2xl rounded-tl-xs p-3 px-3.5 text-xs shadow-xs space-y-2">
               <div class="flex items-center justify-between gap-2">
                 <div class="flex items-center gap-2">
                   <span class="relative flex h-2 w-2">
@@ -1253,7 +1253,7 @@ function getExecutionStatusLabel(status?: string): string {
               </HqBadge>
             </div>
 
-            <div class="flex items-center justify-between text-[11px] text-text-muted pt-1 border-t border-border/40">
+            <div class="flex items-center justify-between text-[11px] text-text-muted pt-1 border-t border-border-subtle">
               <span class="truncate">ID: {{ cmd.commandId.slice(0, 10) }}...</span>
 
               <!-- Withdraw Button -->

@@ -601,7 +601,7 @@ function handleConversationSelect(conversationId: string) {
 
           <div
             v-if="chatStore.workspaces.length === 0"
-            class="mx-2 my-2 p-3 rounded-lg border border-dashed border-border/70 text-center text-xs space-y-2 select-none"
+            class="mx-2 my-2 p-3 rounded-xl bg-muted/20 text-center text-xs space-y-2 select-none"
           >
             <FolderPlus class="w-6 h-6 mx-auto text-text-muted/60" />
             <div class="text-text-muted leading-relaxed">
@@ -1025,7 +1025,7 @@ function handleConversationSelect(conversationId: string) {
     </HqDialog>
 
     <!-- Sidebar bottom toolbar (Settings, Archive, Mobile connection, Theme toggle, Version) matching Image 4 -->
-    <div class="px-3 py-2 border-t border-border/30 flex items-center justify-between text-xs shrink-0 select-none">
+    <div class="px-3 py-2 border-t border-border-subtle flex items-center justify-between text-xs shrink-0 select-none">
       <div class="flex items-center gap-1">
         <!-- Settings button -->
         <button
