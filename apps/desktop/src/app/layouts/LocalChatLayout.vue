@@ -27,7 +27,7 @@ watch(() => auth.currentMode, () => {
 
 <template>
   <div class="h-full flex flex-col bg-app text-content-primary overflow-hidden">
-    <header class="shrink-0 border-b border-border/30 bg-panel px-4 py-2 flex items-center justify-between gap-3 z-20">
+    <header class="shrink-0 bg-panel px-4 py-2 flex items-center justify-between gap-3 z-20">
       <div class="flex items-center gap-3">
         <router-link to="/chat" class="font-bold text-sm text-content-primary hover:text-primary transition-colors flex items-center gap-2">
           <div class="w-6 h-6 rounded-md bg-primary flex items-center justify-center text-white font-bold text-xs shadow-xs">

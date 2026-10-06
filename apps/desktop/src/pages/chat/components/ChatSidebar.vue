@@ -469,8 +469,8 @@ function handleConversationSelect(conversationId: string) {
 </script>
 
 <template>
-  <aside class="w-[85vw] max-w-[320px] md:w-72 lg:w-80 h-full border-r border-border/30 bg-panel flex flex-col shrink-0 select-none">
-    <div class="p-3.5 pb-2 flex items-center justify-between gap-2">
+  <aside class="w-[85vw] max-w-[320px] md:w-72 lg:w-80 h-full border-r border-border-subtle bg-panel flex flex-col shrink-0 select-none">
+    <div class="h-11 px-3.5 flex items-center justify-between gap-2 shrink-0">
       <div class="flex items-center gap-2 min-w-0">
         <Bot class="w-5 h-5 text-primary shrink-0" />
         <h2 class="text-sm font-semibold text-text truncate">项目任务</h2>
@@ -492,14 +492,14 @@ function handleConversationSelect(conversationId: string) {
       </div>
     </div>
 
-    <div class="px-3 pb-2.5 border-b border-border/30 space-y-2">
+    <div class="px-3 pb-2 space-y-2">
       <div class="relative">
         <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
         <input
           v-model="chatStore.searchQuery"
           type="text"
           placeholder="搜索任务或项目..."
-          class="hq-form-control w-full pl-8 pr-2.5 py-1.5 text-xs bg-bg-app/70 border border-border/40 rounded-lg text-text placeholder-text-muted/60 focus:outline-none focus:border-primary transition-colors"
+          class="hq-form-control w-full pl-8 pr-2.5 py-1.5 text-xs bg-muted/40 border border-transparent rounded-lg text-text placeholder-text-muted/60 focus:outline-none focus:border-primary/40 focus:bg-muted/60 transition-colors"
         />
       </div>
       <div class="grid grid-cols-2 gap-1 rounded-lg bg-bg-app/60 p-1 text-[11px]">
@@ -678,7 +678,7 @@ function handleConversationSelect(conversationId: string) {
               <button
                 v-if="group.conversations.length === 0 && !chatStore.showArchived"
                 type="button"
-                class="mx-1 mb-1 w-[calc(100%-0.5rem)] rounded-lg border border-dashed border-border px-3 py-2 text-left text-[11px] text-text-muted hover:border-primary/50 hover:text-primary transition-colors cursor-pointer"
+                class="mx-1 mb-1 w-[calc(100%-0.5rem)] rounded-lg bg-muted/20 hover:bg-muted/40 px-3 py-2 text-left text-[11px] text-text-muted hover:text-text transition-colors cursor-pointer"
                 @click="openCreateModal(group.workspace.id)"
               >
                 该项目暂无任务，点击新建

@@ -4,7 +4,7 @@
   --hq-field-bg: var(--color-bg-panel, #ffffff);
   --hq-field-fg: var(--color-text-primary, #0f172a);
   --hq-field-placeholder: var(--color-text-muted, #64748b);
-  --hq-field-border: var(--color-text-muted, #64748b);
+  --hq-field-border: var(--color-border-subtle, rgba(0, 0, 0, 0.05));
   --hq-field-focus: var(--color-focus-ring, #2563eb);
   --hq-field-disabled-bg: var(--color-bg-muted, #f1f5f9);
   --hq-field-disabled-fg: var(--color-text-secondary, #475569);

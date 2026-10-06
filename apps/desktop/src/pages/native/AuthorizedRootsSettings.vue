@@ -85,7 +85,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="p-5 bg-panel border border-border/40 rounded-xl space-y-4" data-testid="authorized-roots">
+  <section class="p-5 bg-panel border border-border-subtle rounded-xl space-y-4" data-testid="authorized-roots">
     <div class="flex items-center justify-between">
       <div class="space-y-0.5">
         <h2 class="font-semibold text-sm text-text flex items-center gap-2">
@@ -130,7 +130,7 @@ onBeforeUnmount(() => {
 
     <div
       v-if="!roots.length"
-      class="p-6 rounded-lg bg-bg-app border border-dashed border-border/40 text-center text-xs text-text-muted"
+      class="p-6 rounded-lg bg-bg-app text-center text-xs text-text-muted"
     >
       未授权任何根目录
     </div>
@@ -149,7 +149,7 @@ onBeforeUnmount(() => {
             aria-label="根目录显示名称"
             maxlength="120"
             placeholder="显示名称"
-            class="hq-form-control h-8 px-2.5 text-xs bg-panel border border-border/40 rounded-lg w-36 font-medium text-text focus:outline-none focus:border-primary"
+            class="hq-form-control h-8 px-2.5 text-xs bg-panel border border-border-subtle rounded-lg w-36 font-medium text-text focus:outline-none focus:border-primary"
           />
         </div>
         <span

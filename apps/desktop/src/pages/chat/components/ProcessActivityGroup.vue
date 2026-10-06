@@ -141,7 +141,7 @@ const summaryTitle = computed(() => {
     <!-- Body timeline -->
     <div
       v-if="isExpanded && activities.length > 0"
-      class="p-2.5 px-3 border-t border-border/20 bg-bg-app/40 max-h-72 overflow-y-auto space-y-1.5"
+      class="p-2.5 px-3 bg-bg-app/40 max-h-72 overflow-y-auto space-y-1.5"
     >
       <div
         v-for="item in activities"

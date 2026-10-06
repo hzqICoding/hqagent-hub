@@ -215,7 +215,7 @@ onMounted(async () => {
 <template>
   <div class="h-full flex flex-col bg-bg-app text-content-primary overflow-hidden select-none">
     <!-- Top Navigation & Tabs Header -->
-    <div class="border-b border-border/30 bg-panel px-4 sm:px-6 pt-3 shrink-0">
+    <div class="border-b border-border-subtle bg-panel px-4 sm:px-6 pt-3 shrink-0">
       <div class="flex items-center justify-between gap-3 mb-2.5">
         <div class="flex items-center gap-3">
           <router-link
@@ -269,7 +269,7 @@ onMounted(async () => {
         <AuthorizedRootsSettings />
 
         <!-- 已登记项目（只读列表） -->
-        <section class="p-5 bg-panel border border-border/40 rounded-xl space-y-4" data-testid="registered-workspaces">
+        <section class="p-5 bg-panel border border-border-subtle rounded-xl space-y-4" data-testid="registered-workspaces">
           <div class="flex items-center justify-between">
             <div class="space-y-0.5">
               <h2 class="font-semibold text-sm text-text flex items-center gap-2">
@@ -288,7 +288,7 @@ onMounted(async () => {
           <!-- 空状态 -->
           <div
             v-if="!chatStore.workspaces.length"
-            class="p-6 rounded-lg bg-bg-app border border-dashed border-border/40 text-center text-xs text-text-muted"
+            class="p-6 rounded-lg bg-bg-app text-center text-xs text-text-muted"
           >
             在对话页新建任务时登记项目
           </div>
@@ -346,7 +346,7 @@ onMounted(async () => {
       <!-- 5. 关于 / 日志 -->
       <div v-else-if="activeTab === 'about'" class="p-6 space-y-6 max-w-5xl mx-auto">
         <!-- Software info card -->
-        <div class="p-5 bg-panel border border-border/40 rounded-xl shadow-xs space-y-4">
+        <div class="p-5 bg-panel border border-border-subtle rounded-xl shadow-xs space-y-4">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center font-bold text-base shadow-sm">
@@ -360,7 +360,7 @@ onMounted(async () => {
             <HqBadge variant="neutral" size="sm">v1.5.0</HqBadge>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-2 border-t border-border/20">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-2 border-t border-border-subtle">
             <div class="p-2.5 rounded-xl bg-muted/20 space-y-0.5">
               <div class="text-[11px] text-text-muted">运行模式</div>
               <div class="font-medium text-text">{{ authStore.isMockMode ? '演示模式 (Mock)' : '真实 Worker 模式' }}</div>
@@ -377,7 +377,7 @@ onMounted(async () => {
         </div>
 
         <!-- 系统偏好与开机自启卡片 -->
-        <section class="p-5 bg-panel border border-border/40 rounded-xl shadow-xs space-y-4" data-testid="settings-autostart-section">
+        <section class="p-5 bg-panel border border-border-subtle rounded-xl shadow-xs space-y-4" data-testid="settings-autostart-section">
           <div class="flex items-center justify-between">
             <div class="space-y-0.5">
               <h3 class="text-sm font-semibold text-text flex items-center gap-2">
@@ -388,7 +388,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div class="pt-2 border-t border-border/20">
+          <div class="pt-2 border-t border-border-subtle">
             <div class="flex items-center justify-between gap-4 py-1">
               <div class="space-y-0.5">
                 <div class="text-xs font-medium text-text">开机自启</div>
@@ -410,8 +410,8 @@ onMounted(async () => {
         </section>
 
         <!-- Logs Viewer Section -->
-        <div class="p-5 bg-panel border border-border/40 rounded-xl shadow-xs space-y-3">
-          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-2 border-b border-border/20">
+        <div class="p-5 bg-panel border border-border-subtle rounded-xl shadow-xs space-y-3">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-2 border-b border-border-subtle">
             <div class="flex items-center gap-2">
               <Terminal class="w-4 h-4 text-primary" />
               <h3 class="text-xs font-bold text-text">实时系统日志与事件流</h3>

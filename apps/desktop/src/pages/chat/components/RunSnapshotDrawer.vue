@@ -80,19 +80,19 @@ async function handleApprove(decision: 'approve' | 'reject') {
 function getNodeStatusBadge(status: string) {
   switch (status) {
     case 'resolving':
-      return { label: '解析中', class: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/40 animate-pulse' }
+      return { label: '解析中', class: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 animate-pulse' }
     case 'running':
-      return { label: '执行中', class: 'bg-primary/15 text-primary border-primary/30 animate-pulse' }
+      return { label: '执行中', class: 'bg-primary/15 text-primary animate-pulse' }
     case 'waiting_approval':
-      return { label: '等待审批', class: 'bg-warning/15 text-warning border-warning/30' }
+      return { label: '等待审批', class: 'bg-warning/15 text-warning' }
     case 'succeeded':
-      return { label: '完成', class: 'bg-success/15 text-success border-success/30' }
+      return { label: '完成', class: 'bg-success/15 text-success' }
     case 'failed':
-      return { label: '失败', class: 'bg-danger/15 text-danger border-danger/30' }
+      return { label: '失败', class: 'bg-danger/15 text-danger' }
     case 'skipped':
-      return { label: '已跳过', class: 'bg-panel text-text-muted border-dashed border-border' }
+      return { label: '已跳过', class: 'bg-panel text-text-muted' }
     default:
-      return { label: status, class: 'bg-panel text-text-muted border-border' }
+      return { label: status, class: 'bg-panel text-text-muted' }
   }
 }
 
@@ -111,21 +111,21 @@ function hasCustomNodeName(node: NonNullable<typeof task.value>['nodes'][number]
 function getReviewVerdictMeta(verdict: string) {
   switch (verdict) {
     case 'passed':
-      return { label: '验收通过', class: 'bg-success/10 text-success border-success/30' }
+      return { label: '验收通过', class: 'bg-success/10 text-success' }
     case 'changes_requested':
-      return { label: '验收不通过：需要修改', class: 'bg-danger/10 text-danger border-danger/30' }
+      return { label: '验收不通过：需要修改', class: 'bg-danger/10 text-danger' }
     case 'insufficient_evidence':
-      return { label: '证据不足', class: 'bg-warning/10 text-warning border-warning/30' }
+      return { label: '证据不足', class: 'bg-warning/10 text-warning' }
     default:
-      return { label: verdict, class: 'bg-panel text-text-muted border-border' }
+      return { label: verdict, class: 'bg-panel text-text-muted' }
   }
 }
 </script>
 
 <template>
-  <aside class="w-full sm:w-[380px] md:w-[360px] lg:w-[400px] h-full border-l border-border/30 bg-panel flex flex-col shrink-0 overflow-y-auto overflow-x-hidden select-none">
+  <aside class="w-full sm:w-[380px] md:w-[360px] lg:w-[400px] h-full border-l border-border-subtle bg-panel flex flex-col shrink-0 overflow-y-auto overflow-x-hidden select-none">
     <!-- Header -->
-    <div class="p-3.5 border-b border-border/30 flex items-center justify-between shrink-0">
+    <div class="h-11 px-3.5 flex items-center justify-between bg-panel shrink-0">
       <div class="flex items-center gap-2 min-w-0">
         <Layers class="w-4 h-4 text-primary shrink-0" />
         <h3 class="text-xs font-semibold text-text truncate">本轮场景与执行详情</h3>
@@ -273,7 +273,7 @@ function getReviewVerdictMeta(verdict: string) {
           </div>
 
           <!-- Roles in Snapshot -->
-          <div class="pt-2 border-t border-border/20 space-y-1.5">
+          <div class="pt-1.5 space-y-1.5">
             <span class="text-[10px] text-text-muted uppercase tracking-wider block">参与角色分配</span>
             <div
               v-for="role in scene?.roles"

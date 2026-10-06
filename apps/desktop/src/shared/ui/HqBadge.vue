@@ -32,7 +32,7 @@ const badgeClasses = computed(() => {
       return 'bg-accent-soft text-action-primary border-transparent'
     case 'neutral':
     default:
-      return 'bg-muted text-content-secondary border-border-subtle'
+      return 'bg-muted text-content-secondary border-transparent'
   }
 })
 

@@ -11,6 +11,10 @@
 @tailwind components;
 @tailwind utilities;
 
+*, ::before, ::after {
+  border-color: var(--color-border-subtle);
+}
+
 /* Custom base scrollbar & selection styling */
 ::-webkit-scrollbar {
   width: 6px;

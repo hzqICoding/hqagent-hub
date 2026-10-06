@@ -373,7 +373,7 @@ async function restoreActiveConversation() {
       <!-- Center Column: Active Chat Stream & Composer -->
       <main class="flex-1 flex flex-col h-full bg-bg-app min-w-0 overflow-hidden">
         <!-- Center Header -->
-        <header class="p-2.5 sm:p-3 border-b border-border/30 bg-panel flex items-center justify-between gap-2 sm:gap-3 shrink-0 select-none">
+        <header class="h-11 px-3 sm:px-4 bg-panel flex items-center justify-between gap-2 sm:gap-3 shrink-0 select-none">
           <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
             <!-- Mobile Sidebar Drawer Toggle Button -->
             <button

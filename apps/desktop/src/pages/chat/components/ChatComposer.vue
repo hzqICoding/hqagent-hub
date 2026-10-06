@@ -256,7 +256,7 @@ function handleStopRun() {
         <span class="text-xs font-medium">对话正在进行，结束后再继续</span>
       </div>
 
-      <div class="bg-panel border border-border/50 focus-within:border-primary/50 rounded-2xl overflow-hidden transition-colors shadow-xs">
+      <div class="bg-panel border border-border-subtle focus-within:border-primary/40 rounded-2xl overflow-hidden transition-colors shadow-xs">
         <AttachmentDrafts class="px-[12px]" v-if="chatStore.activeConversationId" :key="chatStore.activeConversationId" ref="attachmentDrafts" :conversation-id="chatStore.activeConversationId" :disabled="chatStore.isSending || chatStore.isActiveConversationArchived" @blocked="attachmentsBlocked = $event" />
         <div class="hq-composer-row px-[12px] py-3">
           <button type="button" aria-label="添加附件" class="hq-composer-icon text-content-muted" :disabled="chatStore.isSending || chatStore.isActiveConversationArchived || !chatStore.activeConversationId" @click="attachmentDrafts?.open()"><Paperclip class="w-5 h-5" /></button>

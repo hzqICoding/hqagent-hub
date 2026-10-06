@@ -32,7 +32,7 @@ const meta = computed<SourceMeta>(() => {
         label: '单次任务指定',
         description: '任务启动时显式指定的临时覆盖',
         variant: 'primary',
-        badgeClass: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+        badgeClass: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-transparent',
         icon: GitBranch,
       }
     case 'workspace_profile':
@@ -40,7 +40,7 @@ const meta = computed<SourceMeta>(() => {
         label: '项目配置绑定',
         description: '当前工作区专属配置中指定',
         variant: 'primary',
-        badgeClass: 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
+        badgeClass: 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border-transparent',
         icon: ShieldCheck,
       }
     case 'global_profile':
@@ -48,7 +48,7 @@ const meta = computed<SourceMeta>(() => {
         label: '全局团队配置',
         description: '默认全局 Team Profile 首选设置',
         variant: 'info',
-        badgeClass: 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+        badgeClass: 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-transparent',
         icon: Layers,
       }
     case 'capability_match':
@@ -56,7 +56,7 @@ const meta = computed<SourceMeta>(() => {
         label: '动态能力匹配',
         description: '根据声明硬能力自动选定最优就绪 Agent',
         variant: 'success',
-        badgeClass: 'bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+        badgeClass: 'bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-transparent',
         icon: Cpu,
       }
     case 'fallback':
