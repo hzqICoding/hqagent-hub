@@ -335,6 +335,114 @@ Phase 1.1 的三 Agent 目标后移**。另两个选项存档备查：
 **影响**：需要补工作区的增删与 `git init` 路由（当前 openapi 只有
 `GET /api/v1/workspaces`），属相容扩展，见 FZ-2.2。
 
+### D39 Antigravity `agentapi` 实测不达标，判定 `incompatible`
+
+D5 当初把 Antigravity 移出一期关键路径，理由是「唯一接入方式未经实测」。
+2026-09-07 实测了，结论是**不达标**——不是暂时没接，是这个接口做不了。
+
+**`agentapi` 的完整命令面**（`language_server.exe agentapi`）：
+
+```text
+get-conversation-metadata <conversation_id>
+new-conversation [--model=<flash_lite|flash|pro>] [--title] [--profile] <prompt>
+send-message [--title] <recipient_id> <content>
+```
+
+对照 Adapter Port 的八个方法：
+
+| Port 方法 | agentapi | 结论 |
+| --- | --- | --- |
+| `start(spec)` | `new-conversation` | ✅ |
+| `resume(req)` | `send-message` | 🟡 勉强 |
+| `detect()` | 靠文件存在凑 | 🟡 |
+| `health()` | 无登录态查询 | ❌ |
+| `streamEvents()` | 无流式输出 | ❌ |
+| `approve(dispatch)` | 无审批回传 | ❌ |
+| `cancel(req)` | 无中断 | ❌ |
+| `collectResult()` | 只有 metadata | ❌ |
+
+缺的三条恰好都是硬能力：`streaming_events`、`tool_approval` 在
+`capabilities.yaml` 里是 `hard: true`，`cancel` 是 D17 两段式取消的前提。
+
+它自己的用法示例说明了设计意图不在这里：
+`# Send to yourself (useful for async notifications)`——
+**这是 Antigravity 会话之间互发通知的消息 API，不是给外部编排器控制 Agent 的。**
+
+**另一条路，明确不走**：`language_server.exe` 有完整 IDE 后端接口
+（`-api_server_url="http://0.0.0.0:50001"`、CSRF token、extension server、LSP、
+headless）。但那是私有未文档化协议，等于逆向别人 IDE 的内部接口。
+每次 Antigravity 升级都可能断，而 OTA 是本项目的 P0 能力——
+用户升级 Antigravity 我们就挂，耦合方向是反的。
+
+这印证了施工方案 §7.1 把 Sidecar 排在可靠性第 4 级的判断。
+
+**决定（已修正，见下）**：一期不实现 Antigravity Adapter，也不创建占位。
+
+#### 修正：上面的判定只看了 agentapi 一半
+
+初判「不达标、不实现」时漏了施工方案 `:468` 早就写好的接入设计：
+
+> Phase 1.1 Antigravity：Sidecar + `agentapi` 创建/续接会话，保存
+> `conversation_id`；**通过共享 MCP 工具回报进度和结果**。
+
+**设计从来没打算只用 agentapi。** 规划的是混合模式：agentapi 起会话，
+MCP 回传。而 Antigravity 确实是 MCP 客户端——`~/.gemini/config/mcp_config.json`
+等三份配置文件都存在（当前为空，未注册任何 server），且它自己就启动着
+`chrome-devtools-mcp`（`-use_ls_chrome_devtools_mcp=true`）。
+
+按混合方案重新对照：
+
+| Port 方法 | 混合方案 | 结论 |
+| --- | --- | --- |
+| `start(spec)` | `agentapi new-conversation` | ✅ |
+| `resume(req)` | `agentapi send-message` | 🟡 |
+| `streamEvents()` | Antigravity 调 Hub 的 MCP `report_progress` | ✅ 推而非拉 |
+| `collectResult()` | MCP `submit_result` | ✅ |
+| `approve()` | MCP `request_approval`，阻塞等回应 | ✅ |
+| `cancel()` | 只能协作式，无硬中断 | ❌ |
+| `health()` | 无登录态查询 | ❌ |
+
+**从三个硬缺口降到一个半。技术上可行。**
+
+#### 但保证强度低一档，这是它留在 Phase 1.1 的真正理由
+
+前四条靠的是**推模式**：进度和结果能不能回来，取决于 Agent 愿不愿意调那个
+MCP 工具。模型忘了调，进度就静默停住，Hub 只能干等到超时。
+
+Claude / Codex 走的是**拉模式**——Adapter 主动读子进程 stdout，Agent 想不给都不行。
+
+定性差别：Antigravity 是「**Agent 配合**」，不是「**Adapter 保证**」。
+正常路径能跑，异常路径（模型跑飞、卡死、拒绝调工具）没有兜底。
+这正是 §7.1 把 Sidecar 排在第 4 级的原因——不是接不了，是保证强度低一档。
+
+`cancel` 的硬缺口也是真的：`agentapi` 起的会话，进程归 Antigravity IDE 管，
+Hub 杀不掉，D17 两段式取消里的 force 那半做不到。按 D17 该如实返回 `refused`
+并报告残留——Claude 的写任务取消已有先例，不是新问题。
+
+#### 修正后的决定
+
+一期结论不变（**不实现**），但理由要改准确：**不是「接口做不了」，
+而是「保证强度低一档 + 一期用两个 Agent 已足够证明四层解耦」（D5、D37）**。
+
+Phase 1.1 若要接，走 agentapi + MCP 混合方案是**可行**的，
+不必如初判所说「不要再往 Sidecar 这条路上投入」。届时必须在 UI 上如实标注
+其能力矩阵：`cancel` 不支持、进度依赖 Agent 配合，不能和 Claude/Codex
+显示成同等可靠。
+
+**另一条明确不走的路**：直接对接 `language_server.exe` 的私有 API
+（`-api_server_url="http://0.0.0.0:50001"`、CSRF token、extension server）。
+那是逆向别人 IDE 的内部协议，每次 Antigravity 升级都可能断，
+而 OTA 是本项目 P0 能力——用户升级 Antigravity 我们就挂，耦合方向是反的。
+
+**当前 Agent 可用性实况**（2026-09-07 实测）：
+
+| Agent | 状态 | 证据 |
+| --- | --- | --- |
+| Codex | ✅ **完整可用** | 通过 Hub 派活跑通：独立会话、隔离 worktree、真实创建 `backend/hello.txt`、结构化结果回传 |
+| Claude | 🟡 部分 | 能被解析成角色、能起会话、能出事件流；写任务闭环未验，`tool_approval` / `session_resume` 实测为 false |
+| Gemini CLI | ❌ 认证关闭 | `IneligibleTierError: UNSUPPORTED_CLIENT`（见 D37） |
+| Antigravity | ❌ 接口不达标 | 本条 |
+
 
 ### D40 R1远程契约沿用现有执行身份，不引入Attempt（主代理裁决，2026-09-26）
 
