@@ -3,7 +3,13 @@
 > 每条执行线开工前先读这份。目标是让你不必重新扫描整个仓库就能进入状态。
 > 长期稳定的信息写在这里；一次性的过程信息写 `handoffs/`。
 
-## 当前设计入口（2026-09-24）
+## 最终状态（2026-10-08）
+
+**项目状态（2026-10-08）：已暂停开发并封存。** 用户评估后认为 Paseo（Apache-2.0，手机远程控制本机 Claude Code / Codex / Pi，自托管）与 Orca（MIT，桌面多 Agent 并行 ADE）等现成开源方案已覆盖核心需求，改为试用现成方案。最终代码在 `integration/phase1`（与 `main` 一致），云端 HQRemote 服务已停止（数据库已备份，程序与数据保留，`systemctl enable --now hqremote` 可恢复）。恢复开发前先确认方向：给现成方案补缺，或缩范围只做差异部分。
+
+最终文档：[`docs/项目文档.md`](../docs/项目文档.md)、[`docs/前后端交接手册.md`](../docs/前后端交接手册.md)。下文是历史阶段记录，`docs/vnext/` 已于 2026-10-04 并入上述两份文档。
+
+## 当前设计入口（2026-09-24，历史）
 
 **当前代码入口**：前端bc22402与后端f656f0f已合入`integration/phase1`，实际工作区为`E:/OtherPro/HQAgent-Hub-worktrees/vnext-integration`，联调修正5cb7d5a。后端90项/前端132项测试及HTTP联调通过；浏览器可视验收和真实模型成功验收未完成。详见[联合集成记录](reviews/N0-joint-integration.md)和[本地试用启动](../docs/vnext/本地试用启动.md)。下文旧阶段信息作为历史保留。
 

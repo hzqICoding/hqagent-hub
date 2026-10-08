@@ -217,3 +217,43 @@ codex 有自己的默认署名行为。
 | 其它进程入口stdin/超时与独立复核 | /root/subprocess_inputs | 01a104a5-d47a-7e63-adc8-11e6cfccb733 | 01a0ffac-4c25-7923-b0d1-c09095bf126c（继承，不是独立session） | 已完成可复用；9e3e36c→49b1580；专项75通过，私有reader生命周期只读复核已完成 |
 
 本线程可followup，跨客户端恢复未验证。子代理指出Git fsmonitor子进程清理风险，主代理已改为有界进程树清理；查询预算准确记为3秒+最多1秒清理。未改vnext-integration或remote-worker工作区、未调用真实模型、未合回integration。
+
+## 补记：主仓库工作区中的派发记录（2026-09-26 起，合并于 2026-10-08 收尾）
+
+## 2026-09-26 R1 手机远程接入
+| 职责 | session ID | 模型/等级 | 分支/目录 | 状态 |
+| R1-P0 远程协议 0.6.0 冻结（三轮：needs-decision → 沙箱 0xC0000142 中断 → 完成） | `01a0ceda-3bd5-7092-a443-c9e36b1eff9c`（复用主会话） | `gpt-6-astra/high`，workspace-write，workdir `E:\OtherPro` | `feat/remote-protocol`；`E:/OtherPro/HQAgent-Hub-worktrees/remote-protocol` | 已审核通过，冻结 `c443e12`，HEAD `872a909`；未合 integration |
+| R1-FZ11 协议 0.6.1（D42 线路修订号、D43 本机配对契约） | `01a0ceda-3bd5-7092-a443-c9e36b1eff9c`（同上 resume） | `gpt-6-astra/high`，workspace-write | 同上 | 进行中 |
+| R1-P1 Hub Server | `01a0ddec-71b7-7e22-83c1-c0c04b5f49f5`（新开） | `gpt-6-astra/high`，workspace-write，workdir `E:\OtherPro` | `feat/remote-server`（基于 872a909，已合 0.6.1）；`E:/OtherPro/HQAgent-Hub-worktrees/remote-server` | 审核通过（含 F1–F4 返修），HEAD `ab05245`，85 passed；未合 integration |
+- P3-A 前端移动布局由用户转交 Gemini（Antigravity）完成：`feat/remote-web-mobile@9b189bf`，外部会话 ID 未提供，不编造。
+- R1-P2 Worker 远程连接：新开会话 `01a0de45-bc31-7ea2-a484-b4ce9b34de74`，gpt-6-astra/high，workspace-write；`feat/remote-worker`（基于 8268c5c），`E:/OtherPro/HQAgent-Hub-worktrees/remote-worker`；审核通过（含 G1、G2 返修），HEAD `9558da9`，270 passed。
+- 2026-09-26 晚：FZ-R1.1 与 P1 两轮都因本机内存不足（空闲约 4GB）出现 0xC0000142 中断；用户关闭 Android Studio 后恢复。FZ-R1.1 已冻结：`7bfbe95`，登记 `8268c5c`，主代理审核通过。随后已合并进 `feat/remote-server`，P1 在原会话 `01a0ddec…` 中恢复。
+- P1 Q1 裁决：配对码只在发起配对的 Worker 的挑战响应和自身轮询中返回，其余响应与日志一律禁止。
+- 2026-09-27：协议 0.6.1、P2（`9558da9`）、P1（`ab05245`）已由主代理 `--no-ff` 合入 `integration/phase1`（`49a714a`、`dff7bda`），本机真实联调通过，记录见 `.hqagent/reviews/R1-remote-joint-local.md`（`integration/phase1` 上）。
+- 2026-09-27 R1.5：协议 0.7.0（D46–D49）由 `01a0ceda…` 冻结，已合入 integration（`1916662`）。P1 服务端（`01a0ddec…`）与 P2 Worker（`01a0de45…`）并行开工，均 gpt-6-astra/high。前端 P3-A/P3-B（含扫码配对）已合入（`919fe5e`，类型修正 `cc23a3c`）；R1.5 前端由 Gemini 在 `feat/r15-web`（`E:/OtherPro/HQAgent-Hub-worktrees/r15-web`）进行。
+- 2026-09-28：R1.5 联调修复（`01a0de45…`，high）与取消后续接会话（同会话，medium）已合入 integration；阿里云 serverD 已部署 hqremote.hylucky.top。手机端真机体验返修 2 派给新会话 `01a0e638-8ef4-7363-a113-129f6929f96c`（gpt-6-astra/medium，`feat/r15-web`）。
+- 2026-09-28：R1.5+ 协议 0.8.0（D50，设备管理 + PAT + 全量接口规范）由 `01a0ceda…` 冻结（`739756f`），审核通过已合入 integration；R1.5+-P1 服务端派给 `01a0ddec…`（gpt-6-astra/high）。
+- 2026-09-28：R1.5+-P1 服务端（`01a0ddec…`）审核通过已合入 integration（195 passed）；R1.5+-P3 前端派给 `01a0e638…`（medium）。
+- 2026-09-28：R1.5+-P3 前端（`01a0e638…`）审核通过；R1.5+ 本机联调通过并部署 serverD（integration `68c4fd6`）。下一步 R3。
+- 2026-09-28：R3-P0 协议（原生会话 + §13 授权根目录添加项目，wireRevision 3 / 0.9.0）派给 `01a0ceda…`（high）。原生会话同步范围用户已定：只同步索引，导入/续接后全量（含续接前历史）。
+- 2026-09-29：R3 协议 0.9.0（D51）审核通过并合入 integration（含历史测试返修 9dbb3f2，495 passed）；R3-P2 Hub 派给 `01a0de45…`（high）。
+- 2026-09-29：R3 协议补冻 0.9.1（本机原生会话接口，裁决 P2 的 Q1）审核通过并合入（498 passed）；R3-P2 Hub（`01a0de45…`）从 55b387c 续作、R3-P1 服务端（`01a0ddec…`）并行开工，均 high。
+- 2026-09-29：R3-P1 服务端（`01a0ddec…`）审核通过并合入（223 passed）；R3-P2 Hub 因并行 429 退出后单独续作。
+- 2026-09-30：R3-P1 服务端返修（0.9.2 同步关闭错误）审核通过合入（228 passed）。R3 真实联调发现两个阻断：老设备 2→3 永不升级（can_upgrade 把 unconfirmed 终态当未决）、Claude 精确版本白名单（本机 2.1.284 全部 unsupported）；R3-P2 返修 2 派给 `01a0de45…`（high）。
+- 2026-09-30：R3 返修 6 合入；原生会话导入+续接真实 CLI 验收通过（暗号回忆正确）；R3 部署 serverD（integration af1e603，协议 0.9.2）。下一步 R3.5 跨平台。
+- 2026-09-30：R3.5-P2 跨平台 Hub（`01a0de45…`，high）交付并合入 integration（8d20faf，主代理补锁 Linux 钥匙串依赖链），GitHub CI 三平台全绿（run 36677742192）；审核记录 `.hqagent/reviews/R35-P2-hub-review.md`。返修 1（测试隔离钥匙串、先写钥匙串、探测缓存、升级测试竞态、POSIX 重定向、CLI 风格）派给同会话（medium）。
+- 2026-09-30：R3.5-P2 返修 1 审核通过合入 integration（17259d9，Hub 495 passed / 9 skipped）。R1.6-P0 附件协议（wireRevision 4 / 0.10.0 / D52）派给 `01a0ceda-3bd5-7092-a443-c9e36b1eff9c`（high）。注意：`codex exec resume` 必须用完整会话 ID，短前缀不会匹配、会静默开新会话（误开的 `01a0f10a…` 已停掉，未产生改动）。
+- 2026-09-30：R1.6-P0 协议 0.10.0（D52，wireRevision 4）审核通过，本地合入 integration（未推送，待 P1）。期间内存告警只杀了外层 shell，codex 进程存活并完成；重复 resume 会被「active writer」拒绝，不会双写。R1.6-P1 服务端派给 `01a0ddec-71b7-7e22-83c1-c0c04b5f49f5`（high），venv 预装 Pillow 12.3.0。
+- 2026-09-30：R1.6-P1 服务端首次交付（264 passed，20MB RSS +0.91MiB）；返修 1（medium：OSS 预留 §7.1、维护频率、代码风格、nginx 端口）通过，主代理复跑 280 passed，合入并推送 integration（cc17608）。R1.6-P2 Hub 派给 `01a0de45…`（high），含 `agents verify-image` 本机图片能力验证入口（由主代理联调时实跑）。
+- 2026-09-30：用户提出界面与 Hub 并行，R1.6-P3 前端（手机 + 电脑附件界面）派给 `01a0e638-8ef4-7363-a113-129f6929f96c`（high），`feat/r15-web`；与 P2 同时运行，注意 429 与内存。排队待办：协议测试常量 39→47（01a0ceda，low）、服务端 macOS 缩略图（01a0ddec，medium）。
+- 2026-09-30：P3 前端、P2 Hub、协议小修、服务端 macOS 缩略图与 smoke 小修全部合入，CI 三平台全绿（34058ae）。真实联调首轮发现附件读取被提示词禁止、Codex 续接/取消问题，R1.6-P2 返修 1 派给 `01a0de45…`（medium）。
+- 2026-10-01～03：Hub 返修 1–3（附件读取授权、Codex 续接、精确附件只读 shell、默认场景能力解析）合入；部署 serverD（ff59150、c23d375）。前端返修 1–3（`01a0e638…`：暗色对比度与页内扫码、共用弹窗与「+」新话题、原生会话按可用性分组）合入。服务端 set-password（`01a0ddec…`，low）合入。
+- 2026-10-03：用户允许低谷期多任务并行（429 休息 3 分钟再 resume）。并行中：Hub 返修 4（`01a0de45…`，medium，新对话首条消息自动开新会话，remote-worker）；Hub 返修 5 新会话 `01a0ff62-bb80-7461-a88b-1e066f2bf395`（high，原生会话 CLI 版本范围，worktree `hub-native-versions` / `feat/hub-native-versions`，借用 remote-worker 的 .venv）；协议 0.10.1（`01a0ceda…`，high，本机图片能力验证接口 + 本机删除对话）。
+- 2026-10-03：返修 4、返修 5（原生版本范围，56/56 可读）、本机浏览器会话持久化（30 天滑动）合入。返修 5 上线后用户 Hub 因 `REMOTE_SYNC_CONFLICT` 本地冻结（服务端未冻结），排查派给 `01a0de45…`（high，remote-worker）。协议 0.10.1 合入（36cddf9）；Hub 实现新会话 `01a0ffac-4c25-7923-b0d1-c09095bf126c`（high，worktree `hub-0101` / `feat/hub-0101`，用 vnext-integration 的 .venv 只读跑测试）；前端实现 `01a0e638…`（medium，r15-web）。
+- 2026-10-03：同步冲突修复（`01a0de45…`，metadataVersion 递增 + `remote resync --confirm-reset`）合入并在用户电脑恢复；0.10.1 Hub 返修 1（版本解析统一）合入，部署 serverD；用户四个图片验证目标经新作业接口全部通过。R1.7 开工：Hub 侧（`01a0de45…`，high，remote-worker，venv 预装 PyInstaller 6.22.3：壳进程约定 + 打包 hqagent-core.exe）；桌面壳新会话 `01a10273-4f82-7393-a315-2b0441a8eee4`（high，worktree `desktop-shell` / `feat/desktop-shell`，已 pnpm install、cargo fetch、加 @tauri-apps/cli 2.12.1；最终 tauri build 由主代理执行）。
+- 2026-10-04：R1.7-P1 Hub（eabf33b / 4c37ae9，壳进程约定 + hqagent-core onedir 54.7MiB）合入。PI 接入：主代理本机装 PI CLI 1.0.1、配 1aicode DeepSeek 渠道（密钥仅存 `~/.pi/agent/1aicode.key`），RPC 实测见 `docs/vnext/PI适配方案.md`。PI-P0 协议派给 `01a0ceda…`（high）。
+- 2026-10-04：R1.7-P2 桌面壳（23caf5c / 1d12e7b）合入，主代理修 build 脚本 `--offline` 透传问题后打出 `HQAgent-Hub_0.1.0_x64-setup.exe`（25.9MiB），core 冒烟通过；已写用户迁移配置（沿用 E:/tmp/hqagent-n0-trial，旧配置备份 .bak-20260906），待用户安装。PI 协议 0.11.0（wireRevision 5，D53，`--no-extensions` 隔离 + editor 往返 guard）合入（60bcc2a）。并行派：PI-P1 服务端 `01a0ddec…`（high）、PI-P2 Hub `01a0de45…`（high）、PI-P3 前端 `01a0e638…`（medium）。
+- 2026-10-04：桌面壳存活/就绪拆分（`01a10273…`，medium）合入 integration；PI-P2 返修 3（`01a0de45…`，medium）合入 integration `0648ee5`，真实 PI 复测拦截后续接通过；返修 4（同会话，low）去掉完成拒绝时多发的 agent.failed。
+- 2026-10-04：Hub bootstrap 缓存（`01a0ffac…`）合入 integration `c767298`；PI-P2 返修 5 合入 `193f3ae`，已部署 serverD（0.11.1）。桌面「事件游标已失效」：Hub 侧 cursor_scope 修复派 `01a0ffac…`（hub-0101，medium），前端自愈派 `01a0e638…`（r15-web，low）。
+- 2026-10-04：桌面壳 pi-v1 头（`01a10273…`）合入 `14ec1bc`；PI 图片能力提前校验 + 卡死验证作业自动收尾（`01a0ffac…`）合入 `982f130`。文档整理（项目文档 + 前后端交接手册 + 删除重复文档）新开会话 `01a1077c-de13-7b62-9a70-66ee39b5a077`（gpt-6-astra/high，workspace-write），worktree `E:/OtherPro/HQAgent-Hub-worktrees/docs` / `work/docs`。
+- 2026-10-05：CI Windows 测试等待缩放（`01a0ffac…`）合入 `47a9e98`，CI 全绿（Windows Hub 869 passed）。AGENTS §7 措辞修正（主代理直改）。Hub 日志 + 事件循环卡顿诊断派 `01a0ffac…`（high）；壳日志 + core 控制台捕获派 `01a10273…`（medium）。前端任务改由用户自行派发。

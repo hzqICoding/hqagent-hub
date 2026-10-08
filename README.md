@@ -1,5 +1,7 @@
 # HQAgent-Hub
 
+> **项目状态（2026-10-08）：已暂停开发并封存。** 用户评估后认为 Paseo（Apache-2.0，手机远程控制本机 Claude Code / Codex / Pi，自托管）与 Orca（MIT，桌面多 Agent 并行 ADE）等现成开源方案已覆盖核心需求，改为试用现成方案。最终代码在 `integration/phase1`（与 `main` 一致），云端 HQRemote 服务已停止（数据库已备份，程序与数据保留，`systemctl enable --now hqremote` 可恢复）。恢复开发前先确认方向：给现成方案补缺，或缩范围只做差异部分。
+
 本地多 Agent 控制中心。在自己电脑上统一发现、启动、续接和管理 Claude Code、Codex 等 Agent，把它们编成一个有角色分工的团队来干活。
 
 核心是**角色与厂商解耦**：工作流只写 `dispatch(role="architect")`，运行时才决定实际用哪个 Agent。换 Agent 不改工作流代码。

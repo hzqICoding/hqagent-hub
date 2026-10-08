@@ -2,6 +2,7 @@
 node_modules/
 .pnpm-store/
 __pycache__/
+.pytest_cache/
 *.py[cod]
 .venv/
 venv/
