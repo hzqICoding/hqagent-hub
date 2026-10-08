@@ -72,3 +72,50 @@ pytest -q -p no:cacheprovider
 - 预期内容：`APPROVAL_EXECUTED_ONCE`，以`flag=wx`独占创建，不允许覆盖。
 
 等待用户点击最新申请的“批准放行”，然后核对真实执行和重复决定的幂等性。此时尚不宣称批准测试通过。
+
+
+## 连接码在线续发与批准测试重建（2026-09-25）
+
+为部署在线续码功能，先取消未执行的 `run_a6286c7bafd348839f26bd0cdca8a8cc`，未代替用户批准或拒绝。升级后重建同一测试。
+
+实现集成提交 `a6c268c`。后端全量测试实际输出：`158 passed, 4 warnings in 22.88s`。
+
+- Run：`run_fbf793c577f84e629620458935c58b49`；Task：`task_a6b8150746e8`。
+- Approval：`approval_6d8fe1e132874766bde73e441d34acd4`。
+执行 `python -B -m runtime.pair --data-dir E:/tmp/hqagent-n0-trial` 后核对输出：
+
+```json
+{
+  "pidUnchanged": true,
+  "approvalUnchanged": true,
+  "runStatus": "waiting_approval",
+  "approvalStatus": "pending",
+  "markerExists": false
+}
+```
+
+续码未重启 Worker、未丢失待审批请求。仍等待用户批准，正向执行及幂等验收尚未完成。
+
+
+## 批准与重复决定测试：通过
+
+用户点击批准并回复“已批准”后，核对真实工具回执和磁盘文件。对同一已批准请求以相同幂等键重复提交、再以新幂等键重复提交批准，均未新增执行。实际输出：
+
+```json
+{
+  "approvalStatus": "approved",
+  "runStatus": "succeeded",
+  "markerContent": "APPROVAL_EXECUTED_ONCE",
+  "successfulCommandCompletions": 1,
+  "commandEvents": 2,
+  "repeatDecisionStatuses": [
+    "approved",
+    "approved",
+    "approved"
+  ],
+  "fileAndExecutionUnchangedAfterRepeats": true,
+  "gitStatus": "?? approval-approved.txt"
+}
+```
+
+两条 commandExecution 事件分别为开始与退出码 0 的完成记录，并非两次执行。重复提交前后文件 SHA-256、mtime_ns 与命令事件数量一致。变更仅为临时工作树中的 approval-approved.txt；业务项目未改动。拒绝阻断、批准执行、重复决定不重复执行三项验收通过。
