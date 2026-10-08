@@ -41,6 +41,24 @@ from orchestrator.runtime import NodeDispatchRequest
 from security.worktrees import WorktreeSpec
 
 
+def _failure_text(failure: Any, fallback: object) -> str:
+    """把 AdapterFailure 拼成人能看懂的一行。
+
+    必须带上 violationPaths：只说「访问越界路径」而不说是哪个路径，
+    用户既不知道该放宽白名单还是该管住 Agent，排障只能靠猜。
+    """
+    kind = getattr(failure, "kind", "agent_error")
+    message = getattr(failure, "message", None) or str(fallback)
+    text = f"{kind}: {message}"
+    paths = getattr(failure, "violation_paths", None)
+    if paths:
+        text += "；越界路径：" + ", ".join(str(p) for p in paths[:5])
+    missing = getattr(failure, "missing_capabilities", None)
+    if missing:
+        text += "；缺少能力：" + ", ".join(str(c) for c in missing)
+    return text
+
+
 def node_id_or_node(repository: Any, task_id: str, node_id: str) -> Any:
     return next((n for n in repository.list_nodes(task_id) if n.id == node_id), None)
 
@@ -332,12 +350,7 @@ class TaskService:
             # Agent 起不来是可处理的状态，不是崩溃。把 AdapterFailureKind
             # 原样写到节点上——前端要靠它区分「没登录」和「缺能力」，
             # 这两种的用户动作完全不同（去登录 vs 换 Agent）。
-            failure = error.failure
-            await self._fail_node(
-                task_id,
-                node,
-                f"{getattr(failure, 'kind', 'agent_error')}: {getattr(failure, 'message', error)}",
-            )
+            await self._fail_node(task_id, node, _failure_text(error.failure, error))
             return
         except OrchestrationError as error:
             await self._fail_node(task_id, node, str(error))
@@ -516,11 +529,10 @@ class TaskService:
             except asyncio.CancelledError:
                 raise
             except AdapterStartFailedError as error:
-                failure = error.failure
                 await self._fail_node(
                     task_id,
                     node_id_or_node(self.repository, task_id, node_id),
-                    f"{getattr(failure, 'kind', 'agent_error')}: {getattr(failure, 'message', error)}",
+                    _failure_text(error.failure, error),
                 )
             except Exception as error:  # noqa: BLE001 - 抽取失败必须落到节点上，不能静默
                 node = next((n for n in self.repository.list_nodes(task_id) if n.id == node_id), None)

@@ -559,7 +559,9 @@ class ClaudeAdapter(AgentAdapter):
                     tool_input = content.get("input") if isinstance(content.get("input"), dict) else {}
                     violations = state.guard.inspect_tool_call(tool_name, tool_input)
                     if violations:
-                        await self._fail_path_violation(state, violations, raw)
+                        # 带上工具名：只说「访问越界路径」而不说是哪个工具，
+                        # 排障时分不清是 Agent 想写还是我们的读写判别写错了。
+                        await self._fail_path_violation(state, violations, raw, tool_name)
                         return
                     excerpt = json.dumps(tool_input, ensure_ascii=False, default=str)[:512]
                     payload = AgentToolCallPayload.model_validate(
@@ -626,11 +628,15 @@ class ClaudeAdapter(AgentAdapter):
             await state.emit(event)
 
     async def _fail_path_violation(
-        self, state: AdapterSessionState, violations: list[str], raw: dict[str, Any]
+        self,
+        state: AdapterSessionState,
+        violations: list[str],
+        raw: dict[str, Any],
+        tool_name: str = "",
     ) -> None:
         state.failure = failure(
             AdapterFailureKind.PATH_VIOLATION,
-            "Claude 尝试在写入前访问越界路径",
+            f"Claude 用工具 {tool_name or '<unknown>'} 访问了越界路径",
             retryable=False,
             raw=raw,
             violation_paths=violations,

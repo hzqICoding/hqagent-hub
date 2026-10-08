@@ -17,6 +17,34 @@ _WRITE_COMMAND = re.compile(
 )
 
 
+# 只读工具：它们的入参里也有 path / file_path，但访问不产生写入。
+# 对这些只校验「有没有跑出 worktree」，不校验可写白名单——
+# 否则只读角色（reviewer 的 writablePaths 是空的）连要复核的文件都打不开，
+# 一 Read 就被判越界。这正是集成时 reviewer 节点失败的原因。
+#
+# 名单之外的工具一律按写处理（fail-closed）：不认识的工具宁可误拦，
+# 也不能让一个能写的工具因为没在名单里就绕过白名单。
+_READ_ONLY_TOOLS = frozenset(
+    {
+        "read",
+        "read_file",
+        "readfile",
+        "view",
+        "cat",
+        "glob",
+        "grep",
+        "search",
+        "ls",
+        "list_dir",
+        "list_directory",
+        "notebookread",
+        "websearch",
+        "webfetch",
+        "todowrite",
+    }
+)
+
+
 class PathGuard:
     def __init__(self, worktree_path: str, allowed_paths: Iterable[str]) -> None:
         self.root = Path(worktree_path).resolve()
@@ -53,8 +81,16 @@ class PathGuard:
     def violations(self, candidates: Iterable[str]) -> list[str]:
         return [item for item in candidates if not self.allows(item)]
 
+    def contains(self, candidate: str) -> bool:
+        """路径是否落在 worktree 内。只读工具用这个，不看可写白名单。"""
+        return self._relative(candidate) is not None
+
     def inspect_tool_call(self, tool_name: str, tool_input: dict[str, Any]) -> list[str]:
         candidates = list(self._extract_paths(tool_input))
+        if tool_name.lower() in _READ_ONLY_TOOLS:
+            # 读操作只要不跑出 worktree 就放行。跑出去仍然拦——
+            # 越界读同样是信息泄漏，不能因为「只是读」就不管。
+            return [item for item in candidates if not self.contains(item)]
         violations = self.violations(candidates)
         if violations:
             return violations

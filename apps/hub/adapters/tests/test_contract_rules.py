@@ -390,3 +390,43 @@ def test_explicit_resume_requires_exact_external_id_and_never_uses_latest(
         assert "--last" in missing.message
 
     asyncio.run(scenario())
+
+
+def test_read_only_tools_are_not_checked_against_the_writable_allowlist(tmp_path) -> None:
+    """只读工具只校验 worktree 边界，不校验可写白名单。
+
+    D22 要求写入前拦下越界路径。但 inspect_tool_call 原来对任何工具都提取
+    path/file_path 去比对可写白名单，而 Read / Grep / Glob 的入参里同样有
+    这些字段——于是只读角色（reviewer 的 writablePaths 是空的）连要复核的
+    文件都打不开，一 Read 就被判越界。集成时 reviewer 节点就是这么失败的。
+    """
+    from adapters.path_guard import PathGuard
+
+    (tmp_path / "backend").mkdir()
+    target = tmp_path / "backend" / "x.txt"
+    target.write_text("hi", encoding="utf-8")
+    guard = PathGuard(str(tmp_path), [])  # 只读角色：可写白名单为空
+
+    assert guard.inspect_tool_call("Read", {"file_path": str(target)}) == []
+    assert guard.inspect_tool_call("Grep", {"path": str(tmp_path / "backend")}) == []
+
+
+def test_read_outside_the_worktree_is_still_blocked(tmp_path) -> None:
+    """越界读同样是信息泄漏，不能因为「只是读」就放行。"""
+    from adapters.path_guard import PathGuard
+
+    guard = PathGuard(str(tmp_path), [])
+    assert guard.inspect_tool_call("Read", {"file_path": "C:/Windows/System32/config/SAM"})
+
+
+def test_unknown_tools_are_treated_as_writes(tmp_path) -> None:
+    """名单外的工具一律按写处理。
+
+    不认识的工具宁可误拦，也不能让一个能写的工具因为没被列进只读名单
+    就绕过可写白名单——这个方向错了就是安全漏洞。
+    """
+    from adapters.path_guard import PathGuard
+
+    (tmp_path / "backend").mkdir()
+    guard = PathGuard(str(tmp_path), [])
+    assert guard.inspect_tool_call("SomeBrandNewTool", {"path": str(tmp_path / "backend" / "z.txt")})
