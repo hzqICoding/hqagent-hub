@@ -1,0 +1,122 @@
+{
+  "designVersion": "0.1",
+  "status": "documentation_examples_only",
+  "message": {
+    "clientMessageId": "mobile-message-001",
+    "text": "梳理 RTK 基站的代码逻辑",
+    "projectId": "project-q20",
+    "workspaceId": "workspace-ua-android",
+    "taskId": null,
+    "attachmentIds": [],
+    "executionProfileId": "profile-direct",
+    "intent": "analyze_code"
+  },
+  "acceptedResponse": {
+    "messageId": "message-001",
+    "commandId": "command-001",
+    "conversationSeq": 1,
+    "status": "queued",
+    "targetWorkerId": "worker-pc",
+    "workerOnline": true,
+    "requestId": "request-001"
+  },
+  "command": {
+    "protocolVersion": "2.0-draft",
+    "commandId": "command-001",
+    "messageId": "message-001",
+    "conversationId": "conversation-q20",
+    "conversationSeq": 1,
+    "targetWorkerId": "worker-pc",
+    "type": "run.submit",
+    "createdAt": "2026-09-24T01:00:00Z",
+    "expiresAt": null,
+    "payload": {
+      "taskId": null,
+      "workspaceId": "workspace-ua-android",
+      "text": "梳理 RTK 基站的代码逻辑",
+      "attachmentIds": [],
+      "executionProfileId": "profile-direct",
+      "profileVersion": 1
+    }
+  },
+  "event": {
+    "protocolVersion": "2.0-draft",
+    "eventId": "event-001",
+    "workerId": "worker-pc",
+    "workerStoreId": "store-001",
+    "workerEpoch": "boot-002",
+    "seq": 108,
+    "commandId": "command-001",
+    "conversationId": "conversation-q20",
+    "taskId": "task-rtk",
+    "runId": "run-analyze",
+    "nodeId": "node-read",
+    "attemptId": "attempt-001",
+    "type": "attempt.started",
+    "occurredAt": "2026-09-24T01:00:02Z",
+    "payload": {
+      "runtimeId": "codex",
+      "executionId": "execution-001"
+    }
+  },
+  "profile": {
+    "id": "profile-codex-dual",
+    "version": 1,
+    "roles": {
+      "planner": {
+        "runtimeId": "codex",
+        "modelId": "gpt-6-astra",
+        "reasoningEffort": "xhigh",
+        "permissionProfileId": "plan-and-dispatch"
+      },
+      "executor": {
+        "runtimeId": "codex",
+        "modelId": "gpt-5.6-luna",
+        "reasoningEffort": "max",
+        "permissionProfileId": "isolated-code-change"
+      }
+    },
+    "policy": {
+      "onUnavailable": "report_capability_gap",
+      "maxConcurrentAgentExecutions": 3
+    }
+  },
+  "pluginManifest": {
+    "pluginId": "hq.android-builder",
+    "version": "0.1.0",
+    "hostApiVersion": "1.0-draft",
+    "kind": "capability",
+    "trust": "builtin",
+    "placement": "worker",
+    "transport": "stdio-jsonrpc",
+    "entrypoint": "bin/android-builder",
+    "platforms": ["windows", "darwin", "linux"],
+    "architectures": ["x86_64", "aarch64"],
+    "operations": [
+      {
+        "name": "build-apk",
+        "inputSchema": "schemas/build-input.json",
+        "outputSchema": "schemas/build-output.json",
+        "supportsCancel": true,
+        "recovery": "inspect-only",
+        "retrySafety": "reconcile-required"
+      }
+    ],
+    "requiredHostCapabilities": ["process.spawn", "artifact.write"],
+    "configSchema": "schemas/config.json"
+  },
+  "pluginExecute": {
+    "jsonrpc": "2.0",
+    "id": "rpc-001",
+    "method": "execute",
+    "params": {
+      "operation": "build-apk",
+      "executionId": "execution-build-001",
+      "attemptId": "attempt-build-001",
+      "input": {
+        "codeSnapshotId": "snapshot-fix-001",
+        "buildProfileId": "q20-test"
+      }
+    }
+  }
+}
